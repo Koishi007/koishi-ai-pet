@@ -1,7 +1,4 @@
-"""
-System monitor skill for the desktop pet.
-Monitors CPU, memory, and other system metrics.
-"""
+"""系统监控技能 —— 监控 CPU、内存等系统指标。"""
 
 import psutil
 import logging
@@ -15,11 +12,11 @@ class SystemMonitor:
 
     def enable(self):
         self._enabled = True
-        logger.info("System monitor enabled")
+        logger.info("系统监控已启用")
 
     def disable(self):
         self._enabled = False
-        logger.info("System monitor disabled")
+        logger.info("系统监控已禁用")
 
     def get_cpu_usage(self) -> float:
         if not self._enabled:

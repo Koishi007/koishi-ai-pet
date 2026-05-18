@@ -1,17 +1,8 @@
-from abc import ABC, abstractmethod
+class BrainMixin:
+    """轻量级上下文管理 mixin — 按需混入具体 brain 类。"""
 
-
-class BaseBrain(ABC):
     def __init__(self):
-        self._context = []
-
-    @abstractmethod
-    def think(self, prompt: str) -> str:
-        pass
-
-    @abstractmethod
-    def greet(self) -> str:
-        pass
+        self._context: list[str] = []
 
     def add_context(self, message: str):
         self._context.append(message)
