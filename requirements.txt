@@ -1,0 +1,6 @@
+﻿PySide6==6.11.1
+PySide6_Addons==6.11.1
+PySide6_Essentials==6.11.1
+shiboken6==6.11.1
+openai>=1.0.0
+psutil>=5.9.0
