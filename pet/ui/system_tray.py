@@ -16,7 +16,7 @@ class SystemTrayManager(QObject):
         # 1. 创建托盘图标 (暂时画一个简易图标)
         self.tray_icon = QSystemTrayIcon(self)
         self.tray_icon.setIcon(self._create_temp_icon())
-        self.tray_icon.setToolTip("我的智能桌宠")
+        self.tray_icon.setToolTip("Pet")
         
         # 2. 构建右键菜单
         self._build_menu()

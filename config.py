@@ -5,10 +5,12 @@ load_dotenv()
 
 
 class Config:
+    
     APP_NAME = "DeskPet"
-    WINDOW_WIDTH = 200
-    WINDOW_HEIGHT = 200
-    FPS = 30
+    # ── 桌宠配置 ──
+    PET_WIDTH = 200
+    PET_HEIGHT = 200
+    PET_FPS = 15
     BUBBLE_MAX_WIDTH = 300
     BUBBLE_FONT_SIZE = 14
     LOG_LEVEL = "DEBUG"

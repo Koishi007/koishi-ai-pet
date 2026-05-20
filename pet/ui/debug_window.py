@@ -1,19 +1,19 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QGroupBox, QTextEdit, QLabel, QLineEdit, QSpinBox,
-    QFormLayout,
+    QFormLayout, QCheckBox, QFrame,
 )
 from datetime import datetime
 
 from PySide6.QtCore import Qt, QPoint, QTimer, QThread, Signal
 from PySide6.QtGui import QFont
 
-from pet.ui.animations import AnimationManager
 from pet.ui.bubble import SpeechBubble
 from pet.brain.chat_brain import ChatBrain
 from pet.brain.view_brain import ViewBrain
 from pet.skills.system_monitor import SystemMonitor
 from pet.skills.screen_reader import ScreenReader
+from config import config
 
 
 class ApiWorker(QThread):
@@ -40,7 +40,6 @@ class DebugWindow(QWidget):
     def __init__(self, pet_window, parent=None):
         super().__init__(parent)
         self.pet = pet_window
-        self.anim = AnimationManager(self)
         self.bubble = SpeechBubble(self.pet)
         self.brain = ChatBrain()
         self.view_brain = ViewBrain()
@@ -64,21 +63,70 @@ class DebugWindow(QWidget):
         # ── 动画测试 ──
         anim_group = QGroupBox("动画测试")
         anim_layout = QVBoxLayout(anim_group)
-
-        row1 = QHBoxLayout()
+        
+        # 帧动画部分
+        # 动作按鈕（动态生成）
+        self._pet_btns: dict[str, QPushButton] = {}
+        actions = self.pet.pet_anim.available_actions()
+        if actions:
+            btn_row = QHBoxLayout()
+            for action in actions:
+                btn = QPushButton(action)
+                btn.setCheckable(True)
+                btn.clicked.connect(lambda checked, a=action: self._play_pet_anim(a))
+                btn_row.addWidget(btn)
+                self._pet_btns[action] = btn
+            anim_layout.addLayout(btn_row)
+        else:
+            anim_layout.addWidget(QLabel("⚠ 未找到可用帧动画（assets/actions/ 下无帧图片）"))
+        
+        # FPS & 循环控制
+        ctrl_row = QHBoxLayout()
+        ctrl_row.addWidget(QLabel("FPS:"))
+        self.pet_fps = QSpinBox()
+        self.pet_fps.setRange(1, 60)
+        self.pet_fps.setValue(config.PET_FPS)
+        self.pet_fps.setFixedWidth(60)
+        ctrl_row.addWidget(self.pet_fps)
+        self.pet_loop = QCheckBox("循环")
+        self.pet_loop.setChecked(True)
+        ctrl_row.addWidget(self.pet_loop)
+        self.btn_pet_stop = QPushButton("停止")
+        self.btn_pet_stop.clicked.connect(self._stop_pet_anim)
+        ctrl_row.addWidget(self.btn_pet_stop)
+        ctrl_row.addStretch()
+        anim_layout.addLayout(ctrl_row)
+        
+        # 状态显示
+        status_row = QFormLayout()
+        self.label_pet_action = QLabel("—")
+        self.label_pet_status = QLabel("—")
+        status_row.addRow("当前动作:", self.label_pet_action)
+        status_row.addRow("播放状态:", self.label_pet_status)
+        anim_layout.addLayout(status_row)
+        
+        # 连接 animation_finished 信号
+        self.pet.pet_anim.animation_finished.connect(self._on_pet_anim_finished)
+        
+        # 分隔线
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setFrameShadow(QFrame.Shadow.Sunken)
+        anim_layout.addWidget(sep)
+        
+        # 窗口动画部分
+        win_row = QHBoxLayout()
         self.btn_bounce = QPushButton("弹跳 (Bounce)")
         self.btn_bounce.clicked.connect(self._test_bounce)
-        row1.addWidget(self.btn_bounce)
-
+        win_row.addWidget(self.btn_bounce)
         self.btn_fade_in = QPushButton("淡入 (Fade In)")
         self.btn_fade_in.clicked.connect(self._test_fade_in)
-        row1.addWidget(self.btn_fade_in)
-
+        win_row.addWidget(self.btn_fade_in)
         self.btn_fade_out = QPushButton("淡出 (Fade Out)")
         self.btn_fade_out.clicked.connect(self._test_fade_out)
-        row1.addWidget(self.btn_fade_out)
-        anim_layout.addLayout(row1)
-
+        win_row.addWidget(self.btn_fade_out)
+        anim_layout.addLayout(win_row)
+        
         move_row = QHBoxLayout()
         move_row.addWidget(QLabel("移动到:"))
         self.move_x = QSpinBox()
@@ -93,7 +141,7 @@ class DebugWindow(QWidget):
         self.btn_move.clicked.connect(self._test_move)
         move_row.addWidget(self.btn_move)
         anim_layout.addLayout(move_row)
-
+        
         root.addWidget(anim_group)
 
         # ── 气泡测试 ──
@@ -193,13 +241,6 @@ class DebugWindow(QWidget):
         stats_layout.addRow("宠物可见:", self.label_pet_visible)
         root.addWidget(stats_group)
 
-        # ── 宠物显隐 ──
-        toggle_row = QHBoxLayout()
-        self.btn_toggle = QPushButton("切换显隐")
-        self.btn_toggle.clicked.connect(self._toggle_pet)
-        toggle_row.addWidget(self.btn_toggle)
-        root.addLayout(toggle_row)
-
         # ── 日志 ──
         log_group = QGroupBox("日志")
         log_layout = QVBoxLayout(log_group)
@@ -217,32 +258,64 @@ class DebugWindow(QWidget):
         ts = datetime.now().strftime("%H:%M:%S")
         self.log_output.append(f"[{ts}] {msg}")
 
-    # ── 动画 ──
+    # ── 桌宠窗口动画 ──
     def _test_bounce(self):
         self.pet.show()
         self._log(f"bounce() from {self.pet.pos().toTuple()}")
-        self.anim.bounce(self.pet)
+        self.pet.pet_anim.bounce()
 
     def _test_fade_in(self):
         self.pet.setWindowOpacity(0.0)
         self.pet.show()
         self._log("fade_in()")
-        self.anim.fade_in(self.pet)
+        self.pet.pet_anim.fade_in() 
 
     def _test_fade_out(self):
         self._log("fade_out() → hide after")
-        self.anim.fade_out(self.pet, callback=self.pet.hide)
+        self.pet.pet_anim.fade_out(callback=self.pet.hide)
 
     def _test_move(self):
         self.pet.show()
         start = self.pet.pos().toTuple()
         end = (self.move_x.value(), self.move_y.value())
         self._log(f"move_to() from {start} → {end}")
-        self.anim.move_to(
-            self.pet,
+        self.pet.pet_anim.move_to(
             self.pet.pos(),
             QPoint(*end),
         )
+        
+    # ── 桌宠帧动画 ──
+    def _play_pet_anim(self, action: str):
+        loop = self.pet_loop.isChecked()
+        fps = self.pet_fps.value()
+        ok = self.pet.pet_anim.play(action, loop=loop, fps=fps)
+        if ok:
+            self._log(f"pet_anim.play('{action}', loop={loop}, fps={fps})")
+            self._update_pet_anim_status(action)
+            for a, btn in self._pet_btns.items():
+                btn.setChecked(a == action)
+        else:
+            self._log(f"⚠ 动作 '{action}' 无可用帧")
+
+    def _stop_pet_anim(self):
+        self.pet.pet_anim.stop()
+        self._log("pet_anim.stop()")
+        self.label_pet_status.setText("已停止")
+        for btn in self._pet_btns.values():
+            btn.setChecked(False)
+
+    def _on_pet_anim_finished(self, action: str):
+        self._log(f"动作 '{action}' 播放完成")
+        self.label_pet_status.setText("已完成")
+        for btn in self._pet_btns.values():
+            btn.setChecked(False)
+
+    def _update_pet_anim_status(self, action: str):
+        loop = self.pet_loop.isChecked()
+        fps = self.pet_fps.value()
+        self.label_pet_action.setText(action)
+        mode = "循环" if loop else "单次"
+        self.label_pet_status.setText(f"播放中 · {fps} FPS · {mode}")
 
     # ── 气泡 ──
     def _test_bubble(self):
@@ -341,11 +414,9 @@ class DebugWindow(QWidget):
         self._log(f"  ↳ VIEW ERROR: {error}")
         self.view_output.append(f"[Error] {error}")
 
-    # ── 显隐 ──
-    def _toggle_pet(self):
-        visible = not self.pet.isVisible()
-        self._log(f"toggle visibility → {'show' if visible else 'hide'}")
-        self.pet.setVisible(visible)
+    
+
+
 
     # ── 监控刷新 ──
     def _refresh_stats(self):
