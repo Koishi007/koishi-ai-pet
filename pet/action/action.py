@@ -1,39 +1,22 @@
-"""桌宠动画模块 —— 帧序列播放 + 窗口动画，统一由 PetAnimator 管理。"""
+"""桌宠行为动作模块 —— 复合行为（移动、弹跳、重力等），通过 PetAnimator 播放帧动画。"""
 
-import os
-from PySide6.QtCore import Qt, QPoint, QTimer, QPropertyAnimation, QEasingCurve, QObject, Signal
-from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import QLabel, QWidget
+from PySide6.QtCore import QPoint, QTimer, QPropertyAnimation, QEasingCurve, QObject, Signal
+from PySide6.QtWidgets import QWidget
 from config import config
-from pet.agent.window_detector import get_visible_windows, get_window_rect
-
-_SUPPORTED_EXT = (".png", ".jpg", ".jpeg", ".bmp", ".webp")
+from pet.agent.window_detector import get_visible_windows, get_window_rect, is_window_occluded
 
 
-class PetAnimator(QObject):
-    """桌宠动画控制器"""
+class PetActions(QObject):
+    """桌宠行为控制器 —— 管理复合动作和重力系统。"""
 
-    animation_finished = Signal(str)  # 非循环播放完毕时发出
+    falling_started = Signal()  # 进入下落状态时发出
 
-    def __init__(self, window: QWidget, label: QLabel, pet_dir: str | None = None, parent=None):
-        super().__init__(parent)
+    def __init__(self, window: QWidget, animator, parent=None):
+        super().__init__(parent or window)
         self._window = window
-        self._label = label
-        self._pet_dir = pet_dir or os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-            "assets", "actions",
-        )
+        self._anim = animator  # PetAnimator instance for frame playback
 
-        self._frames: list[QPixmap] = []
-        self._current_frame: int = 0
-        self._current_action: str = ""
-        self._loop: bool = True
-
-        self._frame_timer = QTimer(self)
-        self._frame_timer.timeout.connect(self._next_frame)
-
-        self._cache: dict[str, list[QPixmap]] = {}
-        self._win_anims: list[QPropertyAnimation] = []  # 防止被 GC
+        self._win_anims: list[QPropertyAnimation] = []
 
         self._gravity_timer = QTimer(self)
         self._gravity_timer.timeout.connect(self._gravity_tick)
@@ -43,65 +26,11 @@ class PetAnimator(QObject):
         self._gravity_falling = False
         self._gravity_timer.start(self._gravity_interval)
 
-        # 窗口检测节流
         self._scan_tick = 0
         self._cached_effective_bottom: int | None = None
         self._standing_hwnd: int = 0
-        self._ALIVE_CHECK_INTERVAL = 15  # ~500ms 检查站立窗口是否存活
-
-    def play(self, action: str, loop: bool = True, fps: int | None = None) -> bool:
-        """播放指定动作的帧动画。"""
-        frames = self._load_action(action)
-        if not frames:
-            return False
-
-        self._frame_timer.stop()
-        self._frames = frames
-        self._current_action = action
-        self._current_frame = 0
-        self._loop = loop
-
-        self._label.setPixmap(self._frames[0])
-
-        if len(self._frames) > 1:
-            interval = self._calc_interval(loop, fps)
-            self._frame_timer.start(interval)
-
-        return True
-
-    def _calc_interval(self, loop: bool, fps: int | None) -> int:
-        base_fps = fps or config.PET_FPS
-        raw_interval = round(1000 / base_fps)
-        if loop and len(self._frames) < base_fps:
-            return max(1, round(1000 / len(self._frames)))
-        return max(1, raw_interval)
-
-    def stop(self):
-        """停止帧动画，画面保持在当前帧。"""
-        self._frame_timer.stop()
-
-    def has_frames(self, action: str) -> bool:
-        """检查指定动作是否有可用帧。"""
-        return len(self._load_action(action)) > 0
-
-    def available_actions(self) -> list[str]:
-        """返回 pet_dir 下所有有帧图片的动作名称。"""
-        if not os.path.isdir(self._pet_dir):
-            return []
-        actions = []
-        for name in sorted(os.listdir(self._pet_dir)):
-            full = os.path.join(self._pet_dir, name)
-            if os.path.isdir(full) and self.has_frames(name):
-                actions.append(name)
-        return actions
-
-    @property
-    def current_action(self) -> str:
-        return self._current_action
-
-    @property
-    def is_playing(self) -> bool:
-        return self._frame_timer.isActive()
+        self._force_standing_check: bool = False
+        self._ALIVE_CHECK_INTERVAL = 15
 
     def _cleanup_stopped_anims(self):
         self._win_anims[:] = [
@@ -124,7 +53,6 @@ class PetAnimator(QObject):
         self._scan_tick += 1
         old_y = self._window.y()
         new_y = old_y + self._gravity_step
-        effective_bottom = new_y
 
         try:
             from PySide6.QtWidgets import QApplication
@@ -135,22 +63,32 @@ class PetAnimator(QObject):
             w = self._window.width()
             h = self._window.height()
             screen_bottom = screen.availableGeometry().bottom() - h
-            new_y = old_y + self._gravity_step
 
             # 静止时：定时检查站立窗口是否存活或移动
             was_at_bottom = self._cached_effective_bottom is not None and old_y >= self._cached_effective_bottom
             if was_at_bottom and self._cached_effective_bottom is not None:
-                if self._standing_hwnd and self._scan_tick % self._ALIVE_CHECK_INTERVAL == 0:
+                if self._standing_hwnd and (
+                    self._scan_tick % self._ALIVE_CHECK_INTERVAL == 0
+                    or self._force_standing_check
+                ):
+                    self._force_standing_check = False
                     rect = get_window_rect(self._standing_hwnd)
                     if rect is None:
                         print(f"[Gravity] standing window gone (hwnd={self._standing_hwnd})")
+                        self._standing_hwnd = 0
+                        self._cached_effective_bottom = None
+                    elif is_window_occluded(self._standing_hwnd, skip_hwnd=int(self._window.winId())):
+                        print(f"[Gravity] standing window occluded (hwnd={self._standing_hwnd})")
                         self._standing_hwnd = 0
                         self._cached_effective_bottom = None
                     else:
                         new_top = rect[1]
                         pet_x = self._window.x()
                         pet_w = self._window.width()
-                        if (pet_x + pet_w <= rect[0] or pet_x >= rect[2]
+                        # 脚部区域：宽度中间 1/3
+                        feet_l = pet_x + pet_w // 3
+                        feet_r = pet_x + (2 * pet_w) // 3
+                        if (feet_l >= rect[2] or feet_r <= rect[0]
                                 or new_top != self._cached_effective_bottom + h):
                             print(f"[Gravity] standing window moved (hwnd={self._standing_hwnd})")
                             self._standing_hwnd = 0
@@ -170,19 +108,24 @@ class PetAnimator(QObject):
             found_hwnd = 0
 
             effective_bottom = screen_bottom
+            pet_hwnd = int(self._window.winId())
+            feet_l = pet_x + w // 3
+            feet_r = pet_x + (2 * w) // 3
             for win in get_visible_windows():
                 left, top, right, bottom = win["rect"]
                 if (left == pet_self[0] and top == pet_self[1]
                         and right == pet_self[2] and bottom == pet_self[3]):
                     continue
-                if pet_x + w <= left or pet_x >= right:
+                if feet_l >= right or feet_r <= left:
                     continue
                 if old_pet_bottom <= top <= new_pet_bottom:
                     landing = top - h
                     if landing < effective_bottom:
-                        print(f"[Gravity] land on: \"{win['title'][:30]}\" top={top}")
+                        if is_window_occluded(win["hwnd"], skip_hwnd=pet_hwnd):
+                            continue
                         effective_bottom = landing
                         found_hwnd = win["hwnd"]
+                        print(f"[Gravity] land on: \"{win['title'][:30]}\" top={top}")
             self._cached_effective_bottom = effective_bottom
             if found_hwnd:
                 self._standing_hwnd = found_hwnd
@@ -205,58 +148,90 @@ class PetAnimator(QObject):
 
         if at_bottom and self._gravity_falling:
             self._gravity_falling = False
-            self.play("idle")
+            self._force_standing_check = True
+            self._anim.play("idle")
         elif not at_bottom and not self._gravity_falling:
             self._gravity_falling = True
-            self.play("floating")
+            self._anim.play("falling")
+            print(f"[Gravity] falling started at y={old_y}, bottom={effective_bottom}")
+            self.falling_started.emit()
 
     def move_to(self, start_pos, end_pos, duration=500, callback=None):
         """将窗口从 start_pos 移动到 end_pos。"""
         self._cleanup_stopped_anims()
-        self.enable_gravity(False)
         print("from", start_pos, " move to:", end_pos)
         anim = QPropertyAnimation(self._window, b"pos")
         anim.setDuration(duration)
         anim.setStartValue(start_pos)
         anim.setEndValue(end_pos)
         anim.setEasingCurve(QEasingCurve.Type.OutCubic)
-        anim.finished.connect(lambda: self.enable_gravity(True))
         if callback:
             anim.finished.connect(callback)
         anim.start()
         self._win_anims.append(anim)
         return anim
 
-    def walk_to(self, target_x: int, duration=2000, bounce=25):
-        """弹跳行走：匀速横向移动到 target_x，每 50px 弹跳一次。"""
+    def walk(self, direction: str, distance: int, duration=2000, bounce=25):
+        """弹跳行走：每 50px 一跳，跳间留 300ms 供重力检测，悬空则自动取消。"""
+        if direction not in ("left", "right"):
+            raise ValueError(f"direction must be 'left' or 'right', got '{direction}'")
+
+        walk_action = f"walk_{direction}"
+        self._anim.play(walk_action, loop=True)
         self._cleanup_stopped_anims()
-        self.enable_gravity(False)
 
-        start = self._window.pos()
-        base_y = start.y()
-        dx = target_x - start.x()
-        steps = min(10, max(1, abs(dx) // 50))
+        sign = 1 if direction == "right" else -1
+        step_px = 50 * sign
+        total_steps = max(1, distance // 50)
+        hop_ms = max(30, duration // total_steps)
+        gap_ms = 300  
 
-        anim = QPropertyAnimation(self._window, b"pos")
-        anim.setDuration(duration)
-        anim.setEasingCurve(QEasingCurve.Type.Linear)
-        for i in range(steps + 1):
-            t = i / steps
-            x = start.x() + dx * t
-            anim.setKeyValueAt(t, QPoint(int(x), base_y))
-            if i < steps:
-                t_mid = (i + 0.5) / steps
-                x_mid = start.x() + dx * t_mid
-                anim.setKeyValueAt(t_mid, QPoint(int(x_mid), base_y - bounce))
+        sentinel = QPropertyAnimation(self._window, b"objectName")
+        sentinel.setStartValue(self._window.objectName())
+        sentinel.setEndValue(self._window.objectName())
+        sentinel.setDuration(100)
+        sentinel.setLoopCount(-1)
+        sentinel.start()
 
-        anim.finished.connect(lambda: self.enable_gravity(True))
-        anim.start()
-        self._win_anims.append(anim)
-        return anim
+        def _hop(step: int):
+            if step >= total_steps:
+                self._anim.play("idle")
+                sentinel.stop()
+                return
+            if self._gravity_falling:
+                # 已被重力接管，不覆盖动画
+                sentinel.stop()
+                return
+
+            base_y = self._window.y()
+            from_x = self._window.x()
+            to_x = from_x + step_px
+            mid_x = from_x + step_px // 2
+
+            anim = QPropertyAnimation(self._window, b"pos")
+            anim.setDuration(hop_ms)
+            anim.setKeyValueAt(0.0, QPoint(from_x, base_y))
+            anim.setKeyValueAt(0.5, QPoint(mid_x, base_y - bounce))
+            anim.setKeyValueAt(1.0, QPoint(to_x, base_y))
+            anim.setEasingCurve(QEasingCurve.Type.InOutQuad)
+
+            def _on_hop_done():
+                self._win_anims.remove(anim)
+                self._cached_effective_bottom = None  # 位置变了，旧落点失效
+                QTimer.singleShot(gap_ms, lambda: _hop(step + 1))
+
+            anim.finished.connect(_on_hop_done)
+            anim.start()
+            self._win_anims.append(anim)
+
+        _hop(0)
+        return sentinel
 
     def fade_in(self, duration=300):
         """窗口淡入。"""
         self._cleanup_stopped_anims()
+        self._window.setWindowOpacity(0.0)
+        self._window.show()
         anim = QPropertyAnimation(self._window, b"windowOpacity")
         anim.setDuration(duration)
         anim.setStartValue(0.0)
@@ -280,7 +255,7 @@ class PetAnimator(QObject):
 
     def bounce(self, dx=0, dy=-150, duration=500):
         self._cleanup_stopped_anims()
-        self.play("bounce", loop=True)
+        self._anim.play("bounce", loop=True)
         original_pos = self._window.pos()
         target = QPoint(original_pos.x() + dx, original_pos.y() + dy)
         anim = QPropertyAnimation(self._window, b"pos")
@@ -308,44 +283,21 @@ class PetAnimator(QObject):
         timer.start(1000)
         return timer
 
-    def _load_action(self, action: str) -> list[QPixmap]:
-        if action in self._cache:
-            return self._cache[action]
+    def sit(self, duration: float = -1):
+        """坐下动作。duration 秒后自动回到 idle，-1 表示不限时。"""
+        self._anim.play("sit")
+        if duration > 0:
+            QTimer.singleShot(int(duration * 1000), lambda: self._anim.play("idle"))
 
-        action_dir = os.path.join(self._pet_dir, action)
-        frames: list[QPixmap] = []
+    def sleep(self, duration: float = -1):
+        """睡觉动作。duration 秒后自动回到 idle，-1 表示不限时。"""
+        self._anim.play("sleep")
+        if duration > 0:
+            QTimer.singleShot(int(duration * 1000), lambda: self._anim.play("idle"))
 
-        if not os.path.isdir(action_dir):
-            return frames
+    def idle(self, duration: float = -1):
+        """待机动作。duration 秒后自动回到 idle，-1 表示不限时。"""
+        self._anim.play("idle")
+        if duration > 0:
+            QTimer.singleShot(int(duration * 1000), lambda: self._anim.play("idle"))
 
-        files = sorted(
-            f for f in os.listdir(action_dir)
-            if os.path.splitext(f)[1].lower() in _SUPPORTED_EXT
-        )
-
-        for f in files:
-            pixmap = QPixmap(os.path.join(action_dir, f))
-            if pixmap.isNull():
-                continue
-            pixmap = pixmap.scaled(
-                config.PET_WIDTH,
-                config.PET_HEIGHT,
-                Qt.AspectRatioMode.IgnoreAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
-            )
-            frames.append(pixmap)
-
-        self._cache[action] = frames
-        return frames
-
-    def _next_frame(self):
-        """切换到下一帧。"""
-        self._current_frame += 1
-        if self._current_frame >= len(self._frames):
-            if self._loop:
-                self._current_frame = 0
-            else:
-                self._frame_timer.stop()
-                self.animation_finished.emit(self._current_action)
-                return
-        self._label.setPixmap(self._frames[self._current_frame])

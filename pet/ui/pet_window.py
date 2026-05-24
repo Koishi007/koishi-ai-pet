@@ -2,7 +2,8 @@ from PySide6.QtWidgets import QLabel, QVBoxLayout
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QMouseEvent
 from pet.ui.base_window import TransparentWindow
-from pet.ui.pet_animations_player import PetAnimator
+from pet.ui.pet_animations import PetAnimator
+from pet.action import PetActions, ActionQueue
 from config import config
 
 
@@ -22,7 +23,12 @@ class PetWindow(TransparentWindow):
         self.pet_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.pet_label)
 
-        self.pet_anim = PetAnimator(self, self.pet_label, parent=self)
+        self.pet_anim = PetAnimator(self.pet_label, parent=self)
+        self.pet_actions = PetActions(self, self.pet_anim, parent=self)
+        self.action_queue = ActionQueue(self.pet_actions, parent=self)
+
+        # 重力下落时暂停队列 2s
+        self.pet_actions.falling_started.connect(self._on_falling_started)
 
         # 初始位置：屏幕底部居中
         from PySide6.QtWidgets import QApplication
@@ -51,7 +57,8 @@ class PetWindow(TransparentWindow):
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton:
             self._old_pos = event.globalPosition().toPoint()
-            self.pet_anim.enable_gravity(False)
+            self.pet_actions.enable_gravity(False)
+            self.action_queue.clear()
 
     def mouseMoveEvent(self, event: QMouseEvent):
         if self._old_pos is not None:
@@ -61,4 +68,21 @@ class PetWindow(TransparentWindow):
 
     def mouseReleaseEvent(self, event: QMouseEvent):
         self._old_pos = None
-        self.pet_anim.enable_gravity(True)
+        self.pet_actions.enable_gravity(True)
+
+    def _on_falling_started(self):
+        self.action_queue.clear()
+
+    # ── 队列控制接口 ──
+
+    def queue_enqueue(self, method: str, *args, **kwargs):
+        self.action_queue.enqueue(method, *args, **kwargs)
+
+    def queue_start(self):
+        self.action_queue.start()
+
+    def queue_stop(self):
+        self.action_queue.stop()
+
+    def queue_clear(self):
+        self.action_queue.clear()

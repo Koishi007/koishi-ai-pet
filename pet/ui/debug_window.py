@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QGroupBox, QTextEdit, QLabel, QLineEdit, QSpinBox,
-    QFormLayout, QCheckBox, QFrame,
+    QFormLayout, QCheckBox, QFrame, QComboBox, QListWidget,
 )
 from datetime import datetime
 
@@ -80,7 +80,7 @@ class DebugWindow(QWidget):
         self.pet_fps = QSpinBox()
         self.pet_fps.setRange(1, 60)
         self.pet_fps.setValue(config.PET_FPS)
-        self.pet_fps.setFixedWidth(60)
+        self.pet_fps.setFixedWidth(150)
         ctrl_row.addWidget(self.pet_fps)
         self.pet_loop = QCheckBox("循环")
         self.pet_loop.setChecked(True)
@@ -99,6 +99,7 @@ class DebugWindow(QWidget):
         anim_layout.addLayout(status_row)
 
         self.pet.pet_anim.animation_finished.connect(self._on_pet_anim_finished)
+        self.pet.action_queue.changed.connect(self._refresh_queue_list)
 
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
@@ -145,17 +146,46 @@ class DebugWindow(QWidget):
         anim_layout.addLayout(move_row)
 
         walk_row = QHBoxLayout()
-        walk_row.addWidget(QLabel("行走 X:"))
-        self.walk_x = QSpinBox()
-        self.walk_x.setRange(0, 3000)
-        self.walk_x.setValue(800)
-        walk_row.addWidget(self.walk_x)
+        walk_row.addWidget(QLabel("方向:"))
+        self.walk_dir = QComboBox()
+        self.walk_dir.addItems(["left", "right"])
+        self.walk_dir.setCurrentText("right")
+        walk_row.addWidget(self.walk_dir)
+        walk_row.addWidget(QLabel("距离:"))
+        self.walk_dist = QSpinBox()
+        self.walk_dist.setRange(0, 3000)
+        self.walk_dist.setValue(800)
+        walk_row.addWidget(self.walk_dist)
         self.btn_walk = QPushButton("行走")
         self.btn_walk.clicked.connect(self._test_walk)
         walk_row.addWidget(self.btn_walk)
         anim_layout.addLayout(walk_row)
 
         left.addWidget(anim_group)
+
+        # ── 队列调试 ──
+
+        queue_group = QGroupBox("行为队列")
+        qlayout = QVBoxLayout(queue_group)
+
+        qbtn_row = QHBoxLayout()
+        self.btn_q_start = QPushButton("启动")
+        self.btn_q_start.clicked.connect(self._queue_start)
+        qbtn_row.addWidget(self.btn_q_start)
+        self.btn_q_stop = QPushButton("停止")
+        self.btn_q_stop.clicked.connect(self._queue_stop)
+        qbtn_row.addWidget(self.btn_q_stop)
+        self.btn_q_clear = QPushButton("清空")
+        self.btn_q_clear.clicked.connect(self._queue_clear)
+        qbtn_row.addWidget(self.btn_q_clear)
+        qlayout.addLayout(qbtn_row)
+
+        self.qlist = QListWidget()
+        self.qlist.setMaximumHeight(120)
+        self.qlist.setFont(QFont("Consolas", 10))
+        qlayout.addWidget(self.qlist)
+
+        left.addWidget(queue_group)
 
         # ── 右栏 ──
 
@@ -296,35 +326,30 @@ class DebugWindow(QWidget):
     def _test_bounce(self):
         self.pet.show()
         dx, dy = self.bounce_dx.value(), self.bounce_dy.value()
-        self._log(f"bounce(dx={dx}, dy={dy})")
-        self.pet.pet_anim.bounce(dx=dx, dy=dy)
+        self._log(f"↩ enqueue bounce(dx={dx}, dy={dy})")
+        self.pet.queue_enqueue("bounce", dx=dx, dy=dy)
 
     def _test_fade_in(self):
-        self.pet.setWindowOpacity(0.0)
-        self.pet.show()
-        self._log("fade_in()")
-        self.pet.pet_anim.fade_in()
+        self._log("↩ enqueue fade_in()")
+        self.pet.queue_enqueue("fade_in")
 
     def _test_fade_out(self):
-        self._log("fade_out() → hide after")
-        self.pet.pet_anim.fade_out(callback=self.pet.hide)
+        self._log("↩ enqueue fade_out()")
+        self.pet.queue_enqueue("fade_out", callback=self.pet.hide)
 
     def _test_move(self):
         self.pet.show()
         start = self.pet.pos()
         end = QPoint(self.move_x.value(), self.move_y.value())
-        self._log(f"move_to() from ({start.x()},{start.y()}) → ({end.x()},{end.y()})")
-        self.pet.pet_anim.move_to(start, end)
+        self._log(f"↩ enqueue move_to from ({start.x()},{start.y()}) → ({end.x()},{end.y()})")
+        self.pet.queue_enqueue("move_to", start, end)
 
     def _test_walk(self):
         self.pet.show()
-        start_x = self.pet.pos().x()
-        end_x = self.walk_x.value()
-        direction = "walk_right" if end_x > start_x else "walk_left" if end_x < start_x else "walk"
-        self._log(f"walk {direction} to x={end_x}")
-        self.pet.play_action(direction)
-        anim = self.pet.pet_anim.walk_to(end_x)
-        anim.finished.connect(lambda: self.pet.play_action("idle"))
+        direction = self.walk_dir.currentText()
+        distance = self.walk_dist.value()
+        self._log(f"↩ enqueue walk {direction} {distance}px")
+        self.pet.queue_enqueue("walk", direction, distance)
 
     def _play_pet_anim(self, action: str):
         loop = self.pet_loop.isChecked()
@@ -357,6 +382,25 @@ class DebugWindow(QWidget):
         self.label_pet_action.setText(action)
         mode = "循环" if loop else "单次"
         self.label_pet_status.setText(f"播放中 · {fps} FPS · {mode}")
+
+    # ── 队列调试 ──
+
+    def _queue_start(self):
+        self.pet.queue_start()
+        self._log("队列: 启动")
+
+    def _queue_stop(self):
+        self.pet.queue_stop()
+        self._log("队列: 停止")
+
+    def _queue_clear(self):
+        self.pet.queue_clear()
+        self._log("队列: 清空")
+
+    def _refresh_queue_list(self):
+        self.qlist.clear()
+        for line in self.pet.action_queue.describe():
+            self.qlist.addItem(line)
 
     def _test_bubble(self):
         text = self.bubble_input.text().strip() or "调试中..."

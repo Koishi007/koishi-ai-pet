@@ -302,7 +302,7 @@ pet/ui/
 ├── __init__.py
 ├── base_window.py
 ├── pet_window.py          # 接收 Agent.action_requested 信号
-├── pet_animations_player.py
+├── pet_animations.py
 ├── bubble.py              # 接收 Agent.speak_requested 信号
 ├── debug_window.py        # 调用 agent.trigger(...) / 订阅事件总线
 ├── system_tray.py
@@ -496,7 +496,7 @@ DeskPet/
         ├── __init__.py
         ├── base_window.py
         ├── pet_window.py
-        ├── pet_animations_player.py
+        ├── pet_animations.py
         ├── bubble.py
         ├── debug_window.py
         ├── system_tray.py

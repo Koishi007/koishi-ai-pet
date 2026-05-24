@@ -7,8 +7,8 @@ load_dotenv()
 class Config:
     
     APP_NAME = "DeskPet"
-    PET_WIDTH = 100
-    PET_HEIGHT = 100
+    PET_WIDTH = 125
+    PET_HEIGHT = 125
     PET_FPS = 15
     BUBBLE_MAX_WIDTH = 300
     BUBBLE_FONT_SIZE = 14
@@ -62,7 +62,7 @@ class Config:
 
     SCREEN_READER_ENABLED = True
     SYSTEM_MONITOR_ENABLED = True
-    SCHEDULER_AUTO_START = os.getenv("SCHEDULER_AUTO_START", "true").lower() == "true"
+    SCHEDULER_AUTO_START = os.getenv("SCHEDULER_AUTO_START", "false").lower() == "true"
 
 
 config = Config()
