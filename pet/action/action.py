@@ -96,6 +96,11 @@ class PetActions(QObject):
             target = self._clamp_pos(QPoint(to_x, base_y))
             to_x, base_y = target.x(), target.y()
 
+            # 碰到屏幕边缘无法前进，停止后续
+            if abs(to_x - from_x) < 10:
+                sentinel.stop()
+                return
+
             anim = QPropertyAnimation(self._window, b"pos")
             anim.setDuration(hop_ms)
             anim.setKeyValueAt(0.0, QPoint(from_x, base_y))
