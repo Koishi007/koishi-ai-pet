@@ -106,14 +106,17 @@ class Behavior(BrainMixin):
 
     def decide_with_vision(self, image: Image.Image, context: str = "") -> BehaviorOutput:
         t = datetime.now().strftime("%H:%M:%S")
-        # 等比例缩放到 768px 边长，送视觉 LLM 前压缩
-        MAX_SIZE = 768
-        w, h = image.size
-        if max(w, h) > MAX_SIZE:
-            ratio = MAX_SIZE / max(w, h)
-            new_size = (int(w * ratio), int(h * ratio))
-            logger.info(f"[{t}] [Behavior] resize image {w}x{h} → {new_size[0]}x{new_size[1]}")
-            image = image.resize(new_size, Image.LANCZOS)
+        # 截图按比例缩放，下限锁 1536px
+        scale = config.VISION_SCALE
+        if scale < 1.0:
+            w, h = image.size
+            new_w, new_h = int(w * scale), int(h * scale)
+            MIN_PX = 1536
+            if max(new_w, new_h) < MIN_PX:
+                ratio = MIN_PX / max(new_w, new_h)
+                new_w, new_h = int(new_w * ratio), int(new_h * ratio)
+            logger.info(f"[{t}] [Behavior] resize image {w}x{h} (scale={scale}) → {new_w}x{new_h}")
+            image = image.resize((new_w, new_h), Image.LANCZOS)
         ctx_preview = context[:60] if context else "(empty)"
         logger.info(f"[{t}] [Behavior] decide_with_vision(context={ctx_preview}, image={image.size})")
         if not self.has_vision:
@@ -158,10 +161,10 @@ class Behavior(BrainMixin):
         for i, m in enumerate(messages):
             if isinstance(m["content"], str):
                 preview = m["content"][:120].replace("\n", "\\n")
-                logger.info(f"[{t}] [Behavior]   msg[{i}] role={m['role']}: \"{preview}...\"")
+                logger.debug(f"[{t}] [Behavior]   msg[{i}] role={m['role']}: \"{preview}...\"")
             else:
                 parts_desc = ", ".join(p["type"] for p in m["content"])
-                logger.info(f"[{t}] [Behavior]   msg[{i}] role={m['role']}: [{parts_desc}]")
+                logger.debug(f"[{t}] [Behavior]   msg[{i}] role={m['role']}: [{parts_desc}]")
 
         try:
             resp = self._client.chat.completions.create(
@@ -174,7 +177,7 @@ class Behavior(BrainMixin):
             logger.info(f"[{t}] [Behavior]   finish_reason: {resp.choices[0].finish_reason}")
             if hasattr(resp, 'usage') and resp.usage:
                 logger.info(f"[{t}] [Behavior]   usage: {resp.usage}")
-            logger.info(f"[{t}] [Behavior]   raw: {content}")
+            logger.debug(f"[{t}] [Behavior]   raw: {content}")
             result = self._parse_behavior(content)
             logger.info(f"[{t}] [Behavior]   parsed → {result}")
             return result
@@ -208,7 +211,7 @@ class Behavior(BrainMixin):
         ]
         for i, m in enumerate(messages):
             preview = m["content"][:120].replace("\n", "\\n")
-            logger.info(f"[{t}] [Behavior]   msg[{i}] role={m['role']}: \"{preview}...\"")
+            logger.debug(f"[{t}] [Behavior]   msg[{i}] role={m['role']}: \"{preview}...\"")
         try:
             resp = self._client.chat.completions.create(
                 model=self._model,
@@ -220,7 +223,7 @@ class Behavior(BrainMixin):
             logger.info(f"[{t}] [Behavior]   finish_reason: {resp.choices[0].finish_reason}")
             if hasattr(resp, 'usage') and resp.usage:
                 logger.info(f"[{t}] [Behavior]   usage: {resp.usage}")
-            logger.info(f"[{t}] [Behavior]   raw: {content}")
+            logger.debug(f"[{t}] [Behavior]   raw: {content}")
             result = self._parse_behavior(content)
             logger.info(f"[{t}] [Behavior]   parsed → {result}")
             return result
@@ -333,7 +336,7 @@ class Behavior(BrainMixin):
         messages.append({"role": "user", "content": prompt})
         for i, m in enumerate(messages):
             preview = m["content"][:120].replace("\n", "\\n")
-            logger.info(f"[{t}] [Behavior]   msg[{i}] role={m['role']}: \"{preview}...\"")
+            logger.debug(f"[{t}] [Behavior]   msg[{i}] role={m['role']}: \"{preview}...\"")
 
         response = self._client.chat.completions.create(
             model=self._model,
@@ -345,7 +348,7 @@ class Behavior(BrainMixin):
         logger.info(f"[{t}] [Behavior]   finish_reason: {response.choices[0].finish_reason}")
         if hasattr(response, 'usage') and response.usage:
             logger.info(f"[{t}] [Behavior]   usage: {response.usage}")
-        logger.info(f"[{t}] [Behavior]   raw: {content}")
+        logger.debug(f"[{t}] [Behavior]   raw: {content}")
         return content
 
     def _think_local(self, prompt: str) -> str:
