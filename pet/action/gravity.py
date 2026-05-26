@@ -5,7 +5,7 @@ import logging
 from PySide6.QtCore import QTimer, QObject, Signal, QPropertyAnimation, QPoint
 from PySide6.QtWidgets import QWidget
 
-from pet.agent.window_detector import get_visible_windows, get_window_rect, is_window_occluded
+from pet.brain.window_detector import get_visible_windows, get_window_rect, is_window_occluded
 
 logger = logging.getLogger(__name__)
 
