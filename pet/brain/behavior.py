@@ -8,6 +8,8 @@ from typing import Optional
 from PIL import Image
 from openai import OpenAI
 from pet.brain.base import BrainMixin
+from pet.brain import prompts
+from pet.action.registry import ACTION_NAMES
 from config import config
 
 logger = logging.getLogger(__name__)
@@ -43,10 +45,7 @@ class Behavior(BrainMixin):
         }
         self._idx = 0
 
-        self._actions = [
-            "idle", "bounce", "walk", "look_around",
-            "stretch", "sit", "sleep",
-        ]
+        self._actions = ACTION_NAMES
 
         t = datetime.now().strftime("%H:%M:%S")
         client_type = "None (local)" if self._client is None else f"{type(self._client).__name__}(model={self._model})"
@@ -87,12 +86,19 @@ class Behavior(BrainMixin):
         image.save(buffer, format="PNG")
         return base64.b64encode(buffer.getvalue()).decode("utf-8")
 
+    def _build_context_str(self, context: str) -> str:
+        """合并 OCR 上下文 + 近期行为历史（排除最近一条）。"""
+        ctx = context or "no context"
+        if len(self._context) > 1:
+            ctx += f"\nRecent: {', '.join(self._context[-6:-1])}"
+        return ctx
+
     def decide(self, context: str = "") -> BehaviorOutput:
         t = datetime.now().strftime("%H:%M:%S")
         ctx_preview = context[:60] if context else "(empty)"
         logger.info(f"[{t}] [Behavior] decide(context={ctx_preview})")
         if self._client:
-            result = self._decide_remote(context)
+            result = self._decide_non_vision(context)
         else:
             result = self._decide_local()
         logger.info(f"[{t}] [Behavior] decide → {result}")
@@ -115,11 +121,11 @@ class Behavior(BrainMixin):
             return self.decide(context)
         base64_img = self._encode_base64(image)
         logger.info(f"[{t}] [Behavior]   base64 encoded, length={len(base64_img)}")
-        return self._decide_with_vision_remote(base64_img, context)
+        return self._decide_vision(base64_img, context)
 
-    def _decide_with_vision_remote(self, base64_img: str, context: str) -> BehaviorOutput:
+    def _decide_vision(self, base64_img: str, context: str) -> BehaviorOutput:
         t = datetime.now().strftime("%H:%M:%S")
-        logger.info(f"[{t}] [Behavior] === LLM REQUEST (decide_with_vision) ===")
+        logger.info(f"[{t}] [Behavior] === LLM REQUEST (vision) ===")
         logger.info(f"[{t}] [Behavior]   model: {self._model}")
         logger.info(f"[{t}] [Behavior]   context({len(context)} chars): \"{context[:80]}\"")
         logger.info(f"[{t}] [Behavior]   history: {len(self._context)} entries")
@@ -127,14 +133,14 @@ class Behavior(BrainMixin):
         if len(self._context) > 10:
             self._context[:] = self._context[-10:]
 
-        system_content = config.VISION_BEHAVIOR_PROMPT
+        system_content = prompts.vision_system_prompt()
         if config.PET_PERSONALITY:
             system_content += f"\n\n=== 你的性格 ===\n{config.PET_PERSONALITY}"
 
-        context_str = (context or "no context") + (
-            f"\nRecent: {', '.join(self._context[-6:-1])}" if len(self._context) > 1 else ""
-        )
-        text_prompt = config.VISION_BEHAVIOR_DECIDE.format(context=context_str)
+        context_str = self._build_context_str(context)
+        text_prompt = prompts.vision_decide_prompt(context_str)
+        if config.VISION_PROMPT_EXTRA:
+            text_prompt += "\n\n" + config.VISION_PROMPT_EXTRA.replace("{context}", context_str)
 
         messages = [
             {"role": "system", "content": system_content},
@@ -164,7 +170,7 @@ class Behavior(BrainMixin):
                 max_tokens=4000,
             )
             content = resp.choices[0].message.content or ""
-            logger.info(f"[{t}] [Behavior] === LLM RESPONSE (decide_with_vision) ===")
+            logger.info(f"[{t}] [Behavior] === LLM RESPONSE (vision) ===")
             logger.info(f"[{t}] [Behavior]   finish_reason: {resp.choices[0].finish_reason}")
             if hasattr(resp, 'usage') and resp.usage:
                 logger.info(f"[{t}] [Behavior]   usage: {resp.usage}")
@@ -179,9 +185,9 @@ class Behavior(BrainMixin):
             logger.warning(f"[{t}] [Behavior]   falling back to local")
             return self._decide_local()
 
-    def _decide_remote(self, context: str) -> BehaviorOutput:
+    def _decide_non_vision(self, context: str) -> BehaviorOutput:
         t = datetime.now().strftime("%H:%M:%S")
-        logger.info(f"[{t}] [Behavior] === LLM REQUEST (decide) ===")
+        logger.info(f"[{t}] [Behavior] === LLM REQUEST (non_vision) ===")
         logger.info(f"[{t}] [Behavior]   model: {self._model}")
         logger.info(f"[{t}] [Behavior]   context({len(context)} chars): \"{context[:80]}\"")
         logger.info(f"[{t}] [Behavior]   history: {len(self._context)} entries")
@@ -189,12 +195,11 @@ class Behavior(BrainMixin):
         if len(self._context) > 10:
             self._context[:] = self._context[-10:]
 
-        prompt = config.BEHAVIOR_PROMPT_DECIDE.format(
-            actions=", ".join(self._actions),
-            context=(context or "no context")
-            + (f"\nRecent: {', '.join(self._context[-6:-1])}" if len(self._context) > 1 else ""),
-        )
-        system_content = config.BEHAVIOR_PROMPT_SYSTEM
+        context_str = self._build_context_str(context)
+        prompt = prompts.non_vision_decide_prompt(context_str)
+        if config.NON_VISION_PROMPT_EXTRA:
+            prompt += "\n\n" + config.NON_VISION_PROMPT_EXTRA.replace("{context}", context_str)
+        system_content = prompts.non_vision_system_prompt()
         if config.PET_PERSONALITY:
             system_content += f"\n\n=== 你的性格 ===\n{config.PET_PERSONALITY}"
         messages = [
@@ -211,7 +216,7 @@ class Behavior(BrainMixin):
                 max_tokens=4000,
             )
             content = resp.choices[0].message.content or ""
-            logger.info(f"[{t}] [Behavior] === LLM RESPONSE ===")
+            logger.info(f"[{t}] [Behavior] === LLM RESPONSE (non_vision) ===")
             logger.info(f"[{t}] [Behavior]   finish_reason: {resp.choices[0].finish_reason}")
             if hasattr(resp, 'usage') and resp.usage:
                 logger.info(f"[{t}] [Behavior]   usage: {resp.usage}")
@@ -276,6 +281,8 @@ class Behavior(BrainMixin):
 
     def _decide_local(self) -> BehaviorOutput:
         import random
+        if len(self._context) > 10:
+            self._context[:] = self._context[-10:]
         action = random.choice(self._actions)
         action_speech = {
             "idle": "Just hanging out...",
@@ -318,6 +325,9 @@ class Behavior(BrainMixin):
         messages = [
             {"role": "system", "content": system_content},
         ]
+        # 仅保留最近 10 条历史，避免上下文窗口溢出
+        if len(self._context) > 10:
+            self._context[:] = self._context[-10:]
         for ctx in self._context:
             messages.append({"role": "user", "content": ctx})
         messages.append({"role": "user", "content": prompt})
