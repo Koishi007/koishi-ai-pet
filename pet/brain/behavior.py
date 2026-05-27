@@ -178,7 +178,7 @@ class Behavior(BrainMixin):
             if hasattr(resp, 'usage') and resp.usage:
                 logger.info(f"[{t}] [Behavior]   usage: {resp.usage}")
             logger.debug(f"[{t}] [Behavior]   raw: {content}")
-            result = self._parse_behavior(content)
+            result = self._execute_with_tools(content, system_content)
             logger.info(f"[{t}] [Behavior]   parsed → {result}")
             return result
         except Exception as e:
@@ -224,7 +224,7 @@ class Behavior(BrainMixin):
             if hasattr(resp, 'usage') and resp.usage:
                 logger.info(f"[{t}] [Behavior]   usage: {resp.usage}")
             logger.debug(f"[{t}] [Behavior]   raw: {content}")
-            result = self._parse_behavior(content)
+            result = self._execute_with_tools(content, system_content)
             logger.info(f"[{t}] [Behavior]   parsed → {result}")
             return result
         except Exception as e:
@@ -281,6 +281,39 @@ class Behavior(BrainMixin):
                     pass
                 args.append(token)
         return ActionStep(name, tuple(args), kwargs)
+
+    def _execute_with_tools(self, first_content: str, system_content: str) -> BehaviorOutput:
+        """解析 LLM 输出，若含 Tool 调用则执行工具并进行二次调用。"""
+        from pet.skills.executor import ToolExecutor
+
+        executor = ToolExecutor()
+        tool_calls = executor.parse_tool_lines(first_content)
+
+        if not tool_calls:
+            return self._parse_behavior(first_content)
+
+        # 执行工具
+        results = executor.execute(tool_calls)
+        result_text = executor.format_results(results)
+
+        # 二次调用 LLM（带工具结果）
+        from pet.brain.prompts import tool_result_user_prompt
+        messages = [
+            {"role": "system", "content": system_content},
+            {"role": "assistant", "content": first_content},
+            {"role": "user", "content": tool_result_user_prompt(result_text)},
+        ]
+        try:
+            resp = self._client.chat.completions.create(
+                model=self._model,
+                messages=messages,
+                max_tokens=4000,
+            )
+            final_content = resp.choices[0].message.content or ""
+            return self._parse_behavior(final_content)
+        except Exception as e:
+            logger.error(f"[Behavior] tool second-pass failed: {e}")
+            return self._parse_behavior(first_content)
 
     def _decide_local(self) -> BehaviorOutput:
         import random
@@ -371,7 +404,7 @@ class Behavior(BrainMixin):
         if not self._client:
             return BehaviorOutput(
                 actions=[ActionStep("look_around", kwargs={"duration": 5})],
-                speech=f"\uff08\u542c\u5230\u4e86\uff1a{user_message[:10]}...\u4f46\u6211\u8fd8\u4e0d\u4f1a\u56de\u5e94\uff09",
+                speech=f"（听到了：{user_message[:10]}...但我还不会回应）",
             )
 
         return self._chat_decide_remote(user_message, context)
@@ -386,14 +419,14 @@ class Behavior(BrainMixin):
         from pet.brain import prompts
         system_content = prompts.chat_decide_system_prompt()
         if config.PET_PERSONALITY:
-            system_content += f"\n\n=== \u4f60\u7684\u6027\u683c ===\n{config.PET_PERSONALITY}"
+            system_content += f"\n\n=== 你的性格 ===\n{config.PET_PERSONALITY}"
 
         # 构建对话历史（包含最近条目，不跳过最后一条）
         history = ""
         if self._context:
             recent = self._context[-9:-1] if len(self._context) > 1 else []
             if recent:
-                history = "\n\n=== \u8fd1\u671f\u5bf9\u8bdd/\u884c\u4e3a\u8bb0\u5f55 ===\n" + "\n".join(recent)
+                history = "\n\n=== 近期对话/行为记录 ===\n" + "\n".join(recent)
 
         user_content = prompts.chat_decide_user_prompt(user_message, context + history)
 
@@ -412,11 +445,11 @@ class Behavior(BrainMixin):
             logger.info(f"[{t}] [Behavior] === LLM RESPONSE (chat_decide) ===")
             logger.debug(f"[{t}] [Behavior]   raw: {content}")
             result = self._parse_behavior(content)
-            logger.info(f"[{t}] [Behavior]   parsed \u2192 {result}")
+            logger.info(f"[{t}] [Behavior]   parsed → {result}")
             return result
         except Exception as e:
             logger.error(f"[{t}] [Behavior] chat_decide failed: {e}")
             return BehaviorOutput(
                 actions=[ActionStep("look_around", kwargs={"duration": 5})],
-                speech="\u5594...\u6211\u597d\u50cf\u6ca1\u542c\u6e05",
+                speech="喔...我好像没听清",
             )

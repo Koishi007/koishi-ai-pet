@@ -44,7 +44,6 @@ class PetWindow(TransparentWindow):
         self.pet_actions = PetActions(self, self.pet_anim, parent=self)
         self.action_queue = ActionQueue(self.pet_actions, parent=self)
 
-        # 重力下落时暂停队列，落地后恢复
         self.pet_actions.gravity.falling_started.connect(self._on_falling_started)
         self.pet_actions.gravity.landed.connect(self._on_landed)
 

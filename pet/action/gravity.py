@@ -92,7 +92,6 @@ class GravitySystem(QObject):
             h = self._window.height()
             screen_bottom = screen.availableGeometry().bottom() - h
 
-            # 静止时：定时检查站立窗口是否存活或移动
             was_at_bottom = self._cached_effective_bottom is not None and old_y >= self._cached_effective_bottom
             if was_at_bottom and self._cached_effective_bottom is not None:
                 if self._standing_hwnd and (
@@ -126,7 +125,6 @@ class GravitySystem(QObject):
                     self._window.move(self._window.x(), new_y)
                     return
 
-            # 下落中：每 tick 全量扫描
             old_pet_bottom = old_y + h
             new_pet_bottom = new_y + h
             pet_x = self._window.x()
@@ -170,22 +168,18 @@ class GravitySystem(QObject):
         at_bottom = new_y >= effective_bottom
         if at_bottom:
             new_y = effective_bottom
-        # 限制在屏幕范围内
         clamped = self._clamp_pos(QPoint(self._window.x(), new_y))
         self._window.move(clamped.x(), clamped.y())
 
         if at_bottom and self._falling:
-            # 正在下落，落到了地面
             self._falling = False
             self._force_standing_check = True
             self._anim.play("idle")
             self.landed.emit()
         elif at_bottom and not self._falling:
-            # 释放拖拽时已经在地上，直接 idle（walk 期间抑制）
             if not self._suppress_idle:
                 self._anim.play("idle")
         elif not at_bottom and not self._falling:
-            # 悬空，开始下落
             self._falling = True
             self._anim.play("falling")
             logger.info(f"[Gravity] falling started at y={old_y}, bottom={effective_bottom}")

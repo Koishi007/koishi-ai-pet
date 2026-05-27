@@ -58,5 +58,7 @@ class Config:
 
     PET_PERSONALITY = os.getenv("PET_PERSONALITY", "")
 
+    SKILLS_ENABLED = os.getenv("SKILLS_ENABLED", "").split(",") if os.getenv("SKILLS_ENABLED") else []
+
 
 config = Config()

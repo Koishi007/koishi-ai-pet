@@ -24,18 +24,12 @@ class ChatBubble(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
         self._setup_ui()
-
-        # 动画成员
         self._show_anim: QParallelAnimationGroup | None = None
         self._hide_anim: QPropertyAnimation | None = None
         self._expand_anim: QPropertyAnimation | None = None
         self._collapse_anim: QPropertyAnimation | None = None
-
-        # 跟随桌宠定时器
         self._follow_timer = QTimer(self)
         self._follow_timer.timeout.connect(self._follow_pet)
-
-        # 隐藏延迟定时器（鼠标离开后延迟隐藏）
         self._hide_timer = QTimer(self)
         self._hide_timer.setSingleShot(True)
         self._hide_timer.timeout.connect(self._try_hide)
@@ -135,54 +129,44 @@ class ChatBubble(QWidget):
             self._collapse()
             self.hide_bubble()
 
-    # ── 显示/隐藏控制 ──
+    # ── 显示/隐藏 ──
 
     def show_bubble(self):
-        """显示聊天按钮，带淡入+滑入动画。"""
         self.cancel_hide()
         if self._hide_anim and self._hide_anim.state() == QPropertyAnimation.State.Running:
             self._hide_anim.stop()
         if self.isVisible():
             return
         self._update_position()
-
-        # 起始：右偏 15px，透明
         start_pos = self.pos() + QPoint(15, 0)
         final_pos = self.pos()
-
         self.move(start_pos)
         self.setWindowOpacity(0.0)
         self.show()
         self._follow_timer.start(50)
 
         self._show_anim = QParallelAnimationGroup(self)
-
         pos_anim = QPropertyAnimation(self, b"pos")
         pos_anim.setDuration(250)
         pos_anim.setStartValue(start_pos)
         pos_anim.setEndValue(final_pos)
         pos_anim.setEasingCurve(QEasingCurve.Type.OutBack)
-
         opacity_anim = QPropertyAnimation(self, b"windowOpacity")
         opacity_anim.setDuration(200)
         opacity_anim.setStartValue(0.0)
         opacity_anim.setEndValue(1.0)
         opacity_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
-
         self._show_anim.addAnimation(pos_anim)
         self._show_anim.addAnimation(opacity_anim)
         self._show_anim.start()
 
     def hide_bubble(self):
-        """隐藏聊天气泡，带淡出动画。"""
         if not self.isVisible():
             return
         if self._show_anim and self._show_anim.state() == QParallelAnimationGroup.State.Running:
             self._show_anim.stop()
-
         self._follow_timer.stop()
         self._collapse()
-
         self._hide_anim = QPropertyAnimation(self, b"windowOpacity")
         self._hide_anim.setDuration(150)
         self._hide_anim.setStartValue(self.windowOpacity())
@@ -192,20 +176,16 @@ class ChatBubble(QWidget):
         self._hide_anim.start()
 
     def _on_hide_done(self):
-        """淡出完成后真正隐藏。"""
         self.hide()
         self.setWindowOpacity(1.0)
 
     def schedule_hide(self):
-        """延迟隐藏（鼠标离开桌宠时调用）。"""
         self._hide_timer.start(500)
 
     def cancel_hide(self):
-        """取消延迟隐藏（鼠标进入本组件时调用）。"""
         self._hide_timer.stop()
 
     def _try_hide(self):
-        """延迟到期后，若鼠标不在本组件上则隐藏。"""
         if not self.underMouse() and not self._expanded:
             self.hide_bubble()
 
@@ -216,13 +196,12 @@ class ChatBubble(QWidget):
             self._update_position()
 
     def _update_position(self):
-        """定位到桌宠右侧偏上。"""
         pet_geo = self._pet_window.geometry()
         x = pet_geo.right() - 20
         y = pet_geo.top() + 10
         self.move(x, y)
 
-    # ── 鼠标事件（防止误隐藏）──
+    # ── 鼠标事件 ──
 
     def enterEvent(self, event):
         self.cancel_hide()

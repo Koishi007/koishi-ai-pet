@@ -1,14 +1,7 @@
-﻿"""系统提示词和决策提示词 —— 由代码构建（基于 Action Registry），不依赖 .env 配置。
-
-新增动作只需在 registry.py 的 REGISTRY 中添加 ActionDef，prompt 自动更新。
-
-用户可在 .env 中自定义的内容：
-  PET_PERSONALITY  — 宠物人格（追加到系统 prompt 末尾）
-  NON_VISION_PROMPT_EXTRA / VISION_PROMPT_EXTRA  — 决策提示的额外追加内容（可选）
-  CHAT_PROMPT_SYSTEM / VIEW_PROMPT_*  — 对话和视图分析
-"""
+﻿"""系统提示词和决策提示词"""
 
 from pet.action.registry import generate_action_section
+from pet.skills.registry import TOOL_REGISTRY
 
 
 # ── 窗口互动指南（两个模式共用）──
@@ -47,6 +40,7 @@ Speech 行 + 至少4个 Action 行，缺一不可：
   Action: look_around duration=5
   Action: walk left 600
   Action: sit duration=10
+  Tool: {"name": "tool.method", "args": {...}}   ← 可选，需要获取信息时使用
 
 === 硬性约束 ===
 1. 最少 4 个 Action，序列总时长约 30 秒
@@ -84,7 +78,7 @@ def non_vision_system_prompt() -> str:
         f"\n\n{_WINDOW_GUIDE}"
         f"\n\n{actions}"
         f"\n\n{_COMMON_TAIL}"
-    )
+    ) + (f"\n\n{TOOL_REGISTRY.generate_prompt_section()}" if TOOL_REGISTRY.generate_prompt_section() else "")
 
 
 def vision_system_prompt() -> str:
@@ -109,7 +103,7 @@ def vision_system_prompt() -> str:
         f"\n\n{actions}"
         f"\n\n{_COMMON_TAIL}"
         f"\n{_VISION_ONLY_CONSTRAINTS}"
-    )
+    ) + (f"\n\n{TOOL_REGISTRY.generate_prompt_section()}" if TOOL_REGISTRY.generate_prompt_section() else "")
 
 
 def non_vision_decide_prompt(context: str) -> str:
@@ -176,7 +170,7 @@ def chat_decide_system_prompt() -> str:
         "\n4. Speech 用你的性格语气，不超过 30 字"
         "\n5. 动作名只能是上方列出的动作之一"
         "\n6. 参考「近期对话/行为记录」保持对话连贯，记住用户之前说过的话"
-    )
+    ) + (f"\n\n{TOOL_REGISTRY.generate_prompt_section()}" if TOOL_REGISTRY.generate_prompt_section() else "")
 
 
 def chat_decide_user_prompt(user_message: str, context: str) -> str:
@@ -186,4 +180,20 @@ def chat_decide_user_prompt(user_message: str, context: str) -> str:
         f"{context}\n\n"
         "请回应用户。根据用户意图输出 Speech + Action。\n"
         "注意参考「近期对话/行为记录」保持对话连贯，不要重复之前说过的话。"
+    )
+
+
+def tool_result_user_prompt(tool_results: str) -> str:
+    """工具执行结果 → 二次 LLM 调用的 user message。
+
+    由 behavior._execute_with_tools() 调用，
+    将 executor.format_results() 的输出包装为规范化的 prompt。
+    """
+    return (
+        "以下是你请求的工具执行结果：\n\n"
+        f"{tool_results}\n\n"
+        "请基于以上信息，输出最终回复。格式要求：\n"
+        "Speech: <你想说的话>\n"
+        "Action: <动作名>\n\n"
+        "注意：不要再调用工具。"
     )

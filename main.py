@@ -7,6 +7,8 @@ from pet.ui.system_tray import SystemTrayManager
 from pet.ui.bubble import SpeechBubble
 from pet.ui.chat_bubble import ChatBubble
 from pet.agent import PetAgent
+from pet.skills import load_skills
+from pet.skills.context import SKILL_CTX
 from config import config
 
 logger = logging.getLogger(__name__)
@@ -23,10 +25,14 @@ def main():
     logger.info(f"===== DeskPet 启动 =====")
     logger.info(f"BRAIN={config.BRAIN}, MODEL={config.LLM_MODEL}")
 
+    # 启动时加载技能插件
+    load_skills(config.SKILLS_ENABLED)
+
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
 
     agent = PetAgent()
+    SKILL_CTX.bind(agent)
     window = PetWindow()
     agent.set_pet_window(window)  # 供窗口坐标探测用
     bubble = SpeechBubble(window)
