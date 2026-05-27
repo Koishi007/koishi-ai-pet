@@ -101,6 +101,7 @@ class PetAgent(QObject):
             "decide_with_vision":  self._trigger_vision_decide,
             "think":               self._trigger_think,
             "view":                self._trigger_view,
+            "chat":                self._trigger_chat,
         }
         handler = handlers.get(intent)
         if handler:
@@ -240,6 +241,54 @@ class PetAgent(QObject):
             on_error=self._on_view_error,
         )
 
+    def _trigger_chat(self, message: str = ""):
+        """用户对话触发：截图+上下文+LLM决策。"""
+        from pet.agent.state import PetState
+        self.state_machine.transition(PetState.INTERACTING)
+        self.state_changed.emit(PetState.INTERACTING.value)
+
+        # 获取当前屏幕上下文（在主线程中获取坐标）
+        pet_x, pet_y = 0, 0
+        if self._pet_window:
+            pet_x = self._pet_window.x()
+            pet_y = self._pet_window.y()
+
+        # 清空队列，播放思考动画
+        if self._pet_window:
+            self._pet_window.action_queue.clear()
+            self._pet_window.pet_actions.thinking()
+
+        # 后台执行：构建上下文 + 调用 chat_decide
+        self._async_brain(self._chat_pipeline, message, pet_x, pet_y)
+
+    def _chat_pipeline(self, message: str, pet_x: int, pet_y: int):
+        """后台线程：构建上下文 + 对话决策。"""
+        ts = datetime.now().strftime("%H:%M:%S")
+        self.behavior.add_context(f"[{ts}] [user] {message}")
+
+        # 窗口探测
+        window_context = self._build_window_context(pet_x, pet_y)
+
+        # OCR（可选）
+        ocr_text = ""
+        if config.OCR_ENABLED:
+            image = self.screen_reader.capture_fullscreen()
+            if image:
+                try:
+                    ocr_text = self.ocr_reader.extract_text(image)
+                except Exception:
+                    pass
+
+        # 组装 context
+        parts = []
+        if window_context:
+            parts.append(window_context)
+        if ocr_text:
+            parts.append(f"屏幕文字(OCR): {ocr_text[:config.OCR_MAX_CHARS]}")
+        context = "\n\n".join(parts) if parts else "当前无特殊环境信息"
+
+        return self.behavior.chat_decide(message, context)
+
     def _async_brain(self, fn, *args, on_result=None, on_error=None):
         fn_name = getattr(fn, "__name__", repr(fn))
         ts = datetime.now().strftime("%H:%M:%S")
@@ -271,6 +320,12 @@ class PetAgent(QObject):
 
     def _on_brain_result(self, result):
         ts = datetime.now().strftime("%H:%M:%S")
+        # 恢复状态（无论结果类型）
+        from pet.agent.state import PetState
+        if self.state_machine.state in (PetState.INTERACTING, PetState.TALKING):
+            self.state_machine.transition(PetState.IDLE)
+            self.state_changed.emit(PetState.IDLE.value)
+
         if isinstance(result, BehaviorOutput):
             logger.info(f"[{ts}] [PetAgent] ← {result}")
             action_names = [a.name for a in result.actions]
@@ -286,6 +341,11 @@ class PetAgent(QObject):
             self.speak_requested.emit(result, 5000)
 
     def _on_brain_error(self, msg: str):
+        # 回复状态（防止 INTERACTING/TALKING 卡死）
+        from pet.agent.state import PetState
+        if self.state_machine.state in (PetState.INTERACTING, PetState.TALKING):
+            self.state_machine.transition(PetState.IDLE)
+            self.state_changed.emit(PetState.IDLE.value)
         logger.error(f"[PetAgent] ERROR: {msg}")
 
     def _on_view_result(self, result):

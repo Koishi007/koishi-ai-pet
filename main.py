@@ -5,6 +5,7 @@ from PySide6.QtWidgets import QApplication
 from pet.ui.pet_window import PetWindow
 from pet.ui.system_tray import SystemTrayManager
 from pet.ui.bubble import SpeechBubble
+from pet.ui.chat_bubble import ChatBubble
 from pet.agent import PetAgent
 from config import config
 
@@ -29,6 +30,12 @@ def main():
     window = PetWindow()
     agent.set_pet_window(window)  # 供窗口坐标探测用
     bubble = SpeechBubble(window)
+
+    chat_bubble = ChatBubble(window)
+    window.set_chat_bubble(chat_bubble)
+    chat_bubble.chat_submitted.connect(
+        lambda text: agent.trigger("chat", message=text)
+    )
 
     agent.action_requested.connect(window.queue_enqueue_action)
     agent.speak_requested.connect(bubble.show_text)

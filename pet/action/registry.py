@@ -1,10 +1,7 @@
-"""Action Registry —— 动作定义的唯一真实来源。
-
-新增动作只需在此文件中添加一个条目：
+"""Action Registry
+可被llm调用的动作
 1. REGISTRY 字典中添加 ActionDef
 2. 在 pet/action/action.py 中实现对应方法
-
-prompt 中的动作描述由 generate_action_section() 自动生成，无需手动更新。
 """
 
 from dataclasses import dataclass, field
@@ -53,19 +50,12 @@ REGISTRY: dict[str, ActionDef] = {
         params=["duration: 秒，10-15"],
         usage_example="Action: sleep duration=12",
     ),
-    "idle": ActionDef(
-        name="idle",
-        category="驻留",
-        description="待机/发呆。耗时动作，必须写 duration=秒（3-5s），用作动作间短停顿。",
-        params=["duration: 秒，3-5"],
-        usage_example="Action: idle duration=4",
-    ),
     "look_around": ActionDef(
         name="look_around",
         category="驻留",
-        description="张望/环顾四周。耗时动作，必须写 duration=秒（3-8s），穿插在 walk 和 sit 之间。",
-        params=["duration: 秒，3-8"],
-        usage_example="Action: look_around duration=5",
+        description="张望/环顾四周。耗时动作，必须写 duration=秒（5-10s），穿插在 walk 和 sit 之间。",
+        params=["duration: 秒，5-10"],
+        usage_example="Action: look_around duration=10",
     ),
     "stretch": ActionDef(
         name="stretch",
@@ -74,21 +64,28 @@ REGISTRY: dict[str, ActionDef] = {
         params=["duration: 秒，3-6"],
         usage_example="Action: stretch duration=4",
     ),
+    "thinking": ActionDef(
+        name="thinking",
+        category="驻留",
+        description="沉思/思考。耗时动作，必须写 duration=秒（3-8s），站着不动但表情思考状。",
+        params=["duration: 秒，3-8"],
+        usage_example="Action: thinking duration=5",
+    ),
 
     # ── 显隐类 ──
     "fade_in": ActionDef(
         name="fade_in",
         category="显隐",
-        description="淡入显示。窗口从透明到可见，duration=毫秒（300）。必须先 in 后 out，中间可以夹带其他动作，比如walk，与 fade_out 成对使用，禁止单独出现。",
-        params=["duration: 毫秒（可选，默认 300）"],
-        usage_example="Action: fade_in duration=300",
+        description="淡入显示。窗口从透明到可见，与 fade_out 成对使用（先 out 后 in），中间可以夹带其他动作。禁止单独出现。",
+        params=[],
+        usage_example="Action: fade_in",
     ),
     "fade_out": ActionDef(
         name="fade_out",
         category="显隐",
-        description="淡出隐藏。窗口从可见到透明，duration=毫秒（400）。必须先 in 后 out，中间可以夹带其他动作，比如walk，与 fade_in 成对使用，禁止单独出现。",
-        params=["duration: 毫秒（可选，默认 400）"],
-        usage_example="Action: fade_out duration=400",
+        description="淡出隐藏。窗口从可见到透明，必须先 out 后 in，中间可以夹带其他动作，与 fade_in 成对使用。禁止单独出现。",
+        params=[],
+        usage_example="Action: fade_out",
     ),
 }
 

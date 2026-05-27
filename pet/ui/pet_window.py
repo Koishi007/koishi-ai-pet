@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import QLabel, QVBoxLayout
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QPoint
 from PySide6.QtGui import QMouseEvent
 from pet.ui.base_window import TransparentWindow
 from pet.ui.pet_animations import PetAnimator
@@ -11,7 +11,24 @@ class PetWindow(TransparentWindow):
     def __init__(self):
         super().__init__()
         self._setup_ui()
-        self._old_pos = None
+        self._grab_local: QPoint | None = None
+        self._chat_bubble = None
+
+    def set_chat_bubble(self, chat_bubble):
+        """注入 ChatBubble 引用。"""
+        self._chat_bubble = chat_bubble
+
+    def enterEvent(self, event):
+        """鼠标进入桌宠区域时显示聊天按钮。"""
+        if self._chat_bubble and self._grab_local is None:
+            self._chat_bubble.show_bubble()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        """鼠标离开桌宠区域时延迟隐藏。"""
+        if self._chat_bubble:
+            self._chat_bubble.schedule_hide()
+        super().leaveEvent(event)
 
     def _setup_ui(self):
         self.setFixedSize(config.PET_WIDTH, config.PET_HEIGHT)
@@ -51,18 +68,22 @@ class PetWindow(TransparentWindow):
 
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton:
-            self._old_pos = event.globalPosition().toPoint()
+            self._grab_local = QPoint(62, 20)
+            if self._chat_bubble:
+                self._chat_bubble.hide_bubble()
             self.pet_actions.gravity.enable(False)
+            self.action_queue.pause()
             self.action_queue.clear()
+            self.pet_actions.caught()
 
     def mouseMoveEvent(self, event: QMouseEvent):
-        if self._old_pos is not None:
-            delta = event.globalPosition().toPoint() - self._old_pos
-            self.move(self.pos() + delta)
-            self._old_pos = event.globalPosition().toPoint()
+        if self._grab_local is not None:
+            new_pos = event.globalPosition().toPoint() - self._grab_local
+            self.move(new_pos)
 
     def mouseReleaseEvent(self, event: QMouseEvent):
-        self._old_pos = None
+        self._grab_local = None
+        self.action_queue.resume()
         self.pet_actions.gravity.enable(True)
 
     def _on_falling_started(self):

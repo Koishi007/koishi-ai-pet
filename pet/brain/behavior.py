@@ -362,3 +362,61 @@ class Behavior(BrainMixin):
         resp = responses[self._idx % len(responses)]
         self._idx += 1
         return resp
+
+    def chat_decide(self, user_message: str, context: str = "") -> BehaviorOutput:
+        """用户对话模式：接收用户消息，结合屏幕上下文，输出动作+语音。"""
+        t = datetime.now().strftime("%H:%M:%S")
+        logger.info(f"[{t}] [Behavior] chat_decide(msg={user_message[:50]}, ctx={context[:30]})")
+
+        if not self._client:
+            return BehaviorOutput(
+                actions=[ActionStep("look_around", kwargs={"duration": 5})],
+                speech=f"\uff08\u542c\u5230\u4e86\uff1a{user_message[:10]}...\u4f46\u6211\u8fd8\u4e0d\u4f1a\u56de\u5e94\uff09",
+            )
+
+        return self._chat_decide_remote(user_message, context)
+
+    def _chat_decide_remote(self, user_message: str, context: str) -> BehaviorOutput:
+        t = datetime.now().strftime("%H:%M:%S")
+        logger.info(f"[{t}] [Behavior] === LLM REQUEST (chat_decide) ===")
+
+        if len(self._context) > 10:
+            self._context[:] = self._context[-10:]
+
+        from pet.brain import prompts
+        system_content = prompts.chat_decide_system_prompt()
+        if config.PET_PERSONALITY:
+            system_content += f"\n\n=== \u4f60\u7684\u6027\u683c ===\n{config.PET_PERSONALITY}"
+
+        # 构建对话历史（包含最近条目，不跳过最后一条）
+        history = ""
+        if self._context:
+            recent = self._context[-9:-1] if len(self._context) > 1 else []
+            if recent:
+                history = "\n\n=== \u8fd1\u671f\u5bf9\u8bdd/\u884c\u4e3a\u8bb0\u5f55 ===\n" + "\n".join(recent)
+
+        user_content = prompts.chat_decide_user_prompt(user_message, context + history)
+
+        messages = [
+            {"role": "system", "content": system_content},
+            {"role": "user", "content": user_content},
+        ]
+
+        try:
+            resp = self._client.chat.completions.create(
+                model=self._model,
+                messages=messages,
+                max_tokens=4000,
+            )
+            content = resp.choices[0].message.content or ""
+            logger.info(f"[{t}] [Behavior] === LLM RESPONSE (chat_decide) ===")
+            logger.debug(f"[{t}] [Behavior]   raw: {content}")
+            result = self._parse_behavior(content)
+            logger.info(f"[{t}] [Behavior]   parsed \u2192 {result}")
+            return result
+        except Exception as e:
+            logger.error(f"[{t}] [Behavior] chat_decide failed: {e}")
+            return BehaviorOutput(
+                actions=[ActionStep("look_around", kwargs={"duration": 5})],
+                speech="\u5594...\u6211\u597d\u50cf\u6ca1\u542c\u6e05",
+            )

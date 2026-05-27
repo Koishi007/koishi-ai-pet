@@ -1,7 +1,7 @@
 
 import logging
 
-from PySide6.QtCore import QObject, QTimer, QPropertyAnimation, Signal
+from PySide6.QtCore import QObject, QPropertyAnimation, Signal
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ class ActionQueue(QObject):
         self._stopped = False
         self._paused = False
         self._active_anim: QPropertyAnimation | None = None
-        self._next_timer: QTimer | None = None
+        self._waiting_anim_finished: bool = False
 
     def enqueue(self, method_name: str, *args, **kwargs):
         self._queue.append((method_name, args, kwargs))
@@ -88,36 +88,24 @@ class ActionQueue(QObject):
 
         try:
             logger.info(f"[ActionQueue] ▶ {self._format(name, args, kwargs)}")
-            duration = kwargs.get("duration", -1)
-            method_kwargs = {k: v for k, v in kwargs.items() if k != "duration"}
-            result = method(*args, **method_kwargs)
+            result = method(*args, **kwargs)
         except Exception as e:
             logger.error(f"[ActionQueue] ✗ {name} failed: {e}")
             self._run_next()
             return
 
         if isinstance(result, QPropertyAnimation):
+            # 动画驱动：监听 QPropertyAnimation.finished
             self._active_anim = result
             result.finished.connect(self._on_action_done)
             return
 
-        if duration > 0:
-            timer = QTimer(self)
-            timer.setSingleShot(True)
-            timer.timeout.connect(self._on_action_done)
-            timer.start(int(duration * 1000))
-            self._next_timer = timer
-            return
+        # 时间驱动：监听 PetAnimator.animation_finished
+        self._actions._anim.animation_finished.connect(self._on_action_done)
+        self._waiting_anim_finished = True
 
-        if duration == -1:
-            self._running = False
-            return
-
-        self._run_next()
-
-    def _on_action_done(self):
-        self._active_anim = None
-        self._next_timer = None
+    def _on_action_done(self, *args):
+        self._disconnect_active()
         self._run_next()
 
     def _disconnect_active(self):
@@ -128,9 +116,12 @@ class ActionQueue(QObject):
                 pass
             self._active_anim.stop()
             self._active_anim = None
-        if self._next_timer is not None:
-            self._next_timer.stop()
-            self._next_timer = None
+        if self._waiting_anim_finished:
+            try:
+                self._actions._anim.animation_finished.disconnect(self._on_action_done)
+            except (TypeError, RuntimeError):
+                pass
+            self._waiting_anim_finished = False
 
     def describe(self) -> list[str]:
         """返回队列可视化列表，用于调试面板展示。"""
@@ -154,7 +145,7 @@ class ActionQueue(QObject):
             parts.append(f"({args[0].x()},{args[0].y()})→({args[1].x()},{args[1].y()})" if len(args) >= 2 else "")
         elif name == "bounce":
             parts.append(f"dx={kwargs.get('dx',0)} dy={kwargs.get('dy',-150)}")
-        elif name in ("sit", "sleep", "idle"):
+        elif name in ("sit", "sleep", "look_around", "stretch", "thinking"):
             d = kwargs.get("duration", -1)
             if d > 0:
                 parts.append(f"{d}s")

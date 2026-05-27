@@ -26,14 +26,22 @@ class PetAnimator(QObject):
         self._current_frame: int = 0
         self._current_action: str = ""
         self._loop: bool = True
+        self._playing_once: bool = False  # True: 时间驱动单次播放中
 
         self._frame_timer = QTimer(self)
         self._frame_timer.timeout.connect(self._next_frame)
 
         self._cache: dict[str, list[QPixmap]] = {}
 
-    def play(self, action: str, loop: bool = True, fps: int | None = None) -> bool:
-        """播放指定动作的帧动画。"""
+    def play(self, action: str, duration: float | None = None) -> bool:
+        """播放指定动作的帧动画。
+
+        Args:
+            action: 动作名称（对应 assets/actions/ 下的子目录）
+            duration: 播放总时长（秒）。
+                None: 无限循环播放，不发 animation_finished 信号
+                > 0: 帧均分时长，单次播完后发 animation_finished 信号
+        """
         frames = self._load_action(action)
         if not frames:
             return False
@@ -42,20 +50,29 @@ class PetAnimator(QObject):
         self._frames = frames
         self._current_action = action
         self._current_frame = 0
-        self._loop = loop
+        self._loop = (duration is None)
+        self._playing_once = (duration is not None and duration > 0)
 
         self._label.setPixmap(self._frames[0])
 
         if len(self._frames) > 1:
-            interval = self._calc_interval(loop, fps)
+            if duration is not None and duration > 0:
+                interval = max(1, int(duration * 1000 / len(self._frames)))
+            else:
+                interval = self._calc_interval()
             self._frame_timer.start(interval)
+        elif self._playing_once:
+            # 单帧 + 有时长：duration 结束后触发 animation_finished
+            if duration is not None:
+                self._frame_timer.start(int(duration * 1000))
 
         return True
 
-    def _calc_interval(self, loop: bool, fps: int | None) -> int:
-        base_fps = fps or config.PET_FPS
+    def _calc_interval(self) -> int:
+        """计算循环播放时的帧间隔（毫秒）。"""
+        base_fps = config.PET_FPS
         raw_interval = round(1000 / base_fps)
-        if loop and len(self._frames) < base_fps:
+        if len(self._frames) < base_fps:
             return max(1, round(1000 / len(self._frames)))
         return max(1, raw_interval)
 

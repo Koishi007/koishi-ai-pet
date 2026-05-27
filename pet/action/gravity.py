@@ -36,15 +36,25 @@ class GravitySystem(QObject):
         self._standing_hwnd: int = 0
         self._force_standing_check: bool = False
         self._ALIVE_CHECK_INTERVAL = 15
+        self._suppress_idle: bool = False
 
     @property
     def falling(self) -> bool:
         return self._falling
 
+    @property
+    def suppress_idle(self) -> bool:
+        return self._suppress_idle
+
+    @suppress_idle.setter
+    def suppress_idle(self, value: bool):
+        self._suppress_idle = value
+
     def enable(self, enabled: bool = True):
         self._enabled = enabled
         if enabled:
             self._cached_effective_bottom = None
+            self._falling = False  # 重置下落状态，下一 tick 重新检测
             if not self._timer.isActive():
                 self._timer.start(self._interval)
         else:
@@ -165,11 +175,17 @@ class GravitySystem(QObject):
         self._window.move(clamped.x(), clamped.y())
 
         if at_bottom and self._falling:
+            # 正在下落，落到了地面
             self._falling = False
             self._force_standing_check = True
             self._anim.play("idle")
             self.landed.emit()
+        elif at_bottom and not self._falling:
+            # 释放拖拽时已经在地上，直接 idle（walk 期间抑制）
+            if not self._suppress_idle:
+                self._anim.play("idle")
         elif not at_bottom and not self._falling:
+            # 悬空，开始下落
             self._falling = True
             self._anim.play("falling")
             logger.info(f"[Gravity] falling started at y={old_y}, bottom={effective_bottom}")

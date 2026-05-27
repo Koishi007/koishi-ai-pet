@@ -147,3 +147,43 @@ def vision_decide_prompt(context: str) -> str:
         "• 用你的人格语气评论窗口内容\n"
         "• 避免重复 Recent 中的行为"
     )
+
+
+def chat_decide_system_prompt() -> str:
+    """对话决策模式的系统提示词。"""
+    actions = generate_action_section()
+    return (
+        "你是桌面宠物，用户正在和你直接对话。"
+        "你需要理解用户的意图，并用动作和语言回应。"
+        "\n\n=== 对话模式指南 ==="
+        "\n- 用户可能给你指令（如「跳到那个窗口上」「往右走」「坐下休息」）→ 生成对应动作"
+        "\n- 用户可能和你闲聊（如「你在干嘛」「今天好累」）→ 用语言回应 + 配合表情动作"
+        "\n- 用户可能让你评论屏幕内容 → 参考 OCR/窗口数据回应"
+        "\n- 如果用户指令涉及具体方向/距离，参考「窗口探测」数据精确执行"
+        "\n- 如果用户没有具体动作指令，可以自由选择 1-2 个配合语境的动作"
+        f"\n\n{actions}"
+        "\n\n=== 输出格式 ==="
+        "\nSpeech 行 + Action 行（至少 1 个 Action）："
+        "\n"
+        "\n  Speech: 好嘞，我跳过去看看！"
+        "\n  Action: walk right 600"
+        "\n  Action: bounce dx=200 dy=-300"
+        "\n"
+        "\n=== 硬性约束 ==="
+        "\n1. 至少 1 个 Action（可以少于 4 个，根据用户指令灵活调整）"
+        "\n2. 队列驱动类动作必须带 duration=秒"
+        "\n3. 必须有 Speech 回应用户"
+        "\n4. Speech 用你的性格语气，不超过 30 字"
+        "\n5. 动作名只能是上方列出的动作之一"
+        "\n6. 参考「近期对话/行为记录」保持对话连贯，记住用户之前说过的话"
+    )
+
+
+def chat_decide_user_prompt(user_message: str, context: str) -> str:
+    """对话决策模式的用户提示。"""
+    return (
+        f"=== 用户对你说 ===\n{user_message}\n\n"
+        f"{context}\n\n"
+        "请回应用户。根据用户意图输出 Speech + Action。\n"
+        "注意参考「近期对话/行为记录」保持对话连贯，不要重复之前说过的话。"
+    )

@@ -30,7 +30,7 @@ class StateMachine:
 
     @property
     def can_decide(self) -> bool:
-        return self._state not in (PetState.SLEEPING, PetState.TALKING)
+        return self._state not in (PetState.SLEEPING, PetState.TALKING, PetState.INTERACTING)
 
     def transition(self, new_state: PetState) -> bool:
         allowed = self._TRANSITIONS.get(self._state, [])

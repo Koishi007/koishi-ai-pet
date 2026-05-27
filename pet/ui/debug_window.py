@@ -396,16 +396,15 @@ class DebugWindow(QWidget):
 
     def _test_idle(self):
         self.pet.show()
-        t = self.pose_duration.value()
-        self._log(f"↩ enqueue idle({t}s)")
-        self.pet.queue_enqueue("idle", duration=t)
+        self._log("↩ direct idle (not queued)")
+        self.pet.pet_actions.idle()
 
     def _play_pet_anim(self, action: str):
         loop = self.pet_loop.isChecked()
-        fps = self.pet_fps.value()
-        ok = self.pet.pet_anim.play(action, loop=loop, fps=fps)
+        duration = None if loop else self.pose_duration.value()
+        ok = self.pet.pet_anim.play(action, duration=duration)
         if ok:
-            self._log(f"pet_anim.play('{action}', loop={loop}, fps={fps})")
+            self._log(f"pet_anim.play('{action}', duration={duration})")
             self._update_pet_anim_status(action)
             for a, btn in self._pet_btns.items():
                 btn.setChecked(a == action)

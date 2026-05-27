@@ -62,8 +62,9 @@ class PetActions(QObject):
             raise ValueError(f"direction must be 'left' or 'right', got '{direction}'")
 
         walk_action = f"walk_{direction}"
-        self._anim.play(walk_action, loop=True)
+        self._anim.play(walk_action)
         self._cleanup_stopped_anims()
+        self.gravity.suppress_idle = True
 
         sign = 1 if direction == "right" else -1
         step_px = 50 * sign
@@ -80,11 +81,13 @@ class PetActions(QObject):
 
         def _hop(step: int):
             if step >= total_steps:
+                self.gravity.suppress_idle = False
                 self._anim.play("idle")
                 sentinel.stop()
                 return
             if self.gravity.falling:
                 # 已被重力接管，不覆盖动画
+                self.gravity.suppress_idle = False
                 sentinel.stop()
                 return
 
@@ -98,6 +101,7 @@ class PetActions(QObject):
 
             # 碰到屏幕边缘无法前进，停止后续
             if abs(to_x - from_x) < 10:
+                self.gravity.suppress_idle = False
                 sentinel.stop()
                 return
 
@@ -148,7 +152,7 @@ class PetActions(QObject):
 
     def bounce(self, dx=0, dy=-150, duration=500):
         self._cleanup_stopped_anims()
-        self._anim.play("bounce", loop=True)
+        self._anim.play("bounce")
         original_pos = self._window.pos()
 
         # 限制 dy 不让弹跳弧线最高点超出屏幕上边界
@@ -169,17 +173,25 @@ class PetActions(QObject):
         self._win_anims.append(anim)
         return anim
 
-    def sit(self):
-        self._anim.play("sit")
+    def sit(self, duration=None):
+        self._anim.play("sit", duration=duration)
 
-    def sleep(self):
-        self._anim.play("sleep")
+    def sleep(self, duration=None):
+        self._anim.play("sleep", duration=duration)
 
     def idle(self):
         self._anim.play("idle")
 
-    def look_around(self):
-        self._anim.play("idle")
+    def look_around(self, duration=None):
+        self._anim.play("look_around", duration=duration)
 
-    def stretch(self):
-        self._anim.play("idle")
+    def stretch(self, duration=None):
+        self._anim.play("stretch", duration=duration)
+
+    def thinking(self, duration=None):
+        self._anim.play("thinking", duration=duration)
+
+    def caught(self):
+        self._cleanup_stopped_anims()
+        self._anim.play("caught")
+
