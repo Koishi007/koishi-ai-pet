@@ -80,6 +80,7 @@ class PetActions(QObject):
         sentinel.start()
 
         def _finish(switch_idle: bool):
+            """统一收尾：恢复 suppress_idle、按需切回 idle、停止 sentinel。"""
             self.gravity.suppress_idle = False
             if switch_idle:
                 self._anim.play("idle")
@@ -145,7 +146,6 @@ class PetActions(QObject):
         return anim
 
     def fade_out(self, duration=300, callback=None):
-        """窗口淡出。"""
         self._cleanup_stopped_anims()
         anim = QPropertyAnimation(self._window, b"windowOpacity")
         anim.setDuration(duration)
@@ -155,7 +155,18 @@ class PetActions(QObject):
             anim.finished.connect(callback)
         anim.start()
         self._win_anims.append(anim)
+    
+        # 15s 后若仍处于不可见状态，自动 fade_in 找回宠物
+        QTimer.singleShot(15000, self._fade_in_safety_check)
         return anim
+    
+    def _fade_in_safety_check(self):
+        try:
+            if self._window.windowOpacity() < 0.1:
+                logger.warning("[PetActions] fade_out safety net triggered, forcing fade_in")
+                self.fade_in()
+        except RuntimeError:
+            pass
 
     def bounce(self, dx=0, dy=-150, duration=500):
         self._cleanup_stopped_anims()
