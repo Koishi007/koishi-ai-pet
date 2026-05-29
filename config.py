@@ -31,12 +31,6 @@ class Config:
 
     NON_VISION_PROMPT_EXTRA = os.getenv("NON_VISION_PROMPT_EXTRA", "")
 
-    CHAT_PROMPT_SYSTEM = os.getenv(
-        "CHAT_PROMPT_SYSTEM",
-        "You are a cute desktop pet. "
-        "Keep responses brief and playful.",
-    )
-
     VIEW_PROMPT_SYSTEM = os.getenv(
         "VIEW_PROMPT_SYSTEM",
         "你是桌面宠物的视觉模块，负责分析屏幕截图内容。"
@@ -55,8 +49,6 @@ class Config:
     LLM_RETRY_DELAY = float(os.getenv("LLM_RETRY_DELAY", "1"))
     LLM_RETRY_MAX_DELAY = float(os.getenv("LLM_RETRY_MAX_DELAY", "8"))
 
-    SCREEN_READER_ENABLED = True
-    SYSTEM_MONITOR_ENABLED = True
     SCHEDULER_AUTO_START = os.getenv("SCHEDULER_AUTO_START", "false").lower() == "true"
     SCHEDULER_FAST_MS = int(os.getenv("SCHEDULER_FAST_MS", "1000"))
     SCHEDULER_MID_MS = int(os.getenv("SCHEDULER_MID_MS", "30000"))

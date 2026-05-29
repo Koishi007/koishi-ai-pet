@@ -9,6 +9,7 @@ from pet.brain.view import View, OcrReader
 from pet.agent.scheduler import Scheduler
 from pet.agent.state import StateMachine
 from pet.agent.screen_reader import ScreenReader
+from pet.agent.memory_store import MemoryStore
 from config import config
 
 logger = logging.getLogger(__name__)
@@ -53,7 +54,8 @@ class PetAgent(QObject):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.behavior = Behavior()
+        self.memory_store = MemoryStore()
+        self.behavior = Behavior(memory_store=self.memory_store)
         self.view_brain = View()
         self.screen_reader = ScreenReader()
         self.screen_reader.enable()
@@ -68,6 +70,8 @@ class PetAgent(QObject):
 
         self._thread: QThread | None = None
         self._worker: BrainWorker | None = None
+        self._cancel_flag = False
+        self._active_stream_id = 0
 
         # 后台预加载 OCR 模型，避免首次 mid_tick 卡 UI
         if config.OCR_ENABLED:
@@ -96,15 +100,13 @@ class PetAgent(QObject):
                 self._thread.wait(3000)
         except RuntimeError:
             pass
+        if hasattr(self, 'memory_store'):
+            self.memory_store.close()
         logger.info("[PetAgent] stopped")
 
     def trigger(self, intent: str, **kwargs):
         handlers = {
-            "decide":              self._trigger_decide,
-            "decide_with_vision":  self._trigger_vision_decide,
-            "think":               self._trigger_think,
-            "view":                self._trigger_view,
-            "chat":                self._trigger_chat,
+            "chat":  self._trigger_chat,
         }
         handler = handlers.get(intent)
         if handler:
@@ -127,6 +129,10 @@ class PetAgent(QObject):
 
         image = self.screen_reader.capture_fullscreen()
         if image:
+            # 锁定状态，阻止并发 chat
+            from pet.agent.state import PetState
+            self.state_machine.transition(PetState.TALKING)
+            self.state_changed.emit(PetState.TALKING.value)
             # 主线程获取桌宠屏幕坐标，供后台线程计算窗口相对距离
             pet_x, pet_y = 0, 0
             if self._pet_window:
@@ -148,7 +154,7 @@ class PetAgent(QObject):
         self.action_requested.emit("stretch", (), {})
 
     def _decide_pipeline(self, image, pet_x=0, pet_y=0):
-        """后台线程中运行：窗口探测 + OCR 提取文字 + LLM 决策，不阻塞 UI。"""
+        """子线程运行：窗口探测 + OCR 提取文字 + LLM 决策"""
         ts = datetime.now().strftime("%H:%M:%S")
 
         # ── Win32 窗口坐标探测 ──
@@ -173,9 +179,13 @@ class PetAgent(QObject):
         context = "\n\n".join(parts) if parts else ""
 
         stream_started = False
+        self._active_stream_id += 1
+        my_stream_id = self._active_stream_id
 
         def on_chunk(delta: str):
             nonlocal stream_started
+            if self._cancel_flag or my_stream_id != self._active_stream_id:
+                return
             if not stream_started:
                 self.speak_stream_start.emit()
                 stream_started = True
@@ -183,6 +193,8 @@ class PetAgent(QObject):
 
         def on_stream_end():
             nonlocal stream_started
+            if self._cancel_flag or my_stream_id != self._active_stream_id:
+                return
             if stream_started:
                 self.speak_stream_end.emit(5000)
                 stream_started = False
@@ -247,16 +259,8 @@ class PetAgent(QObject):
 
         return "\n".join(lines)
 
-    def _trigger_decide(self, context: str = ""):
-        self._async_brain(self.behavior.decide, context)
-
-    def _trigger_vision_decide(self, image, context: str = ""):
-        self._async_brain(self.behavior.decide_with_vision, image, context)
-
-    def _trigger_think(self, prompt: str = ""):
-        self._async_brain(self.behavior.think, prompt)
-
-    def _trigger_view(self, image, prompt: str = ""):
+    # 仅供view调试用
+    def analyze_view(self, image, prompt: str = ""):
         self._async_brain(
             self.view_brain.analyze, image, prompt,
             on_result=self._on_view_result,
@@ -266,6 +270,16 @@ class PetAgent(QObject):
     def _trigger_chat(self, message: str = ""):
         """用户对话触发：截图+上下文+LLM决策。"""
         from pet.agent.state import PetState
+        # 去重：若已在交互中且线程运行中，忽略
+        if (self.state_machine.state == PetState.INTERACTING
+                and self._thread and self._thread.isRunning()):
+            logger.info("[PetAgent] chat request ignored, already processing")
+            return
+
+        # 若有正在进行的流式，终止
+        if self._thread and self._thread.isRunning():
+            self.speak_stream_end.emit(0)
+
         self.state_machine.transition(PetState.INTERACTING)
         self.state_changed.emit(PetState.INTERACTING.value)
 
@@ -280,10 +294,13 @@ class PetAgent(QObject):
             self._pet_window.action_queue.clear()
             self._pet_window.pet_actions.thinking()
 
-        # 后台执行：构建上下文 + 调用 chat_decide
-        self._async_brain(self._chat_pipeline, message, pet_x, pet_y)
+        # 截图（主线程中执行，避免子线程跨线程问题）
+        image = self.screen_reader.capture_fullscreen()
 
-    def _chat_pipeline(self, message: str, pet_x: int, pet_y: int):
+        # 后台执行：构建上下文 + 调用 chat_decide
+        self._async_brain(self._chat_pipeline, message, image, pet_x, pet_y)
+
+    def _chat_pipeline(self, message: str, image, pet_x: int, pet_y: int):
         """后台线程：构建上下文 + 对话决策（流式）。"""
         ts = datetime.now().strftime("%H:%M:%S")
         self.behavior.add_context(f"[{ts}] [user] {message}")
@@ -293,13 +310,11 @@ class PetAgent(QObject):
 
         # OCR（可选）
         ocr_text = ""
-        if config.OCR_ENABLED:
-            image = self.screen_reader.capture_fullscreen()
-            if image:
-                try:
-                    ocr_text = self.ocr_reader.extract_text(image)
-                except Exception:
-                    pass
+        if config.OCR_ENABLED and image:
+            try:
+                ocr_text = self.ocr_reader.extract_text(image)
+            except Exception:
+                pass
 
         # 组装 context
         parts = []
@@ -310,9 +325,13 @@ class PetAgent(QObject):
         context = "\n\n".join(parts) if parts else "当前无特殊环境信息"
 
         stream_started = False
+        self._active_stream_id += 1
+        my_stream_id = self._active_stream_id
 
         def on_chunk(delta: str):
             nonlocal stream_started
+            if self._cancel_flag or my_stream_id != self._active_stream_id:
+                return
             if not stream_started:
                 self.speak_stream_start.emit()
                 stream_started = True
@@ -320,11 +339,16 @@ class PetAgent(QObject):
 
         def on_stream_end():
             nonlocal stream_started
+            if self._cancel_flag or my_stream_id != self._active_stream_id:
+                return
             if stream_started:
                 self.speak_stream_end.emit(8000)
                 stream_started = False
 
-        result = self.behavior.chat_decide_stream(message, context, on_chunk=on_chunk, on_stream_end=on_stream_end)
+        result = self.behavior.chat_decide_stream(
+            message, context, image=image,
+            on_chunk=on_chunk, on_stream_end=on_stream_end,
+        )
 
         if stream_started:
             self.speak_stream_end.emit(8000)
@@ -334,20 +358,31 @@ class PetAgent(QObject):
         fn_name = getattr(fn, "__name__", repr(fn))
         ts = datetime.now().strftime("%H:%M:%S")
         logger.info(f"[{ts}] [PetAgent] _async_brain: {fn_name}")
-        # 如果有旧线程还在跑，先断开信号避免结果乱序
+        # 取消旧任务，等待线程退出
+        if self._thread is not None and self._thread.isRunning():
+            self._cancel_flag = True
+            try:
+                self._thread.quit()
+                if not self._thread.wait(2000):
+                    logger.warning(f"[{ts}] [PetAgent] old brain thread timeout, force terminate")
+                    self._thread.terminate()
+                    self._thread.wait(500)
+                    # 强制终止后恢复状态，防止卡死
+                    from pet.agent.state import PetState
+                    if self.state_machine.state in (PetState.INTERACTING, PetState.TALKING):
+                        self.state_machine.transition(PetState.IDLE)
+                        self.state_changed.emit(PetState.IDLE.value)
+                        logger.info(f"[PetAgent] state recovered to IDLE after thread terminate")
+            except RuntimeError:
+                pass
+        # 断开旧 worker 信号
         if self._worker is not None:
             try:
                 self._worker.finished.disconnect()
                 self._worker.error.disconnect()
             except (RuntimeError, TypeError):
                 pass
-        if self._thread is not None:
-            try:
-                if self._thread.isRunning():
-                    self._thread.quit()
-                    self._thread.wait(1000)
-            except RuntimeError:
-                pass
+        self._cancel_flag = False
         self._worker = BrainWorker(fn, *args)
         self._thread = QThread(self)
         self._worker.moveToThread(self._thread)
@@ -355,9 +390,16 @@ class PetAgent(QObject):
         self._worker.finished.connect(on_result or self._on_brain_result)
         self._worker.error.connect(on_error or self._on_brain_error)
         self._worker.finished.connect(self._thread.quit)
-        self._worker.finished.connect(self._worker.deleteLater)
-        self._thread.finished.connect(self._thread.deleteLater)
+        self._thread.finished.connect(self._cleanup_thread)
         self._thread.start()
+
+    def _cleanup_thread(self):
+        if self._thread is not None:
+            self._thread.deleteLater()
+            self._thread = None
+        if self._worker is not None:
+            self._worker.deleteLater()
+            self._worker = None
 
     def _on_brain_result(self, result):
         ts = datetime.now().strftime("%H:%M:%S")
@@ -384,6 +426,13 @@ class PetAgent(QObject):
             logger.info(f"[{ts}] [PetAgent] ← \"{result[:60]}\"")
             self.behavior.add_context(f"[{ts}] said: {result[:100]}")
             self.speak_requested.emit(result, 5000)
+
+        # 记忆存储
+        if hasattr(result, 'memory_line') and result.memory_line:
+            try:
+                self.memory_store.save_from_line(result.memory_line)
+            except Exception as e:
+                logger.warning(f"[PetAgent] memory save failed: {e}")
 
     def _on_brain_error(self, msg: str):
         # 回复状态（防止 INTERACTING/TALKING 卡死）

@@ -253,52 +253,7 @@ class DebugWindow(QWidget):
         self.label_chat_ctx = QLabel("上下文: 0 条")
         chat_layout.addWidget(self.label_chat_ctx)
 
-        self.chat_output = QTextEdit()
-        self.chat_output.setReadOnly(True)
-        self.chat_output.setMaximumHeight(120)
-        self.chat_output.setFont(QFont("Microsoft YaHei", 10))
-        chat_layout.addWidget(self.chat_output)
-
         right.addWidget(chat_group)
-
-        decide_group = QGroupBox("Behavior 决策")
-        decide_layout = QVBoxLayout(decide_group)
-
-        decide_btn_row = QHBoxLayout()
-        self.btn_decide = QPushButton("decide()")
-        self.btn_decide.clicked.connect(self._test_decide)
-        decide_btn_row.addWidget(self.btn_decide)
-        if self.agent:
-            self.chk_tick = QCheckBox("Tick")
-            self.agent.scheduler.stop()
-            self.chk_tick.setChecked(False)
-            self.chk_tick.toggled.connect(self._toggle_tick)
-            decide_btn_row.addWidget(self.chk_tick)
-            self.label_tick_state = QLabel("已停")
-            decide_btn_row.addWidget(self.label_tick_state)
-        self.label_vision_mode = QLabel(
-            "📷 Vision" if (hasattr(self.brain, 'has_vision') and self.brain.has_vision) else "📝 Text"
-        )
-        decide_btn_row.addWidget(self.label_vision_mode)
-        decide_btn_row.addStretch()
-        decide_layout.addLayout(decide_btn_row)
-
-        vision_decide_row = QHBoxLayout()
-        self.btn_vision_decide = QPushButton("合并决策 decide_with_vision()")
-        has_vision = hasattr(self.brain, 'has_vision') and self.brain.has_vision
-        self.btn_vision_decide.setEnabled(has_vision)
-        self.btn_vision_decide.clicked.connect(self._test_vision_decide)
-        vision_decide_row.addWidget(self.btn_vision_decide)
-        vision_decide_row.addStretch()
-        decide_layout.addLayout(vision_decide_row)
-
-        self.decide_output = QTextEdit()
-        self.decide_output.setReadOnly(True)
-        self.decide_output.setMaximumHeight(80)
-        self.decide_output.setFont(QFont("Consolas", 10))
-        decide_layout.addWidget(self.decide_output)
-
-        right.addWidget(decide_group)
 
         # ── 左栏（续）──
 
@@ -455,67 +410,18 @@ class DebugWindow(QWidget):
         if kwargs:
             params += f" {', '.join(f'{k}={v}' for k, v in kwargs.items())}"
         self._log(f"Agent → action: {action}{params}")
-        self.decide_output.append(f"Action: {action}{params}")
 
     def _on_agent_speech(self, text: str, duration: int):
         self._log(f"Agent → speech: \"{text[:50]}\"")
-        self.chat_output.append(f"<<< {text}")
 
     def _test_chat_think(self):
         prompt = self.chat_input.text().strip()
         if not prompt:
             return
-        self._log(f"chat.think(\"{prompt[:40]}\")")
-        self.chat_output.append(f">>> {prompt}")
+        self._log(f"chat.send(\"{prompt[:40]}\")")
+        self.chat_input.clear()
         if self.agent:
-            self.agent.trigger("think", prompt=prompt)
-        else:
-            reply = self.brain.think(prompt)
-            self.chat_output.append(f"<<< {reply}")
-
-    def _test_decide(self):
-        self._log("behavior.decide()")
-        self.decide_output.clear()
-        if self.agent:
-            self.agent.trigger("decide")
-        else:
-            result = self.brain.decide()
-            action_str = result.actions[0].name if result.actions else "none"
-            self._log(f"  ↳ action={action_str}, speech={result.speech}")
-            self.decide_output.append(f"Action: {action_str}")
-            self.decide_output.append(f"Speech: {result.speech or '(none)'}")
-
-    def _test_vision_decide(self):
-        self._log("behavior.decide_with_vision()")
-        self.decide_output.clear()
-        # Hide debug window before capture
-        self.hide()
-        screenshot = self.screen_reader.capture_fullscreen()
-        self.show()
-        if screenshot is None:
-            self._log("⚠ 截图失败")
-            self.decide_output.append("截图失败")
-            return
-        w, h = screenshot.size
-        self._log(f"截图成功: {w}×{h}")
-        if self.agent:
-            self.agent.trigger("decide_with_vision", image=screenshot, context="")
-        else:
-            result = self.brain.decide_with_vision(screenshot, "")
-            action_str = result.actions[0].name if result.actions else "none"
-            self._log(f"  ↳ action={action_str}, speech={result.speech}")
-            self.decide_output.append(f"Action: {action_str}")
-            self.decide_output.append(f"Speech: {result.speech or '(none)'}")
-
-    def _toggle_tick(self, enabled: bool):
-        if not self.agent:
-            return
-        if enabled:
-            self.agent.scheduler.start()
-            self._log("Tick: ON")
-        else:
-            self.agent.scheduler.stop()
-            self._log("Tick: OFF")
+            self.agent.trigger("chat", message=prompt)
 
     def _chat_add_context(self):
         text = self.chat_input.text().strip()
@@ -557,7 +463,7 @@ class DebugWindow(QWidget):
         self.view_output.clear()
         self.view_output.append("分析中...")
         if self.agent:
-            self.agent.trigger("view", image=self._last_screenshot, prompt=prompt)
+            self.agent.analyze_view(image=self._last_screenshot, prompt=prompt)
         else:
             reply = self.view_brain.analyze(self._last_screenshot, prompt)
             self._on_view_ready(reply)

@@ -2,6 +2,7 @@ import base64
 from datetime import datetime
 import io
 import logging
+import threading
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -29,24 +30,18 @@ class BehaviorOutput:
     speech: Optional[str] = None
     speech_streamed: bool = False
     summary: Optional[str] = None
+    memory_line: Optional[str] = None
 
 
 class Behavior(BrainMixin):
 
-    def __init__(self):
+    def __init__(self, memory_store=None):
         super().__init__()
         self._client = None
         self._model = None
+        self._lock = threading.RLock()
+        self._memory_store = memory_store
         self._setup()
-
-        self._responses = {
-            "idle": [
-                "Just hanging out...",
-                "What a nice day!",
-                "Watching you work is fun!",
-            ],
-        }
-        self._idx = 0
 
         self._actions = ACTION_NAMES
 
@@ -219,6 +214,7 @@ class Behavior(BrainMixin):
         actions: list = []
         speech = None
         summary = None
+        memory_line = None
         for line in content.split("\n"):
             line = line.strip()
             if not line:
@@ -235,11 +231,13 @@ class Behavior(BrainMixin):
                     speech = raw
             elif lower.startswith("summary:"):
                 summary = line.split(":", 1)[1].strip()
+            elif lower.startswith("memory:") and memory_line is None:
+                memory_line = line.split(":", 1)[1].strip()
         if not actions:
             actions.append(ActionStep("idle"))
-        return BehaviorOutput(actions=actions, speech=speech, summary=summary)
+        return BehaviorOutput(actions=actions, speech=speech, summary=summary, memory_line=memory_line)
 
-    def _finish_line(self, buffer, actions, speech_parts, skill_lines, summary_holder=None):
+    def _finish_line(self, buffer, actions, speech_parts, skill_lines, summary_holder=None, memory_holder=None):
         """归档一个完成的行。"""
         line = buffer.strip()
         if not line:
@@ -256,6 +254,9 @@ class Behavior(BrainMixin):
         elif lower.startswith("summary:"):
             if summary_holder is not None:
                 summary_holder.append(line.split(":", 1)[1].strip())
+        elif lower.startswith("memory:"):
+            if memory_holder is not None:
+                memory_holder.append(line.split(":", 1)[1].strip())
 
     def _parse_action_line(self, raw: str) -> ActionStep | None:
         parts = raw.split()
@@ -345,6 +346,10 @@ class Behavior(BrainMixin):
         context_str = self._build_context_str(context)
         if vision:
             system_content = self._append_personality(prompts.vision_system_prompt())
+            if self._memory_store:
+                memory_text = self._memory_store.retrieve_context("")
+                if memory_text:
+                    system_content += f"\n\n[你对主人的记忆]\n{memory_text}"
             text_prompt = prompts.vision_decide_prompt(context_str)
             if config.VISION_PROMPT_EXTRA:
                 text_prompt += "\n\n" + config.VISION_PROMPT_EXTRA.replace("{context}", context_str)
@@ -357,6 +362,10 @@ class Behavior(BrainMixin):
             ]
         else:
             system_content = self._append_personality(prompts.non_vision_system_prompt())
+            if self._memory_store:
+                memory_text = self._memory_store.retrieve_context("")
+                if memory_text:
+                    system_content += f"\n\n[你对主人的记忆]\n{memory_text}"
             prompt = prompts.non_vision_decide_prompt(context_str)
             if config.NON_VISION_PROMPT_EXTRA:
                 prompt += "\n\n" + config.NON_VISION_PROMPT_EXTRA.replace("{context}", context_str)
@@ -365,15 +374,27 @@ class Behavior(BrainMixin):
                 {"role": "user", "content": prompt},
             ]
 
-    def _build_chat_messages(self, user_message: str, context: str) -> list:
+    def _build_chat_messages(self, user_message: str, context: str, base64_img: str = None) -> list:
         self._trim_history()
         system_content = self._append_personality(prompts.chat_decide_system_prompt())
+        if self._memory_store:
+            memory_text = self._memory_store.retrieve_context(user_message)
+            if memory_text:
+                system_content += f"\n\n[你对主人的记忆]\n{memory_text}"
         history = ""
         if self._context:
             recent = self._context[-9:-1] if len(self._context) > 1 else []
             if recent:
                 history = "\n\n=== 近期对话/行为记录 ===\n" + "\n".join(recent)
         user_content = prompts.chat_decide_user_prompt(user_message, context + history)
+        if base64_img:
+            return [
+                {"role": "system", "content": system_content},
+                {"role": "user", "content": [
+                    {"type": "text", "text": user_content},
+                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_img}"}},
+                ]},
+            ]
         return [
             {"role": "system", "content": system_content},
             {"role": "user", "content": user_content},
@@ -390,6 +411,7 @@ class Behavior(BrainMixin):
             speech_parts = []
             skill_lines = []
             summary_holder = []
+            memory_holder = []
             speech_streamed = False
             line_type = None
             speech_prefix_consumed = False
@@ -402,7 +424,7 @@ class Behavior(BrainMixin):
                 delta_speech = ""
                 for char in delta:
                     if char == "\n":
-                        self._finish_line(buffer, actions, speech_parts, skill_lines, summary_holder)
+                        self._finish_line(buffer, actions, speech_parts, skill_lines, summary_holder, memory_holder)
                         buffer = ""
                         line_type = None
                         speech_prefix_consumed = False
@@ -420,6 +442,8 @@ class Behavior(BrainMixin):
                                 line_type = "skill"
                             elif lower.startswith("summary:"):
                                 line_type = "summary"
+                            elif lower.startswith("memory:"):
+                                line_type = "memory"
                             elif len(stripped) >= 8:
                                 line_type = "other"
 
@@ -439,7 +463,7 @@ class Behavior(BrainMixin):
 
             # 最后一行
             if buffer.strip():
-                self._finish_line(buffer, actions, speech_parts, skill_lines, summary_holder)
+                self._finish_line(buffer, actions, speech_parts, skill_lines, summary_holder, memory_holder)
 
             # Skill 调用 → 二次非流式调用
             if skill_lines:
@@ -468,6 +492,7 @@ class Behavior(BrainMixin):
                 speech=" ".join(speech_parts),
                 speech_streamed=speech_streamed,
                 summary=summary_holder[0] if summary_holder else None,
+                memory_line=memory_holder[0] if memory_holder else None,
             )
 
         except Exception as e:
@@ -478,8 +503,14 @@ class Behavior(BrainMixin):
         """流式决策（无视觉）。"""
         if not self._client:
             return self._decide_local()
-        messages = self._build_decide_messages(context, vision=False)
-        return self._stream_and_parse(messages, on_chunk=on_chunk, on_stream_end=on_stream_end, tag="decide_stream")
+        if not self._lock.acquire(timeout=0.5):
+            logger.warning("[Behavior] decide_stream: busy, skip")
+            return self._decide_local()
+        try:
+            messages = self._build_decide_messages(context, vision=False)
+            return self._stream_and_parse(messages, on_chunk=on_chunk, on_stream_end=on_stream_end, tag="decide_stream")
+        finally:
+            self._lock.release()
 
     def decide_with_vision_stream(self, image: Image.Image, context: str, on_chunk=None, on_stream_end=None) -> BehaviorOutput:
         """流式决策（含视觉截图）。"""
@@ -504,13 +535,32 @@ class Behavior(BrainMixin):
             speech=f"（听到了：{user_message[:10]}...但我还不会回应）",
         )
 
-    def chat_decide_stream(self, user_message: str, context: str, on_chunk=None, on_stream_end=None) -> BehaviorOutput:
-        """流式对话决策。"""
+    def chat_decide_stream(self, user_message: str, context: str, image=None, on_chunk=None, on_stream_end=None) -> BehaviorOutput:
+        """流式对话决策（可选视觉截图）。"""
         if not self._client:
             return self._chat_decide_local(user_message)
-        messages = self._build_chat_messages(user_message, context)
-        self._dump_context("chat_stream", messages)
+        if not self._lock.acquire(timeout=5):
+            logger.warning("[Behavior] chat_decide_stream: busy, timeout")
+            return BehaviorOutput(
+                actions=[ActionStep("look_around", kwargs={"duration": 5})],
+                speech="\u5514\u2026\u2026\u7b49\u4e00\u4e0b\uff0c\u6211\u8fd8\u5728\u60f3\u2026\u2026",
+            )
         try:
+            # 处理截图：缩放 + 编码
+            base64_img = None
+            if image is not None and self.has_vision:
+                scale = config.VISION_SCALE
+                if scale < 1.0:
+                    w, h = image.size
+                    new_w, new_h = int(w * scale), int(h * scale)
+                    MIN_PX = 1536
+                    if max(new_w, new_h) < MIN_PX:
+                        ratio = MIN_PX / max(new_w, new_h)
+                        new_w, new_h = int(new_w * ratio), int(new_h * ratio)
+                    image = image.resize((new_w, new_h), Image.LANCZOS)
+                base64_img = self._encode_base64(image)
+            messages = self._build_chat_messages(user_message, context, base64_img=base64_img)
+            self._dump_context("chat_stream", messages)
             stream = self._llm_call_stream(messages)
             full_content = ""
             line_buffer = ""
@@ -575,60 +625,8 @@ class Behavior(BrainMixin):
                 actions=[ActionStep("look_around", kwargs={"duration": 5})],
                 speech="喔...我好像没听清",
             )
-
-    def decide_action(self, context: str = "") -> str:
-        result = self.decide(context)
-        return result.actions[0].name if result.actions else "idle"
-
-    def think(self, prompt: str) -> str:
-        t = datetime.now().strftime("%H:%M:%S")
-        logger.info(f"[{t}] [Behavior] think(prompt={prompt[:50]})")
-        if self._client:
-            reply = self._think_remote(prompt)
-        else:
-            reply = self._think_local(prompt)
-        logger.info(f"[{t}] [Behavior] think → \"{reply[:60]}\"")
-        return reply
-
-    def _think_remote(self, prompt: str) -> str:
-        t = datetime.now().strftime("%H:%M:%S")
-        logger.info(f"[{t}] [Behavior] === LLM REQUEST (think) ===")
-        logger.info(f"[{t}] [Behavior]   model: {self._model}, ctx_len={len(self._context)}")
-        system_content = self._append_personality(config.CHAT_PROMPT_SYSTEM)
-        messages = [
-            {"role": "system", "content": system_content},
-        ]
-        # 仅保留最近 10 条历史，避免上下文窗口溢出
-        self._trim_history()
-        for ctx in self._context:
-            messages.append({"role": "user", "content": ctx})
-        messages.append({"role": "user", "content": prompt})
-        self._dump_context("think", messages)
-
-        try:
-            response = self._llm_call(messages)
-        except Exception as e:
-            logger.error(f"[Behavior] think failed after retries: {type(e).__name__}: {e}")
-            return "抱歉，我现在脑子有点转不过来..."
-        content = response.choices[0].message.content or ""
-        logger.info(f"[{t}] [Behavior] === LLM RESPONSE ===")
-        logger.info(f"[{t}] [Behavior]   finish_reason: {response.choices[0].finish_reason}")
-        if hasattr(response, 'usage') and response.usage:
-            logger.info(f"[{t}] [Behavior]   usage: {response.usage}")
-        logger.debug(f"[{t}] [Behavior]   raw: {content}")
-        return content
-
-    def _think_local(self, prompt: str) -> str:
-        t = datetime.now().strftime("%H:%M:%S")
-        reply = self._rotate("idle")
-        logger.info(f"[{t}] [Behavior] _think_local → \"{reply}\"")
-        return reply
-
-    def _rotate(self, key: str) -> str:
-        responses = self._responses.get(key, ["Hmm..."])
-        resp = responses[self._idx % len(responses)]
-        self._idx += 1
-        return resp
+        finally:
+            self._lock.release()
 
     def chat_decide(self, user_message: str, context: str = "") -> BehaviorOutput:
         """用户对话模式：接收用户消息，结合屏幕上下文，输出动作+语音。"""
