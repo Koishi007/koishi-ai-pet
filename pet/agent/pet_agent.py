@@ -131,22 +131,26 @@ class PetAgent(QObject):
 
     def _on_mid_tick(self):
         ts = datetime.now().strftime("%H:%M:%S")
-        if not self.state_machine.can_decide:
+        from pet.agent.state import PetState
+        # 原子化：检查 can_decide + 转移到 TALKING 一步完成，消除竞态窗口
+        if not self.state_machine.try_transition(PetState.TALKING):
             logger.info(f"[{ts}] [PetAgent] [mid_tick] skipped (state={self.state_machine.state.value})")
             return
+        self.state_changed.emit(PetState.TALKING.value)
 
         image = self.screen_reader.capture_fullscreen()
-        if image:
-            # 锁定状态，阻止并发 chat
-            from pet.agent.state import PetState
-            self.state_machine.transition(PetState.TALKING)
-            self.state_changed.emit(PetState.TALKING.value)
-            # 主线程获取桌宠屏幕坐标，供后台线程计算窗口相对距离
-            pet_x, pet_y = 0, 0
-            if self._pet_window:
-                pet_x = self._pet_window.x()
-                pet_y = self._pet_window.y()
-            self._async_brain(self._decide_pipeline, image, pet_x, pet_y)
+        if not image:
+            # 截图失败，回退状态
+            self.state_machine.transition(PetState.IDLE)
+            self.state_changed.emit(PetState.IDLE.value)
+            return
+
+        # 主线程获取桌宠屏幕坐标，供后台线程计算窗口相对距离
+        pet_x, pet_y = 0, 0
+        if self._pet_window:
+            pet_x = self._pet_window.x()
+            pet_y = self._pet_window.y()
+        self._async_brain(self._decide_pipeline, image, pet_x, pet_y)
 
     def _on_fast_tick(self):
         pass
@@ -207,10 +211,7 @@ class PetAgent(QObject):
                 self.speak_stream_end.emit(5000)
                 stream_started = False
 
-        if self.behavior.has_vision:
-            result = self.behavior.decide_with_vision_stream(image, context, on_chunk=on_chunk, on_stream_end=on_stream_end)
-        else:
-            result = self.behavior.decide_stream(context, on_chunk=on_chunk, on_stream_end=on_stream_end)
+        result = self.behavior.decide_stream(context, image=image, on_chunk=on_chunk, on_stream_end=on_stream_end)
 
         if stream_started:
             self.speak_stream_end.emit(5000)
@@ -252,13 +253,19 @@ class PetAgent(QObject):
 
             direction = "右" if dx_walk > 0 else "左"
             dist = abs(dx_walk)
-            reachable = "可跳" if abs(dy_top) < 800 else "需攀爬"
+            jump_px = abs(dy_top)
+            if jump_px <= 500:
+                reachable = "可跳"
+            elif jump_px <= 900:
+                reachable = "勉强可跳"
+            else:
+                reachable = "禁止跳跃（距离过高）"
 
             valid += 1
             lines.append(
                 f"{valid}. \"{title}\" ｜ "
                 f"范围: 左{left} 上{top} 右{right} 下{bottom} (宽{w} 高{h}) ｜ "
-                f"相对桌宠: {direction}走{dist}px, 上跳{abs(dy_top)}px 到窗口顶 "
+                f"相对桌宠: {direction}走{dist}px, 上跳{jump_px}px 到窗口顶 "
                 f"({reachable})"
             )
 

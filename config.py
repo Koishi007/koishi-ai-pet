@@ -17,7 +17,7 @@ class Config:
     OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
 
     BRAIN = os.getenv("BRAIN", "local")                  # local / llm / ollama
-    LLM_MODEL = os.getenv("LLM_MODEL", "deepseek-v4-pro") # 模型名
+    LLM_MODEL = os.getenv("LLM_MODEL", "") # 模型名
     LLM_KEY = os.getenv("LLM_KEY", "")                   # API Key
     LLM_URL = os.getenv("LLM_URL", "")                   # API 地址
 

@@ -98,11 +98,11 @@ class GravitySystem(QObject):
                     self._force_standing_check = False
                     rect = get_window_rect(self._standing_hwnd)
                     if rect is None:
-                        logger.info(f"[Gravity] standing window gone (hwnd={self._standing_hwnd})")
+                        logger.debug(f"[Gravity] standing window gone (hwnd={self._standing_hwnd})")
                         self._standing_hwnd = 0
                         self._cached_effective_bottom = None
                     elif is_window_occluded(self._standing_hwnd, skip_hwnd=int(self._window.winId())):
-                        logger.info(f"[Gravity] standing window occluded (hwnd={self._standing_hwnd})")
+                        logger.debug(f"[Gravity] standing window occluded (hwnd={self._standing_hwnd})")
                         self._standing_hwnd = 0
                         self._cached_effective_bottom = None
                     else:
@@ -113,7 +113,7 @@ class GravitySystem(QObject):
                         feet_r = pet_x + (2 * pet_w) // 3
                         if (feet_l >= rect[2] or feet_r <= rect[0]
                                 or new_top != self._cached_effective_bottom + h):
-                            logger.info(f"[Gravity] standing window moved (hwnd={self._standing_hwnd})")
+                            logger.debug(f"[Gravity] standing window moved (hwnd={self._standing_hwnd})")
                             self._standing_hwnd = 0
                             self._cached_effective_bottom = None
                 if self._cached_effective_bottom is not None:
@@ -146,7 +146,7 @@ class GravitySystem(QObject):
                             continue
                         effective_bottom = landing
                         found_hwnd = win["hwnd"]
-                        logger.info(f"[Gravity] land on: \"{win['title'][:30]}\" top={top}")
+                        logger.debug(f"[Gravity] land on: \"{win['title'][:30]}\" top={top}")
             self._cached_effective_bottom = effective_bottom
             if found_hwnd:
                 self._standing_hwnd = found_hwnd
@@ -179,5 +179,5 @@ class GravitySystem(QObject):
         elif not at_bottom and not self._falling:
             self._falling = True
             self._anim.play("falling")
-            logger.info(f"[Gravity] falling started at y={old_y}, bottom={effective_bottom}")
+            logger.debug(f"[Gravity] falling started at y={old_y}, bottom={effective_bottom}")
             self.falling_started.emit()

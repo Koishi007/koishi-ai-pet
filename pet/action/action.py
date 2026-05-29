@@ -79,16 +79,19 @@ class PetActions(QObject):
         sentinel.setLoopCount(-1)
         sentinel.start()
 
+        def _finish(switch_idle: bool):
+            self.gravity.suppress_idle = False
+            if switch_idle:
+                self._anim.play("idle")
+            sentinel.stop()
+
         def _hop(step: int):
             if step >= total_steps:
-                self.gravity.suppress_idle = False
-                self._anim.play("idle")
-                sentinel.stop()
+                _finish(switch_idle=True)
                 return
             if self.gravity.falling:
-                # 已被重力接管，不覆盖动画
-                self.gravity.suppress_idle = False
-                sentinel.stop()
+                # 已被重力接管，不覆盖动画（gravity 落地时会自行切 idle）
+                _finish(switch_idle=False)
                 return
 
             base_y = self._window.y()
@@ -99,10 +102,9 @@ class PetActions(QObject):
             target = self._clamp_pos(QPoint(to_x, base_y))
             to_x, base_y = target.x(), target.y()
 
-            # 碰到屏幕边缘无法前进，停止后续
+            # 碰到屏幕边缘无法前进：必须切回 idle，否则会卡在 walk 静帧上
             if abs(to_x - from_x) < 10:
-                self.gravity.suppress_idle = False
-                sentinel.stop()
+                _finish(switch_idle=True)
                 return
 
             anim = QPropertyAnimation(self._window, b"pos")
@@ -121,7 +123,12 @@ class PetActions(QObject):
             anim.start()
             self._win_anims.append(anim)
 
-        _hop(0)
+        # 首次 _hop 异步化：确保 walk() 已 return sentinel 给 ActionQueue
+        # 完成 finished 信号连接后，再可能触发 sentinel.stop()。
+        # 否则若起点就在屏幕边缘，_hop(0) 会同步 stop sentinel，
+        # 而 QPropertyAnimation(loopCount=-1) 在 stop 时会同步 emit finished，
+        # 那一刻 ActionQueue 还没连上信号 → 队列永久阻塞 + 桌宠停在 walk 静帧。
+        QTimer.singleShot(0, lambda: _hop(0))
         return sentinel
 
     def fade_in(self, duration=300):

@@ -39,5 +39,11 @@ class StateMachine:
             return True
         return False
 
+    def try_transition(self, new_state: PetState) -> bool:
+        """原子化的 can_decide 检查 + 状态转移"""
+        if not self.can_decide:
+            return False
+        return self.transition(new_state)
+
     def force(self, new_state: PetState):
         self._state = new_state
