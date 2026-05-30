@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QMenu
-from PySide6.QtCore import Qt, QPoint
+from PySide6.QtCore import Qt, QPoint, QDateTime
 from PySide6.QtGui import QMouseEvent, QAction
 from pet.ui.base_window import TransparentWindow
 from pet.ui.pet_animations import PetAnimator
@@ -16,6 +16,7 @@ class PetWindow(TransparentWindow):
         self._agent = None
         self._debug_window = None
         self._app = None
+        self._drag_history: list = []  # [(QPoint, timestamp_ms), ...]
 
     def set_chat_bubble(self, chat_bubble):
         """注入 ChatBubble 引用。"""
@@ -79,6 +80,7 @@ class PetWindow(TransparentWindow):
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton:
             self._grab_local = QPoint(62, 20)
+            self._drag_history.clear()
             if self._chat_bubble:
                 self._chat_bubble.hide_bubble()
             self.pet_actions.gravity.enable(False)
@@ -88,6 +90,37 @@ class PetWindow(TransparentWindow):
         elif event.button() == Qt.MouseButton.RightButton:
             self._show_context_menu(event.globalPosition().toPoint())
 
+    def mouseMoveEvent(self, event: QMouseEvent):
+        if self._grab_local is not None:
+            new_pos = event.globalPosition().toPoint() - self._grab_local
+            self.move(new_pos)
+            now = QDateTime.currentMSecsSinceEpoch()
+            self._drag_history.append((new_pos, now))
+            if len(self._drag_history) > 10:
+                self._drag_history.pop(0)
+
+    def mouseReleaseEvent(self, event: QMouseEvent):
+        if event.button() != Qt.MouseButton.LeftButton or self._grab_local is None:
+            return
+        self._grab_local = None
+        self.action_queue.resume()
+        vx, vy = 0.0, 0.0
+        # 只使用最近 100ms 内的采样帧，过期帧视为停顿（避免释放前停顿导致速度为 0）
+        now = QDateTime.currentMSecsSinceEpoch()
+        recent = [(p, t) for p, t in self._drag_history if now - t <= 150]
+        if len(recent) >= 2:
+            p1, t1 = recent[0]
+            p2, t2 = recent[-1]
+            dt = (t2 - t1) / 1000.0
+            if dt > 0.005:
+                vx = (p2.x() - p1.x()) / dt
+                vy = (p2.y() - p1.y()) / dt
+        self._drag_history.clear()
+        speed = (vx ** 2 + vy ** 2) ** 0.5
+        self.pet_actions.gravity.enable(True)
+        if speed > 80:
+            self.pet_actions.gravity.apply_impulse(vx, vy)
+
     def _show_context_menu(self, pos):
         """右键菜单。"""
         menu = QMenu()
@@ -95,7 +128,7 @@ class PetWindow(TransparentWindow):
         if self._agent:
             # 调度器开关
             scheduler_running = self._agent.scheduler.is_running()
-            toggle_sched = QAction("暂停自动决策" if scheduler_running else "开始自动决策")
+            toggle_sched = QAction("关闭自主行动" if scheduler_running else "开启自主行动")
             toggle_sched.triggered.connect(self._toggle_scheduler)
             menu.addAction(toggle_sched)
 
@@ -136,6 +169,7 @@ class PetWindow(TransparentWindow):
             self._agent.scheduler.stop()
         else:
             self._agent.scheduler.start()
+            self._agent.trigger_once(2000)  # 启动后 2s 即刻触发首次决策
 
     def _show_debug_window(self):
         if self._debug_window is None:
@@ -144,16 +178,6 @@ class PetWindow(TransparentWindow):
         self._debug_window.show()
         self._debug_window.activateWindow()
         self._debug_window.raise_()
-
-    def mouseMoveEvent(self, event: QMouseEvent):
-        if self._grab_local is not None:
-            new_pos = event.globalPosition().toPoint() - self._grab_local
-            self.move(new_pos)
-
-    def mouseReleaseEvent(self, event: QMouseEvent):
-        self._grab_local = None
-        self.action_queue.resume()
-        self.pet_actions.gravity.enable(True)
 
     def _on_falling_started(self):
         self.action_queue.pause()

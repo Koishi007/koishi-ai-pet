@@ -86,10 +86,57 @@ class PetAgent(QObject):
         if config.SCHEDULER_AUTO_START:
             self.scheduler.start()
             logger.info("[PetAgent] scheduler auto-started")
-            # 启动后延迟 5 秒再触发首次决策
-            QTimer.singleShot(5000, self._on_mid_tick)
+            self.trigger_once(5000)
         else:
             logger.info("[PetAgent] scheduler auto-start disabled (SCHEDULER_AUTO_START=false)")
+
+    def trigger_once(self, delay_ms: int = 2000, stream: bool = True,
+                      screenshot: bool = True):
+        """延迟触发一次决策。
+
+        Args:
+            delay_ms:   延迟毫秒数
+            stream:     True 流式（decide_stream），False 非流式（decide）
+            screenshot: True 在定时器触发时自动截图，False 仅用文本上下文
+        """
+        logger.info(f"[PetAgent] trigger_once in {delay_ms}ms (stream={stream}, screenshot={screenshot})")
+
+        def _execute():
+            from pet.agent.state import PetState
+            if not self.state_machine.try_transition(PetState.TALKING):
+                logger.info(f"[PetAgent] trigger_once skipped (state={self.state_machine.state.value})")
+                return
+            self.state_changed.emit(PetState.TALKING.value)
+
+            image = None
+            if screenshot:
+                image = self.screen_reader.capture_fullscreen()
+                if not image:
+                    self.state_machine.transition(PetState.IDLE)
+                    self.state_changed.emit(PetState.IDLE.value)
+                    return
+
+            pet_x, pet_y = (self._pet_window.x(), self._pet_window.y()) if self._pet_window else (0, 0)
+
+            if stream:
+                self._async_brain(self._decide_pipeline, image, pet_x, pet_y)
+            else:
+                def _non_stream(img, px, py):
+                    ctx_parts = []
+                    wctx = self._build_window_context(px, py)
+                    if wctx:
+                        ctx_parts.append(wctx)
+                    if config.OCR_ENABLED and img:
+                        try:
+                            ocr = self.ocr_reader.extract_text(img)
+                            if ocr:
+                                ctx_parts.append(f"屏幕文字(OCR): {ocr[:config.OCR_MAX_CHARS]}")
+                        except Exception:
+                            pass
+                    return self.behavior.decide("\n\n".join(ctx_parts), image=img)
+                self._async_brain(_non_stream, image, pet_x, pet_y)
+
+        QTimer.singleShot(delay_ms, _execute)
 
     def stop(self):
         self.scheduler.stop()
