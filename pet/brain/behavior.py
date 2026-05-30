@@ -11,7 +11,6 @@ from openai import OpenAI
 from pet.brain.base import BrainMixin
 from pet.brain import prompts
 from pet.action.registry import ACTION_NAMES
-from pet.agent.screen_reader import ScreenReader
 from config import config
 from pet.brain.llm_retry import llm_retry
 
