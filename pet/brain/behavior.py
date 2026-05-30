@@ -11,6 +11,7 @@ from openai import OpenAI
 from pet.brain.base import BrainMixin
 from pet.brain import prompts
 from pet.action.registry import ACTION_NAMES
+from pet.agent.screen_reader import ScreenReader
 from config import config
 from pet.brain.llm_retry import llm_retry
 
@@ -35,16 +36,13 @@ class BehaviorOutput:
 
 class Behavior(BrainMixin):
 
-    # ══════════════════════════════════════════════════════════════════
-    # 1. Init & Properties
-    # ══════════════════════════════════════════════════════════════════
-
-    def __init__(self, memory_store=None):
+    def __init__(self, memory_store=None, screen_reader=None):
         super().__init__()
         self._client = None
         self._model = None
         self._lock = threading.RLock()
         self._memory_store = memory_store
+        self._screen_reader = screen_reader
         self._setup()
 
         self._actions = ACTION_NAMES
@@ -83,23 +81,19 @@ class Behavior(BrainMixin):
     @property
     def has_vision(self) -> bool:
         return self._client is not None and config.VISION_ENABLED
-
-    # ══════════════════════════════════════════════════════════════════
-    # 2. Public API — 自动决策（mid_tick 调用）
-    # ══════════════════════════════════════════════════════════════════
-
-    def decide(self, context: str = "", image: Optional[Image.Image] = None) -> BehaviorOutput:
-        """非流式自动决策（可选视觉）。
+    
+    def decide(self, context: str = "", screenshot: bool = True) -> BehaviorOutput:
+        """非流式自动决策。
 
         Args:
-            context: OCR/窗口探测等文本上下文
-            image: 屏幕截图（传入且 has_vision=True 时启用视觉模式）
+            context:    窗口探测文本上下文
+            screenshot: True 时内部调用 _prepare_image 截图
         """
         t = datetime.now().strftime("%H:%M:%S")
         if not self._client:
             return self._decide_local()
 
-        base64_img = self._prepare_image(image)
+        base64_img = self._prepare_image() if screenshot else None
         vision = base64_img is not None
         tag = "vision" if vision else "non_vision"
         ctx_preview = context[:60] if context else "(empty)"
@@ -110,14 +104,14 @@ class Behavior(BrainMixin):
         messages = self._build_decide_messages(context, vision=vision, base64_img=base64_img)
         return self._call_llm_and_parse(messages, messages[0]["content"], tag)
 
-    def decide_stream(self, context: str = "", image: Optional[Image.Image] = None,
+    def decide_stream(self, context: str = "", screenshot: bool = True,
                       on_chunk=None, on_stream_end=None) -> BehaviorOutput:
-        """流式自动决策（可选视觉）。
+        """流式自动决策。
 
         Args:
-            context: OCR/窗口探测等文本上下文
-            image: 屏幕截图（传入且 has_vision=True 时启用视觉模式）
-            on_chunk: Speech 逐字回调
+            context:    窗口探测等文本上下文
+            screenshot: True 时内部调用 _prepare_image 截图
+            on_chunk:   Speech 逐字回调
             on_stream_end: 流结束回调
         """
         if not self._client:
@@ -126,7 +120,7 @@ class Behavior(BrainMixin):
             logger.warning("[Behavior] decide_stream: busy, skip")
             return self._decide_local()
         try:
-            base64_img = self._prepare_image(image)
+            base64_img = self._prepare_image() if screenshot else None
             vision = base64_img is not None
             tag = "decide_vision_stream" if vision else "decide_stream"
             messages = self._build_decide_messages(context, vision=vision, base64_img=base64_img)
@@ -134,17 +128,51 @@ class Behavior(BrainMixin):
         finally:
             self._lock.release()
 
-    # ══════════════════════════════════════════════════════════════════
-    # 3. Public API — 用户对话（chat）
-    # ══════════════════════════════════════════════════════════════════
+    def interact_decide(self, event_hint: str) -> BehaviorOutput:
+        """非流式交互事件决策（抟取/释放等即时响应）。"""
+        if not self._client:
+            return self._decide_local()
+        system_content = prompts.interact_system_prompt()
+        messages = [
+            {"role": "system", "content": system_content},
+            {"role": "user", "content": event_hint},
+        ]
+        return self._call_llm_and_parse(messages, system_content, "interact")
 
-    def chat_decide(self, user_message: str, context: str = "", image: Optional[Image.Image] = None) -> BehaviorOutput:
-        """非流式对话决策（可选视觉）。
+    def interact_decide_stream(self, event_hint: str,
+                               on_chunk=None, on_stream_end=None) -> BehaviorOutput:
+        """流式交互事件决策（抟取/释放等即时响应）。
+
+        不走窗口探测、视觉流程，专用 interact_system_prompt，
+        输出简短：Speech + 1-2 个动作。
+        """
+        if not self._client:
+            return self._decide_local()
+        if not self._lock.acquire(timeout=2):
+            logger.warning("[Behavior] interact_decide_stream: busy, skip")
+            return self._decide_local()
+        try:
+            system_content = prompts.interact_system_prompt()
+            messages = [
+                {"role": "system", "content": system_content},
+                {"role": "user", "content": event_hint},
+            ]
+            return self._stream_and_parse(
+                messages, on_chunk=on_chunk, on_stream_end=on_stream_end,
+                tag="interact"
+            )
+        finally:
+            self._lock.release()
+
+
+
+    def chat_decide(self, user_message: str, context: str = "", screenshot: bool = True) -> BehaviorOutput:
+        """非流式对话决策。
 
         Args:
             user_message: 用户输入文本
-            context: OCR/窗口探测等文本上下文
-            image: 屏幕截图（传入且 has_vision=True 时启用视觉模式）
+            context:      窗口探测等文本上下文
+            screenshot:   True 时内部调用 _prepare_image 截图
         """
         t = datetime.now().strftime("%H:%M:%S")
         logger.info(f"[{t}] [Behavior] chat_decide(msg={user_message[:50]}, ctx={context[:30]})")
@@ -152,7 +180,7 @@ class Behavior(BrainMixin):
         if not self._client:
             return self._chat_decide_local(user_message)
 
-        base64_img = self._prepare_image(image)
+        base64_img = self._prepare_image() if screenshot else None
         logger.info(f"[{t}] [Behavior] === LLM REQUEST (chat_decide) ===")
         self._trim_history()
         system_content = self._append_personality(prompts.chat_decide_system_prompt())
@@ -198,15 +226,15 @@ class Behavior(BrainMixin):
                 speech="喔...我好像没听清",
             )
 
-    def chat_decide_stream(self, user_message: str, context: str, image=None,
+    def chat_decide_stream(self, user_message: str, context: str, screenshot: bool = True,
                            on_chunk=None, on_stream_end=None) -> BehaviorOutput:
-        """流式对话决策（可选视觉）。
-
+        """流式对话决策。
+    
         Args:
             user_message: 用户输入文本
-            context: OCR/窗口探测等文本上下文
-            image: 屏幕截图（传入且 has_vision=True 时启用视觉模式）
-            on_chunk: Speech 逐字回调
+            context:      窗口探测等文本上下文
+            screenshot:   True 时内部调用 _prepare_image 截图
+            on_chunk:     Speech 逐字回调
             on_stream_end: 流结束回调
         """
         if not self._client:
@@ -215,10 +243,10 @@ class Behavior(BrainMixin):
             logger.warning("[Behavior] chat_decide_stream: busy, timeout")
             return BehaviorOutput(
                 actions=[ActionStep("look_around", kwargs={"duration": 5})],
-                speech="嗯……等一下，我还在想……",
+                speech="嚎……等一下，我还在想……",
             )
         try:
-            base64_img = self._prepare_image(image)
+            base64_img = self._prepare_image() if screenshot else None
             messages = self._build_chat_messages(user_message, context, base64_img=base64_img)
             self._dump_context("chat_stream", messages)
             stream = self._llm_call_stream(messages)
@@ -287,10 +315,6 @@ class Behavior(BrainMixin):
             )
         finally:
             self._lock.release()
-
-    # ══════════════════════════════════════════════════════════════════
-    # 4. LLM 调用基础设施
-    # ══════════════════════════════════════════════════════════════════
 
     @llm_retry(tag="Behavior")
     def _llm_call(self, messages: list, max_tokens: int = 4000):
@@ -433,10 +457,6 @@ class Behavior(BrainMixin):
             logger.exception(f"[{tag}] stream failed: {type(e).__name__}: {e}")
             return self._decide_local()
 
-    # ══════════════════════════════════════════════════════════════════
-    # 5. Message 构建
-    # ══════════════════════════════════════════════════════════════════
-
     def _build_decide_messages(self, context: str, vision: bool = False, base64_img: str = None) -> list:
         self._trim_history()
         context_str = self._build_context_str(context)
@@ -495,11 +515,7 @@ class Behavior(BrainMixin):
             {"role": "system", "content": system_content},
             {"role": "user", "content": user_content},
         ]
-
-    # ══════════════════════════════════════════════════════════════════
-    # 6. 响应解析
-    # ══════════════════════════════════════════════════════════════════
-
+        
     def _parse_behavior(self, content: str) -> BehaviorOutput:
         actions: list = []
         speech = None
@@ -575,10 +591,6 @@ class Behavior(BrainMixin):
                 args.append(token)
         return ActionStep(name, tuple(args), kwargs)
 
-    # ══════════════════════════════════════════════════════════════════
-    # 7. Skill 执行
-    # ══════════════════════════════════════════════════════════════════
-
     def _execute_with_skills(self, first_content: str, system_content: str, on_chunk=None,
                              max_rounds: int = 3) -> BehaviorOutput:
         """多轮工具调用循环。
@@ -626,7 +638,7 @@ class Behavior(BrainMixin):
             try:
                 if on_chunk:
                     # 流式调用：Speech 逐字推送，返回原始文本供下轮检测 Skill
-                    current_content = self._stream_collect(messages, on_chunk=on_chunk, tag=tag)
+                    current_content = self._stream_text_raw(messages, on_chunk=on_chunk, tag=tag)
                 else:
                     resp = self._llm_call(messages)
                     current_content = resp.choices[0].message.content or ""
@@ -640,10 +652,12 @@ class Behavior(BrainMixin):
         logger.warning(f"[Behavior] reached MAX_ROUNDS={max_rounds}, force terminate skill loop")
         return self._parse_behavior(current_content)
 
-    def _stream_collect(self, messages: list, on_chunk=None, tag: str = "") -> str:
-        """流式调用 LLM，Speech 行逐字推送给 on_chunk，返回完整原始文本。
+    def _stream_text_raw(self, messages: list, on_chunk=None, tag: str = "") -> str:
+        """流式调用 LLM，返回完整原始文本。
 
-        不做 Skill 检测，仅负责“收集 + 推送”，以便在多轮循环中复用。
+        与 _stream_and_parse 的区别：不做行类型解析（Action/Skill/Summary），
+        仅实时推送 Speech 内容并归集原始文本。
+        专为 _execute_with_skills 多轮循环内的中间轮设计，避免递归触发 Skill 检测。
         """
         stream = self._llm_call_stream(messages)
         full_content = ""
@@ -690,11 +704,6 @@ class Behavior(BrainMixin):
         logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] [Behavior]   raw: {full_content}")
         return full_content
 
-    # ══════════════════════════════════════════════════════════════════
-    # 8. Local Fallback
-    # ══════════════════════════════════════════════════════════════════
-
-    # local 模式安全动作池（排除 fade_in/fade_out/bounce 等需配对或参数精确的动作）
     _LOCAL_ACTIONS = [
         ("idle", "Just hanging out..."),
         ("walk", "Time to stretch my legs!"),
@@ -731,38 +740,17 @@ class Behavior(BrainMixin):
             speech=f"（听到了：{user_message[:10]}...但我还不会回应）",
         )
 
-    # ══════════════════════════════════════════════════════════════════
-    # 9. 内部工具方法
-    # ══════════════════════════════════════════════════════════════════
+    def _prepare_image(self) -> Optional[str]:
+        """内部截图 + 缩放 + base64 编码入口。
 
-    def _prepare_image(self, image: Optional[Image.Image]) -> Optional[str]:
-        """统一的图片预处理：缩放 + base64 编码。
-
-        Returns:
-            base64 编码字符串，或 None（无图/不支持视觉时）
+        检查 has_vision，通过 screen_reader.prepare_image 完成全流程。
         """
-        if image is None or not self.has_vision:
+        if not self.has_vision or not self._screen_reader:
             return None
-        scale = config.VISION_SCALE
-        if scale < 1.0:
-            w, h = image.size
-            new_w, new_h = int(w * scale), int(h * scale)
-            MIN_PX = 1536
-            if max(new_w, new_h) < MIN_PX:
-                ratio = MIN_PX / max(new_w, new_h)
-                new_w, new_h = int(new_w * ratio), int(new_h * ratio)
-            t = datetime.now().strftime("%H:%M:%S")
-            logger.info(f"[{t}] [Behavior] resize image {w}x{h} (scale={scale}) → {new_w}x{new_h}")
-            image = image.resize((new_w, new_h), Image.LANCZOS)
-        return self._encode_base64(image)
-
-    def _encode_base64(self, image: Image.Image) -> str:
-        buffer = io.BytesIO()
-        image.save(buffer, format="PNG")
-        return base64.b64encode(buffer.getvalue()).decode("utf-8")
+        return self._screen_reader.prepare_image(vision_scale=config.VISION_SCALE)
 
     def _build_context_str(self, context: str) -> str:
-        """合并 OCR 上下文 + 近期行为历史（排除最近一条）。"""
+        """近期行为历史（排除最近一条）。"""
         ctx = context or "no context"
         if len(self._context) > 1:
             ctx += f"\nRecent: {', '.join(self._context[-6:-1])}"

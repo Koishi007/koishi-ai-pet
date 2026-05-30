@@ -2,6 +2,7 @@
 
 from pet.action.registry import generate_action_section
 from pet.skills.registry import SKILL_REGISTRY
+from config import config
 
 
 # ── 窗口互动指南（两个模式共用）──
@@ -85,23 +86,27 @@ importance 评分标准：
 
 不需要记忆时不输出此行。一次最多输出1条Memory行。"""
 
+INTERACT_GRABBED = (
+    "用户正用鼠标把你抓起来"
+    "用一句话（不超过 15 字）根据你的人格表达被抓住的小反应，"
+)
+
+INTERACT_RELEASED = (
+    "用户刚刚把你放开了，你可以自由走动了。"
+    "用一句话（不超过 15 字）表达重获自由的感觉，"
+)
+
 
 def non_vision_system_prompt() -> str:
-    """自动-纯文本模式的系统提示词。"""
+    """自动-无视觉模式的系统提示词。"""
     actions = generate_action_section()
     return (
         "你是桌面宠物。你能行走、跳跃、坐下、睡觉、张望、伸展、淡入淡出。"
         "每次输出完整的动作序列（约30秒），禁止单个动作。"
-        "\n\n=== 感知能力 ==="
-        "\n你能通过 OCR 读取屏幕文字。"
-        "用户消息中的「屏幕文字(OCR):」字段是当前屏幕的 OCR 识别结果"
-        "（可能为空，表示未识别到文字）。"
-        "\n\n=== 纯文本模式行为指南 ==="
-        "\n你无法看到屏幕，只能依赖 OCR 文字来感知窗口内容。"
-        "\n- OCR 有文字 → 基于文字内容推测窗口类型，决定互动方式"
-        "\n- OCR 为空 → 可能是桌面或全屏应用，巡视、休息、探索"
+        "\n\n=== 非视觉模式行为指南 ==="
+        "\n你无法看到屏幕，仅能依据窗口探测数据感知环境。"
         "\n- walk 方向可以随机选择，不需要精确坐标"
-        "\n- 不要在纯文本模式下使用 bounce（你看不到窗口位置）"
+        "\n- 不要在非视觉模式下使用 bounce（你看不到窗口位置）"
         f"\n\n{_WINDOW_GUIDE}"
         f"\n\n{actions}"
         f"\n\n{_COMMON_TAIL}"
@@ -115,10 +120,6 @@ def vision_system_prompt() -> str:
     return (
         "你是桌面宠物。你能看到用户的屏幕截图。"
         "每次输出完整的动作序列（约30秒），禁止单个动作。"
-        "\n\n=== 双重感知系统 ==="
-        "\n你同时拥有两种感知能力："
-        "\n1. 视觉截图：直观看到屏幕内容、窗口布局、自己的位置"
-        "\n2. OCR 文字：用户消息中的「屏幕文字(OCR):」字段是截图中的 OCR 识别结果"
         "\n\n=== 视觉模式行为指南 ==="
         "\n- 优先参考「窗口探测」数据（系统 API 精确坐标），截图仅作视觉确认"
         "\n- 先在截图中找到自己的形象（约125×125px），确认位置是否与探测数据一致"
@@ -136,23 +137,23 @@ def vision_system_prompt() -> str:
 
 
 def non_vision_decide_prompt(context: str) -> str:
-    """自动-纯文本模式的决策提示。"""
+    """自动-非视觉模式的决策提示。"""
     has_content = context and not context.startswith("no context")
     if has_content:
         return (
             f"{context}\n\n"
-            "根据 OCR 内容和你的性格，输出完整的动作序列。"
-            "用你的人格语气评论屏幕内容。"
-            "纯文本模式下不要使用 bounce，walk 方向可以随机。"
+            "根据窗口探测数据和你的性格，输出完整的动作序列。"
+            "用你的人格语气评论窗口内容。"
+            "walk 方向可以随机，不要使用 bounce。"
             "避免重复 Recent 中的行为。"
         )
     else:
         return (
             f"{context}\n\n"
-            "当前没有检测到屏幕文字。"
+            "当前无窗口信息。"
             "根据你的性格和直觉，输出完整的动作序列。"
             "可以巡视桌面、找个地方坐下、或者伸个懒腰。"
-            "纯文本模式下不要使用 bounce，walk 方向可以随机。"
+            "walk 方向可以随机，不要使用 bounce。"
             "避免重复 Recent 中的行为。"
         )
 
@@ -183,7 +184,7 @@ def chat_decide_system_prompt() -> str:
         "\n- 用户可能给你指令（如「跳到那个窗口上」「往右走」「坐下休息」）→ 生成对应动作"
         "\n- 用户可能和你闲聊（如「你在干嘛」「今天好累」）→ 用语言回应 + 配合表情动作"
         "\n- 用户可能让你使用skill，如「我想知道系统的内存使用率」 → 在可用技能查找对应技能并使用"
-        "\n- 用户可能让你评论屏幕内容 → 参考 OCR/窗口数据回应"
+        "\n- 用户可能让你评论屏幕内容 → 参考窗口探测数据回应"
         "\n- 如果用户指令涉及具体方向/距离，参考「窗口探测」数据精确执行"
         "\n- 如果用户没有具体动作指令，可以自由选择 1-2 个配合语境的动作"
         f"\n\n{actions}"
@@ -234,3 +235,25 @@ def skill_result_user_prompt(skill_results: str) -> str:
         "  Action: <动作名>\n"
         "避免重复调用相同参数的技能。若上轮返回 ‗ 参数错误 ‘，请读并修正后重试。"
     )
+
+
+
+
+
+def interact_system_prompt() -> str:
+    """鼠标交互事件模式系统提示词。"""
+    actions = generate_action_section()
+    return (
+        "你是桌面宠物，用户刚刚对你做了某个动作，你需要即时做出自然反应。\n"
+        "这是一个即时反应场景，不需要复杂规划和长篇分析。\n\n"
+        f"{actions}\n\n"
+        "=== 输出格式 ===\n"
+        "Summary: <10字内简述发生了什么>\n"
+        "Speech: <即时反应，不超过 15 字>\n"
+        "Action: <1-2 个动作>\n\n"
+        "=== 约束 ===\n"
+        "1. Speech 简短（≤ 20 字），是本能反应而非分析，风格由你的个性决定\n"
+        "2. 只输出1-2个Action\n"
+        "3. 禁止输出 Skill 行\n"
+        "4. 完全由你的个性决定反应方式"
+    ) + (f"\n\n=== 你的性格 ===\n{config.PET_PERSONALITY}" if config.PET_PERSONALITY else "")

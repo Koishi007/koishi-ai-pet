@@ -8,6 +8,5 @@ python-dotenv>=1.0.0
 mss>=9.0.0
 Pillow>=10.0.0
 numpy>=1.24.0
-easyocr>=1.7.0
 tenacity>=8.2.0
 jieba>=0.42.1

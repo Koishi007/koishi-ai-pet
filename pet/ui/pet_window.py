@@ -4,6 +4,7 @@ from PySide6.QtGui import QMouseEvent, QAction
 from pet.ui.base_window import TransparentWindow
 from pet.ui.pet_animations import PetAnimator
 from pet.action import PetActions, ActionQueue
+from pet.brain.prompts import INTERACT_GRABBED, INTERACT_RELEASED
 from config import config
 
 
@@ -17,6 +18,8 @@ class PetWindow(TransparentWindow):
         self._debug_window = None
         self._app = None
         self._drag_history: list = []  # [(QPoint, timestamp_ms), ...]
+        self._PROMPT_GRABBED = INTERACT_GRABBED
+        self._PROMPT_RELEASED = INTERACT_RELEASED
 
     def set_chat_bubble(self, chat_bubble):
         """注入 ChatBubble 引用。"""
@@ -87,6 +90,8 @@ class PetWindow(TransparentWindow):
             self.action_queue.pause()
             self.action_queue.clear()
             self.pet_actions.caught()
+            if self._agent:
+                self._agent.trigger("interact", hint=self._PROMPT_GRABBED)
         elif event.button() == Qt.MouseButton.RightButton:
             self._show_context_menu(event.globalPosition().toPoint())
 
@@ -120,6 +125,8 @@ class PetWindow(TransparentWindow):
         self.pet_actions.gravity.enable(True)
         if speed > 80:
             self.pet_actions.gravity.apply_impulse(vx, vy)
+        if self._agent:
+            self._agent.trigger("interact", hint=self._PROMPT_RELEASED)
 
     def _show_context_menu(self, pos):
         """右键菜单。"""

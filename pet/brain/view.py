@@ -4,7 +4,6 @@ import base64
 from datetime import datetime
 import io
 import logging
-import threading
 import traceback
 
 from PIL import Image
@@ -41,7 +40,9 @@ class View:
         if not self._client:
             return ""
         logger.debug(f"[View.analyze] image={image.size}, prompt=\"{prompt[:50]}\"")
-        base64_img = self._encode_base64(image)
+        buf = io.BytesIO()
+        image.save(buf, format="PNG")
+        base64_img = base64.b64encode(buf.getvalue()).decode("utf-8")
         logger.debug(f"[View.analyze] base64 encoded, length={len(base64_img)}")
         result = self._call_vision_api(base64_img, prompt)
         logger.debug(f"[View.analyze] result=\"{result[:100]}\"")
@@ -56,11 +57,6 @@ class View:
         except Exception:
             traceback.print_exc()
             return ""
-
-    def _encode_base64(self, image: Image.Image) -> str:
-        buffer = io.BytesIO()
-        image.save(buffer, format="PNG")
-        return base64.b64encode(buffer.getvalue()).decode("utf-8")
 
     @llm_retry(tag="View")
     def _llm_call(self, messages: list):
@@ -111,75 +107,4 @@ class View:
         except Exception as e:
             logger.error(f"[{t}] [View] EXCEPTION: {type(e).__name__}: {e}")
             traceback.print_exc()
-            return ""
-
-
-class OcrReader:
-    """EasyOCR 屏幕文字提取 —— 桌宠的基本感知能力。"""
-
-    def __init__(self, languages: list[str] = None, gpu: bool = False):
-        self._languages = languages or ["ch_sim", "en"]
-        self._gpu = gpu
-        self._reader = None
-        self._loading = False          # 后台正在加载标志
-        self._lock = threading.Lock()  # 保护 _loading 读写
-
-    def _get_reader(self):
-        """获取已加载的 reader。首次调用触发模型加载（可被后台预加载）。
-
-        线程安全：后台线程加载时，主线程不会重复触发加载阻塞 UI。
-        """
-        # 快速路径：已加载完成
-        if self._reader is not None:
-            return self._reader
-
-        with self._lock:
-            # 双重检查：获得锁后可能已经被加载
-            if self._reader is not None:
-                return self._reader
-            # 后台正在加载中，主线程返回 None，不阻塞 UI
-            if self._loading:
-                return None
-            self._loading = True
-
-        try:
-            import easyocr
-            self._reader = easyocr.Reader(self._languages, gpu=self._gpu)
-            logger.info(f"[OcrReader] model loaded, languages={self._languages}, gpu={self._gpu}")
-        except ImportError:
-            logger.warning("[OcrReader] easyocr not installed, OCR disabled")
-        except Exception as e:
-            logger.warning(f"[OcrReader] model load failed: {e}")
-        finally:
-            with self._lock:
-                self._loading = False
-        return self._reader
-
-    def extract_text(self, image: Image.Image, min_confidence: float = 0.5) -> str:
-        """从 PIL Image 提取文字，返回拼接后的字符串。失败时返回空串。
-
-        内置过滤：
-          - 置信度低于 min_confidence 的丢弃
-          - 纯符号/单字符非字母数字的丢弃
-        """
-        try:
-            import numpy as np
-            img_array = np.array(image)
-            reader = self._get_reader()
-            if reader is None:
-                return ""
-            results = reader.readtext(img_array, detail=1)
-
-            parts = []
-            for bbox, text, conf in results:
-                if conf < min_confidence:
-                    continue
-                text = text.strip()
-                if len(text) <= 1 and not text.isalnum():
-                    continue
-                parts.append(text)
-
-            return " ｜ ".join(parts)
-        except Exception as e:
-            logger.error(f"[OcrReader] extract failed: {e}")
             return ""

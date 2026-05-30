@@ -5,7 +5,7 @@ from datetime import datetime
 from PySide6.QtCore import QObject, QThread, QThreadPool, QTimer, Signal
 
 from pet.brain.behavior import Behavior, BehaviorOutput
-from pet.brain.view import View, OcrReader
+from pet.brain.view import View
 from pet.agent.scheduler import Scheduler
 from pet.agent.state import StateMachine
 from pet.agent.screen_reader import ScreenReader
@@ -55,11 +55,10 @@ class PetAgent(QObject):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.memory_store = MemoryStore()
-        self.behavior = Behavior(memory_store=self.memory_store)
         self.view_brain = View()
         self.screen_reader = ScreenReader()
         self.screen_reader.enable()
-        self.ocr_reader = OcrReader(languages=config.OCR_LANGUAGES, gpu=config.OCR_GPU)
+        self.behavior = Behavior(memory_store=self.memory_store, screen_reader=self.screen_reader)
         self.scheduler = Scheduler(self)
         self.state_machine = StateMachine()
         self._pet_window = None  # PetWindow 引用，用于获取桌宠当前位置
@@ -72,12 +71,7 @@ class PetAgent(QObject):
         self._worker: BrainWorker | None = None
         self._cancel_flag = False
         self._active_stream_id = 0
-
-        # 后台预加载 OCR 模型，避免首次 mid_tick 卡 UI
-        if config.OCR_ENABLED:
-            QThreadPool.globalInstance().start(
-                lambda: self.ocr_reader._get_reader()
-            )
+        self._last_interact_ms: int = 0  # interact 限频时间戳
 
     def set_pet_window(self, window):
         self._pet_window = window
@@ -108,33 +102,15 @@ class PetAgent(QObject):
                 return
             self.state_changed.emit(PetState.TALKING.value)
 
-            image = None
-            if screenshot:
-                image = self.screen_reader.capture_fullscreen()
-                if not image:
-                    self.state_machine.transition(PetState.IDLE)
-                    self.state_changed.emit(PetState.IDLE.value)
-                    return
-
             pet_x, pet_y = (self._pet_window.x(), self._pet_window.y()) if self._pet_window else (0, 0)
 
             if stream:
-                self._async_brain(self._decide_pipeline, image, pet_x, pet_y)
+                self._async_brain(self._decide_pipeline, pet_x, pet_y)
             else:
-                def _non_stream(img, px, py):
-                    ctx_parts = []
+                def _non_stream(px, py):
                     wctx = self._build_window_context(px, py)
-                    if wctx:
-                        ctx_parts.append(wctx)
-                    if config.OCR_ENABLED and img:
-                        try:
-                            ocr = self.ocr_reader.extract_text(img)
-                            if ocr:
-                                ctx_parts.append(f"屏幕文字(OCR): {ocr[:config.OCR_MAX_CHARS]}")
-                        except Exception:
-                            pass
-                    return self.behavior.decide("\n\n".join(ctx_parts), image=img)
-                self._async_brain(_non_stream, image, pet_x, pet_y)
+                    return self.behavior.decide(wctx or "", screenshot=screenshot)
+                self._async_brain(_non_stream, pet_x, pet_y)
 
         QTimer.singleShot(delay_ms, _execute)
 
@@ -153,7 +129,8 @@ class PetAgent(QObject):
 
     def trigger(self, intent: str, **kwargs):
         handlers = {
-            "chat":  self._trigger_chat,
+            "chat":     self._trigger_chat,
+            "interact": self._trigger_interact,
         }
         handler = handlers.get(intent)
         if handler:
@@ -185,19 +162,12 @@ class PetAgent(QObject):
             return
         self.state_changed.emit(PetState.TALKING.value)
 
-        image = self.screen_reader.capture_fullscreen()
-        if not image:
-            # 截图失败，回退状态
-            self.state_machine.transition(PetState.IDLE)
-            self.state_changed.emit(PetState.IDLE.value)
-            return
-
         # 主线程获取桌宠屏幕坐标，供后台线程计算窗口相对距离
         pet_x, pet_y = 0, 0
         if self._pet_window:
             pet_x = self._pet_window.x()
             pet_y = self._pet_window.y()
-        self._async_brain(self._decide_pipeline, image, pet_x, pet_y)
+        self._async_brain(self._decide_pipeline, pet_x, pet_y)
 
     def _on_fast_tick(self):
         pass
@@ -212,30 +182,12 @@ class PetAgent(QObject):
             logger.info(f"[{ts}] [PetAgent] slow_tick: woke up, emitting stretch")
         self._emit_action("stretch", (), {})
 
-    def _decide_pipeline(self, image, pet_x=0, pet_y=0):
-        """子线程运行：窗口探测 + OCR 提取文字 + LLM 决策"""
-        ts = datetime.now().strftime("%H:%M:%S")
+    def _decide_pipeline(self, pet_x=0, pet_y=0):
+        """窗口探测 + LLM 决策"""
 
         # ── Win32 窗口坐标探测 ──
         window_context = self._build_window_context(pet_x, pet_y)
-
-        # ── OCR ──
-        ocr_text = ""
-        if config.OCR_ENABLED:
-            try:
-                ocr_text = self.ocr_reader.extract_text(image)
-                if ocr_text:
-                    logger.info(f"[{ts}] [PetAgent] OCR({len(ocr_text)} chars): {ocr_text[:100]}")
-            except Exception as e:
-                logger.warning(f"[{ts}] [PetAgent] OCR failed, skipped: {e}")
-
-        # ── 组装 context ──
-        parts = []
-        if window_context:
-            parts.append(window_context)
-        if ocr_text:
-            parts.append(f"屏幕文字(OCR): {ocr_text[:config.OCR_MAX_CHARS]}")
-        context = "\n\n".join(parts) if parts else ""
+        context = window_context if window_context else ""
 
         stream_started = False
         self._active_stream_id += 1
@@ -258,7 +210,7 @@ class PetAgent(QObject):
                 self.speak_stream_end.emit(5000)
                 stream_started = False
 
-        result = self.behavior.decide_stream(context, image=image, on_chunk=on_chunk, on_stream_end=on_stream_end)
+        result = self.behavior.decide_stream(context, screenshot=True, on_chunk=on_chunk, on_stream_end=on_stream_end)
 
         if stream_started:
             self.speak_stream_end.emit(5000)
@@ -329,6 +281,65 @@ class PetAgent(QObject):
             on_error=self._on_view_error,
         )
 
+    def _trigger_interact(self, hint: str = "", delay_ms: int = 500,
+                          cooldown_ms: int = 15000):
+        """交互事件触发：抟取/释放等即时响应，内置限频。
+
+        Args:
+            hint:        事件描述（源自 prompts.py 常量）
+            delay_ms:    延迟毫秒数
+            cooldown_ms: 限频间隔（默认 15s）
+        """
+        if not hint:
+            return
+        # 频率限制
+        from PySide6.QtCore import QDateTime
+        now = QDateTime.currentMSecsSinceEpoch()
+        if now - self._last_interact_ms < cooldown_ms:
+            logger.debug(f"[PetAgent] interact skipped (cooldown, {(now - self._last_interact_ms)//1000}s elapsed)")
+            return
+        self._last_interact_ms = now
+
+        def _execute():
+            from pet.agent.state import PetState
+            if not self.state_machine.try_transition(PetState.TALKING):
+                logger.info(f"[PetAgent] _trigger_interact skipped (state={self.state_machine.state.value})")
+                return
+            self.state_changed.emit(PetState.TALKING.value)
+
+            self._active_stream_id += 1
+            my_stream_id = self._active_stream_id
+            stream_started = False
+
+            def on_chunk(delta: str):
+                nonlocal stream_started
+                if self._cancel_flag or my_stream_id != self._active_stream_id:
+                    return
+                if not stream_started:
+                    self.speak_stream_start.emit()
+                    stream_started = True
+                self.speak_stream_chunk.emit(delta)
+
+            def on_stream_end():
+                nonlocal stream_started
+                if self._cancel_flag or my_stream_id != self._active_stream_id:
+                    return
+                if stream_started:
+                    self.speak_stream_end.emit(4000)
+                    stream_started = False
+
+            def _pipeline():
+                result = self.behavior.interact_decide_stream(
+                    hint, on_chunk=on_chunk, on_stream_end=on_stream_end
+                )
+                if stream_started:
+                    self.speak_stream_end.emit(4000)
+                return result
+
+            self._async_brain(_pipeline)
+
+        QTimer.singleShot(delay_ms, _execute)
+
     def _trigger_chat(self, message: str = ""):
         """用户对话触发：截图+上下文+LLM决策。"""
         from pet.agent.state import PetState
@@ -356,35 +367,17 @@ class PetAgent(QObject):
             self._pet_window.action_queue.clear()
             self._pet_window.pet_actions.thinking()
 
-        # 截图（主线程中执行，避免子线程跨线程问题）
-        image = self.screen_reader.capture_fullscreen()
-
         # 后台执行：构建上下文 + 调用 chat_decide
-        self._async_brain(self._chat_pipeline, message, image, pet_x, pet_y)
+        self._async_brain(self._chat_pipeline, message, pet_x, pet_y)
 
-    def _chat_pipeline(self, message: str, image, pet_x: int, pet_y: int):
+    def _chat_pipeline(self, message: str, pet_x: int, pet_y: int):
         """后台线程：构建上下文 + 对话决策（流式）。"""
         ts = datetime.now().strftime("%H:%M:%S")
         self.behavior.add_context(f"[{ts}] [user] {message}")
 
         # 窗口探测
         window_context = self._build_window_context(pet_x, pet_y)
-
-        # OCR（可选）
-        ocr_text = ""
-        if config.OCR_ENABLED and image:
-            try:
-                ocr_text = self.ocr_reader.extract_text(image)
-            except Exception:
-                pass
-
-        # 组装 context
-        parts = []
-        if window_context:
-            parts.append(window_context)
-        if ocr_text:
-            parts.append(f"屏幕文字(OCR): {ocr_text[:config.OCR_MAX_CHARS]}")
-        context = "\n\n".join(parts) if parts else "当前无特殊环境信息"
+        context = window_context if window_context else "当前无窗口信息"
 
         stream_started = False
         self._active_stream_id += 1
@@ -408,7 +401,7 @@ class PetAgent(QObject):
                 stream_started = False
 
         result = self.behavior.chat_decide_stream(
-            message, context, image=image,
+            message, context, screenshot=True,
             on_chunk=on_chunk, on_stream_end=on_stream_end,
         )
 
