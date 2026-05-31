@@ -296,6 +296,7 @@ class PetAgent(QObject):
         now = QDateTime.currentMSecsSinceEpoch()
         last = self._last_interact_ms.get(hint, 0)
         if now - last < cooldown_ms:
+            logger.info(f"[PetAgent] interact skipped (cooldown, {cooldown_ms - (now - last)}ms remaining)")
             return
         # 立即占位：阻断 delay_ms 期间同一 hint 的重复入队；
         # 若 _execute 状态去重失败，在内部回滚，不消耗 cooldown 窗口。

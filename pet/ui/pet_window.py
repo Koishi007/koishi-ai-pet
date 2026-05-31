@@ -1,3 +1,5 @@
+import logging
+
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QMenu
 from PySide6.QtCore import Qt, QPoint, QDateTime
 from PySide6.QtGui import QMouseEvent, QAction
@@ -6,6 +8,8 @@ from pet.ui.pet_animations import PetAnimator
 from pet.action import PetActions, ActionQueue
 from pet.brain.prompts import INTERACT_GRABBED, INTERACT_RELEASED
 from config import config
+
+logger = logging.getLogger(__name__)
 
 
 class PetWindow(TransparentWindow):
@@ -90,6 +94,7 @@ class PetWindow(TransparentWindow):
             self.action_queue.pause()
             self.action_queue.clear()
             self.pet_actions.caught()
+            logger.info("[PetWindow] grabbed")
             if self._agent:
                 self._agent.trigger("interact", hint=self._PROMPT_GRABBED)
         elif event.button() == Qt.MouseButton.RightButton:
@@ -125,6 +130,7 @@ class PetWindow(TransparentWindow):
         self.pet_actions.gravity.enable(True)
         if speed > 80:
             self.pet_actions.gravity.apply_impulse(vx, vy)
+        logger.info(f"[PetWindow] released speed={speed:.0f}px/s flick={speed > 80}")
         if self._agent:
             self._agent.trigger("interact", hint=self._PROMPT_RELEASED)
 

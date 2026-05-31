@@ -27,7 +27,10 @@ class ScreenReader:
     def disable(self):
         self._enabled = False
         if self._sct:
-            self._sct.close()
+            try:
+                self._sct.close()
+            except Exception:
+                pass
             self._sct = None
         logger.info("屏幕截图已禁用")
 
