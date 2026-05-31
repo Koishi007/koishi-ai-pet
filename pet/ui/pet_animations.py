@@ -10,9 +10,8 @@ _SUPPORTED_EXT = (".png", ".jpg", ".jpeg", ".bmp", ".webp")
 
 
 class PetAnimator(QObject):
-    """桌宠动画控制器"""
 
-    animation_finished = Signal(str)  # 非循环播放完毕时发出
+    animation_finished = Signal(str)
 
     def __init__(self, label: QLabel, pet_dir: str | None = None, parent=None):
         super().__init__(parent)
@@ -34,14 +33,6 @@ class PetAnimator(QObject):
         self._cache: dict[str, list[QPixmap]] = {}
 
     def play(self, action: str, duration: float | None = None) -> bool:
-        """播放指定动作的帧动画。
-
-        Args:
-            action: 动作名称（对应 assets/actions/ 下的子目录）
-            duration: 播放总时长（秒）。
-                None: 无限循环播放，不发 animation_finished 信号
-                > 0: 帧均分时长，单次播完后发 animation_finished 信号
-        """
         frames = self._load_action(action)
         if not frames:
             return False
@@ -62,14 +53,12 @@ class PetAnimator(QObject):
                 interval = self._calc_interval()
             self._frame_timer.start(interval)
         elif self._playing_once:
-            # 单帧 + 有时长：duration 结束后触发 animation_finished
             if duration is not None:
                 self._frame_timer.start(int(duration * 1000))
 
         return True
 
     def _calc_interval(self) -> int:
-        """计算循环播放时的帧间隔（毫秒）。"""
         base_fps = config.PET_FPS
         raw_interval = round(1000 / base_fps)
         if len(self._frames) < base_fps:
@@ -77,15 +66,12 @@ class PetAnimator(QObject):
         return max(1, raw_interval)
 
     def stop(self):
-        """停止帧动画，画面保持在当前帧。"""
         self._frame_timer.stop()
 
     def has_frames(self, action: str) -> bool:
-        """检查指定动作是否有可用帧。"""
         return len(self._load_action(action)) > 0
 
     def available_actions(self) -> list[str]:
-        """返回 pet_dir 下所有有帧图片的动作名称。"""
         if not os.path.isdir(self._pet_dir):
             return []
         actions = []
@@ -134,7 +120,6 @@ class PetAnimator(QObject):
         return frames
 
     def _next_frame(self):
-        """切换到下一帧。"""
         self._current_frame += 1
         if self._current_frame >= len(self._frames):
             if self._loop:

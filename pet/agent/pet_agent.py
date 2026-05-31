@@ -41,7 +41,6 @@ class BrainWorker(QObject):
 
 
 class PetAgent(QObject):
-    """Agent 调度层"""
 
     action_requested = Signal(str, object, object)
     speak_requested  = Signal(str, int)
@@ -61,7 +60,7 @@ class PetAgent(QObject):
         self.behavior = Behavior(memory_store=self.memory_store, screen_reader=self.screen_reader)
         self.scheduler = Scheduler(self)
         self.state_machine = StateMachine()
-        self._pet_window = None  # PetWindow 引用，用于获取桌宠当前位置
+        self._pet_window = None
 
         self.scheduler.mid_tick.connect(self._on_mid_tick)
         self.scheduler.fast_tick.connect(self._on_fast_tick)
@@ -71,7 +70,7 @@ class PetAgent(QObject):
         self._worker: BrainWorker | None = None
         self._cancel_flag = False
         self._active_stream_id = 0
-        self._last_interact_ms: dict[str, int] = {}  # interact 按 hint 独立限频时间戳
+        self._last_interact_ms: dict[str, int] = {}
 
     def set_pet_window(self, window):
         self._pet_window = window
@@ -86,13 +85,6 @@ class PetAgent(QObject):
 
     def trigger_once(self, delay_ms: int = 2000, stream: bool = True,
                       screenshot: bool = True):
-        """延迟触发一次决策。
-
-        Args:
-            delay_ms:   延迟毫秒数
-            stream:     True 流式（decide_stream），False 非流式（decide）
-            screenshot: True 在定时器触发时自动截图，False 仅用文本上下文
-        """
         logger.info(f"[PetAgent] trigger_once in {delay_ms}ms (stream={stream}, screenshot={screenshot})")
 
         def _execute():
@@ -146,7 +138,6 @@ class PetAgent(QObject):
         self.state_changed.emit(st.value)
 
     def _emit_action(self, name: str, args, kwargs):
-        """发射 action_requested 之前统一补上默认 duration，避免循环动作阻塞队列。"""
         kw = dict(kwargs) if kwargs else {}
         if "duration" not in kw and name in DEFAULT_ACTION_DURATIONS:
             kw["duration"] = DEFAULT_ACTION_DURATIONS[name]
@@ -156,13 +147,11 @@ class PetAgent(QObject):
     def _on_mid_tick(self):
         ts = datetime.now().strftime("%H:%M:%S")
         from pet.agent.state import PetState
-        # 原子化：检查 can_decide + 转移到 TALKING 一步完成，消除竞态窗口
         if not self.state_machine.try_transition(PetState.TALKING):
             logger.info(f"[{ts}] [PetAgent] [mid_tick] skipped (state={self.state_machine.state.value})")
             return
         self.state_changed.emit(PetState.TALKING.value)
 
-        # 主线程获取桌宠屏幕坐标，供后台线程计算窗口相对距离
         pet_x, pet_y = 0, 0
         if self._pet_window:
             pet_x = self._pet_window.x()
@@ -183,9 +172,7 @@ class PetAgent(QObject):
         self._emit_action("stretch", (), {})
 
     def _decide_pipeline(self, pet_x=0, pet_y=0):
-        """窗口探测 + LLM 决策"""
 
-        # ── Win32 窗口坐标探测 ──
         window_context = self._build_window_context(pet_x, pet_y)
         context = window_context if window_context else ""
 
@@ -217,14 +204,13 @@ class PetAgent(QObject):
         return result
 
     def _build_window_context(self, pet_x: int, pet_y: int) -> str:
-        """用 Win32 API 枚举可见窗口，生成桌宠可用的跳转参考数据。"""
         try:
             from pet.brain.window_detector import get_visible_windows, is_window_occluded
             windows = get_visible_windows()
         except Exception:
             return ""
 
-        pet_w, pet_h = 125, 125  # 桌宠尺寸
+        pet_w, pet_h = 125, 125
         pet_hwnd = int(self._pet_window.winId()) if self._pet_window else 0
         lines = [f"=== 窗口探测（系统 API，坐标精确） ==="]
         lines.append(f"桌宠位置: 左{pet_x} 上{pet_y} (宽{pet_w} 高{pet_h})")
@@ -236,19 +222,16 @@ class PetAgent(QObject):
             title = win["title"].strip()
             if not title or len(title) > 50:
                 continue
-            # 排除桌宠自身和过小的窗口
             if abs(left - pet_x) < 10 and abs(top - pet_y) < 10 and w == pet_w and h == pet_h:
                 continue
             if w < 200 or h < 100:
                 continue
-            # 跳过被遮挡超过 80% 的窗口（后台线程中运行，不卡 UI）
             if is_window_occluded(win["hwnd"], threshold=0.8, skip_hwnd=pet_hwnd):
                 continue
 
-            # 相对桌宠的距离
-            dx_walk = (left + w // 2) - pet_x           # 走到窗口中心需水平移动
-            dy_top = top - (pet_y + pet_h)                # 跳到窗口顶部需垂直移动（负=向上）
-            dy_bottom = bottom - pet_y                    # 跳到底部
+            dx_walk = (left + w // 2) - pet_x
+            dy_top = top - (pet_y + pet_h)
+            dy_bottom = bottom - pet_y
 
             direction = "右" if dx_walk > 0 else "左"
             dist = abs(dx_walk)
@@ -273,7 +256,6 @@ class PetAgent(QObject):
 
         return "\n".join(lines)
 
-    # 仅供view调试用
     def analyze_view(self, image, prompt: str = ""):
         self._async_brain(
             self.view_brain.analyze, image, prompt,
@@ -281,15 +263,8 @@ class PetAgent(QObject):
             on_error=self._on_view_error,
         )
 
-    def _trigger_interact(self, hint: str = "", delay_ms: int = 500,
+    def _trigger_interact(self, hint: str = "", delay_ms: int = 100,
                           cooldown_ms: int = 15000):
-        """交互事件触发：抟取/释放等即时响应，内置限频。
-
-        Args:
-            hint:        事件描述（源自 prompts.py 常量，同时作为限频 key）
-            delay_ms:    延迟毫秒数
-            cooldown_ms: 限频间隔（默认 15s，按 hint 独立）
-        """
         if not hint:
             return
         from PySide6.QtCore import QDateTime
@@ -298,37 +273,30 @@ class PetAgent(QObject):
         if now - last < cooldown_ms:
             logger.info(f"[PetAgent] interact skipped (cooldown, {cooldown_ms - (now - last)}ms remaining)")
             return
-        # 立即占位：阻断 delay_ms 期间同一 hint 的重复入队；
-        # 若 _execute 状态去重失败，在内部回滚，不消耗 cooldown 窗口。
-        self._last_interact_ms[hint] = now
+        self._last_interact_ms[hint] = now  # 提前占位防同 hint 重复入队，_execute 去重失败时回滚
 
         def _execute():
             from pet.agent.state import PetState
-            # 去重：若已在交互中且线程运行中，回滚时间戳并忽略
             if (self.state_machine.state == PetState.INTERACTING
                     and self._thread and self._thread.isRunning()):
                 self._last_interact_ms[hint] = last
                 logger.info("[PetAgent] interact ignored, already processing")
                 return
 
-            # 若有正在进行的流式，终止
             if self._thread and self._thread.isRunning():
                 self.speak_stream_end.emit(0)
 
             self.state_machine.transition(PetState.INTERACTING)
             self.state_changed.emit(PetState.INTERACTING.value)
 
-            # 清空队列，播放思考动画
             if self._pet_window:
                 self._pet_window.action_queue.clear()
-                self._pet_window.pet_actions.thinking()
 
             self._async_brain(self._interact_pipeline, hint)
 
         QTimer.singleShot(delay_ms, _execute)
 
     def _interact_pipeline(self, hint: str):
-        """后台线程：交互事件流式决策。"""
         stream_started = False
         self._active_stream_id += 1
         my_stream_id = self._active_stream_id
@@ -359,41 +327,33 @@ class PetAgent(QObject):
         return result
 
     def _trigger_chat(self, message: str = ""):
-        """用户对话触发：截图+上下文+LLM决策。"""
         from pet.agent.state import PetState
-        # 去重：若已在交互中且线程运行中，忽略
         if (self.state_machine.state == PetState.INTERACTING
                 and self._thread and self._thread.isRunning()):
             logger.info("[PetAgent] chat request ignored, already processing")
             return
 
-        # 若有正在进行的流式，终止
         if self._thread and self._thread.isRunning():
             self.speak_stream_end.emit(0)
 
         self.state_machine.transition(PetState.INTERACTING)
         self.state_changed.emit(PetState.INTERACTING.value)
 
-        # 获取当前屏幕上下文（在主线程中获取坐标）
         pet_x, pet_y = 0, 0
         if self._pet_window:
             pet_x = self._pet_window.x()
             pet_y = self._pet_window.y()
 
-        # 清空队列，播放思考动画
         if self._pet_window:
             self._pet_window.action_queue.clear()
             self._pet_window.pet_actions.thinking()
 
-        # 后台执行：构建上下文 + 调用 chat_decide
         self._async_brain(self._chat_pipeline, message, pet_x, pet_y)
 
     def _chat_pipeline(self, message: str, pet_x: int, pet_y: int):
-        """后台线程：构建上下文 + 对话决策（流式）。"""
         ts = datetime.now().strftime("%H:%M:%S")
         self.behavior.add_context(f"[{ts}] [user] {message}")
 
-        # 窗口探测
         window_context = self._build_window_context(pet_x, pet_y)
         context = window_context if window_context else "当前无窗口信息"
 
@@ -431,10 +391,8 @@ class PetAgent(QObject):
         fn_name = getattr(fn, "__name__", repr(fn))
         ts = datetime.now().strftime("%H:%M:%S")
         logger.info(f"[{ts}] [PetAgent] _async_brain: {fn_name}")
-        # 保存旧引用，避免 _cleanup_thread 误操作新线程
         old_thread = self._thread
         old_worker = self._worker
-        # 取消旧任务，等待线程退出
         if old_thread is not None and old_thread.isRunning():
             self._cancel_flag = True
             try:
@@ -443,14 +401,12 @@ class PetAgent(QObject):
                     logger.warning(f"[{ts}] [PetAgent] old brain thread timeout, force terminate")
                     old_thread.terminate()
                     old_thread.wait(500)
-                    # 强制终止后，RLock 可能被死线程持有，需重建避免死锁
                     import threading
                     if hasattr(self, 'behavior') and hasattr(self.behavior, '_lock'):
-                        self.behavior._lock = threading.RLock()
+                        self.behavior._lock = threading.RLock()  # terminate 后原锁可能随线程死锁，重建一把
                         logger.warning(f"[PetAgent] behavior._lock rebuilt after thread terminate")
             except RuntimeError:
                 pass
-        # 彻底断开旧 thread 和 worker 的所有信号，防止已入队的 finished 信号破坏新对象
         if old_thread is not None:
             try:
                 old_thread.finished.disconnect()
@@ -476,12 +432,8 @@ class PetAgent(QObject):
         self._thread.start()
 
     def _cleanup_thread(self):
-        """线程完成后清理引用，避免访问已销毁的 C++ 对象。
-        
-        仅当 sender 是当前活跃线程时才清理，防止旧线程延迟信号误删新线程。
-        """
         sender = self.sender()
-        if self._thread is not None and self._thread is sender:
+        if self._thread is not None and self._thread is sender:  # 仅清理当前线程，忽略旧线程延迟信号
             self._thread.deleteLater()
             self._thread = None
         if self._worker is not None:
@@ -490,7 +442,6 @@ class PetAgent(QObject):
 
     def _on_brain_result(self, result):
         ts = datetime.now().strftime("%H:%M:%S")
-        # 恢复状态（无论结果类型）
         from pet.agent.state import PetState
         if self.state_machine.state in (PetState.INTERACTING, PetState.TALKING):
             self.state_machine.transition(PetState.IDLE)
@@ -514,7 +465,6 @@ class PetAgent(QObject):
             self.behavior.add_context(f"[{ts}] said: {result[:100]}")
             self.speak_requested.emit(result, 5000)
 
-        # 记忆存储
         if hasattr(result, 'memory_line') and result.memory_line:
             try:
                 self.memory_store.save_from_line(result.memory_line)
@@ -522,7 +472,6 @@ class PetAgent(QObject):
                 logger.warning(f"[PetAgent] memory save failed: {e}")
 
     def _on_brain_error(self, msg: str):
-        # 回复状态（防止 INTERACTING/TALKING 卡死）
         from pet.agent.state import PetState
         if self.state_machine.state in (PetState.INTERACTING, PetState.TALKING):
             self.state_machine.transition(PetState.IDLE)

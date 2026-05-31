@@ -1,3 +1,5 @@
+"""LLM 行为决策 —— 与 AI 通信，解析响应为动作序列。"""
+
 import base64
 from datetime import datetime
 import io
@@ -82,12 +84,6 @@ class Behavior(BrainMixin):
         return self._client is not None and config.VISION_ENABLED
     
     def decide(self, context: str = "", screenshot: bool = True) -> BehaviorOutput:
-        """非流式自动决策。
-
-        Args:
-            context:    窗口探测文本上下文
-            screenshot: True 时内部调用 _prepare_image 截图
-        """
         t = datetime.now().strftime("%H:%M:%S")
         if not self._client:
             return self._decide_local()
@@ -105,14 +101,6 @@ class Behavior(BrainMixin):
 
     def decide_stream(self, context: str = "", screenshot: bool = True,
                       on_chunk=None, on_stream_end=None) -> BehaviorOutput:
-        """流式自动决策。
-
-        Args:
-            context:    窗口探测等文本上下文
-            screenshot: True 时内部调用 _prepare_image 截图
-            on_chunk:   Speech 逐字回调
-            on_stream_end: 流结束回调
-        """
         if not self._client:
             return self._decide_local()
         if not self._lock.acquire(timeout=0.5):
@@ -128,7 +116,6 @@ class Behavior(BrainMixin):
             self._lock.release()
 
     def interact_decide(self, event_hint: str) -> BehaviorOutput:
-        """非流式交互事件决策（抟取/释放等即时响应）。"""
         if not self._client:
             return self._decide_local()
         system_content = prompts.interact_system_prompt()
@@ -140,11 +127,6 @@ class Behavior(BrainMixin):
 
     def interact_decide_stream(self, event_hint: str,
                                on_chunk=None, on_stream_end=None) -> BehaviorOutput:
-        """流式交互事件决策（抟取/释放等即时响应）。
-
-        不走窗口探测、视觉流程，专用 interact_system_prompt，
-        输出简短：Speech + 1-2 个动作。
-        """
         if not self._client:
             return self._decide_local()
         if not self._lock.acquire(timeout=2):
@@ -166,13 +148,6 @@ class Behavior(BrainMixin):
 
 
     def chat_decide(self, user_message: str, context: str = "", screenshot: bool = True) -> BehaviorOutput:
-        """非流式对话决策。
-
-        Args:
-            user_message: 用户输入文本
-            context:      窗口探测等文本上下文
-            screenshot:   True 时内部调用 _prepare_image 截图
-        """
         t = datetime.now().strftime("%H:%M:%S")
         logger.info(f"[{t}] [Behavior] chat_decide(msg={user_message[:50]}, ctx={context[:30]})")
 
@@ -227,15 +202,6 @@ class Behavior(BrainMixin):
 
     def chat_decide_stream(self, user_message: str, context: str, screenshot: bool = True,
                            on_chunk=None, on_stream_end=None) -> BehaviorOutput:
-        """流式对话决策。
-    
-        Args:
-            user_message: 用户输入文本
-            context:      窗口探测等文本上下文
-            screenshot:   True 时内部调用 _prepare_image 截图
-            on_chunk:     Speech 逐字回调
-            on_stream_end: 流结束回调
-        """
         if not self._client:
             return self._chat_decide_local(user_message)
         if not self._lock.acquire(timeout=5):
@@ -317,7 +283,6 @@ class Behavior(BrainMixin):
 
     @llm_retry(tag="Behavior")
     def _llm_call(self, messages: list, max_tokens: int = 4000):
-        """带重试的非流式 LLM 调用。"""
         return self._client.chat.completions.create(
             model=self._model,
             messages=messages,
@@ -325,7 +290,6 @@ class Behavior(BrainMixin):
         )
 
     def _llm_call_stream(self, messages: list, max_tokens: int = 4000):
-        """带重试的流式 LLM 调用（仅连接阶段重试）。"""
         from pet.brain.llm_retry import llm_stream_with_retry
         return llm_stream_with_retry(
             lambda: self._client.chat.completions.create(
@@ -338,7 +302,6 @@ class Behavior(BrainMixin):
         )
 
     def _call_llm_and_parse(self, messages: list, system_content: str, tag: str) -> BehaviorOutput:
-        """调用_llm_call + 响应日志 + Skill 解析 + 异常 fallback。"""
         t = datetime.now().strftime("%H:%M:%S")
         self._dump_context(tag, messages)
         try:
@@ -358,7 +321,6 @@ class Behavior(BrainMixin):
             return self._decide_local()
 
     def _stream_and_parse(self, messages: list, on_chunk=None, on_stream_end=None, tag: str = "") -> BehaviorOutput:
-        """流式 LLM 调用的核心：逐行状态机解析，Speech 行逐字推送。"""
         self._dump_context(tag, messages)
         try:
             stream = self._llm_call_stream(messages)
@@ -543,7 +505,6 @@ class Behavior(BrainMixin):
         return BehaviorOutput(actions=actions, speech=speech, summary=summary, memory_line=memory_line)
 
     def _finish_line(self, buffer, actions, speech_parts, skill_lines, summary_holder=None, memory_holder=None):
-        """归档一个完成的行（流式解析用）。"""
         line = buffer.strip()
         if not line:
             return
@@ -592,11 +553,6 @@ class Behavior(BrainMixin):
 
     def _execute_with_skills(self, first_content: str, system_content: str, on_chunk=None,
                              max_rounds: int = 3) -> BehaviorOutput:
-        """多轮工具调用循环。
-
-        每轮检测输出中的 Skill 行：有 → 执行并调用下一轮 LLM；无 → 解析为最终决策。
-        最多 max_rounds 轮，超过后强制结束，避免死循环。
-        """
         from pet.skills.executor import SkillExecutor
 
         executor = SkillExecutor()
@@ -652,12 +608,7 @@ class Behavior(BrainMixin):
         return self._parse_behavior(current_content)
 
     def _stream_text_raw(self, messages: list, on_chunk=None, tag: str = "") -> str:
-        """流式调用 LLM，返回完整原始文本。
-
-        与 _stream_and_parse 的区别：不做行类型解析（Action/Skill/Summary），
-        仅实时推送 Speech 内容并归集原始文本。
-        专为 _execute_with_skills 多轮循环内的中间轮设计，避免递归触发 Skill 检测。
-        """
+        """流式调用并返回原始文本，不做 Skill/Action 行解析，避免多轮 Skill 循环中递归触发。"""
         stream = self._llm_call_stream(messages)
         full_content = ""
         line_buffer = ""
@@ -740,16 +691,11 @@ class Behavior(BrainMixin):
         )
 
     def _prepare_image(self) -> Optional[str]:
-        """内部截图 + 缩放 + base64 编码入口。
-
-        检查 has_vision，通过 screen_reader.prepare_image 完成全流程。
-        """
         if not self.has_vision or not self._screen_reader:
             return None
         return self._screen_reader.prepare_image(vision_scale=config.VISION_SCALE)
 
     def _build_context_str(self, context: str) -> str:
-        """近期行为历史（排除最近一条）。"""
         ctx = context or "no context"
         if len(self._context) > 1:
             ctx += f"\nRecent: {', '.join(self._context[-6:-1])}"
@@ -765,7 +711,6 @@ class Behavior(BrainMixin):
         return system_content
 
     def _dump_context(self, tag: str, messages: list):
-        """输出完整上下文到日志（调试用）。"""
         t = datetime.now().strftime("%H:%M:%S")
         logger.debug(f"[{t}] [Behavior] ====== FULL CONTEXT ({tag}) ======")
         for i, m in enumerate(messages):

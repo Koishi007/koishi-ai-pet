@@ -1,3 +1,5 @@
+"""桌宠对话气泡 —— 打字机效果、流式追加、队列缓冲、跟随桌宠移动。"""
+
 from PySide6.QtWidgets import QLabel, QWidget
 from PySide6.QtCore import Qt, QTimer, QPoint, QPropertyAnimation, QParallelAnimationGroup, QEasingCurve
 from PySide6.QtGui import QPainter, QColor, QPen, QPolygon
@@ -30,7 +32,6 @@ class SpeechBubble(QLabel):
         self._follow_timer.timeout.connect(self._follow_pet)
         self._anim_group: QParallelAnimationGroup | None = None
 
-        # 打字机效果相关
         self._stream_buffer = ""
         self._char_queue: list[str] = []
         self._stream_ending = False
@@ -38,19 +39,13 @@ class SpeechBubble(QLabel):
         self._type_timer.timeout.connect(self._type_next_char)
         self._type_interval = 35
 
-        # ── 气泡输出队列 ──
-        # 每个元素：{"text": str, "duration": int}
         self._speech_queue: list[dict] = []
-        # 当前正在缓冲（气泡显示中有新流进来时）
         self._buffering = False
         self._incoming_chunks: list[str] = []
         self._incoming_duration: int = 5000
 
         self.hide()
 
-    # ══════════════════════════════════════════════════════
-    # paintEvent / resize / position helpers
-    # ══════════════════════════════════════════════════════
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -104,9 +99,6 @@ class SpeechBubble(QLabel):
     def _start_tracking(self):
         self._follow_timer.start(50)
 
-    # ══════════════════════════════════════════════════════
-    # 公共显示接口（show_text / start_stream / append_stream / end_stream）
-    # ══════════════════════════════════════════════════════
 
     def show_text(self, text: str, duration: int = 5000, parent_pos=None):
         """显示静态文本。若气泡正在使用中则入队。"""
@@ -116,15 +108,12 @@ class SpeechBubble(QLabel):
         self._play_text(text, duration, parent_pos)
 
     def start_stream(self, parent_pos=None):
-        """开始流式。若气泡正在使用中则进入缓冲模式。"""
         if self._is_active():
-            # 进入缓冲模式：收集 chunks，等当前结束后再播
-            self._buffering = True
+            self._buffering = True  # 气泡忙则进入缓冲：收完所有 chunk 后以静态文本入队播放
             self._incoming_chunks.clear()
             self._incoming_duration = 5000
             return
 
-        # 气泡空闲，立即流式显示
         self._buffering = False
         self._stream_buffer = ""
         self._char_queue.clear()
@@ -170,10 +159,6 @@ class SpeechBubble(QLabel):
             self._type_timer.stop()
             self._finish_stream()
 
-    # ══════════════════════════════════════════════════════
-    # 队列管理
-    # ══════════════════════════════════════════════════════
-
     def _is_active(self) -> bool:
         """气泡当前是否正在使用（显示中或打字中）。"""
         return self.isVisible() and (
@@ -188,7 +173,6 @@ class SpeechBubble(QLabel):
         """播放队列中下一条，若无则隐藏。"""
         if self._speech_queue:
             item = self._speech_queue.pop(0)
-            # 短暂停顿后显示下一条
             QTimer.singleShot(300, lambda: self._play_text(item["text"], item["duration"]))
         else:
             self._hide_bubble()
@@ -235,15 +219,11 @@ class SpeechBubble(QLabel):
         else:
             self._start_tracking()
 
-        # 把文本塞入打字机
         self._end_stream_duration = duration
         self._char_queue.extend(text)
         self._stream_ending = True
         self._type_timer.start(self._type_interval)
 
-    # ══════════════════════════════════════════════════════
-    # 打字机内部
-    # ══════════════════════════════════════════════════════
 
     def _type_next_char(self):
         if self._char_queue:
@@ -278,9 +258,6 @@ class SpeechBubble(QLabel):
             self._anim_group = None
         super().hide()
 
-    # ══════════════════════════════════════════════════════
-    # 位置 helpers
-    # ══════════════════════════════════════════════════════
 
     def _head_position(self, target_pos: QPoint) -> QPoint:
         pet_top = target_pos.y() - config.PET_HEIGHT // 2

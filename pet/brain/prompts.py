@@ -5,7 +5,6 @@ from pet.skills.registry import SKILL_REGISTRY
 from config import config
 
 
-# ── 窗口互动指南（两个模式共用）──
 _WINDOW_GUIDE = """=== 窗口互动方法 ===
 屏幕上的窗口是你与用户世界的主要连接点。你需要主动利用窗口来展开行为。
 
@@ -32,7 +31,6 @@ _WINDOW_GUIDE = """=== 窗口互动方法 ===
 
 
 
-# 公共尾部（自动纯文本、自动视觉模式共用）──
 _COMMON_TAIL = """=== 输出格式 ===
 必须按以下顺序输出：Summary 行 → Speech 行 → 至少4个 Action 行，缺一不可：
 
@@ -59,13 +57,11 @@ _COMMON_TAIL = """=== 输出格式 ===
 
 
 
-# ── 视觉模式专用约束（追加到视觉 prompt 尾部）──
 _VISION_ONLY_CONSTRAINTS = """11. walk 距离和方向基于截图中的实际距离估算，不要随意编造
 12. 先在截图中定位自己，再观察窗口，两者结合规划动作
 13. bounce 必须有明确的窗口目标，基于窗口在截图中的位置估算参数"""
 
 
-# ── 记忆存储指南（所有 system prompt 共用尾部）──
 _MEMORY_GUIDE = """## 记忆存储
 如果本次对话中出现了值得长期记住的信息（用户个人信息、偏好、习惯、重要事件、约定等），
 请在回复末尾额外输出一行（不要输出给用户看，仅供系统解析）：
@@ -88,17 +84,16 @@ importance 评分标准：
 
 INTERACT_GRABBED = (
     "用户正用鼠标把你抓起来"
-    "用一句话（不超过 15 字）根据你的人格表达被抓住的小反应，"
+    "用一句话（不超过 15 字）根据你的人格表达被抓住的小反应"
 )
 
 INTERACT_RELEASED = (
     "用户刚刚把你放开了，你可以自由走动了。"
-    "用一句话（不超过 15 字）表达重获自由的感觉，"
+    "用一句话（不超过 15 字）表达重获自由的感觉"
 )
 
 
 def non_vision_system_prompt() -> str:
-    """自动-无视觉模式的系统提示词。"""
     actions = generate_action_section()
     return (
         "你是桌面宠物。你能行走、跳跃、坐下、睡觉、张望、伸展、淡入淡出。"
@@ -115,7 +110,6 @@ def non_vision_system_prompt() -> str:
 
 
 def vision_system_prompt() -> str:
-    """自动-视觉模式的系统提示词。"""
     actions = generate_action_section()
     return (
         "你是桌面宠物。你能看到用户的屏幕截图。"
@@ -137,7 +131,6 @@ def vision_system_prompt() -> str:
 
 
 def non_vision_decide_prompt(context: str) -> str:
-    """自动-非视觉模式的决策提示。"""
     has_content = context and not context.startswith("no context")
     if has_content:
         return (
@@ -159,7 +152,6 @@ def non_vision_decide_prompt(context: str) -> str:
 
 
 def vision_decide_prompt(context: str) -> str:
-    """自动-视觉模式的决策提示。"""
     return (
         f"{context}\n\n"
         "根据窗口探测数据和截图，输出完整的动作序列。\n"
@@ -175,7 +167,6 @@ def vision_decide_prompt(context: str) -> str:
 
 
 def chat_decide_system_prompt() -> str:
-    """对话驱动-决策模式的系统提示词。"""
     actions = generate_action_section()
     return (
         "你是桌面宠物，用户正在和你直接对话。"
@@ -210,7 +201,6 @@ def chat_decide_system_prompt() -> str:
 
 
 def chat_decide_user_prompt(user_message: str, context: str) -> str:
-    """对话驱动-决策模式的用户提示。"""
     return (
         f"=== 用户对你说 ===\n{user_message}\n\n"
         f"{context}\n\n"
@@ -220,11 +210,6 @@ def chat_decide_user_prompt(user_message: str, context: str) -> str:
 
 
 def skill_result_user_prompt(skill_results: str) -> str:
-    """工具执行结果 → 二次 LLM 调用的 user message。
-
-    由 behavior._execute_with_skills() 调用，
-    将 executor.format_results() 的输出包装为规范化的 prompt。
-    """
     return (
         "以下是你请求的技能执行结果：\n\n"
         f"{skill_results}\n\n"
@@ -237,11 +222,7 @@ def skill_result_user_prompt(skill_results: str) -> str:
     )
 
 
-
-
-
 def interact_system_prompt() -> str:
-    """鼠标交互事件模式系统提示词。"""
     actions = generate_action_section()
     return (
         "你是桌面宠物，用户刚刚对你做了某个动作，你需要即时做出自然反应。\n"

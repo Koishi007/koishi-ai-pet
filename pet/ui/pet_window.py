@@ -93,7 +93,7 @@ class PetWindow(TransparentWindow):
             self.pet_actions.gravity.enable(False)
             self.action_queue.pause()
             self.action_queue.clear()
-            self.pet_actions.caught()
+            self.pet_actions.grabbed()
             logger.info("[PetWindow] grabbed")
             if self._agent:
                 self._agent.trigger("interact", hint=self._PROMPT_GRABBED)

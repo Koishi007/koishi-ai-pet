@@ -18,8 +18,6 @@ class ScreenReader:
         self._enabled = False
         self._sct: Optional[mss.mss] = None
 
-    # ══ 截图 ══
-
     def enable(self):
         self._enabled = True
         logger.info("屏幕截图已启用")
@@ -29,7 +27,7 @@ class ScreenReader:
         if self._sct:
             try:
                 self._sct.close()
-            except Exception:
+            except Exception:  # Qt 销毁窗口句柄后 mss.close 的 ReleaseDC 会抛异常
                 pass
             self._sct = None
         logger.info("屏幕截图已禁用")
@@ -65,12 +63,9 @@ class ScreenReader:
             return None
 
     def _get_sct(self) -> mss.mss:
-        """延迟初始化 mss 实例。"""
         if self._sct is None:
             self._sct = mss.mss()
         return self._sct
-
-    # ══ 图片预处理 ══
 
     def prepare_image(
         self,
@@ -78,15 +73,6 @@ class ScreenReader:
         vision_scale: float = 1.0,
         min_px: int = 1536,
     ) -> Optional[str]:
-        """截图（可选）+ 缩放 + base64 编码，为 LLM 多模态调用准备。
-
-        Args:
-            image:        已有 PIL Image；为 None 时自动截取全屏
-            vision_scale: 缩放比例（1.0 = 不缩放）
-            min_px:       缩放后最长边下限（px）
-        Returns:
-            base64 编码字符串，截图失败时返回 None
-        """
         if image is None:
             image = self.capture_fullscreen()
         if image is None:

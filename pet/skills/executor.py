@@ -9,8 +9,6 @@ from pet.skills.registry import SKILL_REGISTRY
 
 logger = logging.getLogger(__name__)
 
-
-# 类型名到 Python 类型的映射（用于参数校验）
 _TYPE_MAP = {
     "int": int,
     "float": (int, float),
@@ -38,7 +36,6 @@ class SkillResult:
 
 
 class SkillExecutor:
-    """串行执行技能调用，架构可扩展为并行。"""
 
     def execute(self, calls: list[SkillCall]) -> list[SkillResult]:
         results = []
@@ -47,13 +44,11 @@ class SkillExecutor:
         return results
 
     def _execute_one(self, call: SkillCall) -> SkillResult:
-        # 获取 SkillMethod 定义，用于参数校验
         method = self._lookup_method(call.name)
         if method is None:
             logger.warning(f"[SkillExecutor] unknown skill: {call.name}")
             return SkillResult(name=call.name, success=False, error=f"unknown skill: {call.name}")
 
-        # 参数校验
         validated_args, err = self._validate_args(call.args, method.args)
         if err:
             logger.warning(f"[SkillExecutor] arg validation failed: {call.name}: {err}")
@@ -62,13 +57,11 @@ class SkillExecutor:
         try:
             data = method.handler(**validated_args)
             logger.info(f"[SkillExecutor] \u2713 {call.name} \u2192 {str(data)[:100]}")
-            # 插件返回的图片（__image__ 键）单独提取，不混入文本结果
             image_b64 = None
             if isinstance(data, dict):
-                image_b64 = data.pop("__image__", None)
+                image_b64 = data.pop("__image__", None)  # 插件的截图走 __image__ 旁路，不混入文本结果
             return SkillResult(name=call.name, success=True, data=data, image_b64=image_b64)
         except TypeError as e:
-            # 参数不匹配类错误，反馈明确提示让 LLM 自纠
             logger.error(f"[SkillExecutor] ✗ {call.name} TypeError: {e}")
             return SkillResult(name=call.name, success=False, error=f"参数不匹配: {e}")
         except Exception as e:
@@ -77,7 +70,6 @@ class SkillExecutor:
 
     @staticmethod
     def _lookup_method(full_name: str):
-        """获取 SkillMethod 实例（含 args 定义）。"""
         parts = full_name.split(".", 1)
         if len(parts) != 2:
             return None
@@ -88,11 +80,6 @@ class SkillExecutor:
 
     @staticmethod
     def _validate_args(provided: dict, schema: dict) -> tuple[dict, str]:
-        """根据结构化 schema 校验参数并填充默认值。
-
-        Returns:
-            (validated_args, error_message)，错误为空则代表校验通过。
-        """
         validated = {}
         provided = provided or {}
 
@@ -112,7 +99,6 @@ class SkillExecutor:
             elif default is not None:
                 validated[key] = default
 
-        # 传入了 schema 中没有的参数也保留（宽容）
         for key, value in provided.items():
             if key not in validated:
                 validated[key] = value
@@ -138,7 +124,6 @@ class SkillExecutor:
 
     @staticmethod
     def _normalize(data: Any) -> str:
-        """统一格式化返回值：dict 支持 summary 键，兼容 str/基本类型。"""
         if isinstance(data, dict):
             summary = data.pop("summary", None)
             json_str = json.dumps(data, ensure_ascii=False)
@@ -149,11 +134,6 @@ class SkillExecutor:
 
     @classmethod
     def format_results(cls, results: list[SkillResult]) -> tuple[str, list[str]]:
-        """格式化所有技能结果，并单独收集 base64 图片列表。
-
-        Returns:
-            (result_text, image_b64_list)
-        """
         lines = []
         images = []
         for r in results:

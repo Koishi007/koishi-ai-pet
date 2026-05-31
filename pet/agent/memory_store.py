@@ -1,3 +1,5 @@
+"""SQLite 持久化记忆存储。"""
+
 import sqlite3
 import re
 import logging
@@ -16,7 +18,6 @@ STOP_WORDS = {
 
 
 class MemoryStore:
-    """SQLite 持久化记忆存储。"""
 
     MAX_MEMORIES = 200
 
@@ -48,10 +49,7 @@ class MemoryStore:
         """)
         self._conn.commit()
 
-    # ─── 写入 ───
-
     def save(self, category: str, content: str, keywords: list[str], importance: int = 3):
-        """写入一条记忆。若已存在高度相似内容，则更新而非新增。"""
         existing = self._find_similar(content, keywords)
         if existing:
             new_imp = max(existing["importance"], importance)
@@ -69,14 +67,9 @@ class MemoryStore:
         logger.info(f"[MemoryStore] saved: [{category}] {content[:30]}...")
 
     def save_from_line(self, line: str):
-        """从 LLM 输出的 Memory 行解析并存储。
-        格式: [category] content | keywords:k1,k2,k3 | importance:N
-        """
         line = line.strip()
-        # 支持两种格式：[category] content 或 category content
         cat_match = re.match(r"\[(\w+)\]\s*(.+)", line)
         if not cat_match:
-            # 尝试无方括号格式：category content
             cat_match = re.match(r"(\w+)\s+(.+)", line)
         if not cat_match:
             logger.warning(f"[MemoryStore] 无法解析 memory 行: {line}")
@@ -106,10 +99,7 @@ class MemoryStore:
         importance = max(1, min(5, importance))
         self.save(category, content, keywords, importance)
 
-    # ─── 检索 ───
-
     def query_core(self, limit: int = 5) -> list[dict]:
-        """获取核心记忆：importance >= 4。"""
         rows = self._conn.execute(
             "SELECT * FROM memories WHERE importance >= 4 ORDER BY importance DESC, created_at DESC LIMIT ?",
             (limit,)
@@ -118,7 +108,6 @@ class MemoryStore:
         return [dict(r) for r in rows]
 
     def query_recent(self, hours: int = 24, limit: int = 3) -> list[dict]:
-        """获取近期记忆。"""
         since = (datetime.now() - timedelta(hours=hours)).isoformat()
         rows = self._conn.execute(
             "SELECT * FROM memories WHERE created_at >= ? ORDER BY created_at DESC LIMIT ?",
@@ -128,7 +117,6 @@ class MemoryStore:
         return [dict(r) for r in rows]
 
     def query_by_keywords(self, keywords: list[str], limit: int = 3) -> list[dict]:
-        """关键词匹配检索。"""
         if not keywords:
             return []
         conditions = " OR ".join(["keywords LIKE ?" for _ in keywords])
@@ -147,7 +135,6 @@ class MemoryStore:
         return [dict(r) for r in rows]
 
     def retrieve_context(self, user_message: str) -> str:
-        """三层检索，去重合并，返回注入 prompt 的文本。"""
         seen_ids = set()
         results = []
 
@@ -177,10 +164,7 @@ class MemoryStore:
             lines.append(f"- {m['content']}{tag}")
         return "\n".join(lines)
 
-    # ─── 关键词提取 ───
-
     def _extract_keywords(self, text: str) -> list[str]:
-        """使用 jieba 分词提取关键词。"""
         import jieba
         import jieba.analyse
         keywords = jieba.analyse.extract_tags(text, topK=5)
@@ -191,11 +175,7 @@ class MemoryStore:
                 if len(t) >= 2 and t not in STOP_WORDS and not t.isdigit()
             ][:5]
         return keywords
-
-    # ─── 内部工具 ───
-
     def _find_similar(self, content: str, keywords: list[str]) -> dict | None:
-        """查找相似记忆（关键词重叠 >= 60%）。"""
         if not keywords:
             return None
         kw_set = set(keywords)
@@ -212,7 +192,6 @@ class MemoryStore:
         return None
 
     def _touch(self, rows):
-        """增加 access_count。"""
         ids = [r["id"] for r in rows] if rows else []
         if ids:
             placeholders = ",".join(["?"] * len(ids))
@@ -223,7 +202,6 @@ class MemoryStore:
             self._conn.commit()
 
     def _enforce_capacity(self):
-        """容量管理：超出 MAX_MEMORIES 时清理低优先级旧记忆。"""
         count = self._conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
         if count <= self.MAX_MEMORIES:
             return
