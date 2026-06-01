@@ -16,10 +16,11 @@ class GravitySystem(QObject):
     falling_started = Signal()  # 进入下落状态时发出
     landed = Signal()           # 落地时发出
 
-    # 甚出物理参数
-    _GRAVITY_ACCEL = 1.5   # 重力加速度（px/tick²）
+    # 物理参数
+    _GRAVITY_ACCEL  = 1.5   # 重力加速度（px/tick²）
     _FRICTION       = 0.99  # 水平摩擦系数（每 tick 乘以）
-    _MAX_SPEED      = 30.0  # 最大速度（px/tick）
+    _MAX_SPEED      = 25.0  # 最大速度（px/tick）
+    _FALL_TERMINAL  = 8.0   # 常规下落终端速度（px/tick）
     _WALL_BOUNCE    = -0.4  # 碰屏幕左右边缘出射系数
     _IMPULSE_SCALE  = 0.05  # 鼠标速度（px/s）转 tick 速度比例（30ms tick）
 
@@ -29,7 +30,6 @@ class GravitySystem(QObject):
         self._anim = animator
         self._win_anims = win_anims  # PetActions 的动画列表，用于判断是否有动画在执行
 
-        self._step = 5
         self._interval = 30
         self._enabled = True
         self._falling = False
@@ -49,6 +49,7 @@ class GravitySystem(QObject):
         self._force_standing_check: bool = False
         self._ALIVE_CHECK_INTERVAL = 15
         self._suppress_idle: bool = False
+        self._last_anim_played: str | None = None
 
     def apply_impulse(self, vx: float, vy: float):
         """注入初速度，开始甚出物理模式。
@@ -57,15 +58,22 @@ class GravitySystem(QObject):
             vx: 水平速度（px/s）
             vy: 垂直速度（px/s）
         """
+        if not self._enabled:
+            return
+
         # 换算为 px/tick
         self._vx = max(-self._MAX_SPEED, min(vx * self._IMPULSE_SCALE, self._MAX_SPEED))
-        self._vy = max(-self._MAX_SPEED, min(vy * self._IMPULSE_SCALE, self._MAX_SPEED))
+        # 纯水平/向下甩出时给一个最小向上速度，确保离面
+        scaled_vy = vy * self._IMPULSE_SCALE
+        if scaled_vy >= 0:
+            scaled_vy = min(scaled_vy, -2.0)
+        self._vy = max(-self._MAX_SPEED, min(scaled_vy, self._MAX_SPEED))
         self._in_flick = True
-        self._cached_effective_bottom = None  # 强制重新扫描落点
+        self._cached_effective_bottom = None
         if not self._falling:
             self._falling = True
-            self._anim.play("falling")
             self.falling_started.emit()
+            self._play_once("falling")
         logger.info(f"[Gravity] apply_impulse vx={self._vx:.1f} vy={self._vy:.1f} px/tick")
 
     @property
@@ -84,11 +92,21 @@ class GravitySystem(QObject):
         self._enabled = enabled
         if enabled:
             self._cached_effective_bottom = None
-            self._falling = False  # 重置下落状态，下一 tick 重新检测
+            self._falling = False
+            self._in_flick = False
+            self._vx = 0.0
+            self._vy = 0.0
+            self._last_anim_played = None
             if not self._timer.isActive():
                 self._timer.start(self._interval)
         else:
             self._timer.stop()
+
+    def _play_once(self, name: str):
+        """只在动画变化时播一次，避免每 tick 重播同动画。"""
+        if name != self._last_anim_played:
+            self._last_anim_played = name
+            self._anim.play(name)
 
     def _clamp_pos(self, pos):
         """将坐标限制在屏幕可用范围内。"""
@@ -106,14 +124,15 @@ class GravitySystem(QObject):
         if any(a.state() == QPropertyAnimation.State.Running for a in self._win_anims):
             return
 
-        # 甚出物理模式：自行驱动位移，不走常规重力逻辑
+        # 甩出的物理模式：自行驱动位移，不走常规重力逻辑
         if self._in_flick:
             self._tick_flick()
             return
 
         self._scan_tick += 1
         old_y = self._window.y()
-        new_y = old_y + self._step
+        self._vy = min(self._vy + self._GRAVITY_ACCEL, self._FALL_TERMINAL)
+        new_y = old_y + self._vy
 
         try:
             screen = QApplication.primaryScreen()
@@ -125,7 +144,7 @@ class GravitySystem(QObject):
             screen_bottom = screen.availableGeometry().bottom() - h
 
             was_at_bottom = self._cached_effective_bottom is not None and old_y >= self._cached_effective_bottom
-            if was_at_bottom and self._cached_effective_bottom is not None:
+            if was_at_bottom:
                 if self._standing_hwnd and (
                     self._scan_tick % self._ALIVE_CHECK_INTERVAL == 0
                     or self._force_standing_check
@@ -151,9 +170,12 @@ class GravitySystem(QObject):
                             logger.debug(f"[Gravity] standing window moved (hwnd={self._standing_hwnd})")
                             self._standing_hwnd = 0
                             self._cached_effective_bottom = None
+                else:
+                    self._force_standing_check = False
                 if self._cached_effective_bottom is not None:
                     effective_bottom = self._cached_effective_bottom
                     new_y = effective_bottom
+                    self._vy = 0.0
                     self._window.move(self._window.x(), new_y)
                     return
 
@@ -205,19 +227,19 @@ class GravitySystem(QObject):
 
         if at_bottom and self._falling:
             self._falling = False
+            self._vy = 0.0
             self._force_standing_check = True
-            self._anim.play("idle")
+            self._play_once("idle")
             self.landed.emit()
         elif at_bottom and not self._falling:
+            self._vy = 0.0
             if not self._suppress_idle:
-                self._anim.play("idle")
+                self._play_once("idle")
         elif not at_bottom and not self._falling:
-            if self._suppress_idle:
-                return
             self._falling = True
-            self._anim.play("falling")
             logger.debug(f"[Gravity] falling started at y={old_y}, bottom={effective_bottom}")
             self.falling_started.emit()
+            self._play_once("falling")
 
     def _tick_flick(self):
         screen = QApplication.primaryScreen()
@@ -252,6 +274,7 @@ class GravitySystem(QObject):
         new_pet_bottom = int(new_y) + h
         screen_bottom = geo.bottom() - h
         effective_bottom = screen_bottom
+        found_hwnd = 0
         try:
             pet_hwnd = int(self._window.winId())
             pet_x_int = int(new_x)
@@ -266,6 +289,7 @@ class GravitySystem(QObject):
                         landing = top - h
                         if landing < effective_bottom:
                             effective_bottom = landing
+                            found_hwnd = win["hwnd"]
         except Exception:
             pass
 
@@ -276,10 +300,11 @@ class GravitySystem(QObject):
             self._vx = 0.0
             self._vy = 0.0
             self._cached_effective_bottom = effective_bottom
+            self._standing_hwnd = found_hwnd
             self._falling = False
             self._force_standing_check = True
-            self._anim.play("idle")
+            self._play_once("idle")
             self.landed.emit()
-            logger.info(f"[Gravity] flick landed at y={int(new_y)}")
+            logger.info(f"[Gravity] flick landed at y={int(new_y)}, hwnd={found_hwnd}")
 
         self._window.move(int(new_x), int(new_y))
