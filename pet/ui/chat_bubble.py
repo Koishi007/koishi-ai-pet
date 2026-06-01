@@ -1,6 +1,6 @@
 """桌宠聊天交互组件 - 悬停显示，点击展开输入框。"""
 
-from PySide6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLineEdit
+from PySide6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLineEdit, QBoxLayout
 from PySide6.QtCore import Qt, QTimer, QPoint, Signal, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup, QEvent
 from PySide6.QtGui import QFont
 from config import config
@@ -11,10 +11,31 @@ class ChatBubble(QWidget):
 
     chat_submitted = Signal(str)  # 用户提交消息时发出
 
+    _INPUT_STYLE = (
+        "QLineEdit {"
+        "  background: rgba(255,255,255,230);"
+        "  border: 1px solid #ccc;"
+        "  border-radius: 14px;"
+        "  padding: 2px 10px;"
+        "  font-size: 13px;"
+        "}"
+    )
+    _INPUT_STYLE_BUSY = (
+        "QLineEdit {"
+        "  background: rgba(230,230,230,200);"
+        "  border: 1px solid #ddd;"
+        "  border-radius: 14px;"
+        "  padding: 2px 10px;"
+        "  font-size: 13px;"
+        "  color: #999;"
+        "}"
+    )
+
     def __init__(self, pet_window, parent=None):
         super().__init__(parent)
         self._pet_window = pet_window
         self._expanded = False
+        self._busy = False
 
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -42,9 +63,9 @@ class ChatBubble(QWidget):
         self.hide()
 
     def _setup_ui(self):
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(4)
+        self._layout = QHBoxLayout(self)
+        self._layout.setContentsMargins(4, 4, 4, 4)
+        self._layout.setSpacing(4)
 
         # 聊天按钮（收起态显示）
         self._btn = QPushButton("\U0001f4ac")
@@ -62,7 +83,7 @@ class ChatBubble(QWidget):
             "}"
         )
         self._btn.clicked.connect(self._toggle_expand)
-        layout.addWidget(self._btn)
+        self._layout.addWidget(self._btn)
 
         # 输入框（展开态显示）
         self._input = QLineEdit()
@@ -70,18 +91,10 @@ class ChatBubble(QWidget):
         self._input.setMinimumWidth(0)
         self._input.setMaximumWidth(180)
         self._input.setMinimumHeight(28)
-        self._input.setStyleSheet(
-            "QLineEdit {"
-            "  background: rgba(255,255,255,230);"
-            "  border: 1px solid #ccc;"
-            "  border-radius: 14px;"
-            "  padding: 2px 10px;"
-            "  font-size: 13px;"
-            "}"
-        )
+        self._input.setStyleSheet(self._INPUT_STYLE)
         self._input.returnPressed.connect(self._on_submit)
         self._input.hide()
-        layout.addWidget(self._input)
+        self._layout.addWidget(self._input)
 
         self.adjustSize()
 
@@ -117,7 +130,10 @@ class ChatBubble(QWidget):
         self._expand_anim.setStartValue(0)
         self._expand_anim.setEndValue(180)
         self._expand_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
-        self._expand_anim.finished.connect(lambda: self._input.setFocus())
+        if self._busy:
+            self._collapse_timer.start(5000)
+        else:
+            self._expand_anim.finished.connect(lambda: self._input.setFocus())
         self._expand_anim.start()
 
     def _collapse(self):
@@ -158,7 +174,9 @@ class ChatBubble(QWidget):
         if self.isVisible():
             return
         self._update_position()
-        start_pos = self.pos() + QPoint(15, 0)
+        on_left = self.pos().x() < self._pet_window.geometry().center().x()
+        offset = -15 if on_left else 15
+        start_pos = self.pos() + QPoint(offset, 0)
         final_pos = self.pos()
         self.move(start_pos)
         self.setWindowOpacity(0.0)
@@ -179,6 +197,17 @@ class ChatBubble(QWidget):
         self._show_anim.addAnimation(pos_anim)
         self._show_anim.addAnimation(opacity_anim)
         self._show_anim.start()
+
+    def set_busy(self, busy: bool):
+        self._busy = busy
+        if busy:
+            self._input.setEnabled(False)
+            self._input.setStyleSheet(self._INPUT_STYLE_BUSY)
+            self._input.setPlaceholderText("正在思考...")
+        else:
+            self._input.setEnabled(True)
+            self._input.setStyleSheet(self._INPUT_STYLE)
+            self._input.setPlaceholderText("说点什么...")
 
     def hide_bubble(self):
         if not self.isVisible():
@@ -217,17 +246,34 @@ class ChatBubble(QWidget):
 
     def _update_position(self):
         pet_geo = self._pet_window.geometry()
-        x = pet_geo.right() - 20
+        screen = self.screen()
+        if screen:
+            screen_right = screen.availableGeometry().right()
+        else:
+            screen_right = 9999
+
+        bw = self.width()
         y = pet_geo.top() + 10
+
+        if pet_geo.right() + bw + 10 > screen_right:
+            x = pet_geo.left() - bw + 20  # 左侧
+            self._layout.setDirection(QBoxLayout.Direction.RightToLeft)
+        else:
+            x = pet_geo.right() - 20      # 右侧
+            self._layout.setDirection(QBoxLayout.Direction.LeftToRight)
         self.move(x, y)
 
     # ── 鼠标事件 ──
 
     def enterEvent(self, event):
         self.cancel_hide()
+        if self._busy and self._expanded:
+            self._collapse_timer.stop()
         super().enterEvent(event)
 
     def leaveEvent(self, event):
         if not self._expanded:
             self.schedule_hide()
+        if self._busy and self._expanded:
+            self._collapse_timer.start(2000)
         super().leaveEvent(event)
