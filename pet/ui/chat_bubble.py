@@ -1,9 +1,13 @@
 """桌宠聊天交互组件 - 悬停显示，点击展开输入框。"""
 
+from pathlib import Path
+
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLineEdit, QBoxLayout
 from PySide6.QtCore import Qt, QTimer, QPoint, Signal, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup, QEvent
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QIcon
 from config import config
+
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 
 class ChatBubble(QWidget):
@@ -68,14 +72,15 @@ class ChatBubble(QWidget):
         self._layout.setSpacing(4)
 
         # 聊天按钮（收起态显示）
-        self._btn = QPushButton("\U0001f4ac")
+        self._btn = QPushButton()
+        self._btn.setIcon(QIcon(str(BASE_DIR / "assets" / "icon" / "chat.png")))
+        self._btn.setIconSize(self._btn.size())
         self._btn.setFixedSize(32, 32)
         self._btn.setStyleSheet(
             "QPushButton {"
             "  background: rgba(255,255,255,220);"
             "  border: 1px solid #ccc;"
             "  border-radius: 16px;"
-            "  font-size: 16px;"
             "}"
             "QPushButton:hover {"
             "  background: rgba(240,240,255,240);"
