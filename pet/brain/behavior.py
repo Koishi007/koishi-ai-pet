@@ -266,7 +266,7 @@ class Behavior(BrainMixin):
                 if on_stream_end:
                     on_stream_end()
                 system_content = messages[0]["content"]
-                result = self._execute_with_skills(full_content, system_content, on_chunk=on_chunk)
+                result = self._execute_with_skills(full_content, system_content, on_chunk=on_chunk, on_stream_end=on_stream_end)
                 return result
 
             result = self._parse_behavior(full_content)
@@ -395,7 +395,7 @@ class Behavior(BrainMixin):
                 )
                 logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] [Behavior] === LLM RESPONSE ({tag}) ===")
                 logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] [Behavior]   raw: {full_content}")
-                return self._execute_with_skills(full_content, messages[0]["content"], on_chunk=on_chunk)
+                return self._execute_with_skills(full_content, messages[0]["content"], on_chunk=on_chunk, on_stream_end=on_stream_end)
 
             raw = "\n".join(
                 ([f"Summary: {summary_holder[0]}"] if summary_holder else []) +
@@ -553,7 +553,7 @@ class Behavior(BrainMixin):
         return ActionStep(name, tuple(args), kwargs)
 
     def _execute_with_skills(self, first_content: str, system_content: str, on_chunk=None,
-                             max_rounds: int = 3) -> BehaviorOutput:
+                             on_stream_end=None, max_rounds: int = 3) -> BehaviorOutput:
         from pet.skills.executor import SkillExecutor
 
         executor = SkillExecutor()
@@ -597,6 +597,8 @@ class Behavior(BrainMixin):
                 if on_chunk:
                     current_content = self._stream_text_raw(messages, on_chunk=on_chunk, tag=tag)
                     speech_streamed = True
+                    if on_stream_end:
+                        on_stream_end()
                 else:
                     resp = self._llm_call(messages)
                     current_content = resp.choices[0].message.content or ""
