@@ -161,18 +161,22 @@ class PetActions(QObject):
         return anim
     
 
-    def bounce(self, dx=0, dy=-150, duration=800):
+    def bounce(self, direction="right", distance=0, height=150, duration=800):
         self._cleanup_stopped_anims()
         self._anim.play("bounce")
         original_pos = self._window.pos()
 
-        # 限制 dy 不让弹跳弧线最高点超出屏幕上边界
+        sign = 1 if direction == "right" else -1
+        dx = sign * distance
+
+        # 限制不让弹跳弧线最高点超出屏幕上边界
         from PySide6.QtWidgets import QApplication
         screen = QApplication.primaryScreen()
         if screen:
-            max_dy_up = -(original_pos.y() - screen.availableGeometry().top())
-            if dy < max_dy_up:
-                dy = max_dy_up
+            max_height = original_pos.y() - screen.availableGeometry().top()
+            if height > max_height:
+                height = max_height
+        dy = -height
 
         target = self._clamp_pos(QPoint(original_pos.x() + dx, original_pos.y() + dy))
         anim = QPropertyAnimation(self._window, b"pos")

@@ -65,8 +65,7 @@ class ActionQueue(QObject):
     def resume(self):
         self._paused = False
         self.changed.emit()
-        if self._cursor < len(self._queue):
-            self._run_next()
+        self._run_next()
 
     def _run_next(self):
         if self._paused:
@@ -178,7 +177,9 @@ class ActionQueue(QObject):
         elif name == "move_to":
             parts.append(f"({args[0].x()},{args[0].y()})→({args[1].x()},{args[1].y()})" if len(args) >= 2 else "")
         elif name == "bounce":
-            parts.append(f"dx={kwargs.get('dx',0)} dy={kwargs.get('dy',-150)}")
+            d = kwargs.get("direction", "right")
+            dist = kwargs.get("distance", 0)
+            parts.append(f"{d} {dist}px h={kwargs.get('height', 150)}")
         elif name in ("sit", "sleep", "thinking"):
             dur = kwargs.get("duration")
             if dur:

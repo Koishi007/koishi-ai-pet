@@ -31,9 +31,9 @@ REGISTRY: dict[str, ActionDef] = {
     "bounce": ActionDef(
         name="bounce",
         category="移动",
-        description="弹跳移动到目标位置。适合跳跃到其他窗口上。dx=水平偏移（正=右），dy=垂直偏移（正=下，负=上，通常为负值表示向上跳）。默认 duration=800。",
-        params=["dx: 水平像素偏移", "dy: 垂直像素偏移（通常为负值）"],
-        usage_example="Action: bounce dx=300 dy=-200",
+        description="弹跳移动。适合跳跃到其他窗口上。direction=left/right 指定水平方向，distance 水平距离，height 向上跳跃高度）",
+        params=["direction: left | right", "distance: 水平像素(范围0-800，0代表垂直往上跳，此时方向任意)", "height: 向上跳跃高度（必须大于0）"],
+        usage_example="Action: bounce direction=right distance=400 height=200",
     ),
     "sit": ActionDef(
         name="sit",
