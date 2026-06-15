@@ -6,7 +6,7 @@ from PySide6.QtGui import QMouseEvent, QAction
 from pet.ui.base_window import TransparentWindow
 from pet.ui.pet_animations import PetAnimator
 from pet.action import PetActions, ActionQueue
-from pet.brain.prompts import INTERACT_GRABBED, INTERACT_RELEASED
+from pet.brain.prompts import INTERACT_GRABBED, INTERACT_RELEASED, INTERACT_WINDOW_DISAPPEARED
 from pet.skills.registry import SKILL_REGISTRY
 from config import config
 
@@ -33,10 +33,11 @@ class PetWindow(TransparentWindow):
         self._agent = None
         self._debug_window = None
         self._app = None
-        self._mouse_interaction = False
+        self._event_reaction = False
         self._drag_history: list = []  # [(QPoint, timestamp_ms), ...]
         self._PROMPT_GRABBED = INTERACT_GRABBED
         self._PROMPT_RELEASED = INTERACT_RELEASED
+        self._PROMPT_WINDOW_DISAPPEARED = INTERACT_WINDOW_DISAPPEARED
 
     def set_chat_bubble(self, chat_bubble):
         """注入 ChatBubble 引用。"""
@@ -79,6 +80,7 @@ class PetWindow(TransparentWindow):
 
         self.pet_actions.gravity.falling_started.connect(self._on_falling_started)
         self.pet_actions.gravity.landed.connect(self._on_landed)
+        self.pet_actions.gravity.standing_lost.connect(self._on_standing_lost)
 
         # 初始位置：屏幕底部居中
         from PySide6.QtWidgets import QApplication
@@ -109,7 +111,7 @@ class PetWindow(TransparentWindow):
             self.action_queue.clear()
             self.pet_actions.grabbed()
             logger.info("[PetWindow] grabbed")
-            if self._agent and self._mouse_interaction :
+            if self._agent and self._event_reaction :
                 self._agent.trigger("interact", hint=self._PROMPT_GRABBED)
         elif event.button() == Qt.MouseButton.RightButton:
             self._show_context_menu(event.globalPosition().toPoint())
@@ -145,7 +147,7 @@ class PetWindow(TransparentWindow):
         if speed > 80:
             self.pet_actions.gravity.apply_impulse(vx, vy)
         logger.info(f"[PetWindow] released speed={speed:.0f}px/s flick={speed > 80}")
-        if self._agent and self._mouse_interaction:
+        if self._agent and self._event_reaction:
             self._agent.trigger("interact", hint=self._PROMPT_RELEASED)
 
     def _show_context_menu(self, pos):
@@ -175,10 +177,10 @@ class PetWindow(TransparentWindow):
 
             menu.addSeparator()
 
-            # 鼠标互动开关
-            on = self._mouse_interaction
-            toggle_mouse = QAction("关闭鼠标响应" if on else "开启鼠标响应")
-            toggle_mouse.triggered.connect(self._toggle_mouse_interaction)
+            # 互动反应开关
+            on = self._event_reaction
+            toggle_mouse = QAction("关闭互动反应" if on else "开启互动反应")
+            toggle_mouse.triggered.connect(self._toggle_event_reaction)
             menu.addAction(toggle_mouse)
 
         menu.addSeparator()
@@ -202,9 +204,9 @@ class PetWindow(TransparentWindow):
             self._agent.scheduler.start()
             self._agent.trigger_once(2000)  # 启动后 2s 即刻触发首次决策
 
-    def _toggle_mouse_interaction(self):
-        self._mouse_interaction = not self._mouse_interaction
-        logger.info(f"Mouse interaction {'enabled' if self._mouse_interaction else 'disabled'}")
+    def _toggle_event_reaction(self):
+        self._event_reaction = not self._event_reaction
+        logger.info(f"Event reaction {'enabled' if self._event_reaction else 'disabled'}")
 
     def _show_debug_window(self):
         if self._debug_window is None:
@@ -219,6 +221,15 @@ class PetWindow(TransparentWindow):
 
     def _on_landed(self):
         self.action_queue.resume()
+
+    def _on_standing_lost(self, window_title: str):
+        """站立窗口消失/被遮挡时，触发 LLM 交互反应。"""
+        hint = self._PROMPT_WINDOW_DISAPPEARED
+        if window_title:
+            hint += f"\n消失的窗口标题：「{window_title}」"
+        logger.info(f"[PetWindow] standing_lost: \"{window_title}\"")
+        if self._agent and self._event_reaction:
+            self._agent.trigger("interact", hint=hint)
 
     # ── 队列控制接口 ──
 
