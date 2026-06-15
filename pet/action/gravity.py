@@ -15,6 +15,7 @@ class GravitySystem(QObject):
 
     falling_started = Signal()  # 进入下落状态时发出
     landed = Signal()           # 落地时发出
+    standing_lost = Signal(str) # 站立的窗口消失/被遮挡，附带窗口标题
 
     # 物理参数
     _GRAVITY_ACCEL  = 1.5   # 重力加速度（px/tick²）
@@ -46,6 +47,8 @@ class GravitySystem(QObject):
         self._scan_tick = 0
         self._cached_effective_bottom: int | None = None
         self._standing_hwnd: int = 0
+        self._standing_title: str = ""
+        self._standing_rect: tuple | None = None
         self._force_standing_check: bool = False
         self._ALIVE_CHECK_INTERVAL = 15
         self._suppress_idle: bool = False
@@ -96,6 +99,9 @@ class GravitySystem(QObject):
             self._in_flick = False
             self._vx = 0.0
             self._vy = 0.0
+            self._standing_hwnd = 0
+            self._standing_title = ""
+            self._standing_rect = None
             self._last_anim_played = None
             if not self._timer.isActive():
                 self._timer.start(self._interval)
@@ -153,23 +159,47 @@ class GravitySystem(QObject):
                     rect = get_window_rect(self._standing_hwnd)
                     if rect is None:
                         logger.debug(f"[Gravity] standing window gone (hwnd={self._standing_hwnd})")
+                        lost_title = self._standing_title
                         self._standing_hwnd = 0
+                        self._standing_title = ""
                         self._cached_effective_bottom = None
+                        self.standing_lost.emit(lost_title)
                     elif is_window_occluded(self._standing_hwnd, skip_hwnd=int(self._window.winId())):
                         logger.debug(f"[Gravity] standing window occluded (hwnd={self._standing_hwnd})")
+                        lost_title = self._standing_title
                         self._standing_hwnd = 0
+                        self._standing_title = ""
                         self._cached_effective_bottom = None
+                        self.standing_lost.emit(lost_title)
                     else:
                         new_top = rect[1]
+                        # 窗口跟随：standing 窗口移动时，宠物同步移动
+                        expected_top = self._cached_effective_bottom + h
+                        if abs(new_top - expected_top) > 2:
+                            delta_y = new_top - expected_top
+                            new_pet_y = self._window.y() + delta_y
+                            # 水平方向也跟随窗口的水平移动
+                            old_left = self._standing_rect[0] if self._standing_rect else 0
+                            delta_x = rect[0] - old_left if self._standing_rect else 0
+                            new_pet_x = self._window.x() + delta_x
+                            clamped = self._clamp_pos(QPoint(new_pet_x, new_pet_y))
+                            self._window.move(clamped.x(), clamped.y())
+                            self._cached_effective_bottom = clamped.y()
+                            self._standing_rect = rect
+                            self._vy = 0.0
+                            return
+
                         pet_x = self._window.x()
                         pet_w = self._window.width()
                         feet_l = pet_x + pet_w // 3
                         feet_r = pet_x + (2 * pet_w) // 3
-                        if (feet_l >= rect[2] or feet_r <= rect[0]
-                                or new_top != self._cached_effective_bottom + h):
-                            logger.debug(f"[Gravity] standing window moved (hwnd={self._standing_hwnd})")
+                        if (feet_l >= rect[2] or feet_r <= rect[0]):
+                            logger.debug(f"[Gravity] standing window moved out of range (hwnd={self._standing_hwnd})")
+                            lost_title = self._standing_title
                             self._standing_hwnd = 0
+                            self._standing_title = ""
                             self._cached_effective_bottom = None
+                            self.standing_lost.emit(lost_title)
                 else:
                     self._force_standing_check = False
                 if self._cached_effective_bottom is not None:
@@ -184,6 +214,7 @@ class GravitySystem(QObject):
             pet_x = self._window.x()
             pet_self = (pet_x, old_y, pet_x + w, old_y + h)
             found_hwnd = 0
+            found_title = ""
 
             effective_bottom = screen_bottom
             pet_hwnd = int(self._window.winId())
@@ -203,12 +234,17 @@ class GravitySystem(QObject):
                             continue
                         effective_bottom = landing
                         found_hwnd = win["hwnd"]
-                        logger.debug(f"[Gravity] land on: \"{win['title'][:30]}\" top={top}")
+                        found_title = win["title"][:30]
+                        logger.debug(f"[Gravity] land on: \"{found_title}\" top={top}")
             self._cached_effective_bottom = effective_bottom
             if found_hwnd:
                 self._standing_hwnd = found_hwnd
+                self._standing_title = found_title
+                self._standing_rect = get_window_rect(found_hwnd)
             elif effective_bottom == screen_bottom:
                 self._standing_hwnd = 0
+                self._standing_title = ""
+                self._standing_rect = None
         except Exception:
             logger.exception("[Gravity] _tick scan failed")
             if self._cached_effective_bottom is None:
@@ -275,6 +311,8 @@ class GravitySystem(QObject):
         screen_bottom = geo.bottom() - h
         effective_bottom = screen_bottom
         found_hwnd = 0
+        found_title = ""
+        found_rect = None
         try:
             pet_hwnd = int(self._window.winId())
             pet_x_int = int(new_x)
@@ -290,6 +328,8 @@ class GravitySystem(QObject):
                         if landing < effective_bottom:
                             effective_bottom = landing
                             found_hwnd = win["hwnd"]
+                            found_title = win["title"][:30]
+                            found_rect = win["rect"]
         except Exception:
             pass
 
@@ -301,6 +341,8 @@ class GravitySystem(QObject):
             self._vy = 0.0
             self._cached_effective_bottom = effective_bottom
             self._standing_hwnd = found_hwnd
+            self._standing_title = found_title
+            self._standing_rect = found_rect
             self._falling = False
             self._force_standing_check = True
             self._play_once("idle")

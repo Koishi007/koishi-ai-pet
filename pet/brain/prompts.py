@@ -103,14 +103,19 @@ importance 评分标准：
 
 不需要记忆时不输出此行。一次最多输出1条Memory行。"""
 
-INTERACT_GRABBED = (
+INTERACT_GRABBED = config.INTERACT_GRABBED_PROMPT or (
     "用户正用鼠标把你抓起来"
     "用一句话（不超过 15 字）根据你的人格表达被抓住的小反应"
 )
 
-INTERACT_RELEASED = (
+INTERACT_RELEASED = config.INTERACT_RELEASED_PROMPT or (
     "用户刚刚把你放开了，你可以自由走动了。"
     "用一句话（不超过 15 字）表达重获自由的感觉"
+)
+
+INTERACT_WINDOW_DISAPPEARED = config.INTERACT_WINDOW_DISAPPEARED_PROMPT or (
+    "你刚才站在的窗口消失了（可能是被关闭、最小化或被其他窗口遮挡了）。"
+    "用一句话（不超过 20 字）根据你的人格表达对此的反应，比如惊讶、无所谓、或调侃。"
 )
 
 

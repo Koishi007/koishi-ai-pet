@@ -55,6 +55,10 @@ class Config:
 
     PET_PERSONALITY = os.getenv("PET_PERSONALITY", "")
 
+    INTERACT_GRABBED_PROMPT = os.getenv("INTERACT_GRABBED_PROMPT", "")
+    INTERACT_RELEASED_PROMPT = os.getenv("INTERACT_RELEASED_PROMPT", "")
+    INTERACT_WINDOW_DISAPPEARED_PROMPT = os.getenv("INTERACT_WINDOW_DISAPPEARED_PROMPT", "")
+
     SKILLS_ENABLED = os.getenv("SKILLS_ENABLED", "").split(",") if os.getenv("SKILLS_ENABLED") else []
 
     SHOW_TRAY = os.getenv("SHOW_TRAY", "true").lower() == "true"  # 是否显示系统托盘
