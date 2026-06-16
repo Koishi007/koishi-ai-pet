@@ -8,9 +8,9 @@ from config import config
 
 
 def _action_params():
-    """根据调度间隔自动推算：目标总时长（50%）+ 最少动作数（每15s一个）。"""
+    """根据调度间隔自动推算：目标总时长（90%）+ 最少动作数（每15s一个）。"""
     mid_s = config.SCHEDULER_MID_MS / 1000
-    target_s = int(mid_s * 0.5)
+    target_s = int(mid_s * 0.9)
     min_actions = max(4, math.ceil(target_s / 15))
     return target_s, min_actions
 
