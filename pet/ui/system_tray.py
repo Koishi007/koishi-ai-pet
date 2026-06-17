@@ -3,9 +3,11 @@ import logging
 import os
 import sys
 
+import psutil
+
 from PySide6.QtWidgets import QSystemTrayIcon, QMenu
 from PySide6.QtGui import QIcon, QAction, QCursor
-from PySide6.QtCore import QObject
+from PySide6.QtCore import QObject, QTimer
 
 from config import config
 
@@ -15,6 +17,16 @@ _ICON_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
     "assets", "icon", "sys_tray.png",
 )
+
+_PROCESS = psutil.Process(os.getpid())
+
+
+def _format_bytes(b: int) -> str:
+    for unit in ("B", "KB", "MB", "GB"):
+        if abs(b) < 1024:
+            return f"{b:.1f}{unit}"
+        b /= 1024
+    return f"{b:.1f}TB"
 
 
 class SystemTrayManager(QObject):
@@ -30,10 +42,25 @@ class SystemTrayManager(QObject):
 
         self.tray_icon = QSystemTrayIcon(self)
         self.tray_icon.setIcon(QIcon(_ICON_PATH))
-        self.tray_icon.setToolTip("DeskPet")
+        self._update_tooltip()
 
         self.tray_icon.activated.connect(self._on_activated)
         self.tray_icon.show()
+
+        # 定时更新资源信息 tooltip
+        self._tooltip_timer = QTimer(self)
+        self._tooltip_timer.timeout.connect(self._update_tooltip)
+        self._tooltip_timer.start(3000)
+
+    def _update_tooltip(self):
+        """定时更新托盘 tooltip，显示当前进程内存和 CPU 占用。"""
+        try:
+            mem_info = _PROCESS.memory_info()
+            cpu_pct = _PROCESS.cpu_percent(interval=0)
+            mem_str = _format_bytes(mem_info.rss)
+            self.tray_icon.setToolTip(f"DeskPet | 内存: {mem_str} | CPU: {cpu_pct:.1f}%")
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            self.tray_icon.setToolTip("DeskPet")
 
     def _show_menu(self):
         self.pet.raise_()
