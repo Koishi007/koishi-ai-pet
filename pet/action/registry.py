@@ -29,7 +29,7 @@ REGISTRY: dict[str, ActionDef] = {
     "normal_walk": ActionDef(
         name="normal_walk",
         category="移动",
-        description="普通行走。丝滑连续移动，走到悬崖边自然掉落。必须指定方向（left/right）和距离（300-1000px）。不可指定 duration。",
+        description="普通行走。必须指定方向（left/right）和距离（300-1000px）。不可指定 duration。",
         params=["direction: left | right", "distance: 像素，500-1000"],
         usage_example="Action: normal_walk right 800",
     ),
