@@ -149,10 +149,16 @@ def _search_bing(query: str, count: int, market: str, cfg: dict) -> dict:
 
 # ── 启动连通性检测 ────────────────────────────────────────────
 
-def check_connectivity():
-    """插件加载时检测后端连通性，结果写入日志。"""
+def check_connectivity() -> bool:
+    """检测后端连通性（同步，由 SkillLoader 后台线程调用，不阻塞主线程）。
+
+    Returns:
+        True:  至少一个后端可用
+        False: 全部后端不可用，不应注册此技能
+    """
     cfg = _load_config()
     backend = cfg.get("backend", "auto")
+    any_ok = False
 
     # 检测 SearXNG
     searxng_url = cfg.get("searxng_url", "").rstrip("/").removesuffix("/search")
@@ -168,6 +174,7 @@ def check_connectivity():
             )
             if resp.status_code == 200 and "results" in resp.json():
                 logger.info(f"[web_search] ✓ SearXNG 连通正常 → {searxng_url}")
+                any_ok = True
             else:
                 logger.warning(
                     f"[web_search] ✗ SearXNG 响应异常 → {searxng_url} "
@@ -190,6 +197,7 @@ def check_connectivity():
             )
             if resp.status_code == 200:
                 logger.info("[web_search] ✓ Bing API 连通正常")
+                any_ok = True
             else:
                 logger.warning(
                     f"[web_search] ✗ Bing API 响应异常 (HTTP {resp.status_code})"
@@ -197,9 +205,13 @@ def check_connectivity():
         except requests.RequestException as e:
             logger.warning(f"[web_search] ✗ Bing API 无法连接 ({e})")
 
-    # 两个都没配
-    if not searxng_url and not bing_key:
-        logger.warning("[web_search] ⚠ 未配置任何搜索后端，搜索功能不可用")
+    if not any_ok:
+        if not searxng_url and not bing_key:
+            logger.warning("[web_search] ⚠ 未配置任何搜索后端，搜索功能不可用")
+        else:
+            logger.warning("[web_search] ⚠ 所有搜索后端均不可达")
+
+    return any_ok
 
 
 # ── 统一入口 ──────────────────────────────────────────────────

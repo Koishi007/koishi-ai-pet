@@ -13,6 +13,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 from pet.skills.registry import SKILL_REGISTRY
@@ -90,12 +91,8 @@ def _ensure_plugin_deps(plugin_dir: Path):
         logger.warning(f"[SkillLoader] Deps install OS error for {plugin_dir.name}: {e}")
 
 
-def load_skills(enabled: list[str]):
-    """扫描 skills/plugins/ 下的子目录，按配置加载启用的插件。
-
-    Args:
-        enabled: 启用列表。["*"] 表示全部启用，[] 表示全部禁用。
-    """
+def _load_skills_sync(enabled: list[str]):
+    """同步加载所有技能插件（在后台线程中执行）。"""
     if not enabled:
         logger.info("[SkillLoader] No skills enabled")
         return
@@ -149,3 +146,21 @@ def load_skills(enabled: list[str]):
             logger.error(f"[SkillLoader] Failed to register {skill_name}: {e}")
 
     logger.info(f"[SkillLoader] {len(loaded)} skills loaded: {loaded}")
+
+
+def load_skills(enabled: list[str]):
+    """异步加载技能插件 — 在后台线程执行，立即返回不阻塞启动。
+
+    Args:
+        enabled: 启用列表。["*"] 表示全部启用，[] 表示全部禁用。
+    """
+    if not enabled:
+        logger.info("[SkillLoader] No skills enabled")
+        return
+
+    threading.Thread(
+        target=_load_skills_sync,
+        args=(enabled,),
+        daemon=True,
+        name="skill-loader",
+    ).start()
