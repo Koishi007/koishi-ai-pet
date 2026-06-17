@@ -108,7 +108,6 @@ class GravitySystem(QObject):
         self._walk_target_x = self._walk_start_x + self._walk_sign * distance
         self._walking = True
         self._suppress_idle = True
-        self._cached_effective_bottom = None  # 起步时清空旧落点
         logger.info(f"[Gravity] walk_start dir={direction} dist={distance} "
                      f"from={self._walk_start_x} to={self._walk_target_x}")
 
@@ -369,8 +368,18 @@ class GravitySystem(QObject):
                     pet_w = self._window.width()
                     feet_l = int(new_x) + pet_w // 3
                     feet_r = int(new_x) + (2 * pet_w) // 3
-                    if feet_l >= rect[2] or feet_r <= rect[0] or new_top != self._cached_effective_bottom + h:
-                        # 走出窗口范围 → 停止行走，下落
+
+                    off_edge = feet_l >= rect[2] or feet_r <= rect[0]
+                    window_moved = new_top != self._cached_effective_bottom + h
+
+                    if off_edge:
+                        # 走出窗口范围 → 夹到边缘，再下落
+                        if self._walk_sign > 0:
+                            new_x = rect[2] - pet_w // 3
+                        else:
+                            new_x = rect[0] - (2 * pet_w) // 3
+                        clamped = self._clamp_pos(QPoint(int(new_x), cur_y))
+                        self._window.move(clamped.x(), clamped.y())
                         lost_title = self._standing_title
                         self._standing_hwnd = 0
                         self._standing_title = ""
@@ -379,15 +388,30 @@ class GravitySystem(QObject):
                         self._walking = False
                         self._suppress_idle = False
                         self.standing_lost.emit(lost_title)
-                        # 交由下个 tick 的常规重力处理下落
                         if not self._falling:
                             self._falling = True
                             self.falling_started.emit()
                             self._play_once("falling")
                         return
-                    else:
-                        new_y = self._cached_effective_bottom
-                        self._vy = 0.0
+
+                    if window_moved:
+                        # 窗口垂直移动 → 停止行走，下落
+                        lost_title = self._standing_title
+                        self._standing_hwnd = 0
+                        self._standing_title = ""
+                        self._standing_rect = None
+                        self._cached_effective_bottom = None
+                        self._walking = False
+                        self._suppress_idle = False
+                        self.standing_lost.emit(lost_title)
+                        if not self._falling:
+                            self._falling = True
+                            self.falling_started.emit()
+                            self._play_once("falling")
+                        return
+
+                    new_y = self._cached_effective_bottom
+                    self._vy = 0.0
             else:
                 # 不在已知落点上，做窗口扫描
                 pet_hwnd = int(self._window.winId())
