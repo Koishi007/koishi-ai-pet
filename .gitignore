@@ -189,6 +189,9 @@ cython_debug/
 # 插件私有配置（含 API key 等敏感信息）
 pet/skills/plugins/*/config.json
 
+# 插件依赖安装标记文件（自动生成）
+pet/skills/plugins/*/.deps_installed
+
 memories.db
 
 CLAUDE.md
