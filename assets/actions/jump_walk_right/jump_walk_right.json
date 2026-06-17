@@ -1,0 +1,7 @@
+{
+  "desc": "向右弹跳行走动画",
+  "tick_counts": 15,
+  "frame_ratios": [1],
+  "loop": true,
+  "note": ""
+}

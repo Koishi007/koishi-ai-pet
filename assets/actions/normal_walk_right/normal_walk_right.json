@@ -1,5 +1,5 @@
 {
-  "desc": "向左走动画",
+  "desc": "向右普通行走动画（暂用弹跳资源）",
   "tick_counts": 15,
   "frame_ratios": [1],
   "loop": true,

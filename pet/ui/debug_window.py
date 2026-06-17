@@ -153,6 +153,11 @@ class DebugWindow(QWidget):
         anim_layout.addLayout(move_row)
 
         walk_row = QHBoxLayout()
+        walk_row.addWidget(QLabel("类型:"))
+        self.walk_type = QComboBox()
+        self.walk_type.addItems(["normal_walk", "jump_walk"])
+        self.walk_type.setCurrentText("normal_walk")
+        walk_row.addWidget(self.walk_type)
         walk_row.addWidget(QLabel("方向:"))
         self.walk_dir = QComboBox()
         self.walk_dir.addItems(["left", "right"])
@@ -327,10 +332,11 @@ class DebugWindow(QWidget):
 
     def _test_walk(self):
         self.pet.show()
+        walk_type = self.walk_type.currentText()
         direction = self.walk_dir.currentText()
         distance = self.walk_dist.value()
-        self._log(f"↩ enqueue walk {direction} {distance}px")
-        self.pet.queue_enqueue("walk", direction, distance)
+        self._log(f"↩ enqueue {walk_type} {direction} {distance}px")
+        self.pet.queue_enqueue(walk_type, direction, distance)
 
     def _test_sit(self):
         self.pet.show()
