@@ -150,7 +150,7 @@ def _search_bing(query: str, count: int, market: str, cfg: dict) -> dict:
 # ── 统一入口 ──────────────────────────────────────────────────
 
 def search(query: str, count: int = 5, language: str = "zh-CN") -> dict:
-    """网络搜索 — 根据 config.json 中 backend 字段选择后端。
+    """网络搜索 — 智能路由：优先使用 SearXNG，未配置/失败则 fallback 到 Bing。
 
     Args:
         query:    搜索关键词
@@ -158,9 +158,30 @@ def search(query: str, count: int = 5, language: str = "zh-CN") -> dict:
         language: 语言/区域代码，如 zh-CN / en-US / ja-JP（SearXNG 用 language，Bing 用 market）
     """
     cfg = _load_config()
-    backend = cfg.get("backend", "searxng")
+    backend = cfg.get("backend", "auto")
 
-    if backend == "bing":
+    # SearXNG 优先（backend=searxng 或 backend=auto）
+    if backend in ("searxng", "auto"):
+        searxng_url = cfg.get("searxng_url", "")
+        if searxng_url:
+            result = _search_searxng(query, count, language, cfg)
+            if "搜索失败" not in str(result.get("summary", "")):
+                return result
+            logger.info("[web_search] SearXNG failed, falling back to Bing")
+
+    # Bing fallback
+    bing_key = cfg.get("bing_search_key", "")
+    if bing_key:
         return _search_bing(query, count, language, cfg)
-    else:
-        return _search_searxng(query, count, language, cfg)
+
+    # 两个后端都不可用
+    searxng_ok = bool(cfg.get("searxng_url", ""))
+    return {
+        "summary": (
+            "搜索失败：所有后端均不可用。"
+            + ("SearXNG 已配置但请求失败。" if searxng_ok else "")
+            + " 请在 web_search/config.json 中配置 searxng_url 或 bing_search_key"
+        ),
+        "results": [],
+        "query": query,
+    }
