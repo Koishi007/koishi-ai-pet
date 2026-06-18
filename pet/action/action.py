@@ -216,7 +216,7 @@ class PetActions(QObject):
         g._vy = min(g._vy + g._GRAVITY_ACCEL, g._FALL_TERMINAL)
         new_y = cur_y + g._vy
 
-            try:
+        try:
             screen_bottom = screen.availableGeometry().bottom() - h if screen else cur_y
             was_at_bottom = g._cached_effective_bottom is not None and cur_y >= g._cached_effective_bottom
             if was_at_bottom and g._standing_hwnd:

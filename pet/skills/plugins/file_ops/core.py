@@ -1,12 +1,26 @@
 import os
+import sys
 import logging
 
 logger = logging.getLogger(__name__)
 
-# 安全限制：只允许操作用户桌面和文档目录
+
+def _get_special_folder(name: str) -> str:
+    """跨平台获取特殊文件夹路径（兼容中文 Windows）。"""
+    if sys.platform == "win32":
+        import ctypes
+        csidl = {"DESKTOP": 0, "DOCUMENTS": 5, "DOWNLOADS": 40}.get(name)
+        if csidl is not None:
+            buf = ctypes.create_unicode_buffer(1024)
+            if ctypes.windll.shell32.SHGetFolderPathW(0, csidl, 0, 0, buf) == 0:
+                return buf.value
+    # fallback / macOS / Linux
+    return os.path.expanduser(f"~/{name.capitalize()}")
+
+
 _ALLOWED_ROOTS = [
-    os.path.expanduser("~/Desktop"),
-    os.path.expanduser("~/Documents"),
+    _get_special_folder("DESKTOP"),
+    _get_special_folder("DOCUMENTS"),
 ]
 
 
@@ -46,7 +60,7 @@ class FileOpsTool:
             return {"error": str(e)}
 
     def write_note(self, filename: str, content: str) -> dict:
-        desktop = os.path.expanduser("~/Desktop")
+        desktop = _get_special_folder("DESKTOP")
         path = os.path.join(desktop, filename)
         try:
             abs_path = self._check_path(path)
