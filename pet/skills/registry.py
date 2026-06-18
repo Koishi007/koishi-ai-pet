@@ -19,6 +19,7 @@ class SkillMethod:
     description: str
     args: dict = field(default_factory=dict)
     handler: Callable = None
+    when: str = ""
 
 
 @dataclass
@@ -26,6 +27,7 @@ class SkillDef:
     name: str
     description: str
     methods: dict[str, SkillMethod] = field(default_factory=dict)
+    when: str = ""
 
 
 class SkillRegistry:
@@ -41,11 +43,12 @@ class SkillRegistry:
         return skill
 
     def add_method(self, skill_name: str, method_name: str,
-                   description: str, handler: Callable, args: dict = None):
+                   description: str, handler: Callable, args: dict = None,
+                   when: str = ""):
         skill = self._skills[skill_name]
         skill.methods[method_name] = SkillMethod(
             name=method_name, description=description,
-            args=args or {}, handler=handler,
+            args=args or {}, handler=handler, when=when,
         )
 
     def get_handler(self, full_name: str) -> Callable | None:
@@ -61,42 +64,10 @@ class SkillRegistry:
         method = skill.methods.get(method_name)
         return method.handler if method else None
 
-    def generate_prompt_section(self) -> str:
-        """生成注入 LLM prompt 的技能描述段。"""
-        if not self._skills:
-            return ""
-        lines = ["=== 可用技能 ===",
-                 "以上是你能调用的全部技能，禁止编造不存在的技能名。",
-                 "输出格式：",
-                 '  Skill: {"name": "skill.method", "args": {}}',
-                 "可一次输出多个 Skill 行；工具结果返回后你可以继续输出新的 Skill 行（多轮调用，最多 3 轮）。",
-                 "",
-                 "可用技能列表："]
-        for skill in self._skills.values():
-            if not self.is_enabled(skill.name):
-                continue
-            lines.append(f"\n【{skill.name}】{skill.description}")
-            for m in skill.methods.values():
-                args_desc = self._format_args(m.args)
-                args_part = f"  参数: {args_desc}" if args_desc else "  无参数"
-                lines.append(f"  - {skill.name}.{m.name}: {m.description}")
-                lines.append(f"    {args_part}")
-        return "\n".join(lines)
-
-    @staticmethod
-    def _format_args(args: dict) -> str:
-        """格式化结构化 args 为 prompt 描述文本。"""
-        if not args:
-            return ""
-        parts = []
-        for k, v in args.items():
-            t = v.get("type", "any")
-            req = v.get("required", False)
-            desc = v.get("desc", "")
-            default = v.get("default")
-            tag = "必选" if req else f"可选, 默认 {default!r}"
-            parts.append(f"{k}({t}, {tag}): {desc}")
-        return "{" + "; ".join(parts) + "}"
+    @property
+    def enabled_skills(self) -> list["SkillDef"]:
+        """返回所有已启用的技能定义列表。"""
+        return [s for s in self._skills.values() if self.is_enabled(s.name)]
 
     @property
     def skill_names(self) -> list[str]:
