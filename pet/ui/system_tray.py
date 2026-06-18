@@ -53,14 +53,28 @@ class SystemTrayManager(QObject):
         self._tooltip_timer.start(3000)
 
     def _update_tooltip(self):
-        """定时更新托盘 tooltip，显示当前进程内存和 CPU 占用。"""
+        """定时更新托盘 tooltip，显示 pulse 参数 + 进程资源。"""
+        lines = ["DeskPet"]
+        # pulse 参数
+        agent = self.pet._agent if self.pet else None
+        if agent:
+            v = agent.vitals
+            m = agent.mood
+            if v:
+                ns = v.numeric_summary()
+                lines.append(f"饱食度 {ns['satiety']:.0f} | 精力 {ns['energy']:.0f}")
+            if m:
+                ms = m.numeric_summary()
+                lines.append(f"好感 {ms['affection']:.0f} | 愉悦 {ms['joy']:.0f} | 理智 {ms['sanity']:.0f}")
+        # 资源占用
         try:
             mem_info = _PROCESS.memory_info()
             cpu_pct = _PROCESS.cpu_percent(interval=0)
             mem_str = _format_bytes(mem_info.rss)
-            self.tray_icon.setToolTip(f"DeskPet | 内存: {mem_str} | CPU: {cpu_pct:.1f}%")
+            lines.append(f"内存: {mem_str} | CPU: {cpu_pct:.1f}%")
         except (psutil.NoSuchProcess, psutil.AccessDenied):
-            self.tray_icon.setToolTip("DeskPet")
+            pass
+        self.tray_icon.setToolTip("\n".join(lines))
 
     def _show_menu(self):
         self.pet.raise_()
