@@ -716,7 +716,7 @@ class Behavior(BrainMixin):
 
     _LOCAL_ACTIONS = [
         ("idle", "Just hanging out..."),
-        ("driving", "Riding my little scooter!"),
+        ("drive", "Riding my little scooter!"),
         ("walk", "Bouncy bouncy!"),
         ("shake_arms", "Yay! So happy!"),
         ("look_around", "What's going on over there?"),
@@ -734,7 +734,7 @@ class Behavior(BrainMixin):
         logger.info(f"[{t}] [Behavior] _decide_local → {action} / {speech}")
 
         # walk 类动作需要方向和距离参数
-        if action in ("driving", "walk"):
+        if action in ("drive", "walk"):
             direction = random.choice(["left", "right"])
             distance = random.randint(300, 800)
             step = ActionStep(action, args=(direction, distance))

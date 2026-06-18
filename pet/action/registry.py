@@ -26,12 +26,12 @@ class ActionDef:
 
 
 REGISTRY: dict[str, ActionDef] = {
-    "driving": ActionDef(
-        name="driving",
+    "drive": ActionDef(
+        name="drive",
         category="移动",
         description="骑小电驴。必须指定方向（left/right）和距离（300-1000px）。不可指定 duration。",
         params=["direction: left | right", "distance: 像素，500-1000"],
-        usage_example="Action: driving right 800",
+        usage_example="Action: drive right 800",
     ),
     "walk": ActionDef(
         name="walk",

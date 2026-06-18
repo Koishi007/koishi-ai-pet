@@ -81,7 +81,7 @@ _PULSE_GUIDE = """=== 语言/动作与生理/心理状态的关系 ===
 - 心理状态：与用户互动才能变化（通过每轮输出的 Mood 行来改变）
 
 【决策建议】
-- 精力低（< 50）→ 优先安排 sit/sleep 来恢复精力，减少 driving/walk/play 等消耗精力的动作
+- 精力低（< 50）→ 优先安排 sit/sleep 来恢复精力，减少 drive/walk/play 等消耗精力的动作
 - 精力极低（< 30）→ 必须安排 sleep，直至恢复到 50 以上再考虑其他动作
 - 饱食度低（< 40）→ 在台词中表达饥饿或疲惫感，小概率不遵守用户指令
 - 饱食度极低（< 20）→ 台词中表现出虚弱/焦躁，大概率不遵守用户指令
@@ -132,21 +132,21 @@ def _build_common_tail() -> str:
   Summary: <本次观察到的屏幕内容和行为决策，50字以内>
   Emotion: happy   ← 可选，表达当前情绪
   Speech: 又有新窗口了，我过去看看
-  Action: driving right 800
+  Action: drive right 800
   Action: stretch
   Action: walk left 600
   Action: look_around
   Action: thinking duration={think_dur}
-  Action: driving right 400
+  Action: drive right 400
   Action: shake_arms
   Action: sit duration={sit_dur}
   Skill: {{"name": "skill.method", "args": {{...}}}}   ← 可选，需要获取信息时使用
 
 === 硬性约束 ===
 1. Summary 行必须放在输出最前面，50字以内
-2. 最少 {min_actions} 个 Action，序列总时长约 {target_s} 秒，必须用多个 sit/thinking/sleep 穿插 driving/walk/shake_arms/stretch/look_around 来撑满时长
+2. 最少 {min_actions} 个 Action，序列总时长约 {target_s} 秒，必须用多个 sit/thinking/sleep 穿插 drive/walk/shake_arms/stretch/look_around 来撞满时长
 3. 必须严格按照动作表输出参数，有参数要求的输出，没有的不输出"
-4. driving/walk 必须指定 left/right，距离 500-1000px
+4. drive/walk 必须指定 left/right，距离 500-1000px
 5. 输出的Action序列,fade_out / fade_in 必须成对出现（先 out 后 in），且在同一序列内配对，out和in之间必须有其他动作
 6. 必须说话，Speech 不能是 none，不超过 20 字
 7. 动作名只能是上方列出的动作之一
@@ -160,7 +160,7 @@ def _build_common_tail() -> str:
 
 
 
-_VISION_ONLY_CONSTRAINTS = """15. driving/walk 距离和方向基于截图中的实际距离估算，不要随意编造
+_VISION_ONLY_CONSTRAINTS = """15. drive/walk 距离和方向基于截图中的实际距离估算，不要随意编造
 16. 先在截图中定位自己，再观察窗口，两者结合规划动作
 17. bounce 必须有明确的窗口目标，基于窗口在截图中的位置估算参数"""
 
@@ -226,7 +226,7 @@ def non_vision_system_prompt() -> str:
         f"每次输出完整的动作序列（约{target_s}秒），禁止单个动作。"
         "\n\n=== 非视觉模式行为指南 ==="
         "\n你无法看到屏幕，仅能依据窗口探测数据感知环境。"
-        "\n- driving 方向可以随机选择，不需要精确坐标"
+        "\n- drive 方向可以随机选择，不需要精确坐标"
         "\n- 不要在非视觉模式下使用 bounce（你看不到窗口位置）"
         f"\n\n{_PULSE_GUIDE}"
         f"\n\n{_WINDOW_GUIDE}"
@@ -245,7 +245,7 @@ def vision_system_prompt() -> str:
         "\n\n=== 视觉模式行为指南 ==="
         "\n- 优先参考「窗口探测」数据（系统 API 精确坐标），截图仅作视觉确认"
         "\n- 先在截图中找到自己的形象（约125×125px），确认位置是否与探测数据一致"
-        "\n- driving/walk 距离和方向必须基于窗口探测中的「相对桌宠」数据，不可随意编造"
+        "\n- drive/walk 距离和方向必须基于窗口探测中的「相对桜宠」数据，不可随意编造"
         "\n- bounce 必须有明确的窗口目标：从窗口探测中选择一个窗口，direction 按「相对桌宠」方向，height 可以直接使用探测数据中的「上跳_N_px」,其中N为具体数值"
         "\n- 对每个窗口探测项都要尝试互动——走过去看内容，或跳到窗口顶部"
         "\n- 如果没有可跳窗口，在桌面巡视、找个地方坐下，但要先确认探测数据确实为空"
@@ -266,7 +266,7 @@ def non_vision_decide_prompt(context: str) -> str:
             f"{context}\n\n"
             "根据窗口探测数据和你的性格，输出完整的动作序列。"
             "用你的人格语气评论窗口内容。"
-            "driving 方向可以随机，不要使用 bounce。"
+            "drive 方向可以随机，不要使用 bounce。"
             "避免重复 Recent 中的行为。"
         )
     else:
@@ -275,7 +275,7 @@ def non_vision_decide_prompt(context: str) -> str:
             "当前无窗口信息。"
             "根据你的性格和直觉，输出完整的动作序列。"
             "可以巡视桌面、找个地方坐下、或者伸个懒腰。"
-            "driving 方向可以随机，不要使用 bounce。"
+            "drive 方向可以随机，不要使用 bounce。"
             "避免重复 Recent 中的行为。"
         )
 
@@ -285,8 +285,8 @@ def vision_decide_prompt(context: str) -> str:
         f"{context}\n\n"
         "根据窗口探测数据和截图，输出完整的动作序列。\n"
         "• 必须先检查窗口探测数据中是否有窗口\n"
-        "• 有窗口 → 必须生成 driving 走到附近 + bounce 跳上窗口顶部\n"
-        "  参数直接使用探测数据中的「相对桌宠」值（方向、距离、高度）\n"
+        "• 有窗口 → 必须生成 drive 走到附近 + bounce 跳上窗口顶部\n"
+        "• 参数直接使用探测数据中的「相对桜宠」值（方向、距离、高度）\n"
         "• 无窗口 → 巡视桌面、找地方坐下\n"
         "• bounce 的 height 可以使用探测数据中的「上跳_N_px」值,其中N为具体数值，不要乱写\n"
         "• 用你的人格语气评论窗口内容\n"
@@ -315,7 +315,7 @@ def chat_decide_system_prompt() -> str:
         "\n  Summary: <对话内容和行为决策的简要记录，50字以内>"
         "\n  Emotion: happy   ← 可选，表达当前情绪"
         "\n  Speech: 好嘞，我跳过去看看！"
-        "\n  Action: driving right 600"
+        "\n  Action: drive right 600"
         "\n  Skill: {\"name\": \"skill.method\", \"args\": {}}   ← 需要查询信息时使用"
         "\n  Mood: affection+5 joy+3 sanity-2   ← 可选，本次交互对你心理状态的影响"
         "\n"

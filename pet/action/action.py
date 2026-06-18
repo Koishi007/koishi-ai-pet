@@ -143,7 +143,7 @@ class PetActions(QObject):
         QTimer.singleShot(0, lambda: _hop(0))
         return sentinel
 
-    def driving(self, direction: str = "right", distance: int = 400):
+    def drive(self, direction: str = "right", distance: int = 400):
         """骑小电驴"""
         if direction not in ("left", "right"):
             raise ValueError(f"direction must be 'left' or 'right', got '{direction}'")
@@ -161,9 +161,9 @@ class PetActions(QObject):
 
         self._walk_timer.timeout.connect(self._driving_tick)
         self._walk_timer.start()
-        logger.info(f"[PetActions] driving dir={direction} dist={distance} "
+        logger.info(f"[PetActions] drive dir={direction} dist={distance} "
                      f"from={self._walk_start_x} to={self._walk_target_x}")
-        return "driving"
+        return "drive"
 
     def _stop_walk(self, switch_idle: bool = True):
         """停止行走，恢复 gravity timer，emit walk_finished。"""
