@@ -34,17 +34,20 @@ class BehaviorOutput:
     summary: Optional[str] = None
     memory_line: Optional[str] = None
     emotion: Optional[str] = None
+    mood_deltas: Optional[dict] = None  # {"affection": ±值, "joy": ±值, "sanity": ±值}
 
 
 class Behavior(BrainMixin):
 
-    def __init__(self, memory_store=None, screen_reader=None):
+    def __init__(self, memory_store=None, screen_reader=None, vitals=None, mood=None):
         super().__init__()
         self._client = None
         self._model = None
         self._lock = threading.RLock()
         self._memory_store = memory_store
         self._screen_reader = screen_reader
+        self._vitals = vitals
+        self._mood = mood
         self._setup()
 
         self._actions = ACTION_NAMES
@@ -335,6 +338,7 @@ class Behavior(BrainMixin):
             summary_holder = []
             memory_holder = []
             emotion_holder = []
+            mood_holder = []
             speech_streamed = False
             line_type = None
             speech_prefix_consumed = False
@@ -349,7 +353,7 @@ class Behavior(BrainMixin):
                 delta_speech = ""
                 for char in delta:
                     if char == "\n":
-                        self._finish_line(buffer, actions, speech_parts, skill_lines, summary_holder, memory_holder, emotion_holder)
+                        self._finish_line(buffer, actions, speech_parts, skill_lines, summary_holder, memory_holder, emotion_holder, mood_holder)
                         buffer = ""
                         line_type = None
                         speech_prefix_consumed = False
@@ -371,6 +375,8 @@ class Behavior(BrainMixin):
                                 line_type = "memory"
                             elif lower.startswith("emotion:"):
                                 line_type = "emotion"
+                            elif lower.startswith("mood:"):
+                                line_type = "mood"
                             elif len(stripped) >= 8:
                                 line_type = "other"
 
@@ -389,7 +395,7 @@ class Behavior(BrainMixin):
                     speech_streamed = True
 
             if buffer.strip():
-                self._finish_line(buffer, actions, speech_parts, skill_lines, summary_holder, memory_holder, emotion_holder)
+                self._finish_line(buffer, actions, speech_parts, skill_lines, summary_holder, memory_holder, emotion_holder, mood_holder)
 
             # Skill 调用 → 执行技能后二次 LLM 调用
             if skill_lines:
@@ -413,6 +419,7 @@ class Behavior(BrainMixin):
             logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] [Behavior] === LLM RESPONSE ({tag}) ===")
             logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] [Behavior]   raw: {raw}")
 
+            mood_deltas = self._parse_mood_line(mood_holder[0]) if mood_holder else None
             return BehaviorOutput(
                 actions=actions,
                 speech=" ".join(speech_parts),
@@ -420,6 +427,7 @@ class Behavior(BrainMixin):
                 summary=summary_holder[0] if summary_holder else None,
                 memory_line=memory_holder[0] if memory_holder else None,
                 emotion=emotion_holder[0] if emotion_holder else None,
+                mood_deltas=mood_deltas,
             )
 
         except Exception as e:
@@ -429,8 +437,11 @@ class Behavior(BrainMixin):
     def _build_decide_messages(self, context: str, vision: bool = False, base64_img: str = None) -> list:
         self._trim_history()
         context_str = self._build_context_str(context)
+        pulse_text = self._build_pulse_status()
         if vision:
             system_content = self._append_personality(prompts.vision_system_prompt())
+            if pulse_text:
+                system_content += f"\n\n{pulse_text}"
             if self._memory_store:
                 memory_text = self._memory_store.retrieve_context("")
                 if memory_text:
@@ -447,6 +458,8 @@ class Behavior(BrainMixin):
             ]
         else:
             system_content = self._append_personality(prompts.non_vision_system_prompt())
+            if pulse_text:
+                system_content += f"\n\n{pulse_text}"
             if self._memory_store:
                 memory_text = self._memory_store.retrieve_context("")
                 if memory_text:
@@ -462,6 +475,9 @@ class Behavior(BrainMixin):
     def _build_chat_messages(self, user_message: str, context: str, base64_img: str = None) -> list:
         self._trim_history()
         system_content = self._append_personality(prompts.chat_decide_system_prompt())
+        pulse_text = self._build_pulse_status()
+        if pulse_text:
+            system_content += f"\n\n{pulse_text}"
         if self._memory_store:
             memory_text = self._memory_store.retrieve_context(user_message)
             if memory_text:
@@ -491,6 +507,7 @@ class Behavior(BrainMixin):
         summary = None
         memory_line = None
         emotion = None
+        mood_line = None
         for line in content.split("\n"):
             line = line.strip()
             if not line:
@@ -511,11 +528,14 @@ class Behavior(BrainMixin):
                 memory_line = line.split(":", 1)[1].strip()
             elif lower.startswith("emotion:"):
                 emotion = line.split(":", 1)[1].strip()
+            elif lower.startswith("mood:") and mood_line is None:
+                mood_line = line.split(":", 1)[1].strip()
         if not actions:
             actions.append(ActionStep("idle"))
-        return BehaviorOutput(actions=actions, speech=speech, summary=summary, memory_line=memory_line, emotion=emotion)
+        mood_deltas = self._parse_mood_line(mood_line) if mood_line else None
+        return BehaviorOutput(actions=actions, speech=speech, summary=summary, memory_line=memory_line, emotion=emotion, mood_deltas=mood_deltas)
 
-    def _finish_line(self, buffer, actions, speech_parts, skill_lines, summary_holder=None, memory_holder=None, emotion_holder=None):
+    def _finish_line(self, buffer, actions, speech_parts, skill_lines, summary_holder=None, memory_holder=None, emotion_holder=None, mood_holder=None):
         line = buffer.strip()
         if not line:
             return
@@ -538,6 +558,21 @@ class Behavior(BrainMixin):
         elif lower.startswith("emotion:"):
             if emotion_holder is not None:
                 emotion_holder.append(line.split(":", 1)[1].strip())
+            elif lower.startswith("mood:"):
+                if mood_holder is not None:
+                    mood_holder.append(line.split(":", 1)[1].strip())
+
+    @staticmethod
+    def _parse_mood_line(raw: str) -> dict | None:
+        """解析 Mood 行，格式: affection+5 joy+3 sanity-2"""
+        import re
+        deltas = {}
+        pattern = re.compile(r'(affection|joy|sanity)\s*([+-]\s*\d+)', re.IGNORECASE)
+        for match in pattern.finditer(raw):
+            key = match.group(1).lower()
+            value = float(match.group(2).replace(" ", ""))
+            deltas[key] = value
+        return deltas if deltas else None
 
     def _parse_action_line(self, raw: str) -> ActionStep | None:
         parts = raw.split()
@@ -732,6 +767,17 @@ class Behavior(BrainMixin):
     def _trim_history(self):
         if len(self._context) > 10:
             self._context[:] = self._context[-10:]
+
+    def _build_pulse_status(self) -> str:
+        """构建当前生理/心理状态的 prompt 段。"""
+        vitals_summary = self._vitals.summary() if self._vitals else ""
+        mood_summary = self._mood.summary() if self._mood else ""
+        if not vitals_summary and not mood_summary:
+            return ""
+        return prompts._PULSE_STATUS_TEMPLATE.format(
+            vitals_summary=f"生理：{vitals_summary}" if vitals_summary else "",
+            mood_summary=f"心理：{mood_summary}" if mood_summary else "",
+        )
 
     def _append_personality(self, system_content: str) -> str:
         if config.PET_PERSONALITY:

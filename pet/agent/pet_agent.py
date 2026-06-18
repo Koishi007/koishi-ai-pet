@@ -9,8 +9,10 @@ from pet.brain.view import View
 from pet.agent.scheduler import Scheduler
 from pet.agent.state import StateMachine
 from pet.agent.screen_reader import ScreenReader
-from pet.agent.memory_store import MemoryStore
+from pet.brain.memory import MemoryStore
 from pet.action.registry import DEFAULT_ACTION_DURATIONS
+from pet.pulse.vitals import Vitals
+from pet.pulse.mood import Mood
 
 from config import config
 
@@ -59,7 +61,9 @@ class PetAgent(QObject):
         self.view_brain = View()
         self.screen_reader = ScreenReader()
         self.screen_reader.enable()
-        self.behavior = Behavior(memory_store=self.memory_store, screen_reader=self.screen_reader)
+        self.vitals = Vitals(parent=self)
+        self.mood = Mood(parent=self)
+        self.behavior = Behavior(memory_store=self.memory_store, screen_reader=self.screen_reader, vitals=self.vitals, mood=self.mood)
         self.scheduler = Scheduler(self)
         self.state_machine = StateMachine()
         self._pet_window = None
@@ -67,6 +71,8 @@ class PetAgent(QObject):
         self.scheduler.mid_tick.connect(self._on_mid_tick)
         self.scheduler.fast_tick.connect(self._on_fast_tick)
         self.scheduler.slow_tick.connect(self._on_slow_tick)
+        self.scheduler.slow_tick.connect(self.vitals.tick)
+        self.scheduler.slow_tick.connect(self.mood.tick)
 
         self._thread: QThread | None = None
         self._worker: BrainWorker | None = None
@@ -119,6 +125,10 @@ class PetAgent(QObject):
             pass
         if hasattr(self, 'memory_store'):
             self.memory_store.close()
+        if hasattr(self, 'vitals'):
+            self.vitals.close()
+        if hasattr(self, 'mood'):
+            self.mood.close()
         logger.info("[PetAgent] stopped")
 
     def trigger(self, intent: str, **kwargs):
@@ -161,7 +171,11 @@ class PetAgent(QObject):
         self._async_brain(self._decide_pipeline, pet_x, pet_y)
 
     def _on_fast_tick(self):
-        pass
+        # sit/sleep 动作期间每秒回复 0.1 精力
+        if self._pet_window:
+            cur = self._pet_window.action_queue.current_action_name()
+            if cur in ("sit", "sleep"):
+                self.vitals.modify_energy(0.1)
 
     def _on_slow_tick(self):
         from pet.agent.state import PetState
@@ -476,6 +490,14 @@ class PetAgent(QObject):
                 self.memory_store.save_from_line(result.memory_line)
             except Exception as e:
                 logger.warning(f"[PetAgent] memory save failed: {e}")
+        if hasattr(result, 'mood_deltas') and result.mood_deltas:
+            try:
+                for key, delta in result.mood_deltas.items():
+                    method = getattr(self.mood, f"modify_{key}", None)
+                    if method:
+                        method(delta)
+            except Exception as e:
+                logger.warning(f"[PetAgent] mood update failed: {e}")
         logger.info(f"[{ts}] [PetAgent] === call complete ===")
         
     def _on_brain_error(self, msg: str):

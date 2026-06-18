@@ -64,6 +64,28 @@ def generate_skill_section() -> str:
     return "\n".join(lines)
 
 
+_PULSE_GUIDE = """=== 动作与生理/心理状态的关系 ===
+你的行为会影响你的状态，你应该根据当前状态选择合适的动作：
+
+【生理状态（pulse/vitals）】
+- satiety（饱食度）：自然衰减，无法通过动作恢复，只有用户喂食才能恢复
+- energy（精力）：自然衰减，sit 和 sleep 动作期间每秒恢复 0.1
+
+【心理状态（pulse/mood）】
+- affection（好感度）：无法通过动作恢复，只有与用户互动才能变化（通过 Mood 行输出）
+- joy（愉悦度）：无法通过动作恢复，只有与用户互动才能变化（通过 Mood 行输出）
+- sanity（理智值）：无法通过动作恢复，只有与用户互动才能变化（通过 Mood 行输出）
+
+【决策建议】
+- 精力低（< 50）→ 多安排 sit/sleep 来恢复精力，减少 driving/walk 等消耗精力的动作
+- 精力极低（< 30）→ 必须安排 sleep 恢复精力
+- 饱食度低 → 在台词中表达饥饿，但无法自行恢复
+- 心理状态异常 → 在台词和行为中体现（冷淡/郁闷/恍惚），等待用户互动恢复"""
+
+_PULSE_STATUS_TEMPLATE = """=== 当前生理/心理状态 ===
+{vitals_summary}
+{mood_summary}"""
+
 _WINDOW_GUIDE = """=== 窗口互动方法 ===
 屏幕上的窗口是你与用户世界的主要连接点。你需要主动利用窗口来展开行为。
 
@@ -134,6 +156,23 @@ _VISION_ONLY_CONSTRAINTS = """15. driving/walk 距离和方向基于截图中的
 17. bounce 必须有明确的窗口目标，基于窗口在截图中的位置估算参数"""
 
 
+_MOOD_GUIDE = """## 心理状态变化
+本次交互可能影响你的心理状态，请在回复末尾额外输出一行 Mood 行（不要输出给用户看，仅供系统解析）：
+Mood: affection±值 joy±值 sanity±值
+
+三个参数含义：
+- affection（好感度）：对主人的亲近程度，被关心/互动时增加，被忽视/粗暴对待时减少
+- joy（愉悦度）：当前的开心程度，玩耍/被夸奖时增加，无聊/被批评时减少
+- sanity（理智值）：清醒/理智程度，受惊吓/目睹诡异事物/被恐吓时减少，平静/安慰/回归日常时恢复；越低越疯癫
+
+取值范围 ±1~±5，根据互动强度合理调整：
+- 轻微互动（闲聊、日常对话）：±1~±2
+- 明确积极（被夸奖、被关心、玩耍）：+3~+5
+- 明确消极（被批评、被忽视、被粗暴对待）：-3~-5
+
+不需要输出 Mood 行的情况：普通指令类对话（如「往右走」「坐下」）对心理状态无影响时，不输出此行。
+三个参数中只有受影响的才需要列出，不受影响的可以省略。"""
+
 _MEMORY_GUIDE = """## 记忆存储
 如果本次对话中出现了值得长期记住的信息（用户个人信息、偏好、习惯、重要事件、约定等），
 请在回复末尾额外输出一行（不要输出给用户看，仅供系统解析）：
@@ -180,6 +219,7 @@ def non_vision_system_prompt() -> str:
         "\n你无法看到屏幕，仅能依据窗口探测数据感知环境。"
         "\n- driving 方向可以随机选择，不需要精确坐标"
         "\n- 不要在非视觉模式下使用 bounce（你看不到窗口位置）"
+        f"\n\n{_PULSE_GUIDE}"
         f"\n\n{_WINDOW_GUIDE}"
         f"\n\n{actions}"
         f"\n\n{_build_common_tail()}"
@@ -201,6 +241,7 @@ def vision_system_prompt() -> str:
         "\n- 对每个窗口探测项都要尝试互动——走过去看内容，或跳到窗口顶部"
         "\n- 如果没有可跳窗口，在桌面巡视、找个地方坐下，但要先确认探测数据确实为空"
         "\n- 大窗口/全屏 → 走到边缘坐下或跳到低矮区域，不要硬跳"
+        f"\n\n{_PULSE_GUIDE}"
         f"\n\n{_WINDOW_GUIDE}"
         f"\n\n{actions}"
         f"\n\n{_build_common_tail()}"
@@ -260,13 +301,14 @@ def chat_decide_system_prompt() -> str:
         f"\n\n{_WINDOW_GUIDE}"
         f"\n\n{actions}"
         "\n\n=== 输出格式 ==="
-        "\n必须按以下顺序输出：Summary 行 → Emotion 行（可选） → Speech 行 → Action 行（至少 1 个）→ Skill 行（看用户输入判断是否输出）："
+        "\n必须按以下顺序输出：Summary 行 → Emotion 行（可选） → Speech 行 → Action 行（至少 1 个）→ Skill 行（可选）→ Mood 行（可选）："
         "\n  例："
         "\n  Summary: <对话内容和行为决策的简要记录，50字以内>"
         "\n  Emotion: happy   ← 可选，表达当前情绪"
         "\n  Speech: 好嘞，我跳过去看看！"
         "\n  Action: driving right 600"
         "\n  Skill: {\"name\": \"skill.method\", \"args\": {}}   ← 需要查询信息时使用"
+        "\n  Mood: affection+5 joy+3 sanity-2   ← 可选，本次交互对你心理状态的影响"
         "\n"
         "\n=== 硬性约束 ==="
         "\n1. Summary 行必须放在输出最前面，50字以内"
@@ -279,6 +321,7 @@ def chat_decide_system_prompt() -> str:
         "\n8. 参考「近期对话/行为记录」保持对话连贯，记住用户之前说过的话"
         "\n9. 假如用户让你使用某技能，在=== 可用技能 === 后面搜索，搜索到了必须调用，如果搜索不到，则按照人格设定回复暂时不会该技能"
         "\n10. Emotion 行可选，从以下列表中选择一个：happy, excited, sad, angry, surprised, thinking, sleepy, love, cool, shy, scared, hungry, curious, proud, bored"
+        f"\n\n{_MOOD_GUIDE}"
         f"\n\n{_MEMORY_GUIDE}"
     ) + (f"\n\n{generate_skill_section()}" if generate_skill_section() else "")
 

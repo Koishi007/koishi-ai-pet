@@ -169,6 +169,12 @@ class ActionQueue(QObject):
                 pass
             self._waiting_gravity_walk = False
 
+    def current_action_name(self) -> str | None:
+        """返回当前正在执行的动作名，无动作时返回 None。"""
+        if self._running and 0 < self._cursor <= len(self._queue):
+            return self._queue[self._cursor - 1][0]
+        return None
+
     def describe(self) -> list[str]:
         """返回队列可视化列表，用于调试面板展示。"""
         result = []
