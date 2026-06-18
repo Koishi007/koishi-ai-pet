@@ -26,19 +26,19 @@ class ActionDef:
 
 
 REGISTRY: dict[str, ActionDef] = {
-    "normal_walk": ActionDef(
-        name="normal_walk",
+    "driving": ActionDef(
+        name="driving",
         category="移动",
-        description="普通行走。必须指定方向（left/right）和距离（300-1000px）。不可指定 duration。",
+        description="骑小电驴。必须指定方向（left/right）和距离（300-1000px）。不可指定 duration。",
         params=["direction: left | right", "distance: 像素，500-1000"],
-        usage_example="Action: normal_walk right 800",
+        usage_example="Action: driving right 800",
     ),
-    "jump_walk": ActionDef(
-        name="jump_walk",
+    "walk": ActionDef(
+        name="walk",
         category="移动",
-        description="弹跳行走。一蹦一蹦地走，活泼可爱。必须指定方向（left/right）和距离（300-1000px）。不可指定 duration。",
+        description="行走。一蹦一蹦地走，活泼可爱。必须指定方向（left/right）和距离（300-1000px）。不可指定 duration。",
         params=["direction: left | right", "distance: 像素，500-1000"],
-        usage_example="Action: jump_walk right 800",
+        usage_example="Action: walk right 800",
     ),
     "bounce": ActionDef(
         name="bounce",
@@ -60,6 +60,13 @@ REGISTRY: dict[str, ActionDef] = {
         description="睡觉。耗时动作，必须写 duration=秒（20-40s），适合安静场景收尾。",
         params=["duration: 秒，20-40"],
         usage_example="Action: sleep duration=30",
+    ),
+    "shake_arms": ActionDef(
+        name="shake_arms",
+        category="驻留",
+        description="开心摇晃手臂，表达兴奋或喜悦，无需参数。",
+        params=[],
+        usage_example="Action: shake_arms",
     ),
     "look_around": ActionDef(
         name="look_around",

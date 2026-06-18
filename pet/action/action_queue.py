@@ -110,7 +110,7 @@ class ActionQueue(QObject):
             result.finished.connect(self._on_action_done)
             return
 
-        if result == "normal_walk":
+        if result == "driving":
             self._actions.walk_finished.connect(self._on_action_done)
             self._waiting_gravity_walk = True
             # 超时保护
@@ -185,7 +185,7 @@ class ActionQueue(QObject):
     @staticmethod
     def _format(name: str, args: tuple, kwargs: dict) -> str:
         parts = [name]
-        if name == "normal_walk" or name == "jump_walk":
+        if name == "driving" or name == "walk":
             parts.append(f"{args[0]} {args[1]}px" if len(args) >= 2 else "")
         elif name == "move_to":
             parts.append(f"({args[0].x()},{args[0].y()})→({args[1].x()},{args[1].y()})" if len(args) >= 2 else "")

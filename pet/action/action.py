@@ -67,12 +67,12 @@ class PetActions(QObject):
         self._win_anims.append(anim)
         return anim
 
-    def jump_walk(self, direction: str = "right", distance: int = 400, bounce=25):
+    def walk(self, direction: str = "right", distance: int = 400, bounce=25):
         """弹跳行走：每 50px 一跳，匀速，跳间留 250ms 供重力检测，悬空则自动取消。"""
         if direction not in ("left", "right"):
             raise ValueError(f"direction must be 'left' or 'right', got '{direction}'")
 
-        walk_action = f"jump_walk_{direction}"
+        walk_action = f"walk_{direction}"
         self._anim.play(walk_action)
         self._cleanup_stopped_anims()
         self.gravity.suppress_idle = True
@@ -143,12 +143,12 @@ class PetActions(QObject):
         QTimer.singleShot(0, lambda: _hop(0))
         return sentinel
 
-    def normal_walk(self, direction: str = "right", distance: int = 400):
-        """普通行走"""
+    def driving(self, direction: str = "right", distance: int = 400):
+        """骑小电驴"""
         if direction not in ("left", "right"):
             raise ValueError(f"direction must be 'left' or 'right', got '{direction}'")
 
-        walk_action = f"normal_walk_{direction}"
+        walk_action = f"driving_{direction}"
         self._anim.play(walk_action)
         self._cleanup_stopped_anims()
 
@@ -159,11 +159,11 @@ class PetActions(QObject):
         self.gravity.suppress_idle = True
         self.gravity.pause_timer()  # 行走期间暂停重力，由本方法 timer 接管
 
-        self._walk_timer.timeout.connect(self._normal_walk_tick)
+        self._walk_timer.timeout.connect(self._driving_tick)
         self._walk_timer.start()
-        logger.info(f"[PetActions] normal_walk dir={direction} dist={distance} "
+        logger.info(f"[PetActions] driving dir={direction} dist={distance} "
                      f"from={self._walk_start_x} to={self._walk_target_x}")
-        return "normal_walk"
+        return "driving"
 
     def _stop_walk(self, switch_idle: bool = True):
         """停止行走，恢复 gravity timer，emit walk_finished。"""
@@ -172,7 +172,7 @@ class PetActions(QObject):
         self._walking = False
         self._walk_timer.stop()
         try:
-            self._walk_timer.timeout.disconnect(self._normal_walk_tick)
+            self._walk_timer.timeout.disconnect(self._driving_tick)
         except (TypeError, RuntimeError):
             pass
         self.gravity.suppress_idle = False
@@ -182,8 +182,8 @@ class PetActions(QObject):
         logger.info(f"[PetActions] _stop_walk at x={self._window.x()}")
         self.walk_finished.emit()
 
-    def _normal_walk_tick(self):
-        """普通行走 tick：水平位移 + 垂直检测，丝滑无顿挫。"""
+    def _driving_tick(self):
+        """开车行驶 tick：水平位移 + 垂直检测，丝滑无顿挫。"""
         from PySide6.QtWidgets import QApplication
         from pet.brain.window_detector import get_visible_windows, get_window_rect, is_window_occluded
 
@@ -320,7 +320,7 @@ class PetActions(QObject):
                     new_y = effective_bottom
                     g._vy = 0.0
         except Exception:
-            logger.exception("[PetActions] _normal_walk_tick scan failed")
+            logger.exception("[PetActions] _driving_tick scan failed")
 
         clamped = g._clamp_pos(QPoint(int(new_x), int(new_y)))
         self._window.move(clamped.x(), clamped.y())
@@ -392,6 +392,9 @@ class PetActions(QObject):
 
     def idle(self):
         self._anim.play("idle")
+
+    def shake_arms(self, **_kw):
+        self._anim.play("shake_arms")
 
     def look_around(self, **_kw):
         self._anim.play("look_around")

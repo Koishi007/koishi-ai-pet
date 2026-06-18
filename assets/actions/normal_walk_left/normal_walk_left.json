@@ -1,7 +1,0 @@
-{
-  "desc": "向左普通行走动画",
-  "tick_counts": 20,
-  "frame_ratios": [0.5, 0.5],
-  "loop": true,
-  "note": ""
-}
