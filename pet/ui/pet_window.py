@@ -1,7 +1,7 @@
 import logging
 
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QMenu
-from PySide6.QtCore import Qt, QPoint, QDateTime
+from PySide6.QtCore import Qt, QPoint, QDateTime, QTimer
 from PySide6.QtGui import QMouseEvent, QAction
 from pet.ui.base_window import TransparentWindow
 from pet.ui.pet_animations import PetAnimator
@@ -36,6 +36,11 @@ class PetWindow(TransparentWindow):
         self._app = None
         self._event_reaction = False
         self._drag_history: list = []  # [(QPoint, timestamp_ms), ...]
+        self._press_pos: QPoint | None = None  # 按下时的全局坐标
+        self._click_timer = QTimer(self)       # 单击检测定时器
+        self._click_timer.setSingleShot(True)
+        self._click_timer.setInterval(50)      # 50ms 内无移动 → 判定为单击
+        self._click_timer.timeout.connect(self._on_click_confirmed)
         self._PROMPT_GRABBED = INTERACT_GRABBED
         self._PROMPT_RELEASED = INTERACT_RELEASED
         self._PROMPT_WINDOW_DISAPPEARED = INTERACT_WINDOW_DISAPPEARED
@@ -104,21 +109,39 @@ class PetWindow(TransparentWindow):
 
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton:
-            self._grab_local = QPoint(62, 20)
+            self._press_pos = event.globalPosition().toPoint()
             self._drag_history.clear()
             if self._chat_bubble:
                 self._chat_bubble.hide_bubble()
-            self.pet_actions.gravity.enable(False)
-            self.action_queue.pause()
-            self.action_queue.clear()
-            self.pet_actions.grabbed()
-            logger.info("[PetWindow] grabbed")
-            if self._agent and self._event_reaction :
-                self._agent.trigger("interact", hint=self._PROMPT_GRABBED)
+            # 先启动单击检测定时器，等待判断是单击还是拖拽
+            self._click_timer.start()
         elif event.button() == Qt.MouseButton.RightButton:
             self._show_context_menu(event.globalPosition().toPoint())
 
+    def _start_drag(self):
+        """确认为拖拽：激活抓取状态。"""
+        self._grab_local = QPoint(62, 20)
+        self.pet_actions.gravity.enable(False)
+        self.action_queue.pause()
+        self.action_queue.clear()
+        self.pet_actions.grabbed()
+        logger.info("[PetWindow] grabbed")
+        if self._agent and self._event_reaction:
+            self._agent.trigger("interact", hint=self._PROMPT_GRABBED)
+
+    def _on_click_confirmed(self):
+        """150ms 内无移动，判定为单击，播放爱心粒子。"""
+        self._press_pos = None
+        self.particles.spawn("hearts")
+        logger.info("[PetWindow] click → hearts")
+
     def mouseMoveEvent(self, event: QMouseEvent):
+        # 若单击定时器还在跑，检查是否已移动足够距离以判定为拖拽
+        if self._click_timer.isActive() and self._press_pos is not None:
+            delta = event.globalPosition().toPoint() - self._press_pos
+            if delta.manhattanLength() >= 5:
+                self._click_timer.stop()
+                self._start_drag()
         if self._grab_local is not None:
             new_pos = event.globalPosition().toPoint() - self._grab_local
             self.move(new_pos)
@@ -128,7 +151,14 @@ class PetWindow(TransparentWindow):
                 self._drag_history.pop(0)
 
     def mouseReleaseEvent(self, event: QMouseEvent):
-        if event.button() != Qt.MouseButton.LeftButton or self._grab_local is None:
+        if event.button() != Qt.MouseButton.LeftButton:
+            return
+        # 若单击定时器还在跑（松开很快，未触发移动），也当单击处理
+        if self._click_timer.isActive():
+            self._click_timer.stop()
+            self._on_click_confirmed()
+            return
+        if self._grab_local is None:
             return
         self._grab_local = None
         self.action_queue.resume()
