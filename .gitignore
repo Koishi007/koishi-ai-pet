@@ -192,7 +192,7 @@ pet/skills/plugins/*/config.json
 # 插件依赖安装标记文件（自动生成）
 pet/skills/plugins/*/.deps_installed
 
-memories.db
+pet.db
 
 CLAUDE.md
 /.claude
