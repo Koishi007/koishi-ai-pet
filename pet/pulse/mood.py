@@ -1,8 +1,4 @@
-"""Mood — 心理数值引擎：好感度、愉悦度、理智值。
-
-三项参数仅通过 modify 方法增减，无自动衰减。
-数值持久化到 pet.db（与 MemoryStore / Vitals 共用同一数据库，不同表）。
-"""
+"""Mood — 心理数值引擎：好感度、愉悦度、理智值"""
 
 import logging
 import sqlite3
@@ -15,42 +11,23 @@ from PySide6.QtCore import QObject, Signal
 
 logger = logging.getLogger(__name__)
 
-# ── 数据库路径 ──────────────────────────────────────────
 _DB_PATH = str(Path(__file__).resolve().parent.parent.parent / "pet.db")
 
 
-# ── 阈值定义 ──────────────────────────────────────────
-
 @dataclass(frozen=True)
 class MoodThresholds:
-    """心理状态的触发阈值。"""
-    affection_low: float = 30.0        # 好感度 < 此值 → 冷淡
-    affection_estranged: float = 10.0  # 好感度 < 此值 → 生疏
-    joy_low: float = 30.0             # 愉悦度 < 此值 → 不开心
-    joy_depressed: float = 10.0       # 愉悦度 < 此值 → 郁闷
-    sanity_low: float = 30.0          # 理智值 < 此值 → 神志恍惚
-    sanity_mad: float = 10.0          # 理智值 < 此值 → 癫狂
+    affection_low: float = 30.0
+    affection_estranged: float = 10.0
+    joy_low: float = 30.0
+    joy_depressed: float = 10.0
+    sanity_low: float = 30.0
+    sanity_mad: float = 10.0
 
 
 # ── Mood ──────────────────────────────────────────────
 
 class Mood(QObject):
-    """心理数值系统，三项参数仅通过 modify 方法增减，无自动衰减。
-
-    三个参数：
-        affection（好感度）— 对主人的亲近程度
-        joy（愉悦度）      — 当前的开心程度
-        sanity（理智值）   — 清醒/理智程度，越低越疯癫
-
-    信号：
-        affection_low       — 好感度 < 30，变得冷淡
-        affection_estranged — 好感度 < 10，变得生疏
-        joy_low             — 愉悦度 < 30，不开心
-        joy_depressed       — 愉悦度 < 10，郁闷
-        sanity_low          — 理智值 < 30，神志恍惚
-        sanity_mad          — 理智值 < 10，癫狂
-        mood_recovered      — 三项都 > 50，恢复正常
-    """
+    """心理数值系统"""
 
     affection_low       = Signal()
     affection_estranged = Signal()
@@ -84,7 +61,6 @@ class Mood(QObject):
         logger.info(f"[Mood] 初始化完成 好感={self._affection:.1f} "
                     f"愉悦={self._joy:.1f} 理智={self._sanity:.1f}")
 
-    # ── SQLite ──────────────────────────────────────────
 
     def _create_table(self):
         """创建 mood 表（单行存储当前心理状态）。"""
@@ -121,7 +97,6 @@ class Mood(QObject):
             )
             self._conn.commit()
 
-    # ── 属性 ──────────────────────────────────────────
 
     @property
     def affection(self) -> float:
@@ -148,7 +123,6 @@ class Mood(QObject):
     def is_sanity_low(self) -> bool:
         return self._sanity < self._thresholds.sanity_low
 
-    # ── 状态摘要（供 prompt 注入） ────────────────────
 
     def summary(self) -> str:
         """返回当前心理状态的人可读摘要。"""
@@ -203,39 +177,32 @@ class Mood(QObject):
             "sanity_low": self.is_sanity_low(),
         }
 
-    # ── 参数增减（对外暴露） ──────────────────────────
 
     _DELTA_MAX = 5.0
 
     def modify_affection(self, delta: float):
-        """增减好感度，delta 会被 clamp 到 ±5，参数范围 0~100。持久化由 tick 统一处理。"""
         delta = max(-self._DELTA_MAX, min(self._DELTA_MAX, delta))
         old = self._affection
         self._affection = max(0.0, min(100.0, self._affection + delta))
         logger.info(f"[Mood] 好感度 {delta:+.1f} ({old:.1f}→{self._affection:.1f})")
 
     def modify_joy(self, delta: float):
-        """增减愉悦度，delta 会被 clamp 到 ±5，参数范围 0~100。持久化由 tick 统一处理。"""
         delta = max(-self._DELTA_MAX, min(self._DELTA_MAX, delta))
         old = self._joy
         self._joy = max(0.0, min(100.0, self._joy + delta))
         logger.info(f"[Mood] 愉悦度 {delta:+.1f} ({old:.1f}→{self._joy:.1f})")
 
     def modify_sanity(self, delta: float):
-        """增减理智值，delta 会被 clamp 到 ±5，参数范围 0~100。持久化由 tick 统一处理。"""
         delta = max(-self._DELTA_MAX, min(self._DELTA_MAX, delta))
         old = self._sanity
         self._sanity = max(0.0, min(100.0, self._sanity + delta))
         logger.info(f"[Mood] 理智值 {delta:+.1f} ({old:.1f}→{self._sanity:.1f})")
 
-    # ── tick：由 Scheduler.slow_tick 驱动 ────────────────
 
     def tick(self):
-        """每次 slow_tick 调用，持久化当前数值并检查阈值信号。"""
         self._save()
         self._check_thresholds()
 
-    # ── 信号触发 ──────────────────────────────────────
 
     def _init_threshold_flags(self):
         """启动时根据当前数值设置防抖标记。"""
@@ -312,7 +279,6 @@ class Mood(QObject):
             self.mood_recovered.emit()
             logger.info("[Mood] 心理状态恢复正常！")
 
-    # ── 生命周期 ──────────────────────────────────────
 
     def close(self):
         self._save()

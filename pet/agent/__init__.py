@@ -1,4 +1,4 @@
-"""Agent 调度层 — 编排截图、窗口探测、LLM 决策，通过 Signal 驱动 UI。"""
+"""Agent 调度层 — PetAgent 编排全流程，Scheduler 三速定时调度，StateMachine 状态机，ScreenReader 截图采集。"""
 
 from pet.agent.pet_agent import PetAgent
 from pet.agent.scheduler import Scheduler

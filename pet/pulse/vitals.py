@@ -1,9 +1,4 @@
-"""Vitals — 生理数值引擎：饱食度、精力。
-
-衰减由 Scheduler 的 slow_tick 驱动（每 5 分钟一次），
-每次衰减 0~3，查表模拟正态分布（均值 ≈ 1.5）。
-数值持久化到 pet.db（与 MemoryStore 共用同一数据库，不同表）。
-"""
+"""Vitals — 生理数值引擎：饱食度、精力"""
 
 import logging
 import random
@@ -17,25 +12,20 @@ from PySide6.QtCore import QObject, Signal
 
 logger = logging.getLogger(__name__)
 
-# ── 数据库路径（与 MemoryStore 共用 pet.db） ──────────
 _DB_PATH = str(Path(__file__).resolve().parent.parent.parent / "pet.db")
 
 
-# ── 阈值定义 ──────────────────────────────────────────────
 
 @dataclass(frozen=True)
 class Thresholds:
     """各状态的触发阈值，方便集中调整。"""
-    satiety_hungry: float = 30.0    # 饱食度 < 此值 → 饿了
-    satiety_starving: float = 10.0  # 饱食度 < 此值 → 饿坏了
-    energy_tired: float = 30.0     # 精力 < 此值 → 累了
-    energy_exhausted: float = 10.0  # 精力 < 此值 → 筋疲力尽
+    satiety_hungry: float = 30.0    
+    satiety_starving: float = 10.0  
+    energy_tired: float = 30.0     
+    energy_exhausted: float = 10.0  
 
 
-# ── 正态衰减查表 ──────────────────────────────────────────
 # 模拟 μ=1.5 σ≈0.8 的截断正态分布，值域 [0, 3]
-# 权重合计 100，便于 random.choices 直接用
-
 _DECAY_TABLE = [
     (0.0,  5),   # P ≈ 5%
     (0.5, 12),   # P ≈ 12%
@@ -58,19 +48,7 @@ def _sample_decay() -> float:
 # ── Vitals ────────────────────────────────────────────────
 
 class Vitals(QObject):
-    """生理数值系统，由 Scheduler.slow_tick 驱动衰减，外部通过 modify 方法增减参数。
-
-    两个参数：
-        satiety（饱食度）— 自然衰减，投喂恢复
-        energy（精力）   — 自然衰减，休息恢复
-
-    信号：
-        hungry      — 饿了（饱食度 < 30）
-        starving    — 饿坏了（饱食度 < 10）
-        tired       — 累了（精力 < 30）
-        exhausted   — 筋疲力尽（精力 < 10）
-        recovered   — 恢复正常（饱食度 & 精力都 > 50）
-    """
+    """生理数值系统，由 Scheduler.slow_tick 驱动衰减，外部通过 modify 方法增减参数"""
 
     hungry     = Signal()
     starving   = Signal()
@@ -99,10 +77,8 @@ class Vitals(QObject):
 
         logger.info(f"[Vitals] 初始化完成 饱食度={self._satiety:.1f} 精力={self._energy:.1f}")
 
-    # ── SQLite ────────────────────────────────────────────
 
     def _create_table(self):
-        """创建 vitals 表（单行 key-value 结构，只存一行当前状态）。"""
         with self._lock:
             self._conn.execute("""
                 CREATE TABLE IF NOT EXISTS vitals (
@@ -132,7 +108,6 @@ class Vitals(QObject):
             )
             self._conn.commit()
 
-    # ── 属性 ──────────────────────────────────────────────
 
     @property
     def satiety(self) -> float:
@@ -152,7 +127,6 @@ class Vitals(QObject):
     def is_tired(self) -> bool:
         return self._energy < self._thresholds.energy_tired
 
-    # ── 状态摘要（供 prompt 注入） ────────────────────────
 
     def summary(self) -> str:
         """返回当前生理状态的人可读摘要，供 LLM prompt 使用。"""
@@ -186,21 +160,17 @@ class Vitals(QObject):
             "tired":   self.is_tired(),
         }
 
-    # ── 参数增减（对外暴露） ──────────────────────────────
 
     def modify_satiety(self, delta: float):
-        """增减饱食度，delta 正值增加、负值减少，范围 0~100。持久化由 tick 统一处理。"""
         old = self._satiety
         self._satiety = max(0.0, min(100.0, self._satiety + delta))
-        logger.info(f"[Vitals] 饱食度 {delta:+.1f} ({old:.1f}→{self._satiety:.1f})")
+        logger.debug(f"[Vitals] 饱食度 {delta:+.1f} ({old:.1f}→{self._satiety:.1f})")
 
     def modify_energy(self, delta: float):
-        """增减精力，delta 正值增加、负值减少，范围 0~100。持久化由 tick 统一处理。"""
         old = self._energy
         self._energy = max(0.0, min(100.0, self._energy + delta))
-        logger.info(f"[Vitals] 精力 {delta:+.1f} ({old:.1f}→{self._energy:.1f})")
+        logger.debug(f"[Vitals] 精力 {delta:+.1f} ({old:.1f}→{self._energy:.1f})")
 
-    # ── tick：由 Scheduler.slow_tick 驱动 ──────────────────
 
     def tick(self):
         """每次 slow_tick 调用一次，饱食度和精力各自独立衰减 0~3，然后持久化。"""
@@ -218,7 +188,6 @@ class Vitals(QObject):
         self._save()
         self._check_thresholds()
 
-    # ── 信号触发 ──────────────────────────────────────────
 
     def _init_threshold_flags(self):
         """启动时根据当前数值设置防抖标记，避免重复触发。"""
@@ -274,7 +243,6 @@ class Vitals(QObject):
             self.recovered.emit()
             logger.info("[Vitals] 恢复正常！")
 
-    # ── 生命周期 ──────────────────────────────────────────
 
     def close(self):
         self._save()
