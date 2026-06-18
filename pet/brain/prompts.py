@@ -331,6 +331,7 @@ def chat_decide_system_prompt() -> str:
         "\n9. 假如用户让你使用某技能，在=== 可用技能 === 后面搜索，搜索到了必须调用，如果搜索不到，则按照人格设定回复暂时不会该技能"
         "\n10. Emotion 行可选，从以下列表中选择一个：happy, excited, sad, angry, surprised, thinking, sleepy, love, cool, shy, scared, hungry, curious, proud, bored"
         f"\n\n{_MOOD_GUIDE}"
+        f"\n\n{_PULSE_GUIDE}"
         f"\n\n{_MEMORY_GUIDE}"
     ) + (f"\n\n{generate_skill_section()}" if generate_skill_section() else "")
 
