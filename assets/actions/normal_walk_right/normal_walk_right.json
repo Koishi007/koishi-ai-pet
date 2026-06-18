@@ -1,6 +1,6 @@
 {
-  "desc": "向右普通行走动画（暂用弹跳资源）",
-  "tick_counts": 45,
+  "desc": "向右普通行走动画",
+  "tick_counts": 20,
   "frame_ratios": [0.5, 0.5],
   "loop": true,
   "note": ""
