@@ -769,15 +769,20 @@ class Behavior(BrainMixin):
             self._context[:] = self._context[-10:]
 
     def _build_pulse_status(self) -> str:
-        """构建当前生理/心理状态的 prompt 段。"""
-        vitals_summary = self._vitals.summary() if self._vitals else ""
-        mood_summary = self._mood.summary() if self._mood else ""
-        if not vitals_summary and not mood_summary:
+        """构建当前生理/心理状态的 prompt 段，含数值和文字描述。"""
+        parts = []
+        if self._vitals:
+            ns = self._vitals.numeric_summary()
+            desc = self._vitals.summary()
+            parts.append(f"生理：饱食度 {ns['satiety']:.0f}、精力 {ns['energy']:.0f}（{desc}）")
+        if self._mood:
+            ms = self._mood.numeric_summary()
+            desc = self._mood.summary()
+            parts.append(f"心理：好感 {ms['affection']:.0f}、愉悦 {ms['joy']:.0f}、理智 {ms['sanity']:.0f}（{desc}）")
+        if not parts:
             return ""
-        return prompts._PULSE_STATUS_TEMPLATE.format(
-            vitals_summary=f"生理：{vitals_summary}" if vitals_summary else "",
-            mood_summary=f"心理：{mood_summary}" if mood_summary else "",
-        )
+        header = "=== 当前生理/心理状态 ==="
+        return f"{header}\n" + "\n".join(parts)
 
     def _append_personality(self, system_content: str) -> str:
         if config.PET_PERSONALITY:
