@@ -43,7 +43,6 @@ class Scheduler(QObject):
     idle_paused = Signal(bool)
 
     _VALID_NAMES = ("fast", "mid", "slow")
-    _SIGNAL_MAP = None  # 延迟初始化，避免类级别引用 Signal 实例
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -56,11 +55,8 @@ class Scheduler(QObject):
         self._initialized = False
         logger.debug("[Scheduler] Created")
 
-    @classmethod
-    def _get_signal_map(cls):
-        if cls._SIGNAL_MAP is None:
-            cls._SIGNAL_MAP = {"fast": cls.fast_tick, "mid": cls.mid_tick, "slow": cls.slow_tick}
-        return cls._SIGNAL_MAP
+    def _get_signal_map(self):
+        return {"fast": self.fast_tick, "mid": self.mid_tick, "slow": self.slow_tick}
 
     def init(self, auto_fast: bool = True, auto_mid: bool = True, auto_slow: bool = True):
         """初始化调度器：始终创建全部三个 timer，auto_xxx 控制初始是否运行。
@@ -173,7 +169,6 @@ class Scheduler(QObject):
             raise ValueError(f"Invalid timer name '{name}', must be one of {self._VALID_NAMES}")
         return name in self._manually_paused
 
-    # ── 便捷别名 ──
 
     def pause_mid(self):
         self.pause("mid")
