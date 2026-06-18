@@ -6,6 +6,7 @@ from PySide6.QtWidgets import QApplication
 from pet.ui.pet_window import PetWindow
 from pet.ui.system_tray import SystemTrayManager
 from pet.ui.bubble import SpeechBubble
+from pet.ui.emotion import EmotionBubble
 from pet.ui.chat_bubble import ChatBubble
 from pet.agent import PetAgent
 from pet.skills import load_skills
@@ -57,6 +58,7 @@ def main():
     window.set_app(app)
     agent.set_pet_window(window)  # 供窗口坐标探测用
     bubble = SpeechBubble(window)
+    emotion_bubble = EmotionBubble(window)
 
     chat_bubble = ChatBubble(window)
     window.set_chat_bubble(chat_bubble)
@@ -65,6 +67,7 @@ def main():
     )
 
     agent.action_requested.connect(window.queue_enqueue_action)
+    agent.emotion_requested.connect(emotion_bubble.show_emotion)
     agent.speak_requested.connect(bubble.show_text)
     agent.speak_stream_start.connect(bubble.start_stream)
     agent.speak_stream_chunk.connect(bubble.append_stream)

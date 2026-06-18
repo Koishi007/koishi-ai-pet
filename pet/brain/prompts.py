@@ -96,9 +96,10 @@ def _build_common_tail() -> str:
     think_dur = max(5, int(target_s * 0.10))
 
     return f"""=== 输出格式 ===
-必须按以下顺序输出：Summary 行 → Speech 行 → 至少{min_actions}个 Action 行，缺一不可：
+必须按以下顺序输出：Summary 行 → Emotion 行 → Speech 行 → 至少{min_actions}个 Action 行，缺一不可：
 
   Summary: <本次观察到的屏幕内容和行为决策，50字以内>
+  Emotion: happy   ← 可选，表达当前情绪
   Speech: 又有新窗口了，我过去看看
   Action: driving right 800
   Action: stretch
@@ -106,7 +107,7 @@ def _build_common_tail() -> str:
   Action: look_around
   Action: thinking duration={think_dur}
   Action: driving right 400
-  Action: look_around
+  Action: shake_arms
   Action: sit duration={sit_dur}
   Skill: {{"name": "skill.method", "args": {{...}}}}   ← 可选，需要获取信息时使用
 
@@ -123,13 +124,14 @@ def _build_common_tail() -> str:
 10. bounce 的 height 禁止超过 900px；窗口探测标记"禁止跳跃"的窗口不得作为 bounce 目标
 11. 如果截图找不到桌宠形象的位置，必须使用fade_in
 12. 每个 Action 行只能包含一个动作，多个动作必须分开写在多行
-13. sit/thinking/sleep 必须写 duration 参数撑时长，不可省略"""
+13. sit/thinking/sleep 必须写 duration 参数撑时长，不可省略
+14. Emotion 行可选，从以下列表中选择一个：happy, excited, sad, angry, surprised, thinking, sleepy, love, cool, shy, scared, hungry, curious, proud, bored"""
 
 
 
-_VISION_ONLY_CONSTRAINTS = """14. driving/walk 距离和方向基于截图中的实际距离估算，不要随意编造
-15. 先在截图中定位自己，再观察窗口，两者结合规划动作
-16. bounce 必须有明确的窗口目标，基于窗口在截图中的位置估算参数"""
+_VISION_ONLY_CONSTRAINTS = """15. driving/walk 距离和方向基于截图中的实际距离估算，不要随意编造
+16. 先在截图中定位自己，再观察窗口，两者结合规划动作
+17. bounce 必须有明确的窗口目标，基于窗口在截图中的位置估算参数"""
 
 
 _MEMORY_GUIDE = """## 记忆存储
@@ -258,9 +260,10 @@ def chat_decide_system_prompt() -> str:
         f"\n\n{_WINDOW_GUIDE}"
         f"\n\n{actions}"
         "\n\n=== 输出格式 ==="
-        "\n必须按以下顺序输出：Summary 行 → Speech 行 → Action 行（至少 1 个）→ Skill 行（看用户输入判断是否输出）："
+        "\n必须按以下顺序输出：Summary 行 → Emotion 行（可选） → Speech 行 → Action 行（至少 1 个）→ Skill 行（看用户输入判断是否输出）："
         "\n  例："
         "\n  Summary: <对话内容和行为决策的简要记录，50字以内>"
+        "\n  Emotion: happy   ← 可选，表达当前情绪"
         "\n  Speech: 好嘞，我跳过去看看！"
         "\n  Action: driving right 600"
         "\n  Skill: {\"name\": \"skill.method\", \"args\": {}}   ← 需要查询信息时使用"
@@ -275,6 +278,7 @@ def chat_decide_system_prompt() -> str:
         "\n7. 动作名只能是上方列出的动作之一"
         "\n8. 参考「近期对话/行为记录」保持对话连贯，记住用户之前说过的话"
         "\n9. 假如用户让你使用某技能，在=== 可用技能 === 后面搜索，搜索到了必须调用，如果搜索不到，则按照人格设定回复暂时不会该技能"
+        "\n10. Emotion 行可选，从以下列表中选择一个：happy, excited, sad, angry, surprised, thinking, sleepy, love, cool, shy, scared, hungry, curious, proud, bored"
         f"\n\n{_MEMORY_GUIDE}"
     ) + (f"\n\n{generate_skill_section()}" if generate_skill_section() else "")
 
@@ -328,11 +332,13 @@ def interact_system_prompt() -> str:
         f"{actions}\n\n"
         "=== 输出格式 ===\n"
         "Summary: <10字内简述发生了什么>\n"
+        "Emotion: <可选，情绪关键词>\n"
         "Speech: <即时反应，不超过 15 字>\n"
         "Action: <1-2 个动作>\n\n"
         "=== 约束 ===\n"
         "1. Speech 简短（≤ 20 字），是本能反应而非分析，风格由你的个性决定\n"
         "2. 只输出1-2个Action\n"
         "3. 禁止输出 Skill 行\n"
-        "4. 完全由你的个性决定反应方式"
+        "4. 完全由你的个性决定反应方式\n"
+        "5. Emotion 可选，可选值：happy, excited, sad, angry, surprised, thinking, sleepy, love, cool, shy, scared, hungry, curious, proud, bored"
     ) + (f"\n\n=== 你的性格 ===\n{config.PET_PERSONALITY}" if config.PET_PERSONALITY else "")

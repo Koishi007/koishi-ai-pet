@@ -33,6 +33,7 @@ class BehaviorOutput:
     speech_streamed: bool = False
     summary: Optional[str] = None
     memory_line: Optional[str] = None
+    emotion: Optional[str] = None
 
 
 class Behavior(BrainMixin):
@@ -333,6 +334,7 @@ class Behavior(BrainMixin):
             skill_lines = []
             summary_holder = []
             memory_holder = []
+            emotion_holder = []
             speech_streamed = False
             line_type = None
             speech_prefix_consumed = False
@@ -347,7 +349,7 @@ class Behavior(BrainMixin):
                 delta_speech = ""
                 for char in delta:
                     if char == "\n":
-                        self._finish_line(buffer, actions, speech_parts, skill_lines, summary_holder, memory_holder)
+                        self._finish_line(buffer, actions, speech_parts, skill_lines, summary_holder, memory_holder, emotion_holder)
                         buffer = ""
                         line_type = None
                         speech_prefix_consumed = False
@@ -367,6 +369,8 @@ class Behavior(BrainMixin):
                                 line_type = "summary"
                             elif lower.startswith("memory:"):
                                 line_type = "memory"
+                            elif lower.startswith("emotion:"):
+                                line_type = "emotion"
                             elif len(stripped) >= 8:
                                 line_type = "other"
 
@@ -385,7 +389,7 @@ class Behavior(BrainMixin):
                     speech_streamed = True
 
             if buffer.strip():
-                self._finish_line(buffer, actions, speech_parts, skill_lines, summary_holder, memory_holder)
+                self._finish_line(buffer, actions, speech_parts, skill_lines, summary_holder, memory_holder, emotion_holder)
 
             # Skill 调用 → 执行技能后二次 LLM 调用
             if skill_lines:
@@ -415,6 +419,7 @@ class Behavior(BrainMixin):
                 speech_streamed=speech_streamed,
                 summary=summary_holder[0] if summary_holder else None,
                 memory_line=memory_holder[0] if memory_holder else None,
+                emotion=emotion_holder[0] if emotion_holder else None,
             )
 
         except Exception as e:
@@ -485,6 +490,7 @@ class Behavior(BrainMixin):
         speech = None
         summary = None
         memory_line = None
+        emotion = None
         for line in content.split("\n"):
             line = line.strip()
             if not line:
@@ -503,11 +509,13 @@ class Behavior(BrainMixin):
                 summary = line.split(":", 1)[1].strip()
             elif lower.startswith("memory:") and memory_line is None:
                 memory_line = line.split(":", 1)[1].strip()
+            elif lower.startswith("emotion:"):
+                emotion = line.split(":", 1)[1].strip()
         if not actions:
             actions.append(ActionStep("idle"))
-        return BehaviorOutput(actions=actions, speech=speech, summary=summary, memory_line=memory_line)
+        return BehaviorOutput(actions=actions, speech=speech, summary=summary, memory_line=memory_line, emotion=emotion)
 
-    def _finish_line(self, buffer, actions, speech_parts, skill_lines, summary_holder=None, memory_holder=None):
+    def _finish_line(self, buffer, actions, speech_parts, skill_lines, summary_holder=None, memory_holder=None, emotion_holder=None):
         line = buffer.strip()
         if not line:
             return
@@ -527,6 +535,9 @@ class Behavior(BrainMixin):
         elif lower.startswith("memory:"):
             if memory_holder is not None:
                 memory_holder.append(line.split(":", 1)[1].strip())
+        elif lower.startswith("emotion:"):
+            if emotion_holder is not None:
+                emotion_holder.append(line.split(":", 1)[1].strip())
 
     def _parse_action_line(self, raw: str) -> ActionStep | None:
         parts = raw.split()
@@ -698,6 +709,7 @@ class Behavior(BrainMixin):
         return BehaviorOutput(
             actions=[step],
             speech=speech,
+            emotion="happy" if action == "shake_arms" else None,
         )
 
     def _chat_decide_local(self, user_message: str) -> BehaviorOutput:

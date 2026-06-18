@@ -45,6 +45,7 @@ class PetAgent(QObject):
 
     action_requested = Signal(str, object, object)
     speak_requested  = Signal(str, int)
+    emotion_requested = Signal(str, int)
     state_changed    = Signal(str)
     view_ready       = Signal(str)
     view_error       = Signal(str)
@@ -460,6 +461,8 @@ class PetAgent(QObject):
                 self.behavior.add_context(f"[{ts}] [summary] {result.summary}")
             for step in result.actions:
                 self._emit_action(step.name, step.args, step.kwargs)
+            if result.emotion:
+                self.emotion_requested.emit(result.emotion, 3000)
         elif isinstance(result, str):
             logger.info(f"[{ts}] [PetAgent] ← \"{result[:60]}\"")
             self.behavior.add_context(f"[{ts}] said: {result[:100]}")
