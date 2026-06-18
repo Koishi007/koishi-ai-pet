@@ -84,12 +84,19 @@ class PetAgent(QObject):
         self._pet_window = window
 
     def start(self):
-        if config.SCHEDULER_AUTO_START:
-            self.scheduler.start()
-            logger.info("[PetAgent] scheduler auto-started")
-            self.trigger_once(5000)
+        fast_ms = config.SCHEDULER_FAST_MS if config.SCHEDULER_AUTO_START_FAST else 0
+        mid_ms = config.SCHEDULER_MID_MS if config.SCHEDULER_AUTO_START_MID else 0
+        slow_ms = config.SCHEDULER_SLOW_MS if config.SCHEDULER_AUTO_START_SLOW else 0
+        if fast_ms or mid_ms or slow_ms:
+            self.scheduler.start(fast_ms=fast_ms, mid_ms=mid_ms, slow_ms=slow_ms)
+            if mid_ms:
+                self.trigger_once(5000)
+            auto = {"fast": config.SCHEDULER_AUTO_START_FAST,
+                    "mid": config.SCHEDULER_AUTO_START_MID,
+                    "slow": config.SCHEDULER_AUTO_START_SLOW}
+            logger.info(f"[PetAgent] scheduler auto-start: {auto}")
         else:
-            logger.info("[PetAgent] scheduler auto-start disabled (SCHEDULER_AUTO_START=false)")
+            logger.info("[PetAgent] scheduler auto-start: all disabled")
 
     def trigger_once(self, delay_ms: int = 2000, stream: bool = True,
                       screenshot: bool = True):

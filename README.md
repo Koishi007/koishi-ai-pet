@@ -66,7 +66,9 @@ python main.py
 | `BRAIN` | LLM 后端：`local`/`llm`/`ollama` | `local` |
 | `VISION_ENABLED` | 是否启用视觉截图分析 | `false` |
 | `VISION_SCALE` | 截图缩放比例（下限锁 1536px） | `1` |
-| `SCHEDULER_AUTO_START` | 是否自动启动定时决策 | `false` |
+| `SCHEDULER_AUTO_START_FAST` | 是否自动启动 fast_tick（精力回复） | `true` |
+| `SCHEDULER_AUTO_START_MID` | 是否自动启动 mid_tick（自主决策） | `true` |
+| `SCHEDULER_AUTO_START_SLOW` | 是否自动启动 slow_tick（pulse 持久化） | `true` |
 | `SCHEDULER_MID_MS` | 自主决策间隔（毫秒） | `30000` |
 | `SKILLS_ENABLED` | 启用的技能插件 | （空=全禁用） |
 | `PET_PERSONALITY` | 宠物人格描述（注入 prompt） | （空） |

@@ -47,7 +47,9 @@ class Config:
     # 动作最大持续时间
     ACTION_TIMEOUT_MS = int(os.getenv("ACTION_TIMEOUT_MS", "15000"))
 
-    SCHEDULER_AUTO_START = os.getenv("SCHEDULER_AUTO_START", "false").lower() == "true"
+    SCHEDULER_AUTO_START_FAST = os.getenv("SCHEDULER_AUTO_START_FAST", "true").lower() == "true"
+    SCHEDULER_AUTO_START_MID = os.getenv("SCHEDULER_AUTO_START_MID", "true").lower() == "true"
+    SCHEDULER_AUTO_START_SLOW = os.getenv("SCHEDULER_AUTO_START_SLOW", "true").lower() == "true"
     SCHEDULER_FAST_MS = int(os.getenv("SCHEDULER_FAST_MS", "1000"))
     SCHEDULER_MID_MS = int(os.getenv("SCHEDULER_MID_MS", "300000"))
     SCHEDULER_SLOW_MS = int(os.getenv("SCHEDULER_SLOW_MS", "300000"))
