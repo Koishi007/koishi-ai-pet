@@ -45,6 +45,7 @@ class Scheduler(QObject):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._timers: dict[str, QTimer] = {}
+        self._manually_paused: set[str] = set()
         self._idle_paused = False
         self._idle_check = QTimer(self)
         self._idle_check.timeout.connect(self._check_idle)
@@ -131,7 +132,8 @@ class Scheduler(QObject):
         t = self._timers.get(name)
         if t and t.isActive():
             t.stop()
-            logger.info(f"[Scheduler] {name}_tick paused")
+        self._manually_paused.add(name)
+        logger.info(f"[Scheduler] {name}_tick paused")
 
     def resume(self, name: str):
         """恢复指定定时器（fast/mid/slow）。"""
@@ -140,14 +142,14 @@ class Scheduler(QObject):
         t = self._timers.get(name)
         if t and not t.isActive():
             t.start()
-            logger.info(f"[Scheduler] {name}_tick resumed")
+        self._manually_paused.discard(name)
+        logger.info(f"[Scheduler] {name}_tick resumed")
 
     def is_paused(self, name: str) -> bool:
-        """指定定时器是否被暂停。"""
+        """指定定时器是否被手动暂停。"""
         if name not in self._VALID_NAMES:
             raise ValueError(f"Invalid timer name '{name}', must be one of {self._VALID_NAMES}")
-        t = self._timers.get(name)
-        return t is not None and not t.isActive()
+        return name in self._manually_paused
 
     # ── 便捷别名 ──
 
