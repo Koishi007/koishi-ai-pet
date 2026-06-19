@@ -28,6 +28,7 @@ class Config:
     LLM_MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "3"))
     LLM_RETRY_DELAY = float(os.getenv("LLM_RETRY_DELAY", "1"))
     LLM_RETRY_MAX_DELAY = float(os.getenv("LLM_RETRY_MAX_DELAY", "8"))
+    LLM_CACHE_PROMPT = os.getenv("LLM_CACHE_PROMPT", "").lower() in ("1", "true", "yes")
 
     # 动作最大持续时间
     ACTION_TIMEOUT_MS = int(os.getenv("ACTION_TIMEOUT_MS", "15000"))

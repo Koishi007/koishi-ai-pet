@@ -61,7 +61,8 @@ class PetAgent(QObject):
         self.mood = Mood(parent=self)
         self.behavior = Behavior(memory_store=self.memory_store, screen_reader=self.screen_reader, vitals=self.vitals, mood=self.mood)
         self.scheduler = Scheduler(self)
-        self.state_machine = StateMachine()
+        self.state_machine = StateMachine(parent=self)
+        self.state_machine.state_changed.connect(self.state_changed)
         self._pet_window = None
 
         self.scheduler.mid_tick.connect(self._on_mid_tick)
@@ -97,7 +98,6 @@ class PetAgent(QObject):
             if not self.state_machine.try_transition(PetState.AUTONOMOUS):
                 logger.info(f"[PetAgent] trigger_once skipped (state={self.state_machine.state.value})")
                 return
-            self.state_changed.emit(PetState.AUTONOMOUS.value)
 
             pet_x, pet_y = (self._pet_window.x(), self._pet_window.y()) if self._pet_window else (0, 0)
 
@@ -144,7 +144,6 @@ class PetAgent(QObject):
         except ValueError:
             return
         self.state_machine.force(st)
-        self.state_changed.emit(st.value)
 
     def _emit_action(self, name: str, args, kwargs):
         kw = dict(kwargs) if kwargs else {}
@@ -159,7 +158,6 @@ class PetAgent(QObject):
         if not self.state_machine.try_transition(PetState.AUTONOMOUS):
             logger.info(f"[{ts}] [PetAgent] [mid_tick] skipped (state={self.state_machine.state.value})")
             return
-        self.state_changed.emit(PetState.AUTONOMOUS.value)
 
         pet_x, pet_y = 0, 0
         if self._pet_window:
@@ -180,7 +178,6 @@ class PetAgent(QObject):
         logger.info(f"[{ts}] [PetAgent] [slow_tick]")
         if self.state_machine.state == PetState.SLEEPING:
             self.state_machine.transition(PetState.IDLE)
-            self.state_changed.emit(PetState.IDLE.value)
             logger.info(f"[{ts}] [PetAgent] slow_tick: woke up, emitting stretch")
         self._emit_action("stretch", (), {})
 
@@ -216,6 +213,8 @@ class PetAgent(QObject):
             self.speak_stream_end.emit(5000)
         return result
 
+    _MAX_WINDOWS = 10  # 窗口探测上下文最多输出的窗口数
+
     def _build_window_context(self, pet_x: int, pet_y: int) -> str:
         try:
             from pet.brain.window_detector import get_visible_windows, is_window_occluded
@@ -227,12 +226,10 @@ class PetAgent(QObject):
         pet_w, pet_h = 125, 125
         pet_hwnd = int(self._pet_window.winId()) if self._pet_window else 0
         dpr = QApplication.primaryScreen().devicePixelRatio() if QApplication.primaryScreen() else 1.0
-        lines = [f"=== 窗口探测（系统 API，坐标精确） ==="]
-        lines.append(f"桌宠位置: 左{pet_x} 上{pet_y} (宽{pet_w} 高{pet_h})")
 
-        valid = 0
+        # 收集有效窗口并打分
+        scored = []
         for win in windows:
-            # Win32 返回物理坐标，需转为 Qt 逻辑坐标才能与 pet_x/pet_y 比较
             left, top, right, bottom = tuple(v / dpr for v in win["rect"])
             w, h = right - left, bottom - top
             title = win["title"].strip()
@@ -247,11 +244,21 @@ class PetAgent(QObject):
 
             dx_walk = (left + w // 2) - pet_x
             dy_top = top - (pet_y + pet_h)
-            dy_bottom = bottom - pet_y
-
-            direction = "右" if dx_walk > 0 else "左"
             dist = abs(dx_walk)
             jump_px = abs(dy_top)
+
+            # 打分：距离近 + 尺寸大 + 可跳跃 = 高优先级
+            dist_score = 1000.0 / (dist + 1.0)
+            size_score = min(w * h / 100000.0, 5.0)
+            if jump_px <= 400:
+                reach_score = 2.0
+            elif jump_px <= 800:
+                reach_score = 1.0
+            else:
+                reach_score = 0.0
+            total = dist_score + size_score + reach_score
+
+            direction = "右" if dx_walk > 0 else "左"
             if jump_px <= 400:
                 reachable = "可跳"
             elif jump_px <= 800:
@@ -259,16 +266,29 @@ class PetAgent(QObject):
             else:
                 reachable = "禁止跳跃（距离过高）"
 
-            valid += 1
-            lines.append(
-                f"{valid}. \"{title}\" ｜ "
-                f"范围: 左{left} 上{top} 右{right} 下{bottom} (宽{w} 高{h}) ｜ "
-                f"相对桌宠: {direction}走{dist}px, 上跳{jump_px}px 到窗口顶 "
-                f"({reachable})"
-            )
+            scored.append((total, title, left, top, right, bottom, w, h,
+                          direction, dist, jump_px, reachable))
 
-        if valid == 0:
+        # 按分降序，取前 N
+        scored.sort(key=lambda x: x[0], reverse=True)
+        top = scored[:self._MAX_WINDOWS]
+
+        lines = ["=== 窗口探测（系统 API，坐标精确） ==="]
+        lines.append(f"桌宠位置: 左{pet_x} 上{pet_y} (宽{pet_w} 高{pet_h})")
+
+        if not top:
             lines.append("未发现适合跳转的窗口。")
+        else:
+            for i, (score, title, left, top, right, bottom, w, h,
+                    direction, dist, jump_px, reachable) in enumerate(top, 1):
+                lines.append(
+                    f"{i}. \"{title}\" ｜ "
+                    f"范围: 左{left} 上{top} 右{right} 下{bottom} (宽{w} 高{h}) ｜ "
+                    f"相对桌宠: {direction}走{dist}px, 上跳{jump_px}px 到窗口顶 "
+                    f"({reachable})"
+                )
+            if len(scored) > self._MAX_WINDOWS:
+                lines.append(f"... 及另外 {len(scored) - self._MAX_WINDOWS} 个窗口（相关性较低，已省略）")
 
         return "\n".join(lines)
 
@@ -294,7 +314,6 @@ class PetAgent(QObject):
             self.speak_stream_end.emit(0)
 
             self.state_machine.transition(PetState.INTERACTING)
-            self.state_changed.emit(PetState.INTERACTING.value)
 
             if self._pet_window:
                 self._pet_window.action_queue.clear()
@@ -342,7 +361,6 @@ class PetAgent(QObject):
         self.speak_stream_end.emit(0)
 
         self.state_machine.transition(PetState.INTERACTING)
-        self.state_changed.emit(PetState.INTERACTING.value)
 
         pet_x, pet_y = 0, 0
         if self._pet_window:
@@ -357,8 +375,7 @@ class PetAgent(QObject):
         logger.info(f"[PetAgent] user chat:{message}")
 
     def _chat_pipeline(self, message: str, pet_x: int, pet_y: int):
-        ts = datetime.now().strftime("%H:%M:%S")
-        self.behavior.add_context(f"[{ts}] [user] {message}")
+        self.behavior.add_context(role="user", content=message)
 
         window_context = self._build_window_context(pet_x, pet_y)
         context = window_context if window_context else "当前无窗口信息"
@@ -451,7 +468,6 @@ class PetAgent(QObject):
         from pet.agent.state import PetState
         if self.state_machine.state in (PetState.INTERACTING, PetState.AUTONOMOUS):
             self.state_machine.transition(PetState.IDLE)
-            self.state_changed.emit(PetState.IDLE.value)
 
         if isinstance(result, BehaviorOutput):
             logger.info(f"[{ts}] [PetAgent] ← {result}")
@@ -459,20 +475,21 @@ class PetAgent(QObject):
                 logger.warning(f"[{ts}] [PetAgent] empty response from LLM (no actions, no speech)")
             action_names = [a.name for a in result.actions]
             self.behavior.add_context(
-                f"[{ts}] did {', '.join(action_names)}, said: {result.speech or '(silent)'}")
+                role="assistant",
+                content=f"did {', '.join(action_names)}, said: {result.speech or '(silent)'}")
             if result.speech and not result.speech_streamed:
                 self.speak_stream_start.emit()
                 self.speak_stream_chunk.emit(result.speech)
                 self.speak_stream_end.emit(4000)
             if result.summary:
-                self.behavior.add_context(f"[{ts}] [summary] {result.summary}")
+                self.behavior.add_context(role="assistant", content=result.summary, is_summary=True)
             for step in result.actions:
                 self._emit_action(step.name, step.args, step.kwargs)
             if result.emotion:
                 self.emotion_requested.emit(result.emotion, 3000)
         elif isinstance(result, str):
             logger.info(f"[{ts}] [PetAgent] ← \"{result[:60]}\"")
-            self.behavior.add_context(f"[{ts}] said: {result[:100]}")
+            self.behavior.add_context(role="assistant", content=result[:100])
             self.speak_requested.emit(result, 5000)
 
         if hasattr(result, 'memory_line') and result.memory_line:
@@ -494,7 +511,6 @@ class PetAgent(QObject):
         from pet.agent.state import PetState
         if self.state_machine.state in (PetState.INTERACTING, PetState.AUTONOMOUS):
             self.state_machine.transition(PetState.IDLE)
-            self.state_changed.emit(PetState.IDLE.value)
         logger.error(f"[PetAgent] ERROR: {msg}")
 
 

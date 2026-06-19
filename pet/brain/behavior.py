@@ -1,17 +1,14 @@
 """与 AI 通信，解析响应为动作序列。"""
 
-import base64
 from datetime import datetime
-import io
 import logging
 import threading
 from dataclasses import dataclass, field
 from typing import Optional
 
-from PIL import Image
 from openai import OpenAI
 from pet.brain.base import BrainMixin
-from pet.brain import prompts
+from pet.brain.context_builder import ContextBuilder
 from pet.action.registry import ACTION_NAMES
 from config import config
 from pet.brain.llm_retry import llm_retry
@@ -44,13 +41,13 @@ class Behavior(BrainMixin):
         self._client = None
         self._model = None
         self._lock = threading.RLock()
-        self._memory_store = memory_store
-        self._screen_reader = screen_reader
-        self._vitals = vitals
-        self._mood = mood
         self._setup()
 
         self._actions = ACTION_NAMES
+        self.ctx = ContextBuilder(
+            memory_store=memory_store, screen_reader=screen_reader,
+            vitals=vitals, mood=mood, brain_mixin=self,
+        )
 
         t = datetime.now().strftime("%H:%M:%S")
         client_type = "None (local)" if self._client is None else f"{type(self._client).__name__}(model={self._model})"
@@ -92,15 +89,14 @@ class Behavior(BrainMixin):
         if not self._client:
             return self._decide_local()
 
-        base64_img = self._prepare_image() if screenshot else None
-        vision = base64_img is not None
-        tag = "vision" if vision else "non_vision"
+        messages = self.ctx.build_decide(context, screenshot=screenshot)
+        is_vision = isinstance(messages[1]["content"], list)
+        tag = "vision" if is_vision else "non_vision"
         ctx_preview = context[:60] if context else "(empty)"
         logger.info(f"[{t}] [Behavior] === LLM REQUEST ({tag}) ===")
         logger.info(f"[{t}] [Behavior]   model: {self._model}, context({len(context)} chars): \"{ctx_preview}\"")
-        logger.info(f"[{t}] [Behavior]   history: {len(self._context)} entries")
+        logger.info(f"[{t}] [Behavior]   history: {self.context_count()} entries")
 
-        messages = self._build_decide_messages(context, vision=vision, base64_img=base64_img)
         return self._call_llm_and_parse(messages, messages[0]["content"], tag)
 
     def decide_stream(self, context: str = "", screenshot: bool = True,
@@ -111,10 +107,9 @@ class Behavior(BrainMixin):
             logger.warning("[Behavior] decide_stream: busy, skip")
             return self._decide_local()
         try:
-            base64_img = self._prepare_image() if screenshot else None
-            vision = base64_img is not None
-            tag = "decide_vision_stream" if vision else "decide_stream"
-            messages = self._build_decide_messages(context, vision=vision, base64_img=base64_img)
+            messages = self.ctx.build_decide(context, screenshot=screenshot)
+            is_vision = isinstance(messages[1]["content"], list)
+            tag = "decide_vision_stream" if is_vision else "decide_stream"
             return self._stream_and_parse(messages, on_chunk=on_chunk, on_stream_end=on_stream_end, tag=tag)
         finally:
             self._lock.release()
@@ -122,12 +117,8 @@ class Behavior(BrainMixin):
     def interact_decide(self, event_hint: str) -> BehaviorOutput:
         if not self._client:
             return self._decide_local()
-        system_content = prompts.interact_system_prompt()
-        messages = [
-            {"role": "system", "content": system_content},
-            {"role": "user", "content": event_hint},
-        ]
-        return self._call_llm_and_parse(messages, system_content, "interact")
+        messages = self.ctx.build_interact(event_hint)
+        return self._call_llm_and_parse(messages, messages[0]["content"], "interact")
 
     def interact_decide_stream(self, event_hint: str,
                                on_chunk=None, on_stream_end=None) -> BehaviorOutput:
@@ -137,11 +128,7 @@ class Behavior(BrainMixin):
             logger.warning("[Behavior] interact_decide_stream: busy, skip")
             return self._decide_local()
         try:
-            system_content = prompts.interact_system_prompt()
-            messages = [
-                {"role": "system", "content": system_content},
-                {"role": "user", "content": event_hint},
-            ]
+            messages = self.ctx.build_interact(event_hint)
             return self._stream_and_parse(
                 messages, on_chunk=on_chunk, on_stream_end=on_stream_end,
                 tag="interact"
@@ -158,36 +145,8 @@ class Behavior(BrainMixin):
         if not self._client:
             return self._chat_decide_local(user_message)
 
-        base64_img = self._prepare_image() if screenshot else None
+        messages = self.ctx.build_chat(user_message, context, screenshot=screenshot)
         logger.info(f"[{t}] [Behavior] === LLM REQUEST (chat_decide) ===")
-        self._trim_history()
-        system_content = self._append_personality(prompts.chat_decide_system_prompt())
-        if self._memory_store:
-            memory_text = self._memory_store.retrieve_context(user_message)
-            if memory_text:
-                system_content += f"\n\n[你对主人的记忆]\n{memory_text}"
-
-        history = ""
-        if self._context:
-            recent = self._context[-9:-1] if len(self._context) > 1 else []
-            if recent:
-                history = "\n\n=== 近期对话/行为记录 ===\n" + "\n".join(recent)
-
-        user_content = prompts.chat_decide_user_prompt(user_message, context + history)
-        if base64_img:
-            messages = [
-                {"role": "system", "content": system_content},
-                {"role": "user", "content": [
-                    {"type": "text", "text": user_content},
-                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_img}"}},
-                ]},
-            ]
-        else:
-            messages = [
-                {"role": "system", "content": system_content},
-                {"role": "user", "content": user_content},
-            ]
-
         self._dump_context("chat_decide", messages)
         try:
             resp = self._llm_call(messages)
@@ -215,8 +174,7 @@ class Behavior(BrainMixin):
                 speech="嚎……等一下，我还在想……",
             )
         try:
-            base64_img = self._prepare_image() if screenshot else None
-            messages = self._build_chat_messages(user_message, context, base64_img=base64_img)
+            messages = self.ctx.build_chat(user_message, context, screenshot=screenshot)
             self._dump_context("chat_stream", messages)
             stream = self._llm_call_stream(messages)
             full_content = ""
@@ -309,6 +267,7 @@ class Behavior(BrainMixin):
 
     def _call_llm_and_parse(self, messages: list, system_content: str, tag: str) -> BehaviorOutput:
         t = datetime.now().strftime("%H:%M:%S")
+        self._apply_cache_control(messages)
         self._dump_context(tag, messages)
         try:
             resp = self._llm_call(messages)
@@ -327,6 +286,7 @@ class Behavior(BrainMixin):
             return self._decide_local()
 
     def _stream_and_parse(self, messages: list, on_chunk=None, on_stream_end=None, tag: str = "") -> BehaviorOutput:
+        self._apply_cache_control(messages)
         self._dump_context(tag, messages)
         try:
             stream = self._llm_call_stream(messages)
@@ -434,69 +394,6 @@ class Behavior(BrainMixin):
             logger.exception(f"[{tag}] stream failed: {type(e).__name__}: {e}")
             return self._decide_local()
 
-    def _build_decide_messages(self, context: str, vision: bool = False, base64_img: str = None) -> list:
-        self._trim_history()
-        context_str = self._build_context_str(context)
-        pulse_text = self._build_pulse_status()
-        if vision:
-            system_content = self._append_personality(prompts.vision_system_prompt())
-            if pulse_text:
-                system_content += f"\n\n{pulse_text}"
-            if self._memory_store:
-                memory_text = self._memory_store.retrieve_context("")
-                if memory_text:
-                    system_content += f"\n\n[你对主人的记忆]\n{memory_text}"
-            text_prompt = prompts.vision_decide_prompt(context_str)
-            return [
-                {"role": "system", "content": system_content},
-                {"role": "user", "content": [
-                    {"type": "text", "text": text_prompt},
-                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_img}"}},
-                ]},
-            ]
-        else:
-            system_content = self._append_personality(prompts.non_vision_system_prompt())
-            if pulse_text:
-                system_content += f"\n\n{pulse_text}"
-            if self._memory_store:
-                memory_text = self._memory_store.retrieve_context("")
-                if memory_text:
-                    system_content += f"\n\n[你对主人的记忆]\n{memory_text}"
-            prompt = prompts.non_vision_decide_prompt(context_str)
-            return [
-                {"role": "system", "content": system_content},
-                {"role": "user", "content": prompt},
-            ]
-
-    def _build_chat_messages(self, user_message: str, context: str, base64_img: str = None) -> list:
-        self._trim_history()
-        system_content = self._append_personality(prompts.chat_decide_system_prompt())
-        pulse_text = self._build_pulse_status()
-        if pulse_text:
-            system_content += f"\n\n{pulse_text}"
-        if self._memory_store:
-            memory_text = self._memory_store.retrieve_context(user_message)
-            if memory_text:
-                system_content += f"\n\n[你对主人的记忆]\n{memory_text}"
-        history = ""
-        if self._context:
-            recent = self._context[-9:-1] if len(self._context) > 1 else []
-            if recent:
-                history = "\n\n=== 近期对话/行为记录 ===\n" + "\n".join(recent)
-        user_content = prompts.chat_decide_user_prompt(user_message, context + history)
-        if base64_img:
-            return [
-                {"role": "system", "content": system_content},
-                {"role": "user", "content": [
-                    {"type": "text", "text": user_content},
-                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_img}"}},
-                ]},
-            ]
-        return [
-            {"role": "system", "content": system_content},
-            {"role": "user", "content": user_content},
-        ]
-        
     def _parse_behavior(self, content: str) -> BehaviorOutput:
         actions: list = []
         speech = None
@@ -554,9 +451,9 @@ class Behavior(BrainMixin):
         elif lower.startswith("emotion:"):
             if emotion_holder is not None:
                 emotion_holder.append(line.split(":", 1)[1].strip())
-            elif lower.startswith("mood:"):
-                if mood_holder is not None:
-                    mood_holder.append(line.split(":", 1)[1].strip())
+        elif lower.startswith("mood:"):
+            if mood_holder is not None:
+                mood_holder.append(line.split(":", 1)[1].strip())
 
     @staticmethod
     def _parse_mood_line(raw: str) -> dict | None:
@@ -605,9 +502,7 @@ class Behavior(BrainMixin):
         current_content = first_content
         history = []
         speech_streamed = False
-        # 第 1 轮用完整 system prompt，后续轮次用精简版
-        personality = config.PET_PERSONALITY or ""
-        short_system = prompts.skill_round_system_prompt(personality)
+        short_system = self.ctx.build_skill_round_system()
 
         for round_idx in range(max_rounds):
             tool_calls = executor.parse_skill_lines(current_content)
@@ -621,19 +516,7 @@ class Behavior(BrainMixin):
             logger.info(f"[Behavior] skill_round_{round_idx+1} executed {len(tool_calls)} tool(s), images={len(images)}")
 
             history.append({"role": "assistant", "content": current_content})
-            # 插件有图且模型支持视觉时，构建多模态消息
-            if images and self.has_vision:
-                user_content = [
-                    {"type": "text", "text": prompts.skill_result_user_prompt(result_text)}
-                ]
-                for img_uri in images:
-                    user_content.append({
-                        "type": "image_url",
-                        "image_url": {"url": img_uri}
-                    })
-                history.append({"role": "user", "content": user_content})
-            else:
-                history.append({"role": "user", "content": prompts.skill_result_user_prompt(result_text)})
+            history.append(self.ctx.build_skill_result(result_text, images))
 
             sys = system_content if round_idx == 0 else short_system
             messages = [{"role": "system", "content": sys}] + history
@@ -724,7 +607,6 @@ class Behavior(BrainMixin):
 
     def _decide_local(self) -> BehaviorOutput:
         import random
-        self._trim_history()
         action, speech = random.choice(self._LOCAL_ACTIONS)
         t = datetime.now().strftime("%H:%M:%S")
         logger.info(f"[{t}] [Behavior] _decide_local → {action} / {speech}")
@@ -749,41 +631,23 @@ class Behavior(BrainMixin):
             speech=f"（听到了：{user_message[:10]}...但我还不会回应）",
         )
 
-    def _prepare_image(self) -> Optional[str]:
-        if not self.has_vision or not self._screen_reader:
-            return None
-        return self._screen_reader.prepare_image(vision_scale=config.VISION_SCALE)
+    def _apply_cache_control(self, messages: list):
+        """为 system prompt 添加缓存标记（Anthropic 兼容 API 使用）。
 
-    def _build_context_str(self, context: str) -> str:
-        ctx = context or "no context"
-        if len(self._context) > 1:
-            ctx += f"\nRecent: {', '.join(self._context[-6:-1])}"
-        return ctx
-
-    def _trim_history(self):
-        if len(self._context) > 10:
-            self._context[:] = self._context[-10:]
-
-    def _build_pulse_status(self) -> str:
-        """构建当前生理/心理状态的 prompt 段，含数值和文字描述。"""
-        parts = []
-        if self._vitals:
-            ns = self._vitals.numeric_summary()
-            desc = self._vitals.summary()
-            parts.append(f"生理：饱食度 {ns['satiety']:.0f}、精力 {ns['energy']:.0f}（{desc}）")
-        if self._mood:
-            ms = self._mood.numeric_summary()
-            desc = self._mood.summary()
-            parts.append(f"心理：好感 {ms['affection']:.0f}、愉悦 {ms['joy']:.0f}、理智 {ms['sanity']:.0f}（{desc}）")
-        if not parts:
-            return ""
-        header = "=== 当前生理/心理状态 ==="
-        return f"{header}\n" + "\n".join(parts)
-
-    def _append_personality(self, system_content: str) -> str:
-        if config.PET_PERSONALITY:
-            return system_content + f"\n\n=== 你的性格 ===\n{config.PET_PERSONALITY}"
-        return system_content
+        仅在 config.LLM_CACHE_PROMPT 启用时生效。
+        将 system 消息的字符串 content 包装为带 cache_control 的结构化格式。
+        OpenAI 原生 API 会忽略该字段，Anthropic 兼容端点则会缓存。
+        """
+        if not config.LLM_CACHE_PROMPT:
+            return
+        if not messages or messages[0]["role"] != "system":
+            return
+        content = messages[0]["content"]
+        if not isinstance(content, str):
+            return
+        messages[0]["content"] = [
+            {"type": "text", "text": content, "cache_control": {"type": "ephemeral"}}
+        ]
 
     def _dump_context(self, tag: str, messages: list):
         t = datetime.now().strftime("%H:%M:%S")

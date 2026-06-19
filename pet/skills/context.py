@@ -31,7 +31,7 @@ class SkillContext:
 
     def add_context(self, text: str):
         if self._check_agent():
-            self._agent.behavior.add_context(text)
+            self._agent.behavior.add_context(role="system", content=text)
 
 
 SKILL_CTX = SkillContext()

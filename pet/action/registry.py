@@ -106,9 +106,12 @@ REGISTRY: dict[str, ActionDef] = {
 }
 
 
-def generate_action_section() -> str:
+def generate_action_section(exclude: list[str] | None = None) -> str:
+    _exclude = set(exclude or [])
     categories: dict[str, list[str]] = {"移动": [], "驻留": [], "显隐": []}
     for name, a in REGISTRY.items():
+        if name in _exclude:
+            continue
         params_str = "，".join(a.params) if a.params else "无额外参数"
         if a.params:
             params_str = " 参数：" + params_str
@@ -117,10 +120,12 @@ def generate_action_section() -> str:
             entry += f"\n  示例：{a.usage_example}"
         categories[a.category].append(entry)
 
-    lines = [f"=== 可用动作（共 {len(REGISTRY)} 个）==="]
+    included = len(REGISTRY) - len(_exclude)
+    lines = [f"=== 可用动作（共 {included} 个）==="]
     for cat_label in ("移动", "驻留", "显隐"):
-        lines.append(f"\n--- {cat_label} ---")
-        lines.extend(categories[cat_label])
+        if categories[cat_label]:
+            lines.append(f"\n--- {cat_label} ---")
+            lines.extend(categories[cat_label])
     return "\n".join(lines)
 
 ACTION_NAMES: list[str] = list(REGISTRY.keys())
