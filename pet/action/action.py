@@ -393,7 +393,6 @@ class PetActions(QObject):
 
     def sleep(self, duration=None):
         self._anim.play("sleep", duration=duration)
-        self._window.particles.spawn("zzz")
 
     def idle(self):
         self._anim.play("idle")

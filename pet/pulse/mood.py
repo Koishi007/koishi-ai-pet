@@ -89,7 +89,7 @@ class Mood(QObject):
             self._joy: float       = row[1]
             self._sanity: float    = row[2]
 
-    def _save(self):
+    def save(self):
         with self._lock:
             self._conn.execute(
                 "UPDATE mood SET affection=?, joy=?, sanity=? WHERE id = 1",
@@ -199,11 +199,6 @@ class Mood(QObject):
         logger.info(f"[Mood] 理智值 {delta:+.1f} ({old:.1f}→{self._sanity:.1f})")
 
 
-    def tick(self):
-        self._save()
-        self._check_thresholds()
-
-
     def _init_threshold_flags(self):
         """启动时根据当前数值设置防抖标记。"""
         t = self._thresholds
@@ -214,7 +209,7 @@ class Mood(QObject):
         self._was_sanity_low    = self._sanity < t.sanity_low
         self._was_sanity_mad    = self._sanity < t.sanity_mad
 
-    def _check_thresholds(self):
+    def check_thresholds(self):
         t = self._thresholds
 
         # 好感度
@@ -281,6 +276,6 @@ class Mood(QObject):
 
 
     def close(self):
-        self._save()
+        self.save()
         with self._lock:
             self._conn.close()

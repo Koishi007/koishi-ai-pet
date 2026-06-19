@@ -65,11 +65,14 @@ class PetAgent(QObject):
         self.state_machine.state_changed.connect(self.state_changed)
         self._pet_window = None
 
-        self.scheduler.mid_tick.connect(self._on_mid_tick)
-        self.scheduler.fast_tick.connect(self._on_fast_tick)
-        self.scheduler.slow_tick.connect(self._on_slow_tick)
-        self.scheduler.slow_tick.connect(self.vitals.tick)
-        self.scheduler.slow_tick.connect(self.mood.tick)
+        self.scheduler.register("mid", self._decide)
+        self.scheduler.register("fast", self._recover)
+        self.scheduler.register("slow", self._wakeup)
+        self.scheduler.register("slow", self.vitals.reduce)
+        self.scheduler.register("slow", self.vitals.save)
+        self.scheduler.register("slow", self.vitals.check_thresholds)
+        self.scheduler.register("slow", self.mood.save)
+        self.scheduler.register("slow", self.mood.check_thresholds)
 
         self._thread: QThread | None = None
         self._worker: BrainWorker | None = None
@@ -152,7 +155,7 @@ class PetAgent(QObject):
             logger.debug(f"[PetAgent] backfill default duration for '{name}': {kw['duration']}s")
         self.action_requested.emit(name, args or (), kw)
 
-    def _on_mid_tick(self):
+    def _decide(self):
         ts = datetime.now().strftime("%H:%M:%S")
         from pet.agent.state import PetState
         if not self.state_machine.try_transition(PetState.AUTONOMOUS):
@@ -165,14 +168,22 @@ class PetAgent(QObject):
             pet_y = self._pet_window.y()
         self._async_brain(self._decide_pipeline, pet_x, pet_y)
 
-    def _on_fast_tick(self):
-        # sit/sleep 动作期间每秒回复 0.1 精力
+    def _recover(self):
+        # sit/sleep 动作期间每秒回复 0.1 精力，sleep 每 3 秒触发 zzz 粒子
         if self._pet_window:
             cur = self._pet_window.action_queue.current_action_name()
-            if cur in ("sit", "sleep"):
+            if cur == "sleep":
                 self.vitals.modify_energy(0.1)
+                if not hasattr(self, '_sleep_tick'):
+                    self._sleep_tick = 0
+                self._sleep_tick += 1
+                if self._sleep_tick % 3 == 0:
+                    self._pet_window.particles.spawn("zzz")
+            elif cur == "sit":
+                self.vitals.modify_energy(0.1)
+                self._sleep_tick = 0
 
-    def _on_slow_tick(self):
+    def _wakeup(self):
         from pet.agent.state import PetState
         ts = datetime.now().strftime("%H:%M:%S")
         logger.info(f"[{ts}] [PetAgent] [slow_tick]")

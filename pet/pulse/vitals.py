@@ -99,8 +99,8 @@ class Vitals(QObject):
             self._satiety: float = row[0]
             self._energy: float  = row[1]
 
-    def _save(self):
-        """将当前数值写入数据库。"""
+    def save(self):
+        """持久化当前数值到数据库。"""
         with self._lock:
             self._conn.execute(
                 "UPDATE vitals SET satiety=?, energy=? WHERE id = 1",
@@ -172,8 +172,8 @@ class Vitals(QObject):
         logger.debug(f"[Vitals] 精力 {delta:+.1f} ({old:.1f}→{self._energy:.1f})")
 
 
-    def tick(self):
-        """每次 slow_tick 调用一次，饱食度和精力各自独立衰减 0~3，然后持久化。"""
+    def reduce(self):
+        """每次 slow tick 衰减饱食度和精力各 0~3（近似正态分布）。"""
         satiety_decay = _sample_decay()
         energy_decay  = _sample_decay()
 
@@ -182,12 +182,8 @@ class Vitals(QObject):
         self._satiety = max(0.0, self._satiety - satiety_decay)
         self._energy  = max(0.0, self._energy  - energy_decay)
 
-        logger.debug(f"[Vitals] tick 衰减 饱食度 -{satiety_decay:.1f}({old_s:.1f}→{self._satiety:.1f}) "
+        logger.debug(f"[Vitals] reduce 饱食度 -{satiety_decay:.1f}({old_s:.1f}→{self._satiety:.1f}) "
                      f"精力 -{energy_decay:.1f}({old_e:.1f}→{self._energy:.1f})")
-
-        self._save()
-        self._check_thresholds()
-
 
     def _init_threshold_flags(self):
         """启动时根据当前数值设置防抖标记，避免重复触发。"""
@@ -197,7 +193,7 @@ class Vitals(QObject):
         self._was_tired    = self._energy < t.energy_tired
         self._was_exhausted = self._energy < t.energy_exhausted
 
-    def _check_thresholds(self):
+    def check_thresholds(self):
         t = self._thresholds
 
         # 饱食度
@@ -245,6 +241,6 @@ class Vitals(QObject):
 
 
     def close(self):
-        self._save()
+        self.save()
         with self._lock:
             self._conn.close()
