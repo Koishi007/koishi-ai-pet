@@ -105,7 +105,7 @@ class PetAgent(QObject):
             pet_x, pet_y = (self._pet_window.x(), self._pet_window.y()) if self._pet_window else (0, 0)
 
             if stream:
-                self._async_brain(self._decide_pipeline, pet_x, pet_y)
+                self._async_brain(self._autonomous_pipeline, pet_x, pet_y)
             else:
                 def _non_stream(px, py):
                     wctx = self._build_window_context(px, py)
@@ -166,7 +166,7 @@ class PetAgent(QObject):
         if self._pet_window:
             pet_x = self._pet_window.x()
             pet_y = self._pet_window.y()
-        self._async_brain(self._decide_pipeline, pet_x, pet_y)
+        self._async_brain(self._autonomous_pipeline, pet_x, pet_y)
 
     def _recover(self):
         # sit/sleep 动作期间每秒回复 0.1 精力，sleep 每 3 秒触发 zzz 粒子
@@ -192,7 +192,7 @@ class PetAgent(QObject):
             logger.info(f"[{ts}] [PetAgent] slow_tick: woke up, emitting stretch")
         self._emit_action("stretch", (), {})
 
-    def _decide_pipeline(self, pet_x=0, pet_y=0):
+    def _autonomous_pipeline(self, pet_x=0, pet_y=0):
 
         window_context = self._build_window_context(pet_x, pet_y)
         context = window_context if window_context else ""
