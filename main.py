@@ -9,7 +9,7 @@ from pet.ui.log_window import _LogRelay, LogWindowHandler
 from pet.ui.styles import ICON_PATH
 from pet.ui.pet_window import PetWindow
 from pet.ui.system_tray import SystemTrayManager
-from pet.ui.bubble import SpeechBubble
+from pet.ui.speech_bubble import SpeechBubble
 from pet.ui.emotion import EmotionBubble
 from pet.ui.chat_bubble import ChatBubble
 from pet.agent import PetAgent

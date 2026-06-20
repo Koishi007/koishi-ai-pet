@@ -14,7 +14,7 @@ from pet.ui.styles import (
     LIST_QSS, CHECKBOX_QSS, LABEL_SECONDARY_QSS, LABEL_MONO_QSS,
 )
 
-from pet.ui.bubble import SpeechBubble
+from pet.ui.speech_bubble import SpeechBubble
 from pet.ui.emotion import EmotionBubble, EMOTION_MAP
 from pet.ui.particle import ParticleWidget
 from pet.brain.behavior import Behavior
