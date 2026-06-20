@@ -253,7 +253,7 @@ class PetAgent(QObject):
             if is_window_occluded(win["hwnd"], threshold=0.8, skip_hwnd=pet_hwnd):
                 continue
 
-            dx_walk = (left + w // 2) - pet_x
+            dx_walk = (left + w // 2) - (pet_x + pet_w // 2)  # 目标: 窗口中部
             dy_top = top - (pet_y + pet_h)
             dist = abs(dx_walk)
             jump_px = abs(dy_top)

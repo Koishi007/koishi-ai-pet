@@ -54,12 +54,13 @@ def main():
     _log_relay.set_handler(_log_handler)
     logging.getLogger().addHandler(_log_handler)
 
-    # 隐藏控制台窗口 (仅 Windows)
     if sys.platform == "win32" and config.HIDE_CONSOLE:
         try:
             hwnd = ctypes.windll.kernel32.GetConsoleWindow()
             if hwnd:
-                ctypes.windll.user32.ShowWindow(hwnd, 0)  # SW_HIDE
+                ctypes.windll.user32.ShowWindow(hwnd, 0)
+            else:
+                ctypes.windll.kernel32.FreeConsole()
         except Exception:
             pass
 
