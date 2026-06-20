@@ -69,6 +69,7 @@ class DebugWindow(QWidget):
 
         self._pos_timer = QTimer(self)
         self._pos_timer.timeout.connect(self._refresh_pos)
+        self._pos_timer.timeout.connect(self._refresh_llm_stats)
         self._pos_timer.start(1000)
 
     def _refresh_pos(self):
@@ -388,6 +389,16 @@ class DebugWindow(QWidget):
         self.label_llm_config.setFont(QFont("Consolas", 9))
         llm_layout.addWidget(self.label_llm_config)
 
+        # ── LLM 调用统计 ──
+        stats_row = QHBoxLayout()
+        self.label_llm_calls = QLabel("累计调用: —")
+        self.label_llm_calls.setFont(QFont("Consolas", 9))
+        self.label_llm_calls.setStyleSheet("color:#555;")
+        stats_row.addWidget(self.label_llm_calls)
+        stats_row.addStretch()
+        llm_layout.addLayout(stats_row)
+        self._refresh_llm_stats()
+
         test_row = QHBoxLayout()
         self.btn_llm_test = QPushButton("测试连接")
         self.btn_llm_test.clicked.connect(self._test_llm_connectivity)
@@ -640,6 +651,10 @@ class DebugWindow(QWidget):
             delta = event.globalPosition().toPoint() - self._drag_pos
             self.move(self.pos() + delta)
             self._drag_pos = event.globalPosition().toPoint()
+
+    def _refresh_llm_stats(self):
+        if hasattr(self.brain, 'llm_stats') and self.brain.llm_stats:
+            self.label_llm_calls.setText(f"累计调用: {self.brain.llm_stats.total} 次")
 
     def closeEvent(self, event):
         self._pos_timer.stop()

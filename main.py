@@ -114,6 +114,10 @@ def main():
         logger.info("shutting down...")
         logging.getLogger().removeHandler(_log_handler)
         try:
+            agent.behavior.llm_stats.save()
+        except Exception:
+            pass
+        try:
             agent.stop()
             window.shutdown()
             window.close()

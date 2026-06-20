@@ -9,6 +9,7 @@ from typing import Optional
 from openai import OpenAI
 from pet.brain.base import BrainMixin
 from pet.brain.context_builder import ContextBuilder
+from pet.brain.llm_stats import LlmStats
 from pet.action.registry import ACTION_NAMES
 from config import config
 from pet.brain.llm_retry import llm_retry
@@ -48,6 +49,7 @@ class Behavior(BrainMixin):
             memory_store=memory_store, screen_reader=screen_reader,
             vitals=vitals, mood=mood, brain_mixin=self,
         )
+        self.llm_stats = LlmStats()
 
         t = datetime.now().strftime("%H:%M:%S")
         client_type = "None (local)" if self._client is None else f"{type(self._client).__name__}(model={self._model})"
@@ -249,6 +251,7 @@ class Behavior(BrainMixin):
 
     @llm_retry(tag="Behavior")
     def _llm_call(self, messages: list, max_tokens: int = 4000):
+        self.llm_stats.increment()
         return self._client.chat.completions.create(
             model=self._model,
             messages=messages,
@@ -256,6 +259,7 @@ class Behavior(BrainMixin):
         )
 
     def _llm_call_stream(self, messages: list, max_tokens: int = 4000):
+        self.llm_stats.increment()
         from pet.brain.llm_retry import llm_stream_with_retry
         return llm_stream_with_retry(
             lambda: self._client.chat.completions.create(
