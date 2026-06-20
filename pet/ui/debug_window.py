@@ -2,6 +2,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QGroupBox, QTextEdit, QLabel, QLineEdit, QSpinBox,
     QFormLayout, QCheckBox, QFrame, QComboBox, QListWidget,
+    QGridLayout,
 )
 from datetime import datetime
 
@@ -80,14 +81,17 @@ class DebugWindow(QWidget):
         self._pet_btns: dict[str, QPushButton] = {}
         actions = self.pet.pet_anim.available_actions()
         if actions:
-            btn_row = QHBoxLayout()
-            for action in actions:
+            COLS = 4
+            btn_grid = QGridLayout()
+            for i, action in enumerate(actions):
                 btn = QPushButton(action)
+                btn.setToolTip(action)
                 btn.setCheckable(True)
+                btn.setMinimumWidth(60)
                 btn.clicked.connect(lambda checked, a=action: self._play_pet_anim(a))
-                btn_row.addWidget(btn)
+                btn_grid.addWidget(btn, i // COLS, i % COLS)
                 self._pet_btns[action] = btn
-            anim_layout.addLayout(btn_row)
+            anim_layout.addLayout(btn_grid)
         else:
             anim_layout.addWidget(QLabel("⚠ 未找到可用帧动画（assets/actions/ 下无帧图片）"))
 
@@ -257,12 +261,15 @@ class DebugWindow(QWidget):
         emotion_group = QGroupBox("表情测试")
         emotion_layout = QVBoxLayout(emotion_group)
 
-        emo_btn_row = QHBoxLayout()
-        for emo_name in EMOTION_MAP:
+        EMO_COLS = 5
+        emo_grid = QGridLayout()
+        for i, emo_name in enumerate(EMOTION_MAP):
             btn = QPushButton(emo_name)
+            btn.setToolTip(emo_name)
+            btn.setMinimumWidth(54)
             btn.clicked.connect(lambda checked, e=emo_name: self._test_emotion(e))
-            emo_btn_row.addWidget(btn)
-        emotion_layout.addLayout(emo_btn_row)
+            emo_grid.addWidget(btn, i // EMO_COLS, i % EMO_COLS)
+        emotion_layout.addLayout(emo_grid)
 
         emo_input_row = QHBoxLayout()
         self.emotion_input = QLineEdit()
