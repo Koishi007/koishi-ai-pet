@@ -160,14 +160,23 @@ _PERCEPTION_SECTIONS = {
 
 
 _MOOD_GUIDE = """## 心理状态变化
-本次交互若影响心理状态，在末尾输出（不对用户可见）：
+本回合若影响心理状态，在末尾输出（不对用户可见）：
 Mood: affection±值 joy±值 sanity±值
 
-affection、joy、sanity的增减范围和规则：
+affection、joy、sanity 的增减范围和规则：
+
+【对话/交互场景 —— 用户主动互动时】
 - 普通闲聊：不输出
 - 明确积极（被夸奖、关心、玩耍）：+0~+1
 - 明确消极（被批评、忽视、粗暴对待）：-1~-3
-- 仅输出受影响的参数，不受影响的可省略"""
+
+【自主探索/独处场景 —— 宠物自行决策时】
+- 发现有趣内容、找到可玩窗口、做了开心的动作 → joy +0~+1
+- 长时间无聊、持续无窗口、受限无法活动 → joy -0~-1, sanity -0~-1
+- 反复受挫（连续多次无窗口/无法到达目的地）→ sanity -1~-2
+- 独处时持续不被用户关注 → affection -0~-1（长期累积）
+
+仅输出受影响的参数，不受影响的可省略"""
 
 
 def _autonomous_task() -> list[str]:
@@ -211,10 +220,11 @@ def _autonomous_task() -> list[str]:
         f"  Action: sit duration={sit_dur}\n"
         f"  Skill: {{\"name\": \"skill.method\", \"args\": {{...}}}}\n"
         f"  Memory: user_fact 用户叫xxx，住在xx | keywords:[具体姓名],[居住地点] | importance:5\n"
+        f"  Mood: joy+1 affection-1\n"
         f"\n"
     )
 
-    return [format_guide] + constraints
+    return [format_guide, _MOOD_GUIDE] + constraints
 
 
 def _chat_task() -> list[str]:
