@@ -70,6 +70,7 @@ class DebugWindow(QWidget):
         self._pos_timer = QTimer(self)
         self._pos_timer.timeout.connect(self._refresh_pos)
         self._pos_timer.timeout.connect(self._refresh_llm_stats)
+        self._pos_timer.timeout.connect(self._refresh_params)
         self._pos_timer.start(1000)
 
     def _refresh_pos(self):
@@ -332,6 +333,64 @@ class DebugWindow(QWidget):
 
         right.addWidget(emotion_group)
 
+        # ── 生理/心理参数 ──
+
+        param_group = QGroupBox("生理/心理参数")
+        param_layout = QVBoxLayout(param_group)
+
+        params_grid = QGridLayout()
+        params_grid.setVerticalSpacing(4)
+
+        self._param_spins: dict[str, QSpinBox] = {}
+        self._param_labels: dict[str, QLabel] = {}
+        param_defs = [
+            ("satiety",   "饱食度"),
+            ("energy",    "精力"),
+            ("affection", "好感度"),
+            ("joy",       "愉悦度"),
+            ("sanity",    "理智值"),
+        ]
+        for col, (key, label) in enumerate(param_defs):
+            lbl = QLabel(label)
+            lbl.setMinimumWidth(50)
+            params_grid.addWidget(lbl, 0, col * 2)
+
+            spin = QSpinBox()
+            spin.setRange(0, 100)
+            spin.setValue(50)
+            spin.setFixedWidth(70)
+            params_grid.addWidget(spin, 1, col * 2)
+            self._param_spins[key] = spin
+
+            val_lbl = QLabel("—")
+            val_lbl.setStyleSheet("color:#555; font-size:11px;")
+            val_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            val_lbl.setMinimumWidth(40)
+            params_grid.addWidget(val_lbl, 2, col * 2)
+            self._param_labels[key] = val_lbl
+
+            btn = QPushButton("设置")
+            btn.setFixedWidth(50)
+            btn.clicked.connect(lambda checked, k=key: self._set_param(k))
+            params_grid.addWidget(btn, 1, col * 2 + 1)
+
+        param_layout.addLayout(params_grid)
+
+        preset_row = QHBoxLayout()
+        self.btn_param_fill = QPushButton("全满 (100)")
+        self.btn_param_fill.clicked.connect(lambda: self._set_all_params(100))
+        preset_row.addWidget(self.btn_param_fill)
+        self.btn_param_zero = QPushButton("归零 (0)")
+        self.btn_param_zero.clicked.connect(lambda: self._set_all_params(0))
+        preset_row.addWidget(self.btn_param_zero)
+        self.btn_param_default = QPushButton("恢复默认")
+        self.btn_param_default.clicked.connect(self._reset_default_params)
+        preset_row.addWidget(self.btn_param_default)
+        preset_row.addStretch()
+        param_layout.addLayout(preset_row)
+
+        right.addWidget(param_group)
+
         # ── 粒子调试 ──
 
         particle_group = QGroupBox("粒子特效测试")
@@ -555,6 +614,85 @@ class DebugWindow(QWidget):
     def _test_emotion_input(self):
         emotion = self.emotion_input.text().strip() or "happy"
         self._test_emotion(emotion)
+
+    # ── 生理/心理参数 ──
+
+    def _get_vitals(self):
+        return self.agent.vitals if self.agent else None
+
+    def _get_mood(self):
+        return self.agent.mood if self.agent else None
+
+    def _set_param(self, key: str):
+        target = self._param_spins[key].value()
+        if key in ("satiety", "energy"):
+            engine = self._get_vitals()
+            if not engine:
+                return
+            current = getattr(engine, key)
+            method = getattr(engine, f"modify_{key}")
+        else:
+            engine = self._get_mood()
+            if not engine:
+                return
+            current = getattr(engine, key)
+            method = getattr(engine, f"modify_{key}")
+        delta = target - current
+        method(delta)
+        self._log(f"参数 {key}: {current:.0f} → {target} ({delta:+.0f})")
+        self._refresh_params()
+
+    def _set_all_params(self, value: int):
+        for key in ("satiety", "energy"):
+            engine = self._get_vitals()
+            if not engine:
+                continue
+            current = getattr(engine, key)
+            delta = value - current
+            getattr(engine, f"modify_{key}")(delta)
+        for key in ("affection", "joy", "sanity"):
+            engine = self._get_mood()
+            if not engine:
+                continue
+            current = getattr(engine, key)
+            delta = value - current
+            getattr(engine, f"modify_{key}")(delta)
+        self._log(f"全部参数 → {value}")
+        self._refresh_params()
+
+    def _reset_default_params(self):
+        """恢复默认值：饱食100 精力100 好感60 愉悦70 理智80"""
+        defaults = {"satiety": 100, "energy": 100, "affection": 60, "joy": 70, "sanity": 80}
+        for key, target in defaults.items():
+            if key in ("satiety", "energy"):
+                engine = self._get_vitals()
+                if not engine:
+                    continue
+                current = getattr(engine, key)
+                getattr(engine, f"modify_{key}")(target - current)
+            else:
+                engine = self._get_mood()
+                if not engine:
+                    continue
+                current = getattr(engine, key)
+                getattr(engine, f"modify_{key}")(target - current)
+        self._log("参数恢复默认")
+        self._refresh_params()
+
+    def _refresh_params(self):
+        """刷新参数显示（由定时器调用）。"""
+        vitals = self._get_vitals()
+        mood = self._get_mood()
+        for key in ("satiety", "energy"):
+            if vitals:
+                self._param_labels[key].setText(f"{getattr(vitals, key):.0f}")
+            else:
+                self._param_labels[key].setText("—")
+        for key in ("affection", "joy", "sanity"):
+            if mood:
+                self._param_labels[key].setText(f"{getattr(mood, key):.0f}")
+            else:
+                self._param_labels[key].setText("—")
 
     def _test_particle(self, effect: str):
         self._log(f"particle: \"{effect}\"")
