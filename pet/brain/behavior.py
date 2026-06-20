@@ -435,10 +435,10 @@ class Behavior(BrainMixin):
 
     @staticmethod
     def _parse_vitals_line(raw: str) -> dict | None:
-        """解析 Vitals 行，格式: satiety+15 energy-3"""
+        """解析 Vitals 行，格式: satiety+15 energy-3 affection+2 joy-5 sanity+10"""
         import re
         deltas = {}
-        pattern = re.compile(r'(satiety|energy)\s*([+-]\s*\d+)', re.IGNORECASE)
+        pattern = re.compile(r'(satiety|energy|affection|joy|sanity)\s*([+-]\s*\d+)', re.IGNORECASE)
         for match in pattern.finditer(raw):
             key = match.group(1).lower()
             value = float(match.group(2).replace(" ", ""))

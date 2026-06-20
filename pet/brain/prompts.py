@@ -258,7 +258,8 @@ def _interact_task() -> list[str]:
         "Summary: <10字内简述>\n"
         "Emotion: <可选>\n"
         "Speech: <即时反应，≤20字>\n"
-        "Action: <1-2个动作>",
+        "Action: <1-2个动作>\n"
+        "Vitals: <可选，satiety/energy/affection/joy/sanity 增减，根据事件自行决定>",
         "=== 约束 ===\n"
         "1. Speech 简短，是本能反应而非分析，风格由个性决定\n"
         "2. 只输出 1-2 个 Action\n"
@@ -404,6 +405,7 @@ INTERACT_WINDOW_DISAPPEARED = config.INTERACT_WINDOW_DISAPPEARED_PROMPT or (
 )
 
 INTERACT_FED = config.INTERACT_FED_PROMPT or (
-    "用户喂你吃了 {food}，根据你的人格用一句话（≤15字）表达反应。"
-    "同时在末尾输出 Vitals: satiety±值（根据食物美味程度和环境自行决定增减）"
+    "用户喂你吃了 {food}（可能是任何东西），根据你的人格用一句话（≤15字）表达反应。"
+    "同时根据食物类型自行决定所有参数变化，在末尾输出 Vitals: "
+    "（satiety/energy/affection/joy/sanity 均可按情境增减，奇怪的食材可能导致负效果）"
 )
