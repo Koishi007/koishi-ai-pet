@@ -330,20 +330,22 @@ def _base_autonomous(context: str, mode: str) -> str:
     if mode == "vision":
         return (
             f"{context}\n\n"
-            f"⚠ 仔细看截图：识别窗口里的实际内容（代码/网页/聊天/视频等），基于内容决定台词，禁止空洞无物。\n\n"
+            f"⚠ 仔细看截图：识别窗口里的实际内容（代码/网页/聊天/视频等），基于内容决定台词，禁止空洞无物。\n"
+            f"⚠ 当前生理、心理状态（饱食/精力/好感/愉悦/理智）决定你的行为倾向和语气，必须遵守本轮强制要求。\n\n"
             f"根据窗口探测数据和截图输出动作序列：\n"
             f"• 有窗口 → drive 走到附近 + bounce 跳上窗口顶部，参数直接用探测数据的「相对桌宠」值\n"
             f"• 无窗口 → 巡视桌面、找地方坐下\n"
             f"• bounce 的 height 用探测数据的「上跳_N_px」值\n"
-            f"• 参考「近期对话/行为记录/生理、心理状态」，用人格语气评论窗口内容或者输出合理对话，禁止重复说过的内容，禁止只说过去看看这种没有实际内容的对话\n"
+            f"• 用人格语气评论窗口内容，禁止重复说过的内容，禁止只说过去看看这种没有实际内容的对话\n"
             f"• 避免重复 Recent 中的行为\n"
             f"• Summary 必须基于截图和窗口探测数据描述实际看到的内容"
         )
     return (
         f"{context}\n\n"
+        f"⚠ 当前生理、心理状态（饱食/精力/好感/愉悦/理智）决定你的行为倾向和语气，必须遵守本轮强制要求。\n\n"
         f"根据窗口探测数据和你的性格输出动作序列。"
         f"用人格语气评论窗口内容。"
-        f"drive 方向可随机，不要使用 bounce。"
+        f"drive 方向可随机"
         f"避免重复 Recent 中的行为。"
     )
 
@@ -356,14 +358,24 @@ def autonomous_vision_user_prompt(context: str) -> str:
     return _base_autonomous(context, "vision")
 
 
-def chat_user_prompt(user_message: str, context: str, vision: bool = True) -> str:
-    vision_line = "⚠ 仔细看截图：识别窗口内容，结合画面回应用户，禁止空洞台词。\n" if vision else ""
+def chat_vision_user_prompt(user_message: str, context: str) -> str:
     return (
         f"=== 用户对你说 ===\n{user_message}\n\n"
         f"{context}\n\n"
-        f"{vision_line}"
+        "⚠ 仔细看截图：识别窗口内容，结合画面回应用户，禁止空洞台词。\n"
+        "⚠ 当前生理、心理状态（饱食/精力/好感/愉悦/理智）影响你的语气和行为倾向，必须遵守本轮强制要求。\n"
         "请回应用户。根据用户意图输出 Speech + Action以及其他可选输出行。"
-        "参考「近期对话/行为记录/生理、心理状态」保持对话连贯，不要重复之前说过的话。"
+        "参考「近期对话/行为记录」保持对话连贯，不要重复之前说过的话。"
+    )
+
+
+def chat_non_vision_user_prompt(user_message: str, context: str) -> str:
+    return (
+        f"=== 用户对你说 ===\n{user_message}\n\n"
+        f"{context}\n\n"
+        "⚠ 当前生理、心理状态（饱食/精力/好感/愉悦/理智）影响你的语气和行为倾向，必须遵守本轮强制要求。\n"
+        "请回应用户。根据用户意图输出 Speech + Action以及其他可选输出行。"
+        "参考「近期对话/行为记录」保持对话连贯，不要重复之前说过的话。"
     )
 
 

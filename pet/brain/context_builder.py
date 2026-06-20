@@ -54,10 +54,9 @@ class ContextBuilder:
         mode = "chat_vision" if vision else "chat_non_vision"
         system = self._build_system(mode, "chat", user_message=user_message)
         history = self._build_history()
-        user_content = prompts.chat_user_prompt(user_message, window_context + history,
-                                                       vision=vision)
-
+        ctx = window_context + history
         if vision:
+            user_content = prompts.chat_vision_user_prompt(user_message, ctx)
             return [
                 {"role": "system", "content": system},
                 {"role": "user", "content": [
@@ -65,6 +64,7 @@ class ContextBuilder:
                     {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_img}"}},
                 ]},
             ]
+        user_content = prompts.chat_non_vision_user_prompt(user_message, ctx)
         return [
             {"role": "system", "content": system},
             {"role": "user", "content": user_content},
@@ -198,7 +198,7 @@ class ContextBuilder:
             "理智值 0-100（越低越疯癫）"
         )
         return "\n".join([
-            f"=== 当前状态（饱食{ns['satiety']:.0f} 精力{ns['energy']:.0f} "
+            f"=== 当前生理、心理状态（饱食{ns['satiety']:.0f} 精力{ns['energy']:.0f} "
             f"好感{ms['affection']:.0f} 愉悦{ms['joy']:.0f} 理智{ms['sanity']:.0f}）===",
             param_intro,
             "【本轮强制要求 — 违反视为格式错误】",
