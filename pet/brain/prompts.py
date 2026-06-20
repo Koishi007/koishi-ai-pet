@@ -308,7 +308,7 @@ def build_system_prompt(mode: str, task: str) -> str:
         sections.extend(_base_sections())
 
     for item in _PERCEPTION_SECTIONS[mode]:
-        sections.append(str(item) if isinstance(item, _Lazy) else item)
+        sections.append(str(item))
 
     sections.extend(_TASK_SECTIONS[task]())
 
@@ -324,7 +324,7 @@ def _base_autonomous(context: str, mode: str) -> str:
         return (
             f"{context}\n\n"
             f"当前无窗口信息。根据你的性格巡视桌面、找地方坐下或伸懒腰。"
-            f"drive 方向可随机，{'不要使用 bounce' if mode != 'vision' else ''}。"
+            f"drive 方向可随机。"
             f"避免重复 Recent 中的行为。"
         )
     if mode == "vision":
@@ -345,7 +345,7 @@ def _base_autonomous(context: str, mode: str) -> str:
         f"⚠ 当前生理、心理状态（饱食/精力/好感/愉悦/理智）决定你的行为倾向和语气，必须遵守本轮强制要求。\n\n"
         f"根据窗口探测数据和你的性格输出动作序列。"
         f"用人格语气评论窗口内容。"
-        f"drive 方向可随机"
+        f"drive 方向可随机。"
         f"避免重复 Recent 中的行为。"
     )
 
