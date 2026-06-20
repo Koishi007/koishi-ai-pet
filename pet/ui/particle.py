@@ -144,6 +144,24 @@ def _spawn_hearts(cx: float, cy: float) -> list[Particle]:
     return particles
 
 
+def _spawn_dark_hearts(cx: float, cy: float) -> list[Particle]:
+    """黑色心型粒子：随机漂浮上升，理智低落时散发。"""
+    particles = []
+    for _ in range(3):
+        particles.append(Particle(
+            x=cx + random.uniform(-14, 14),
+            y=cy + random.uniform(-8, 8),
+            vx=random.uniform(-0.5, 0.5),
+            vy=-random.uniform(0.4, 1.0),
+            gravity=-0.01,
+            lifetime=random.randint(1000, 1800),
+            size=random.uniform(6, 10),
+            color=QColor(random.randint(30, 60), random.randint(30, 60), random.randint(30, 60)),
+            shape="heart",
+        ))
+    return particles
+
+
 # ── 粒子绘制 ──
 
 def _draw_star(painter: QPainter, x: float, y: float, size: float, color: QColor, alpha: float):
@@ -252,8 +270,9 @@ class ParticleWidget(QWidget):
     _DEFAULT_Y = {
         "dust":   -1,         # 特殊: 脚底（代码中特殊处理）
         "stars":  1 / 4,      # 头部附近
-        "hearts": 1 / 4,      # 头部附近
-        "zzz":    1 / 2,      # 窗口中部（sleep 姿势是卧倒的）
+        "hearts":      1 / 4,  # 头部附近
+        "dark_hearts": 1 / 4,  # 头部附近
+        "zzz":         1 / 2,  # 窗口中部（sleep 姿势是卧倒的）
     }
 
     def spawn(self, effect: str, cx: float | None = None, cy: float | None = None):
@@ -264,6 +283,7 @@ class ParticleWidget(QWidget):
             "stars": _spawn_stars,
             "zzz": _spawn_zzz,
             "hearts": _spawn_hearts,
+            "dark_hearts": _spawn_dark_hearts,
         }.get(effect)
         if spawner is None:
             logger.warning(f"Unknown particle effect: {effect!r}, expected one of dust/stars/zzz/hearts")

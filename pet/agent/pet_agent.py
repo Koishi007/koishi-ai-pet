@@ -67,6 +67,7 @@ class PetAgent(QObject):
 
         self.scheduler.register("mid", self._autonomous)
         self.scheduler.register("fast", self._recover)
+        self.scheduler.register("fast", self._update_idle_anim)
         self.scheduler.register("slow", self._wakeup)
         self.scheduler.register("slow", self.vitals.reduce)
         self.scheduler.register("slow", self.vitals.save)
@@ -182,6 +183,29 @@ class PetAgent(QObject):
             elif cur == "sit":
                 self.vitals.modify_energy(0.1)
                 self._sleep_tick = 0
+
+    def _update_idle_anim(self):
+        """根据理智值切换待机动画：sanity < 20 → grim，否则 → idle。"""
+        if not self._pet_window:
+            return
+        win = self._pet_window
+        # 仅在无队列动作且不处于下落状态时切换
+        if win.action_queue.current_action_name() is not None:
+            return
+        if win.pet_actions.gravity.falling:
+            return
+        ms = self.mood.numeric_summary()
+        sanity = ms.get("sanity", 100)
+        cur = win.pet_anim.current_action
+        if sanity < 20 and cur == "idle":
+            win.pet_anim.play("grim")
+        elif sanity >= 20 and cur == "grim":
+            win.pet_anim.play("idle")
+        # grim 待机时定期散发黑色心型粒子
+        if cur == "grim":
+            self._dark_heart_tick = getattr(self, '_dark_heart_tick', 0) + 1
+            if self._dark_heart_tick % 2 == 0:
+                win.particles.spawn("dark_hearts")
 
     def _wakeup(self):
         from pet.agent.state import PetState
