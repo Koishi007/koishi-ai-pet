@@ -11,7 +11,7 @@ class ContextBuilder:
 
     四个公开方法对应四种任务：
       build_autonomous_decide — 自主决策（视觉 / 非视觉自动选择）
-      build_chat              — 用户对话
+      build_chat_decide          — 用户对话
       build_interact          — 即时交互（抓取、释放等）
       build_skill_result      — 技能多轮调用中的结果消息
     """
@@ -29,7 +29,7 @@ class ContextBuilder:
         """自主决策模式的 messages（视觉／非视觉自动选择）"""
         base64_img = self._prepare_image() if screenshot else None
         vision = base64_img is not None
-        mode = "vision" if vision else "non_vision"
+        mode = "autonomous_vision" if vision else "autonomous_non_vision"
         system = self._build_system(mode, "autonomous", user_message=window_context)
         ctx_str = self._build_user_context(window_context)
 
@@ -46,12 +46,12 @@ class ContextBuilder:
             {"role": "user", "content": prompts.autonomous_non_vision_user_prompt(ctx_str)},
         ]
 
-    def build_chat(self, user_message: str, window_context: str,
+    def build_chat_decide(self, user_message: str, window_context: str,
                    screenshot: bool = True) -> list[dict]:
         """对话模式的 messages（视觉／非视觉自动选择）。"""
         base64_img = self._prepare_image() if screenshot else None
         vision = base64_img is not None
-        mode = "chat" if vision else "chat_no_vision"
+        mode = "chat_vision" if vision else "chat_non_vision"
         system = self._build_system(mode, "chat", user_message=user_message)
         history = self._build_history()
         user_content = prompts.chat_user_prompt(user_message, window_context + history,

@@ -147,7 +147,7 @@ class Behavior(BrainMixin):
         if not self._client:
             return self._chat_decide_local(user_message)
 
-        messages = self.ctx.build_chat(user_message, context, screenshot=screenshot)
+        messages = self.ctx.build_chat_decide(user_message, context, screenshot=screenshot)
         is_vision = isinstance(messages[1]["content"], list)
         tag = "chat_vision" if is_vision else "chat_non_vision"
         logger.info(f"[{t}] [Behavior] === LLM REQUEST ({tag}) ===")
@@ -167,7 +167,7 @@ class Behavior(BrainMixin):
                 speech="嚎……等一下，我还在想……",
             )
         try:
-            messages = self.ctx.build_chat(user_message, context, screenshot=screenshot)
+            messages = self.ctx.build_chat_decide(user_message, context, screenshot=screenshot)
             is_vision = isinstance(messages[1]["content"], list)
             tag = "chat_decide_vision_stream" if is_vision else "chat_decide_stream"
             return self._stream_and_parse(messages, on_chunk=on_chunk, on_stream_end=on_stream_end, tag=tag)
