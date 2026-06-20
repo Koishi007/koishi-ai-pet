@@ -34,17 +34,17 @@ class ContextBuilder:
         ctx_str = self._build_user_context(window_context)
 
         if vision:
-            return [
+            return self._finalize([
                 {"role": "system", "content": system},
                 {"role": "user", "content": [
                     {"type": "text", "text": prompts.vision_autonomous_prompt(ctx_str)},
                     {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_img}"}},
                 ]},
-            ]
-        return [
+            ])
+        return self._finalize([
             {"role": "system", "content": system},
             {"role": "user", "content": prompts.non_vision_autonomous_prompt(ctx_str)},
-        ]
+        ])
 
     def build_chat(self, user_message: str, window_context: str,
                    screenshot: bool = True) -> list[dict]:
@@ -55,24 +55,24 @@ class ContextBuilder:
         user_content = prompts.chat_decide_user_prompt(user_message, window_context + history)
 
         if base64_img:
-            return [
+            return self._finalize([
                 {"role": "system", "content": system},
                 {"role": "user", "content": [
                     {"type": "text", "text": user_content},
                     {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_img}"}},
                 ]},
-            ]
-        return [
+            ])
+        return self._finalize([
             {"role": "system", "content": system},
             {"role": "user", "content": user_content},
-        ]
+        ])
 
     def build_interact(self, event_hint: str) -> list[dict]:
         """即时交互模式的 messages（抓取、释放等，无动态数据）"""
-        return [
+        return self._finalize([
             {"role": "system", "content": prompts.build_system_prompt("interact", "interact")},
             {"role": "user",   "content": event_hint},
-        ]
+        ])
 
     def build_skill_result(self, result_text: str,
                            images: list[str] | None = None) -> dict:
@@ -89,6 +89,35 @@ class ContextBuilder:
     def build_skill_round_system() -> str:
         """技能多轮调用的精简 system prompt。"""
         return prompts.build_system_prompt("skill", "skill_round")
+
+    # internal — message finalization
+
+    @staticmethod
+    def _finalize(messages: list[dict]) -> list[dict]:
+        """若配置了 LLM_SYSTEM_AS_USER，将 system 合并进第一条 user message。
+
+        部分小模型（如 GLM-10B）不支持或不遵守 system role，
+        会把 system prompt 当成正文复读。开启后 system 内容会
+        拼接到第一条 user message 最前面，roles 只剩 user。
+        """
+        if not config.LLM_SYSTEM_AS_USER:
+            return messages
+        if len(messages) < 2 or messages[0]["role"] != "system":
+            return messages
+
+        sys_text = messages[0]["content"]
+        # 找到第一条 user message（兼容 skill round 场景：system 后可能先有 assistant）
+        for msg in messages[1:]:
+            if msg["role"] != "user":
+                continue
+            if isinstance(msg["content"], str):
+                msg["content"] = sys_text + "\n\n" + msg["content"]
+            elif isinstance(msg["content"], list):
+                # vision 场景: content 是 [{type:text, text:...}, {type:image_url, ...}]
+                msg["content"] = [{"type": "text", "text": sys_text + "\n\n"}] + msg["content"]
+            break
+
+        return messages[1:]  # 去掉 system，只留 user 和后面的消息
 
     # internal
 

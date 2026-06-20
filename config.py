@@ -29,6 +29,7 @@ class Config:
     LLM_RETRY_DELAY = float(os.getenv("LLM_RETRY_DELAY", "1"))
     LLM_RETRY_MAX_DELAY = float(os.getenv("LLM_RETRY_MAX_DELAY", "8"))
     LLM_CACHE_PROMPT = os.getenv("LLM_CACHE_PROMPT", "").lower() in ("1", "true", "yes")
+    LLM_SYSTEM_AS_USER = os.getenv("LLM_SYSTEM_AS_USER", "").lower() in ("1", "true", "yes")  # GLM等小模型不支持system role时开启
 
     # 动作最大持续时间
     ACTION_TIMEOUT_MS = int(os.getenv("ACTION_TIMEOUT_MS", "15000"))

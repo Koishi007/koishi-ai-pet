@@ -537,7 +537,7 @@ class Behavior(BrainMixin):
             history.append(self.ctx.build_skill_result(result_text, images))
 
             sys = system_content if round_idx == 0 else short_system
-            messages = [{"role": "system", "content": sys}] + history
+            messages = self.ctx._finalize([{"role": "system", "content": sys}] + history)
             tag = f"skill_round_{round_idx+1}"
             self._dump_context(tag, messages)
             self._log_prompt_size(messages, tag)
