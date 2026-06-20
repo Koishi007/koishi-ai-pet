@@ -198,6 +198,17 @@ class Mood(QObject):
         self._sanity = max(0.0, min(100.0, self._sanity + delta))
         logger.info(f"[Mood] 理智值 {delta:+.1f} ({old:.1f}→{self._sanity:.1f})")
 
+    def set_affection(self, value: float):
+        self._affection = max(0.0, min(100.0, value))
+        logger.info(f"[Mood] 好感度 直接设置 → {self._affection:.1f}")
+
+    def set_joy(self, value: float):
+        self._joy = max(0.0, min(100.0, value))
+        logger.info(f"[Mood] 愉悦度 直接设置 → {self._joy:.1f}")
+
+    def set_sanity(self, value: float):
+        self._sanity = max(0.0, min(100.0, value))
+        logger.info(f"[Mood] 理智值 直接设置 → {self._sanity:.1f}")
 
     def _init_threshold_flags(self):
         """启动时根据当前数值设置防抖标记。"""

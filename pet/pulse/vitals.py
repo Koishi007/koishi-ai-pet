@@ -171,6 +171,14 @@ class Vitals(QObject):
         self._energy = max(0.0, min(100.0, self._energy + delta))
         logger.debug(f"[Vitals] 精力 {delta:+.1f} ({old:.1f}→{self._energy:.1f})")
 
+    def set_satiety(self, value: float):
+        self._satiety = max(0.0, min(100.0, value))
+        logger.info(f"[Vitals] 饱食度 直接设置 → {self._satiety:.1f}")
+
+    def set_energy(self, value: float):
+        self._energy = max(0.0, min(100.0, value))
+        logger.info(f"[Vitals] 精力 直接设置 → {self._energy:.1f}")
+
 
     def reduce(self):
         """每次 slow tick 衰减饱食度和精力各 0~3（近似正态分布）。"""
