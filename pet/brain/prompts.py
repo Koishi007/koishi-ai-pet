@@ -103,7 +103,6 @@ def _base_sections() -> list[str]:
     target_s, _ = _action_params()
     return [
         f"你是桌面宠物。每次输出完整动作序列（约{target_s}秒），禁止单个动作。",
-        _PULSE_GUIDE,
         _MEMORY_GUIDE,
     ]
 
@@ -202,6 +201,7 @@ def _autonomous_task() -> list[str]:
         "10. 避免重复 Recent 中的行为和台词",
         "11. 台词、动作、互动方式全部由你的人格描述决定",
         "12. 必须查看[记忆存储指导]判断是否输出Memory行，如果值得，必须输出",
+        "13. 若存在[当前状态]中的【本轮强制要求】，必须无条件遵守",
     ]
 
     format_guide = (
@@ -249,7 +249,8 @@ def _chat_task() -> list[str]:
         "7. 参考「近期对话/行为记录」保持连贯，不重复说过的话\n"
         "8. 用户要求使用技能时，在可用技能中搜索，找到必须调用，找不到按人格回复\n"
         "9. Emotion 可选: happy, excited, sad, angry, surprised, thinking, sleepy, love, cool, shy, scared, hungry, curious, proud, bored\n"
-        "10. 必须查看[记忆存储指导]判断是否输出Memory行，如果值得，必须输出",
+        "10. 必须查看[记忆存储指导]判断是否输出Memory行，如果值得，必须输出\n"
+        "11. 若存在[当前状态]中的【本轮强制要求】，必须无条件遵守",
         _MOOD_GUIDE,
     ]
     return parts

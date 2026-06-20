@@ -142,13 +142,6 @@ class ContextBuilder:
 
         directives = []
 
-        # ── 数值展示（精简一行） ──
-        lines = [
-            f"=== 当前状态 ===\n"
-            f"饱食度{ns['satiety']:.0f} 精力{ns['energy']:.0f} "
-            f"好感{ms['affection']:.0f} 愉悦{ms['joy']:.0f} 理智{ms['sanity']:.0f}"
-        ]
-
         # ── 动态指令（规则不再让 LLM 查表，直接给命令） ──
 
         # --- 生理 ---
@@ -181,9 +174,13 @@ class ContextBuilder:
             directives.append("好感偏低：语气保持距离，不带亲昵称呼")
 
         if not directives:
-            return ""  # 有数值但无指令 → 也跳过
+            return ""
 
-        return "\n".join(lines + directives)
+        return "\n".join([
+            f"=== 当前状态（饱食{ns['satiety']:.0f} 精力{ns['energy']:.0f} "
+            f"好感{ms['affection']:.0f} 愉悦{ms['joy']:.0f} 理智{ms['sanity']:.0f}）===",
+            "【本轮强制要求 — 违反视为格式错误】",
+        ] + [f"- {d}" for d in directives])
 
     def _prepare_image(self) -> Optional[str]:
         if not config.VISION_ENABLED or not self._screen_reader:
