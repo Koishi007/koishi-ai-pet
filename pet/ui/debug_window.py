@@ -44,8 +44,8 @@ class DebugWindow(QWidget):
 
         self.setWindowTitle("DeskPet 调试面板")
         self.setObjectName("FlatWindow")
-        self.setMinimumSize(700, 500)
-        self.resize(740, 560)
+        self.setMinimumSize(740, 600)
+        self.resize(780, 680)
 
         # 无边框 + 圆角
         self.setWindowFlags(
@@ -76,13 +76,13 @@ class DebugWindow(QWidget):
 
     def _setup_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(6, 4, 6, 6)
-        root.setSpacing(4)
+        root.setContentsMargins(6, 2, 6, 4)
+        root.setSpacing(2)
 
         # ── 自定义标题栏 ──
         header = QWidget()
         header.setObjectName("LogHeader")
-        header.setFixedHeight(34)
+        header.setFixedHeight(30)
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(10, 0, 4, 0)
         header_layout.setSpacing(6)
