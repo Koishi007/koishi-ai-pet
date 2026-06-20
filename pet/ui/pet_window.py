@@ -9,7 +9,7 @@ from pet.ui.pet_animations import PetAnimator
 from pet.ui.particle import ParticleWidget
 from pet.ui.styles import MENU_QSS
 from pet.action import PetActions, ActionQueue
-from pet.brain.prompts import INTERACT_GRABBED, INTERACT_RELEASED, INTERACT_WINDOW_DISAPPEARED
+from pet.brain.prompts import INTERACT_GRABBED, INTERACT_RELEASED, INTERACT_WINDOW_DISAPPEARED, INTERACT_FED
 from pet.skills.registry import SKILL_REGISTRY
 from config import config
 
@@ -257,6 +257,13 @@ class PetWindow(TransparentWindow):
             toggle_mouse.triggered.connect(self._toggle_event_reaction)
             menu.addAction(toggle_mouse)
 
+            # 喂食子菜单
+            feed_menu = QMenu("喂食", menu)
+            for food in ("蛋糕", "饼干", "苹果", "冰淇淋", "寿司"):
+                action = feed_menu.addAction(food)
+                action.triggered.connect(lambda checked, f=food: self._feed_pet(f))
+            menu.addMenu(feed_menu)
+
             menu.addSeparator()
 
         # 隐藏 / 退出
@@ -282,6 +289,15 @@ class PetWindow(TransparentWindow):
     def _toggle_event_reaction(self):
         self._event_reaction = not self._event_reaction
         logger.info(f"Event reaction {'enabled' if self._event_reaction else 'disabled'}")
+
+    def _feed_pet(self, food: str):
+        """喂食：增加饱食度 + 触发互动反应"""
+        if self._agent:
+            self._agent.vitals.modify_satiety(15)
+            logger.info(f"[PetWindow] 喂食 {food}，饱食度 +15")
+        if self._agent and self._event_reaction:
+            hint = INTERACT_FED.format(food=food)
+            self._agent.trigger("interact", hint=hint)
 
     def _show_debug_window(self):
         if self._debug_window is None:
