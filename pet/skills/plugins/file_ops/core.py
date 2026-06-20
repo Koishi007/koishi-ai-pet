@@ -75,3 +75,15 @@ class FileOpsTool:
         except OSError as e:
             return {"error": f"写入失败: {e}"}
         return {"status": "written", "path": abs_path}
+
+    def write_file(self, path: str, content: str) -> dict:
+        try:
+            abs_path = self._check_path(path)
+        except PermissionError as e:
+            return {"error": str(e)}
+        try:
+            with open(abs_path, "w", encoding="utf-8") as f:
+                f.write(content)
+        except OSError as e:
+            return {"error": f"写入失败: {e}"}
+        return {"status": "written", "path": abs_path}

@@ -1,7 +1,7 @@
 from pet.skills.plugins.file_ops.core import FileOpsTool
 
 SKILL_NAME = "file"
-SKILL_DESCRIPTION = "文件操作（读取、列目录、写笔记，限桌面/文档）"
+SKILL_DESCRIPTION = "文件操作（读写、列目录，限桌面/文档）"
 
 _instance = FileOpsTool()
 
@@ -38,6 +38,16 @@ def register(registry):
         when="用户说\"帮我记一下\"\"写个备忘\"\"记笔记\"时",
         args={
             "filename": {"type": "str", "required": True, "desc": "文件名（含扩展名）"},
+            "content": {"type": "str", "required": True, "desc": "写入内容"},
+        },
+    )
+    registry.add_method(
+        SKILL_NAME, "write_file",
+        "写入/覆盖指定文件内容（限桌面/文档下的已有或无文件）",
+        handler=_instance.write_file,
+        when="用户说\"帮我写进去\"\"修改这个文件\"\"覆盖xxx内容\"时",
+        args={
+            "path": {"type": "str", "required": True, "desc": "文件路径"},
             "content": {"type": "str", "required": True, "desc": "写入内容"},
         },
     )
