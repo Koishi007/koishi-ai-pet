@@ -23,6 +23,8 @@ def main():
         level=getattr(logging, config.LOG_LEVEL, logging.INFO),
         format="[%(name)s] %(message)s",
     )
+    # 根 logger 降到 DEBUG，让各级 handler 自己过滤（GUI 热切换依赖这个）
+    logging.getLogger().setLevel(logging.DEBUG)
     # 静默 HTTP 库的 DEBUG 日志（它们会打印完整的 base64 图片数据）
     for _lib in ("httpx", "httpcore", "openai", "urllib3"):
         logging.getLogger(_lib).setLevel(logging.WARNING)
