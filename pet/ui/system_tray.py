@@ -110,12 +110,13 @@ class SystemTrayManager(QObject):
         except Exception:
             pass
 
-        # 扁平圆角菜单（Windows 下需 frameless + 自绘背景）
         menu = QMenu(self.pet)
-        menu.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Popup | Qt.WindowType.NoDropShadowWindowHint)
-        menu.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         menu.setStyleSheet(MENU_QSS)
-        _wrap_menu_paint(menu)
+        # Windows 原生菜单不认 QSS border-radius，需 frameless + 自绘
+        if sys.platform == "win32":
+            menu.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Popup | Qt.WindowType.NoDropShadowWindowHint)
+            menu.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+            _wrap_menu_paint(menu)
 
         if self.pet.isVisible():
             hide_action = QAction("隐藏", menu)

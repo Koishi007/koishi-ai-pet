@@ -1,4 +1,5 @@
 import logging
+import sys
 
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QMenu, QStyle
 from PySide6.QtCore import Qt, QPoint, QDateTime, QTimer, QSize
@@ -18,19 +19,24 @@ _R = 8  # 菜单圆角半径
 
 
 class _FlatMenuBase(QMenu):
-    """扁平圆角菜单基类 — 自绘圆角背景。"""
+    """扁平圆角菜单基类 — Windows 下自绘圆角背景，macOS 走原生。"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint
-            | Qt.WindowType.Popup
-            | Qt.WindowType.NoDropShadowWindowHint
-        )
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setStyleSheet(MENU_QSS)
+        self._is_win = sys.platform == "win32"
+        if self._is_win:
+            self.setWindowFlags(
+                Qt.WindowType.FramelessWindowHint
+                | Qt.WindowType.Popup
+                | Qt.WindowType.NoDropShadowWindowHint
+            )
+            self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
 
     def paintEvent(self, event):
+        if not self._is_win:
+            super().paintEvent(event)
+            return
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         path = QPainterPath()
@@ -38,13 +44,12 @@ class _FlatMenuBase(QMenu):
         painter.fillPath(path, QColor("#ffffff"))
         painter.setPen(QPen(QColor("#dddddd"), 1))
         painter.drawPath(path)
-        # 裁切子项到圆角区域内
         painter.setClipPath(path)
         super().paintEvent(event)
 
     def sizeHint(self):
         s = super().sizeHint()
-        return QSize(s.width() + 4, s.height() + 4)
+        return QSize(s.width() + 4, s.height() + 4) if self._is_win else s
 
 
 class StickyMenu(_FlatMenuBase):
