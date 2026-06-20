@@ -65,7 +65,7 @@ class PetAgent(QObject):
         self.state_machine.state_changed.connect(self.state_changed)
         self._pet_window = None
 
-        self.scheduler.register("mid", self._decide)
+        self.scheduler.register("mid", self._autonomous)
         self.scheduler.register("fast", self._recover)
         self.scheduler.register("slow", self._wakeup)
         self.scheduler.register("slow", self.vitals.reduce)
@@ -155,7 +155,7 @@ class PetAgent(QObject):
             logger.debug(f"[PetAgent] backfill default duration for '{name}': {kw['duration']}s")
         self.action_requested.emit(name, args or (), kw)
 
-    def _decide(self):
+    def _autonomous(self):
         ts = datetime.now().strftime("%H:%M:%S")
         from pet.agent.state import PetState
         if not self.state_machine.try_transition(PetState.AUTONOMOUS):
