@@ -79,12 +79,9 @@ class SpeechBubble(QLabel):
         self.setMinimumWidth(80)
         self.setMaximumWidth(config.BUBBLE_MAX_WIDTH)
         metrics = self.fontMetrics()
-        avg_w = metrics.averageCharWidth()
-        target_w = int(avg_w * 28)
-        text_w = metrics.horizontalAdvance(text) + 20
-        w = text_w if text_w <= target_w else target_w
+        text_w = metrics.horizontalAdvance(text) + 20 + 5  # 20px CSS padding + 5px 缓冲（防 subpixel 舍入换行）
+        w = text_w if text_w <= config.BUBBLE_MAX_WIDTH else config.BUBBLE_MAX_WIDTH
         w = max(w, self.minimumWidth())
-        w = min(w, self.maximumWidth())
         self.setFixedWidth(w)
         self.adjustSize()
         self.resize(self.width(), self.height() + TAIL_HEIGHT)
@@ -133,6 +130,9 @@ class SpeechBubble(QLabel):
 
     def append_stream(self, chunk: str):
         """追加流式文本片段。"""
+        chunk = chunk.replace("\r", "").replace("\n", "")  # 去掉换行符（某些 API 会发送 \r\n）
+        if not chunk:
+            return
         if self._buffering:
             self._incoming_chunks.append(chunk)
         else:
