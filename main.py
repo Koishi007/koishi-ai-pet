@@ -69,8 +69,6 @@ def main():
     # 启动时加载技能插件
     load_skills(config.SKILLS_ENABLED)
 
-    # Windows 任务栏图标修复：必须在 QApplication 之前设置 AppID，
-    # 否则任务栏会沿用 python.exe 的图标（setWindowIcon 仅改标题栏）
     if sys.platform == "win32":
         try:
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("DeskPet.App.1")
