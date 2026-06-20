@@ -39,6 +39,7 @@ class ActionQueue(QObject):
         self._queue.clear()
         self._cursor = 0
         self._disconnect_active()
+        self._actions._stop_drive(switch_idle=False)
         self._running = False
         self.changed.emit()
 

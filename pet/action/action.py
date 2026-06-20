@@ -98,6 +98,10 @@ class PetActions(QObject):
             sentinel.stop()
 
         def _hop(step: int):
+            if sentinel.state() != QPropertyAnimation.State.Running:
+                # clear/stop 已终止此次行走，忽略残留的 singleShot 回调
+                self.gravity.suppress_idle = False
+                return
             if step >= total_steps:
                 _finish(switch_idle=True)
                 return
