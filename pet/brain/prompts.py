@@ -144,10 +144,10 @@ class _Lazy:
         return self.fn()
 
 _PERCEPTION_SECTIONS = {
-    "vision":     [_VISION_INTRO, _WINDOW_GUIDE, _VISION_CONTENT_GUIDE, _Lazy(generate_action_section), _VISION_CONSTRAINTS],
-    "non_vision": [_NON_VISION_INTRO, _WINDOW_GUIDE, _Lazy(generate_action_section)],
-    "chat":           [_CHAT_INTRO, _WINDOW_GUIDE, _VISION_CONTENT_GUIDE, _Lazy(generate_action_section), _VISION_CONSTRAINTS],
-    "chat_no_vision": [_CHAT_INTRO, _WINDOW_GUIDE, _Lazy(generate_action_section)],
+    "autonomous_vision":     [_VISION_INTRO, _WINDOW_GUIDE, _VISION_CONTENT_GUIDE, _Lazy(generate_action_section), _VISION_CONSTRAINTS],
+    "autonomous_non_vision": [_NON_VISION_INTRO, _WINDOW_GUIDE, _Lazy(generate_action_section)],
+    "chat_vision":           [_CHAT_INTRO, _WINDOW_GUIDE, _VISION_CONTENT_GUIDE, _Lazy(generate_action_section), _VISION_CONSTRAINTS],
+    "chat_non_vision":       [_CHAT_INTRO, _WINDOW_GUIDE, _Lazy(generate_action_section)],
     "interact":   [_Lazy(generate_action_section)],
     "skill":      [_Lazy(generate_action_section)],
 }
@@ -290,7 +290,7 @@ def build_system_prompt(mode: str, task: str) -> str:
     """分层组装 system prompt。
 
     Args:
-        mode: "vision" | "non_vision" | "chat" | "interact" | "skill"
+        mode: "autonomous_vision" | "autonomous_non_vision" | "chat_vision" | "chat_non_vision" | "interact" | "skill"
         task: "autonomous" | "chat" | "interact" | "skill_round"
     """
     if mode not in _PERCEPTION_SECTIONS:
