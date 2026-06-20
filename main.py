@@ -47,6 +47,7 @@ def main():
     # GUI 日志桥接 (INFO 级)
     _log_relay = _LogRelay()
     _log_handler = LogWindowHandler(_log_relay, level=logging.INFO)
+    _log_relay.set_handler(_log_handler)
     logging.getLogger().addHandler(_log_handler)
 
     # 隐藏控制台窗口 (仅 Windows)

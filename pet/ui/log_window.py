@@ -7,7 +7,7 @@ from PySide6.QtCore import Qt, Signal, QObject, QPoint
 from PySide6.QtGui import QFont, QTextCursor, QIcon, QPainter, QPainterPath, QColor, QPen
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
-    QTextEdit, QPushButton, QLabel,
+    QTextEdit, QPushButton, QLabel, QComboBox,
 )
 
 
@@ -23,9 +23,17 @@ class _LogRelay(QObject):
 
     log_received = Signal(str)
 
+    _LEVELS = {
+        "DEBUG": logging.DEBUG,
+        "INFO": logging.INFO,
+        "WARNING": logging.WARNING,
+        "ERROR": logging.ERROR,
+    }
+
     def __init__(self, buffer_size: int = 2000, parent=None):
         super().__init__(parent)
         self._widget: QWidget | None = None
+        self._handler: LogWindowHandler | None = None
         self._buffer: deque[str] = deque(maxlen=buffer_size)
         self.log_received.connect(self._on_log_received)
 
@@ -33,6 +41,22 @@ class _LogRelay(QObject):
         self._widget = widget
         while self._buffer:
             widget._append_log(self._buffer.popleft())
+
+    def set_handler(self, handler: "LogWindowHandler"):
+        self._handler = handler
+
+    def set_level(self, level_name: str):
+        """热切换日志级别 (DEBUG/INFO/WARNING/ERROR)。"""
+        level = self._LEVELS.get(level_name)
+        if level is not None and self._handler:
+            self._handler.setLevel(level)
+
+    def current_level_name(self) -> str:
+        if self._handler:
+            for name, val in self._LEVELS.items():
+                if val == self._handler.level:
+                    return name
+        return "INFO"
 
     def _on_log_received(self, formatted: str):
         if self._widget:
@@ -106,6 +130,35 @@ QPushButton#LogCloseBtn:hover {
 }
 """
 
+_LEVEL_COMBO_QSS = """
+QComboBox {
+    background: transparent;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    padding: 1px 6px;
+    font-size: 11px;
+    color: #666;
+    min-width: 72px;
+}
+QComboBox:hover {
+    border-color: #aaa;
+}
+QComboBox::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: right center;
+    width: 16px;
+    border: none;
+}
+QComboBox QAbstractItemView {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    selection-background-color: #e0e0e0;
+    color: #333;
+    font-size: 11px;
+}
+"""
+
 _CLEAR_BTN_QSS = """
 QPushButton#LogClearBtn {
     background: transparent;
@@ -175,13 +228,13 @@ class LogWindow(QWidget):
 
         header_layout.addStretch()
 
-        # 日志级别标签
-        level_badge = QLabel("INFO+")
-        level_badge.setStyleSheet(
-            "font-size:11px; color:#888; background:transparent;"
-            "border:1px solid #ccc; border-radius:8px; padding:1px 8px;"
-        )
-        header_layout.addWidget(level_badge)
+        # 日志级别切换
+        self._level_combo = QComboBox()
+        self._level_combo.addItems(["DEBUG", "INFO", "WARNING", "ERROR"])
+        self._level_combo.setCurrentText(relay.current_level_name())
+        self._level_combo.setStyleSheet(_LEVEL_COMBO_QSS)
+        self._level_combo.currentTextChanged.connect(relay.set_level)
+        header_layout.addWidget(self._level_combo)
 
         header_layout.addSpacing(8)
 
