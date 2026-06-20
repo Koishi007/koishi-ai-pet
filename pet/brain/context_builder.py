@@ -30,31 +30,34 @@ class ContextBuilder:
         base64_img = self._prepare_image() if screenshot else None
         vision = base64_img is not None
         mode = "vision" if vision else "non_vision"
-        system = self._build_system(mode, "autonomous")
+        system = self._build_system(mode, "autonomous", user_message=window_context)
         ctx_str = self._build_user_context(window_context)
 
         if vision:
             return [
                 {"role": "system", "content": system},
                 {"role": "user", "content": [
-                    {"type": "text", "text": prompts.vision_autonomous_prompt(ctx_str)},
+                    {"type": "text", "text": prompts.autonomous_vision_user_prompt(ctx_str)},
                     {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_img}"}},
                 ]},
             ]
         return [
             {"role": "system", "content": system},
-            {"role": "user", "content": prompts.non_vision_autonomous_prompt(ctx_str)},
+            {"role": "user", "content": prompts.autonomous_non_vision_user_prompt(ctx_str)},
         ]
 
     def build_chat(self, user_message: str, window_context: str,
                    screenshot: bool = True) -> list[dict]:
-        """对话模式的 messages。"""
+        """对话模式的 messages（视觉／非视觉自动选择）。"""
         base64_img = self._prepare_image() if screenshot else None
-        system = self._build_system("chat", "chat", user_message=user_message)
+        vision = base64_img is not None
+        mode = "chat" if vision else "chat_no_vision"
+        system = self._build_system(mode, "chat", user_message=user_message)
         history = self._build_history()
-        user_content = prompts.chat_decide_user_prompt(user_message, window_context + history)
+        user_content = prompts.chat_user_prompt(user_message, window_context + history,
+                                                       vision=vision)
 
-        if base64_img:
+        if vision:
             return [
                 {"role": "system", "content": system},
                 {"role": "user", "content": [
@@ -79,17 +82,21 @@ class ContextBuilder:
                            images: list[str] | None = None) -> dict:
         """构建技能执行结果对应的 user message（含可选图片）"""
         text = prompts.skill_result_user_prompt(result_text)
-        if images and config.VISION_ENABLED:
+        if images:
             content = [{"type": "text", "text": text}]
             for uri in images:
                 content.append({"type": "image_url", "image_url": {"url": uri}})
             return {"role": "user", "content": content}
         return {"role": "user", "content": text}
 
-    @staticmethod
-    def build_skill_round_system() -> str:
-        """技能多轮调用的精简 system prompt。"""
-        return prompts.build_system_prompt("skill", "skill_round")
+    def build_skill_round_system(self) -> str:
+        """技能多轮调用的精简 system prompt"""
+        content = prompts.build_system_prompt("skill", "skill_round")
+        if self._memory_store:
+            memory_text = self._memory_store.retrieve_context("")
+            if memory_text:
+                content += f"\n\n[你对主人的记忆]\n{memory_text}"
+        return content
 
     # internal
 
@@ -183,9 +190,17 @@ class ContextBuilder:
         if not directives:
             return ""
 
+        param_intro = (
+            "【参数说明】饱食度 0-100（仅喂食可恢复）| "
+            "精力 0-100（sit/sleep 可恢复）| "
+            "好感度 0-100（对用户亲密度）| "
+            "愉悦度 0-100（当下快乐感）| "
+            "理智值 0-100（越低越疯癫）"
+        )
         return "\n".join([
             f"=== 当前状态（饱食{ns['satiety']:.0f} 精力{ns['energy']:.0f} "
             f"好感{ms['affection']:.0f} 愉悦{ms['joy']:.0f} 理智{ms['sanity']:.0f}）===",
+            param_intro,
             "【本轮强制要求 — 违反视为格式错误】",
         ] + [f"- {d}" for d in directives])
 
