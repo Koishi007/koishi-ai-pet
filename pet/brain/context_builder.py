@@ -10,10 +10,10 @@ class ContextBuilder:
     """构建 LLM 请求所需的完整 messages 列表。
 
     四个公开方法对应四种任务：
-      build_decide       — 自主决策（视觉 / 非视觉自动选择）
-      build_chat         — 用户对话
-      build_interact     — 即时交互（抓取、释放等）
-      build_skill_result — 技能多轮调用中的结果消息
+      build_autonomous_decide — 自主决策（视觉 / 非视觉自动选择）
+      build_chat              — 用户对话
+      build_interact          — 即时交互（抓取、释放等）
+      build_skill_result      — 技能多轮调用中的结果消息
     """
 
     def __init__(self, memory_store=None, screen_reader=None, vitals=None, mood=None, brain_mixin=None):
@@ -25,7 +25,7 @@ class ContextBuilder:
 
     # public API
 
-    def build_decide(self, window_context: str, screenshot: bool = True) -> list[dict]:
+    def build_autonomous_decide(self, window_context: str, screenshot: bool = True) -> list[dict]:
         """自主决策模式的 messages（视觉／非视觉自动选择）"""
         base64_img = self._prepare_image() if screenshot else None
         vision = base64_img is not None
@@ -37,13 +37,13 @@ class ContextBuilder:
             return [
                 {"role": "system", "content": system},
                 {"role": "user", "content": [
-                    {"type": "text", "text": prompts.vision_decide_prompt(ctx_str)},
+                    {"type": "text", "text": prompts.vision_autonomous_prompt(ctx_str)},
                     {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{base64_img}"}},
                 ]},
             ]
         return [
             {"role": "system", "content": system},
-            {"role": "user", "content": prompts.non_vision_decide_prompt(ctx_str)},
+            {"role": "user", "content": prompts.non_vision_autonomous_prompt(ctx_str)},
         ]
 
     def build_chat(self, user_message: str, window_context: str,

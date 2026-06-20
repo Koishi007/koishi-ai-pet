@@ -109,7 +109,7 @@ class PetAgent(QObject):
             else:
                 def _non_stream(px, py):
                     wctx = self._build_window_context(px, py)
-                    return self.behavior.decide(wctx or "", screenshot=screenshot)
+                    return self.behavior.autonomous_decide(wctx or "", screenshot=screenshot)
                 self._async_brain(_non_stream, pet_x, pet_y)
 
         QTimer.singleShot(delay_ms, _execute)
@@ -218,7 +218,7 @@ class PetAgent(QObject):
                 self.speak_stream_end.emit(5000)
                 stream_started = False
 
-        result = self.behavior.decide_stream(context, screenshot=True, on_chunk=on_chunk, on_stream_end=on_stream_end)
+        result = self.behavior.autonomous_decide_stream(context, screenshot=True, on_chunk=on_chunk, on_stream_end=on_stream_end)
 
         if stream_started:
             self.speak_stream_end.emit(5000)

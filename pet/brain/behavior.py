@@ -84,12 +84,12 @@ class Behavior(BrainMixin):
     def has_vision(self) -> bool:
         return self._client is not None and config.VISION_ENABLED
     
-    def decide(self, context: str = "", screenshot: bool = True) -> BehaviorOutput:
+    def autonomous_decide(self, context: str = "", screenshot: bool = True) -> BehaviorOutput:
         t = datetime.now().strftime("%H:%M:%S")
         if not self._client:
             return self._decide_local()
 
-        messages = self.ctx.build_decide(context, screenshot=screenshot)
+            messages = self.ctx.build_autonomous_decide(context, screenshot=screenshot)
         is_vision = isinstance(messages[1]["content"], list)
         tag = "vision" if is_vision else "non_vision"
         ctx_preview = context[:60] if context else "(empty)"
@@ -99,17 +99,17 @@ class Behavior(BrainMixin):
 
         return self._call_llm_and_parse(messages, messages[0]["content"], tag)
 
-    def decide_stream(self, context: str = "", screenshot: bool = True,
+    def autonomous_decide_stream(self, context: str = "", screenshot: bool = True,
                       on_chunk=None, on_stream_end=None) -> BehaviorOutput:
         if not self._client:
             return self._decide_local()
         if not self._lock.acquire(timeout=0.5):
-            logger.warning("[Behavior] decide_stream: busy, skip")
+            logger.warning("[Behavior] autonomous_decide_stream: busy, skip")
             return self._decide_local()
         try:
-            messages = self.ctx.build_decide(context, screenshot=screenshot)
+            messages = self.ctx.build_autonomous_decide(context, screenshot=screenshot)
             is_vision = isinstance(messages[1]["content"], list)
-            tag = "decide_vision_stream" if is_vision else "decide_stream"
+            tag = "autonomous_decide_vision_stream" if is_vision else "autonomous_decide_stream"
             return self._stream_and_parse(messages, on_chunk=on_chunk, on_stream_end=on_stream_end, tag=tag)
         finally:
             self._lock.release()

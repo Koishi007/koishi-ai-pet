@@ -313,7 +313,7 @@ def build_system_prompt(mode: str, task: str) -> str:
 
     return "\n\n".join(sections)
 
-def _base_decide(context: str, mode: str) -> str:
+def _base_autonomous(context: str, mode: str) -> str:
     if not context or context.startswith("no context"):
         return (
             f"{context}\n\n"
@@ -341,12 +341,12 @@ def _base_decide(context: str, mode: str) -> str:
     )
 
 
-def non_vision_decide_prompt(context: str) -> str:
-    return _base_decide(context, "non_vision")
+def non_vision_autonomous_prompt(context: str) -> str:
+    return _base_autonomous(context, "non_vision")
 
 
-def vision_decide_prompt(context: str) -> str:
-    return _base_decide(context, "vision")
+def vision_autonomous_prompt(context: str) -> str:
+    return _base_autonomous(context, "vision")
 
 
 def chat_decide_user_prompt(user_message: str, context: str) -> str:
