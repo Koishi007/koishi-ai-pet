@@ -29,6 +29,11 @@ def main():
     )
     # 根 logger 降到 DEBUG，让各级 handler 自己过滤（GUI 热切换依赖这个）
     logging.getLogger().setLevel(logging.DEBUG)
+    # basicConfig 的 StreamHandler 默认 NOTSET，会继承 root level → 显式设为 LOG_LEVEL
+    _console_level = getattr(logging, config.LOG_LEVEL, logging.INFO)
+    for h in logging.getLogger().handlers:
+        if isinstance(h, logging.StreamHandler) and h.level == logging.NOTSET:
+            h.setLevel(_console_level)
     # 静默 HTTP 库的 DEBUG 日志（它们会打印完整的 base64 图片数据）
     for _lib in ("httpx", "httpcore", "openai", "urllib3"):
         logging.getLogger(_lib).setLevel(logging.WARNING)
