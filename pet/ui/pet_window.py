@@ -1,9 +1,9 @@
 import logging
 import sys
 
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QMenu, QStyle
+from PySide6.QtWidgets import QLabel, QVBoxLayout, QMenu
 from PySide6.QtCore import Qt, QPoint, QDateTime, QTimer, QSize
-from PySide6.QtGui import QMouseEvent, QAction, QPainter, QPainterPath, QColor, QPen, QBrush
+from PySide6.QtGui import QMouseEvent, QAction, QPainter, QPainterPath, QColor, QPen
 from pet.ui.base_window import TransparentWindow
 from pet.ui.pet_animations import PetAnimator
 from pet.ui.particle import ParticleWidget
