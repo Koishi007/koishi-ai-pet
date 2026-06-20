@@ -228,16 +228,6 @@ class LogWindow(QWidget):
 
         header_layout.addStretch()
 
-        # 日志级别切换
-        self._level_combo = QComboBox()
-        self._level_combo.addItems(["DEBUG", "INFO", "WARNING", "ERROR"])
-        self._level_combo.setCurrentText(relay.current_level_name())
-        self._level_combo.setStyleSheet(_LEVEL_COMBO_QSS)
-        self._level_combo.currentTextChanged.connect(relay.set_level)
-        header_layout.addWidget(self._level_combo)
-
-        header_layout.addSpacing(8)
-
         # 关闭按钮
         close_btn = QPushButton("✕")
         close_btn.setObjectName("LogCloseBtn")
@@ -250,11 +240,20 @@ class LogWindow(QWidget):
         toolbar = QHBoxLayout()
         toolbar.setContentsMargins(0, 0, 0, 0)
 
+        # 日志级别切换
+        self._level_combo = QComboBox()
+        self._level_combo.addItems(["DEBUG", "INFO", "WARNING", "ERROR"])
+        self._level_combo.setCurrentText(relay.current_level_name())
+        self._level_combo.setStyleSheet(_LEVEL_COMBO_QSS)
+        self._level_combo.currentTextChanged.connect(relay.set_level)
+        toolbar.addWidget(self._level_combo)
+
+        toolbar.addStretch()
+
         clear_btn = QPushButton("清空")
         clear_btn.setObjectName("LogClearBtn")
         clear_btn.setStyleSheet(_CLEAR_BTN_QSS)
         clear_btn.clicked.connect(self._clear)
-        toolbar.addStretch()
         toolbar.addWidget(clear_btn)
 
         # ── 日志正文 ──
