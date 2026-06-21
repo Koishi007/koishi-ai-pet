@@ -127,12 +127,14 @@ class Scheduler(QObject):
         """运行时更新调度器配置（设置界面修改调度参数后调用）。
 
         重建定时器但保留已注册的回调和手动暂停状态。
+        仅通过 _manually_paused 判断定时器是否应启动，
+        避免 idle-paused 状态被误判为手动暂停。
         """
         if not self._initialized:
             return
-        auto_fast = "fast" not in self._manually_paused and self._timers.get("fast", QTimer()).isActive()
-        auto_mid = "mid" not in self._manually_paused and self._timers.get("mid", QTimer()).isActive()
-        auto_slow = "slow" not in self._manually_paused and self._timers.get("slow", QTimer()).isActive()
+        auto_fast = "fast" not in self._manually_paused
+        auto_mid = "mid" not in self._manually_paused
+        auto_slow = "slow" not in self._manually_paused
         self._idle_timeout_ms = config.SCHEDULER_IDLE_TIMEOUT_MS
         self.init(auto_fast=auto_fast, auto_mid=auto_mid, auto_slow=auto_slow)
         logger.info("[Scheduler] config updated — timers rebuilt")
