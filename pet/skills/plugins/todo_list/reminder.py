@@ -114,7 +114,8 @@ class ReminderManager:
                 return
             self._fire_reminder(todo)
 
-        SKILL_CTX.register_alarm(ts, _alarm)
+        alarm_key = f"todo_{todo['id']}"
+        SKILL_CTX.register_alarm(ts, _alarm, key=alarm_key)
         logger.info(f"[Reminder] exact alarm set for #{todo['id']} at {todo['due_date']}")
 
     def _check_date_tasks(self):

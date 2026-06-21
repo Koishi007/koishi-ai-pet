@@ -202,15 +202,16 @@ class Scheduler(QObject):
     def is_mid_paused(self) -> bool:
         return self.is_paused("mid")
 
-    def schedule_at(self, timestamp_ms: int, callback: Callable[[], None]):
+    def schedule_at(self, timestamp_ms: int, callback: Callable[[], None],
+                    key: str | None = None):
         """在指定绝对时间戳（ms）精准触发一次性回调。
         已过期则立即触发，同 ID 重复注册会覆盖旧的。"""
         import time
         now_ms = int(time.time() * 1000)
         delay_ms = max(0, timestamp_ms - now_ms)
 
-        # 用 callback 的函数名作为 key，同 callback 覆盖旧 alarm
-        key = str(id(callback))
+        if key is None:
+            key = str(id(callback))
 
         # 覆盖旧 timer
         self._cleanup_alarm_timer(key)

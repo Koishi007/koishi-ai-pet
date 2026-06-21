@@ -172,5 +172,5 @@ def register(registry):
 
     global _reminder
     _reminder = ReminderManager(_instance._storage)
-    _reminder.start()
-    logger.info("[todo] skill registered with reminders")
+    SKILL_CTX.on_bind(lambda: _reminder.start())
+    logger.info("[todo] skill registered (reminders deferred to post-bind)")

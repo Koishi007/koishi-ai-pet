@@ -14,10 +14,17 @@ class SkillContext:
     def __init__(self):
         self._agent = None
         self._panels: dict[str, Callable] = {}
+        self._pending_callbacks: list[Callable] = []
 
     def bind(self, agent):
         self._agent = agent
         logger.info("[SkillContext] Bound to agent")
+        for cb in self._pending_callbacks:
+            try:
+                cb()
+            except Exception:
+                logger.exception("[SkillContext] post-bind callback error")
+        self._pending_callbacks.clear()
 
     def _check_agent(self):
         if not self._agent:
@@ -53,10 +60,11 @@ class SkillContext:
         if self._check_agent():
             self._agent.scheduler.register(name, callback)
 
-    def register_alarm(self, timestamp_ms: int, callback: Callable[[], None]):
+    def register_alarm(self, timestamp_ms: int, callback: Callable[[], None],
+                       key: str | None = None):
         """注册精确时刻一次性回调，内部转发给 Scheduler.schedule_at。"""
         if self._check_agent():
-            self._agent.scheduler.schedule_at(timestamp_ms, callback)
+            self._agent.scheduler.schedule_at(timestamp_ms, callback, key=key)
 
     def register_panel(self, skill_name: str,
                        factory: Callable[[], object]):
@@ -67,6 +75,14 @@ class SkillContext:
     def get_panel_factory(self, skill_name: str) -> Callable | None:
         """获取指定技能的 panel 工厂。"""
         return self._panels.get(skill_name)
+
+
+    def on_bind(self, callback: Callable[[], None]):
+        """注册回调：agent 绑定后立即执行（已绑定时立即调用）。"""
+        if self._agent is not None:
+            callback()
+        else:
+            self._pending_callbacks.append(callback)
 
 
 SKILL_CTX = SkillContext()
