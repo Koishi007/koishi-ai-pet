@@ -332,14 +332,8 @@ class SettingsWindow(QWidget):
         sched_group = QGroupBox("调度器")
         sched_form = QFormLayout(sched_group)
         sched_form.setSpacing(6)
-        sched_form.addRow("Fast 间隔(ms):", self._line("SCHEDULER_FAST_MS", "1000"))
-        sched_form.addRow("Mid 间隔(ms):", self._line("SCHEDULER_MID_MS", "300000"))
-        sched_form.addRow("Slow 间隔(ms):", self._line("SCHEDULER_SLOW_MS", "300000"))
-        sched_form.addRow("空闲超时(ms):", self._line("SCHEDULER_IDLE_TIMEOUT_MS", "900000"))
-        sched_form.addRow("动作超时(ms):", self._line("ACTION_TIMEOUT_MS", "15000"))
-        sched_form.addRow("", self._check("SCHEDULER_AUTO_START_FAST", "自动启动 Fast"))
-        sched_form.addRow("", self._check("SCHEDULER_AUTO_START_MID", "自动启动 Mid"))
-        sched_form.addRow("", self._check("SCHEDULER_AUTO_START_SLOW", "自动启动 Slow"))
+        sched_form.addRow("自主行动间隔(ms):", self._line("SCHEDULER_MID_MS", "300000"))
+        sched_form.addRow("", self._check("SCHEDULER_AUTO_START_MID", "默认开启自动行动"))
         layout.addWidget(sched_group)
 
         # 理智
@@ -376,7 +370,6 @@ class SettingsWindow(QWidget):
         form.addRow("气泡字号:", self._line("BUBBLE_FONT_SIZE", "14"))
         form.addRow("", self._check("HIDE_CONSOLE", "隐藏控制台"))
         form.addRow("", self._check("SHOW_TRAY", "显示托盘图标"))
-        form.addRow("日志级别:", self._line("LOG_LEVEL", "INFO"))
 
         layout.addLayout(form)
         layout.addStretch()
