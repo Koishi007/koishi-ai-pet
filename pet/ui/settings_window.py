@@ -250,7 +250,7 @@ class SettingsWindow(QWidget):
 
         # 调用模式
         self._brain_combo = QComboBox()
-        self._brain_combo.addItems(["local", "llm", "ollama"])
+        self._brain_combo.addItems(["local", "api", "ollama"])
         self._fields["BRAIN"] = self._brain_combo
         form.addRow("调用模式:", self._brain_combo)
 
@@ -355,7 +355,7 @@ class SettingsWindow(QWidget):
                 w.setEnabled(False)
             for w in ollama_fields + common_fields:
                 w.setEnabled(True)
-        else:  # llm
+        else:  # api
             for w in ollama_fields:
                 w.setEnabled(False)
             for w in llm_fields + common_fields:
