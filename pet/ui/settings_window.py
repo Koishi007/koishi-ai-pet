@@ -386,7 +386,13 @@ class SettingsWindow(QWidget):
         # 理智
         sanity_row = QFormLayout()
         sanity_row.addRow("理智临界值:", self._line("SANITY_CRITICAL_THRESHOLD", "20"))
+        sanity_row.labelForField(self._fields["SANITY_CRITICAL_THRESHOLD"]).setMinimumWidth(0)
+        self._fields["SANITY_CRITICAL_THRESHOLD"].setFixedWidth(100)
         layout.addLayout(sanity_row)
+        layout.addWidget(
+            QLabel("低于该值会导致异常行为"),
+            alignment=Qt.AlignmentFlag.AlignRight,
+        )
 
         layout.addStretch()
         return w
