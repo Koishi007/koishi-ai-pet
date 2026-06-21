@@ -152,9 +152,9 @@ class ContextBuilder:
             if key == "satiety":
                 if value >= 80:    return "刚吃饱，"
                 elif value >= 60:  return None
-                elif value >= 40:  return "肚子有点空了，"
-                elif value >= 20:  return "饿得肚子咕咕叫，"
-                else:              return "快要饿死了，眼前发黑，"
+                elif value >= 40:  return "肚子有点空了，想让主人喂点吃的。"
+                elif value >= 20:  return "饿得肚子咕咕叫，想让主人喂点吃的。"
+                else:              return "快要饿死了，眼前发黑，想让主人喂点吃的。"
             elif key == "energy":
                 if value >= 80:    return "浑身充满力气，"
                 elif value >= 60:  return None
