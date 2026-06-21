@@ -32,6 +32,8 @@ def _to_timestamp(due_date: str) -> int:
     """将 ISO datetime 转为毫秒时间戳。"""
     try:
         dt = datetime.fromisoformat(due_date)
+        if dt.tzinfo is not None:
+            dt = dt.replace(tzinfo=None)
         return int(dt.timestamp() * 1000)
     except ValueError:
         return 0
@@ -104,6 +106,8 @@ class ReminderManager:
                 # 再次确认在 ±5 分钟窗口内
                 try:
                     due_dt = datetime.fromisoformat(t["due_date"])
+                    if due_dt.tzinfo is not None:
+                        due_dt = due_dt.replace(tzinfo=None)
                     if abs((due_dt - now).total_seconds()) <= 300:
                         self._fire_reminder(t)
                 except ValueError:
