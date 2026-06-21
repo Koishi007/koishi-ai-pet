@@ -1,8 +1,29 @@
 import base64
+import json
 import logging
+import os
 import webbrowser
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+_PLUGIN_DIR = Path(__file__).parent
+_CONFIG_FILE = _PLUGIN_DIR / "config.json"
+
+
+def _load_config() -> dict:
+    if _CONFIG_FILE.is_file():
+        try:
+            with open(_CONFIG_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning(f"[BrowserTool] Failed to read config.json: {e}")
+    return {}
+
+
+_cfg = _load_config()
+if _cfg.get("browser"):
+    os.environ["BROWSER"] = _cfg["browser"]
 
 
 def _get_playwright():
