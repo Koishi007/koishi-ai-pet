@@ -256,13 +256,28 @@ class PetWindow(TransparentWindow):
             log_action.triggered.connect(self._show_log_window)
             menu.addAction(log_action)
 
-            # 技能开关子菜单（勾选不关闭）
+            # 技能子菜单（每技能支持独立子菜单）
             skill_menu = StickyMenu("技能", menu)
             for name in SKILL_REGISTRY.skill_names:
-                action = skill_menu.addAction(name)
-                action.setCheckable(True)
-                action.setChecked(SKILL_REGISTRY.is_enabled(name))
-                action.toggled.connect(lambda checked, n=name: SKILL_REGISTRY.set_enabled(n, checked))
+                skill = SKILL_REGISTRY._skills.get(name)
+                if not skill:
+                    continue
+
+                # 技能开关（checkable）
+                skill_action = skill_menu.addAction(name)
+                skill_action.setCheckable(True)
+                skill_action.setChecked(SKILL_REGISTRY.is_enabled(name))
+                skill_action.toggled.connect(
+                    lambda checked, n=name: SKILL_REGISTRY.set_enabled(n, checked))
+
+                # 如果有子菜单项，挂到 action 上
+                if skill.menu_items:
+                    sub_menu = _FlatMenuBase(name)
+                    for item in skill.menu_items:
+                        sub_action = sub_menu.addAction(item["label"])
+                        sub_action.triggered.connect(item["handler"])
+                    skill_action.setMenu(sub_menu)
+
             menu.addMenu(skill_menu)
 
             # 互动反应开关
