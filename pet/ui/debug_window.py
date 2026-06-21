@@ -2,7 +2,7 @@
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-    QGroupBox, QTextEdit, QLabel, QLineEdit, QSpinBox,
+    QGroupBox, QTextEdit, QLabel, QLineEdit,
     QFormLayout, QCheckBox, QFrame, QComboBox, QListWidget,
     QGridLayout,
 )
@@ -12,8 +12,9 @@ from PySide6.QtCore import Qt, QPoint, QTimer, QSize
 from PySide6.QtGui import QFont, QIcon, QPainter, QPainterPath, QColor, QPen
 from pet.ui.styles import (
     ICON_PATH, WINDOW_QSS, PANEL_QSS, BUTTON_QSS, BUTTON_PRIMARY_QSS,
-    BUTTON_DANGER_QSS, INPUT_QSS, COMBOBOX_QSS, TEXTEDIT_QSS,
+    BUTTON_DANGER_QSS, INPUT_HIGHLIGHT_QSS, COMBOBOX_QSS, TEXTEDIT_QSS,
     LIST_QSS, CHECKBOX_QSS, LABEL_SECONDARY_QSS, LABEL_MONO_QSS,
+    _COLOR_BG, _COLOR_BORDER_DARK, _COLOR_TEXT_TITLE, _COLOR_TEXT_MUTED, _COLOR_DANGER,
 )
 
 from pet.ui.speech_bubble import SpeechBubble
@@ -62,7 +63,7 @@ class DebugWindow(QWidget):
         self._setup_ui()
         self.setStyleSheet(
             PANEL_QSS + BUTTON_QSS + BUTTON_PRIMARY_QSS +
-            INPUT_QSS + COMBOBOX_QSS + TEXTEDIT_QSS + LIST_QSS +
+            INPUT_HIGHLIGHT_QSS + COMBOBOX_QSS + TEXTEDIT_QSS + LIST_QSS +
             CHECKBOX_QSS
         )
 
@@ -96,9 +97,9 @@ class DebugWindow(QWidget):
         # ── 自定义标题栏 ──
         header = QWidget()
         header.setObjectName("LogHeader")
-        header.setFixedHeight(30)
+        header.setFixedHeight(38)
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(10, 0, 4, 0)
+        header_layout.setContentsMargins(12, 0, 6, 0)
         header_layout.setSpacing(6)
 
         try:
@@ -109,13 +110,17 @@ class DebugWindow(QWidget):
             pass
 
         title_lbl = QLabel("DeskPet 调试面板")
-        title_lbl.setStyleSheet("font-size:13px; color:#444; font-weight:bold; background:transparent;")
+        title_lbl.setStyleSheet(f"font-size:13px; color:{_COLOR_TEXT_TITLE}; font-weight:bold; background:transparent;")
         header_layout.addWidget(title_lbl)
         header_layout.addStretch()
 
         close_btn = QPushButton("✕")
-        close_btn.setFixedSize(28, 28)
-        close_btn.setStyleSheet(BUTTON_DANGER_QSS)
+        close_btn.setFixedSize(36, 36)
+        close_btn.setStyleSheet(f"""
+            QPushButton {{ background: transparent; border: none; border-radius: 18px;
+                         font-size: 18px; color: {_COLOR_TEXT_MUTED}; }}
+            QPushButton:hover {{ background: {_COLOR_DANGER}; color: #fff; }}
+        """)
         close_btn.clicked.connect(self.close)
         header_layout.addWidget(close_btn)
 
@@ -158,9 +163,8 @@ class DebugWindow(QWidget):
 
         ctrl_row = QHBoxLayout()
         ctrl_row.addWidget(QLabel("FPS:"))
-        self.pet_fps = QSpinBox()
-        self.pet_fps.setRange(1, 60)
-        self.pet_fps.setValue(config.PET_FPS)
+        self.pet_fps = QLineEdit()
+        self.pet_fps.setText(str(config.PET_FPS))
         self.pet_fps.setFixedWidth(150)
         ctrl_row.addWidget(self.pet_fps)
         self.pet_loop = QCheckBox("循环")
@@ -194,16 +198,14 @@ class DebugWindow(QWidget):
         self.bounce_dir.addItems(["right", "left"])
         self.bounce_dir.setFixedWidth(60)
         win_row.addWidget(self.bounce_dir)
-        self.bounce_dist = QSpinBox()
-        self.bounce_dist.setRange(0, 3000)
-        self.bounce_dist.setValue(400)
-        self.bounce_dist.setPrefix("d:")
+        self.bounce_dist = QLineEdit()
+        self.bounce_dist.setPlaceholderText("d:400")
+        self.bounce_dist.setText("400")
         self.bounce_dist.setFixedWidth(80)
         win_row.addWidget(self.bounce_dist)
-        self.bounce_height = QSpinBox()
-        self.bounce_height.setRange(0, 3000)
-        self.bounce_height.setValue(150)
-        self.bounce_height.setPrefix("h:")
+        self.bounce_height = QLineEdit()
+        self.bounce_height.setPlaceholderText("h:150")
+        self.bounce_height.setText("150")
         self.bounce_height.setFixedWidth(90)
         win_row.addWidget(self.bounce_height)
         self.btn_bounce = QPushButton("弹跳")
@@ -219,13 +221,11 @@ class DebugWindow(QWidget):
 
         move_row = QHBoxLayout()
         move_row.addWidget(QLabel("移动到:"))
-        self.move_x = QSpinBox()
-        self.move_x.setRange(0, 3000)
-        self.move_x.setValue(500)
+        self.move_x = QLineEdit()
+        self.move_x.setText("500")
         move_row.addWidget(self.move_x)
-        self.move_y = QSpinBox()
-        self.move_y.setRange(0, 2000)
-        self.move_y.setValue(300)
+        self.move_y = QLineEdit()
+        self.move_y.setText("300")
         move_row.addWidget(self.move_y)
         self.btn_move = QPushButton("移动")
         self.btn_move.clicked.connect(self._test_move)
@@ -244,9 +244,8 @@ class DebugWindow(QWidget):
         self.walk_dir.setCurrentText("right")
         walk_row.addWidget(self.walk_dir)
         walk_row.addWidget(QLabel("距离:"))
-        self.walk_dist = QSpinBox()
-        self.walk_dist.setRange(0, 3000)
-        self.walk_dist.setValue(800)
+        self.walk_dist = QLineEdit()
+        self.walk_dist.setText("800")
         walk_row.addWidget(self.walk_dist)
         self.btn_walk = QPushButton("行走")
         self.btn_walk.clicked.connect(self._test_walk)
@@ -256,10 +255,8 @@ class DebugWindow(QWidget):
         pose_row = QHBoxLayout()
         pose_row.addWidget(QLabel("姿势:"))
         pose_row.addWidget(QLabel("时长:"))
-        self.pose_duration = QSpinBox()
-        self.pose_duration.setRange(1, 5)
-        self.pose_duration.setValue(5)
-        self.pose_duration.setSuffix("s")
+        self.pose_duration = QLineEdit()
+        self.pose_duration.setText("5")
         self.pose_duration.setFixedWidth(70)
         pose_row.addWidget(self.pose_duration)
         self.btn_sit = QPushButton("sit")
@@ -403,6 +400,7 @@ class DebugWindow(QWidget):
         self.ctx_output.setReadOnly(True)
         self.ctx_output.setMaximumHeight(180)
         self.ctx_output.setFont(QFont("Consolas", 9))
+        self.ctx_output.setStyleSheet(f"QTextEdit {{ background: {_COLOR_BG}; }}")
         ctx_layout.addWidget(self.ctx_output)
 
         right.addWidget(ctx_group)
@@ -422,6 +420,7 @@ class DebugWindow(QWidget):
         self.log_output.setReadOnly(True)
         self.log_output.setMaximumHeight(150)
         self.log_output.setFont(QFont("Consolas", 9))
+        self.log_output.setStyleSheet(f"QTextEdit {{ background: {_COLOR_BG}; }}")
         log_layout.addWidget(self.log_output)
         left.addWidget(log_group)
 
@@ -431,7 +430,7 @@ class DebugWindow(QWidget):
 
     def _test_bounce(self):
         self.pet.show()
-        d, dist, h = self.bounce_dir.currentText(), self.bounce_dist.value(), self.bounce_height.value()
+        d, dist, h = self.bounce_dir.currentText(), int(self.bounce_dist.text()), int(self.bounce_height.text())
         self._log(f"↩ enqueue bounce(direction={d}, distance={dist}, height={h})")
         self.pet.queue_enqueue("bounce", direction=d, distance=dist, height=h)
 
@@ -446,7 +445,7 @@ class DebugWindow(QWidget):
     def _test_move(self):
         self.pet.show()
         start = self.pet.pos()
-        end = QPoint(self.move_x.value(), self.move_y.value())
+        end = QPoint(int(self.move_x.text()), int(self.move_y.text()))
         self._log(f"↩ enqueue move_to from ({start.x()},{start.y()}) → ({end.x()},{end.y()})")
         self.pet.queue_enqueue("move_to", start, end)
 
@@ -454,19 +453,19 @@ class DebugWindow(QWidget):
         self.pet.show()
         walk_type = self.walk_type.currentText()
         direction = self.walk_dir.currentText()
-        distance = self.walk_dist.value()
+        distance = int(self.walk_dist.text())
         self._log(f"↩ enqueue {walk_type} {direction} {distance}px")
         self.pet.queue_enqueue(walk_type, direction, distance)
 
     def _test_sit(self):
         self.pet.show()
-        t = self.pose_duration.value()
+        t = int(self.pose_duration.text())
         self._log(f"↩ enqueue sit({t}s)")
         self.pet.queue_enqueue("sit", duration=t)
 
     def _test_sleep(self):
         self.pet.show()
-        t = self.pose_duration.value()
+        t = int(self.pose_duration.text())
         self._log(f"↩ enqueue sleep({t}s)")
         self.pet.queue_enqueue("sleep", duration=t)
 
@@ -477,7 +476,7 @@ class DebugWindow(QWidget):
 
     def _play_pet_anim(self, action: str):
         loop = self.pet_loop.isChecked()
-        duration = self.pose_duration.value() if loop else None
+        duration = int(self.pose_duration.text()) if loop else None
         ok = self.pet.pet_anim.play(action, duration=duration)
         if ok:
             self._log(f"pet_anim.play('{action}', duration={duration})")
@@ -502,7 +501,7 @@ class DebugWindow(QWidget):
 
     def _update_pet_anim_status(self, action: str):
         loop = self.pet_loop.isChecked()
-        fps = self.pet_fps.value()
+        fps = int(self.pet_fps.text())
         self.label_pet_action.setText(action)
         mode = "循环" if loop else "单次"
         self.label_pet_status.setText(f"播放中 · {fps} FPS · {mode}")
@@ -611,8 +610,8 @@ class DebugWindow(QWidget):
         rect = self.rect().adjusted(0, 0, -1, -1)
         path = QPainterPath()
         path.addRoundedRect(rect, 10, 10)
-        painter.fillPath(path, QColor("#f0f0f0"))
-        painter.setPen(QPen(QColor("#cccccc"), 1))
+        painter.fillPath(path, QColor(_COLOR_BG))
+        painter.setPen(QPen(QColor("#000000"), 1))
         painter.drawPath(path)
 
     # ── 标题栏拖拽 ──

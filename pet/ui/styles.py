@@ -85,6 +85,11 @@ QPushButton:checked {
     color: #fff;
     border-color: """ + _COLOR_ACCENT + """;
 }
+QPushButton:disabled {
+    background: #f0f0f0;
+    color: #bbb;
+    border-color: #e0e0e0;
+}
 """
 
 BUTTON_PRIMARY_QSS = """
@@ -99,6 +104,11 @@ QPushButton:hover {
 }
 QPushButton:pressed {
     background: #2d6ab5;
+}
+QPushButton:disabled {
+    background: #e0e0e0;
+    color: #aaa;
+    border-color: #d0d0d0;
 }
 """
 
@@ -127,11 +137,39 @@ QLineEdit, QSpinBox {
     border: 1px solid """ + _COLOR_BORDER + """;
     border-radius: 6px;
     padding: 3px 8px;
+    min-height: 20px;
     font-size: 12px;
     color: """ + _COLOR_TEXT + """;
 }
 QLineEdit:focus, QSpinBox:focus {
     border-color: """ + _COLOR_BORDER_FOCUS + """;
+}
+QLineEdit:disabled, QSpinBox:disabled {
+    background: #f5f5f5;
+    color: #bbb;
+    border-color: #e0e0e0;
+}
+"""
+
+# ── 高亮输入框（重要字段用）──
+
+INPUT_HIGHLIGHT_QSS = """
+QLineEdit {
+    background: #f8fafc;
+    border: 1.5px solid #d0e3ff;
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 12px;
+    color: """ + _COLOR_TEXT + """;
+}
+QLineEdit:focus {
+    border-color: """ + _COLOR_ACCENT + """;
+    background: """ + _COLOR_SURFACE + """;
+}
+QLineEdit:disabled {
+    background: #f5f5f5;
+    color: #bbb;
+    border-color: #e0e0e0;
 }
 """
 
@@ -139,16 +177,26 @@ QLineEdit:focus, QSpinBox:focus {
 
 COMBOBOX_QSS = """
 QComboBox {
-    background: """ + _COLOR_SURFACE + """;
-    border: 1px solid """ + _COLOR_BORDER + """;
+    background: #f8fafc;
+    border: 1.5px solid #d0e3ff;
     border-radius: 6px;
-    padding: 3px 8px;
+    padding: 5px 10px;
+    min-height: 20px;
     font-size: 12px;
     color: """ + _COLOR_TEXT + """;
     min-width: 64px;
 }
 QComboBox:hover {
     border-color: """ + _COLOR_BORDER_FOCUS + """;
+}
+QComboBox:focus {
+    border-color: """ + _COLOR_ACCENT + """;
+    background: """ + _COLOR_SURFACE + """;
+}
+QComboBox:disabled {
+    background: #f5f5f5;
+    color: #bbb;
+    border-color: #e0e0e0;
 }
 QComboBox::drop-down {
     subcontrol-origin: padding;
@@ -182,6 +230,11 @@ QTextEdit, QPlainTextEdit {
 }
 QTextEdit:focus, QPlainTextEdit:focus {
     border-color: """ + _COLOR_BORDER_FOCUS + """;
+}
+QTextEdit:disabled, QPlainTextEdit:disabled {
+    background: #f5f5f5;
+    color: #bbb;
+    border-color: #e0e0e0;
 }
 """
 
@@ -243,12 +296,19 @@ QCheckBox {
     color: """ + _COLOR_TEXT + """;
     spacing: 6px;
 }
+QCheckBox:disabled {
+    color: #bbb;
+}
 QCheckBox::indicator {
     width: 14px;
     height: 14px;
     background: """ + _COLOR_SURFACE + """;
     border: 1px solid """ + _COLOR_BORDER_FOCUS + """;
     border-radius: 3px;
+}
+QCheckBox::indicator:disabled {
+    background: #f5f5f5;
+    border-color: #e0e0e0;
 }
 QCheckBox::indicator:checked {
     background: """ + _COLOR_SURFACE + """;

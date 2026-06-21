@@ -9,12 +9,12 @@ from PySide6.QtWidgets import (
     QFormLayout, QGroupBox, QMessageBox, QScrollArea, QMenu, QApplication,
 )
 from PySide6.QtCore import Qt, QThread, Signal, QObject
-from PySide6.QtGui import QIcon, QFont, QPainter, QPainterPath, QPen, QColor
+from PySide6.QtGui import QIcon, QFont, QPainter, QPainterPath, QPen, QColor, QIntValidator, QDoubleValidator
 
 from config import config, _KEY_META
 from pet.ui.styles import (
     ICON_PATH, SETTING_ICON_PATH, SHOW_ICON_PATH, HIDE_ICON_PATH, PANEL_QSS, BUTTON_QSS, BUTTON_PRIMARY_QSS,
-    INPUT_QSS, COMBOBOX_QSS, TEXTEDIT_QSS, CHECKBOX_QSS,
+    INPUT_QSS, INPUT_HIGHLIGHT_QSS, COMBOBOX_QSS, TEXTEDIT_QSS, CHECKBOX_QSS,
     TAB_BAR_QSS,
     _COLOR_BG, _COLOR_BORDER_DARK, _COLOR_TEXT_TITLE,
     _COLOR_TEXT_SEC, _COLOR_TEXT_MUTED, _COLOR_DANGER, _COLOR_WARNING,
@@ -121,23 +121,8 @@ class SettingsWindow(QWidget):
 
     def _setup_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
+        root.setContentsMargins(6, 2, 6, 4)
         root.setSpacing(0)
-
-        # 背景
-        bg = QWidget()
-        bg.setObjectName("settingsBg")
-        bg.setStyleSheet(f"""
-            QWidget#settingsBg {{
-                background: {_COLOR_BG};
-                border-radius: 8px;
-                font-size: 12px;
-            }}
-        """)
-        layout = QVBoxLayout(bg)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-        root.addWidget(bg)
 
         # 标题栏
         title_bar = QWidget()
@@ -166,7 +151,7 @@ class SettingsWindow(QWidget):
         """)
         btn_close.clicked.connect(self.close)
         title_row.addWidget(btn_close)
-        layout.addWidget(title_bar)
+        root.addWidget(title_bar)
 
         # 标题栏拖拽
         self._drag_pos = None
@@ -184,21 +169,17 @@ class SettingsWindow(QWidget):
         self._tabs.addTab(self._build_behavior_tab(), "行为")
         self._tabs.addTab(self._build_personality_tab(), "提示词")
         self._tabs.addTab(self._build_appearance_tab(), "通用")
-        layout.addWidget(self._tabs, stretch=1)
+        root.addWidget(self._tabs, stretch=1)
 
         # 底部操作栏
         bottom = QHBoxLayout()
         bottom.setContentsMargins(12, 4, 12, 8)
-        btn_reset = QPushButton("重置为默认")
-        btn_reset.setStyleSheet(BUTTON_QSS)
-        btn_reset.clicked.connect(self._on_reset)
-        bottom.addWidget(btn_reset)
         bottom.addStretch()
         btn_save = QPushButton("保存")
         btn_save.setStyleSheet(BUTTON_PRIMARY_QSS)
         btn_save.clicked.connect(self._on_save)
         bottom.addWidget(btn_save)
-        layout.addLayout(bottom)
+        root.addLayout(bottom)
 
     # ── 无图标消息框 ──
 
@@ -216,10 +197,14 @@ class SettingsWindow(QWidget):
     # ── 值控件映射 ──
     # _fields: dict[str, QWidget] — key 是 Config 属性名
 
-    def _line(self, key: str, placeholder: str = "") -> QLineEdit:
+    def _line(self, key: str, placeholder: str = "",
+              validator=None) -> QLineEdit:
         """创建 QLineEdit 并注册到 _fields。"""
         edit = QLineEdit()
         edit.setPlaceholderText(placeholder)
+        edit.setStyleSheet(INPUT_HIGHLIGHT_QSS)
+        if validator:
+            edit.setValidator(validator)
         self._fields[key] = edit
         return edit
 
@@ -265,6 +250,7 @@ class SettingsWindow(QWidget):
         self._llm_key_edit = QLineEdit()
         self._llm_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
         self._llm_key_edit.setPlaceholderText("sk-...")
+        self._llm_key_edit.setStyleSheet(INPUT_HIGHLIGHT_QSS)
         self._fields["LLM_KEY"] = self._llm_key_edit
         key_row.addWidget(self._llm_key_edit)
         self._key_toggle = QPushButton()
@@ -286,25 +272,30 @@ class SettingsWindow(QWidget):
         model_row = QHBoxLayout()
         self._model_edit = QLineEdit()
         self._model_edit.setPlaceholderText("gpt-4o")
+        self._model_edit.setStyleSheet(INPUT_HIGHLIGHT_QSS)
         self._fields["LLM_MODEL"] = self._model_edit
         model_row.addWidget(self._model_edit)
         self._btn_fetch_models = QPushButton("获取列表")
-        self._btn_fetch_models.setStyleSheet(BUTTON_QSS)
+        self._btn_fetch_models.setStyleSheet(BUTTON_PRIMARY_QSS)
         self._btn_fetch_models.setFixedWidth(72)
         self._btn_fetch_models.clicked.connect(self._fetch_models)
         model_row.addWidget(self._btn_fetch_models)
         form.addRow("模型名称:", model_row)
 
-        self._timeout_edit = self._line("LLM_TIMEOUT", "30")
+        self._timeout_edit = self._line("LLM_TIMEOUT", "30", QDoubleValidator(1, 300, 1))
+        self._timeout_edit.setMaxLength(5)
         form.addRow("请求超时(秒):", self._timeout_edit)
 
-        self._retries_edit = self._line("LLM_MAX_RETRIES", "3")
+        self._retries_edit = self._line("LLM_MAX_RETRIES", "3", QIntValidator(0, 10))
+        self._retries_edit.setMaxLength(2)
         form.addRow("最大重试次数:", self._retries_edit)
-
-        self._retry_delay_edit = self._line("LLM_RETRY_DELAY", "1")
+        
+        self._retry_delay_edit = self._line("LLM_RETRY_DELAY", "1", QDoubleValidator(0, 60, 1))
+        self._retry_delay_edit.setMaxLength(4)
         form.addRow("重试延迟(秒):", self._retry_delay_edit)
-
-        self._retry_max_delay_edit = self._line("LLM_RETRY_MAX_DELAY", "8")
+        
+        self._retry_max_delay_edit = self._line("LLM_RETRY_MAX_DELAY", "8", QDoubleValidator(0, 300, 1))
+        self._retry_max_delay_edit.setMaxLength(5)
         form.addRow("最大重试延迟(秒):", self._retry_max_delay_edit)
 
         self._cache_check = self._check("LLM_CACHE_PROMPT", "Prompt 缓存")
@@ -315,7 +306,7 @@ class SettingsWindow(QWidget):
         # 测试连接按钮
         test_row = QHBoxLayout()
         self._btn_test = QPushButton("测试连接")
-        self._btn_test.setStyleSheet(BUTTON_QSS)
+        self._btn_test.setStyleSheet(BUTTON_PRIMARY_QSS)
         self._btn_test.clicked.connect(self._test_llm)
         test_row.addWidget(self._btn_test)
         self._label_test = QLabel("就绪")
@@ -328,7 +319,11 @@ class SettingsWindow(QWidget):
         self._test_output.setReadOnly(True)
         self._test_output.setMaximumHeight(60)
         self._test_output.setFont(QFont("Consolas", 9))
-        self._test_output.setStyleSheet(TEXTEDIT_QSS)
+        self._test_output.setStyleSheet(TEXTEDIT_QSS + f"""
+            QTextEdit {{
+                background: {_COLOR_BG};
+            }}
+        """)
         layout.addWidget(self._test_output)
 
         # 模式切换联动
@@ -368,31 +363,36 @@ class SettingsWindow(QWidget):
         w = QWidget()
         layout = QVBoxLayout(w)
         layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(10)
 
         # 调度器
         sched_group = QGroupBox("调度器")
         sched_form = QFormLayout(sched_group)
-        sched_form.setSpacing(6)
-        sched_form.addRow("自主行动间隔(ms):", self._line("SCHEDULER_MID_MS", "300000"))
+        sched_form.setSpacing(8)
+        sched_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        sched_form.addRow("自主行动间隔(ms):", self._line("SCHEDULER_MID_MS", "300000", QIntValidator(1000, 3600000)))
         sched_form.addRow("", self._check("SCHEDULER_AUTO_START_MID", "默认开启自动行动"))
         layout.addWidget(sched_group)
 
-        # Vision
-        vision_row = QFormLayout()
-        vision_row.addRow("", self._check("VISION_ENABLED", "开启视觉理解（须模型支持多模态）"))
-        vision_row.addRow("截图缩放比例(0.1~1.0):", self._line("VISION_SCALE", "1"))
-        layout.addLayout(vision_row)
+        # 视觉
+        vision_group = QGroupBox("视觉")
+        vision_form = QFormLayout(vision_group)
+        vision_form.setSpacing(8)
+        vision_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        vision_form.addRow("", self._check("VISION_ENABLED", "开启视觉理解（需要模型支持多模态）"))
+        vision_form.addRow("截图缩放比例(0.1~1.0):", self._line("VISION_SCALE", "1", QDoubleValidator(0.1, 1.0, 1)))
+        layout.addWidget(vision_group)
 
         # 理智
-        sanity_row = QFormLayout()
-        sanity_row.addRow("理智临界值:", self._line("SANITY_CRITICAL_THRESHOLD", "20"))
-        sanity_row.labelForField(self._fields["SANITY_CRITICAL_THRESHOLD"]).setMinimumWidth(0)
-        self._fields["SANITY_CRITICAL_THRESHOLD"].setFixedWidth(100)
-        layout.addLayout(sanity_row)
-        layout.addWidget(
-            QLabel("低于该值会导致异常行为"),
-            alignment=Qt.AlignmentFlag.AlignRight,
-        )
+        sanity_group = QGroupBox("理智")
+        sanity_form = QFormLayout(sanity_group)
+        sanity_form.setSpacing(8)
+        sanity_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        sanity_form.addRow("理智临界值:", self._line("SANITY_CRITICAL_THRESHOLD", "20", QIntValidator(0, 100)))
+        hint = QLabel("低于该值会导致异常行为")
+        hint.setStyleSheet(f"color:{_COLOR_TEXT_MUTED}; font-size:11px;")
+        sanity_form.addRow("", hint)
+        layout.addWidget(sanity_group)
 
         layout.addStretch()
         return w
@@ -412,10 +412,10 @@ class SettingsWindow(QWidget):
         restart_label.setStyleSheet(f"color:{_COLOR_WARNING}; font-size:11px; font-weight:bold;")
         form.addRow(restart_label)
 
-        form.addRow("宠物宽度:", self._line("PET_WIDTH", "125"))
-        form.addRow("宠物高度:", self._line("PET_HEIGHT", "125"))
-        form.addRow("气泡最大宽度:", self._line("BUBBLE_MAX_WIDTH", "300"))
-        form.addRow("气泡字号:", self._line("BUBBLE_FONT_SIZE", "14"))
+        form.addRow("宠物宽度:", self._line("PET_WIDTH", "125", QIntValidator(50, 500)))
+        form.addRow("宠物高度:", self._line("PET_HEIGHT", "125", QIntValidator(50, 500)))
+        form.addRow("气泡最大宽度:", self._line("BUBBLE_MAX_WIDTH", "300", QIntValidator(100, 1000)))
+        form.addRow("气泡字号:", self._line("BUBBLE_FONT_SIZE", "14", QIntValidator(8, 48)))
         form.addRow("", self._check("SHOW_TRAY", "显示托盘图标"))
 
         layout.addLayout(form)
@@ -432,9 +432,11 @@ class SettingsWindow(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
+        scroll.setStyleSheet(f"QScrollArea {{ border: none; background: {_COLOR_BG}; }}")
+        scroll.viewport().setStyleSheet(f"background: {_COLOR_BG};")
 
         content = QWidget()
+        content.setStyleSheet(f"background: {_COLOR_BG};")
         form = QVBoxLayout(content)
         form.setContentsMargins(8, 8, 8, 8)
 
@@ -604,37 +606,6 @@ class SettingsWindow(QWidget):
             self._msg("设置已保存", "所有设置已即时生效。")
         self._take_snapshot()
 
-    def _on_reset(self):
-        """重置当前 tab 的所有字段为 .env 默认值。"""
-        current_tab = self._tabs.currentIndex()
-        category_map = {0: "connection", 1: "behavior", 2: "appearance", 3: "personality"}
-        category = category_map.get(current_tab, "connection")
-        keys = [k for k, v in _KEY_META.items() if v[2] == category]
-        config.reset(keys)
-        self._load_values()
-
-        # 重置后同样触发运行时钩子（类别可能属于连接或调度器）
-        connection_keys = {"BRAIN", "LLM_URL", "OLLAMA_BASE_URL", "LLM_KEY",
-                          "LLM_MODEL", "LLM_TIMEOUT", "LLM_MAX_RETRIES",
-                          "LLM_RETRY_DELAY", "LLM_RETRY_MAX_DELAY", "LLM_CACHE_PROMPT"}
-        scheduler_keys = {"SCHEDULER_FAST_MS", "SCHEDULER_MID_MS", "SCHEDULER_SLOW_MS",
-                         "SCHEDULER_IDLE_TIMEOUT_MS", "ACTION_TIMEOUT_MS",
-                         "SCHEDULER_AUTO_START_FAST", "SCHEDULER_AUTO_START_MID",
-                         "SCHEDULER_AUTO_START_SLOW"}
-        reset_set = set(keys)
-        if reset_set & connection_keys and self.agent and hasattr(self.agent, 'behavior'):
-            try:
-                self.agent.behavior.rebuild_client()
-            except Exception as e:
-                logger.exception(f"[Settings] rebuild_client after reset: {e}")
-        if reset_set & scheduler_keys and self.agent and hasattr(self.agent, 'scheduler'):
-            try:
-                self.agent.scheduler.update_config()
-            except Exception as e:
-                logger.exception(f"[Settings] scheduler.update_config after reset: {e}")
-
-        self._msg("已重置", f"{category} 设置已重置为默认值。")
-
     # ── LLM 连通性测试 ──
 
     def _test_llm(self):
@@ -794,5 +765,5 @@ class SettingsWindow(QWidget):
         path = QPainterPath()
         path.addRoundedRect(rect, 10, 10)
         painter.fillPath(path, QColor(_COLOR_BG))
-        painter.setPen(QPen(QColor(_COLOR_BORDER_DARK), 1))
+        painter.setPen(QPen(QColor("#000000"), 1))
         painter.drawPath(path)

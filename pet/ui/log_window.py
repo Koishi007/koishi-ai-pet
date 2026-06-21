@@ -10,7 +10,8 @@ from PySide6.QtWidgets import (
     QTextEdit, QPushButton, QLabel, QComboBox,
 )
 from pet.ui.styles import (
-    ICON_PATH, TEXTEDIT_QSS, BUTTON_QSS, BUTTON_DANGER_QSS, COMBOBOX_QSS,
+    ICON_PATH, TEXTEDIT_QSS, BUTTON_QSS, BUTTON_PRIMARY_QSS, BUTTON_DANGER_QSS, COMBOBOX_QSS,
+    _COLOR_BG, _COLOR_BORDER_DARK, _COLOR_TEXT_TITLE, _COLOR_TEXT_MUTED, _COLOR_DANGER,
 )
 
 
@@ -135,7 +136,7 @@ class LogWindow(QWidget):
         # ── 自定义标题栏 ──
         header = QWidget()
         header.setObjectName("LogHeader")
-        header.setFixedHeight(34)
+        header.setFixedHeight(38)
         header.setStyleSheet(_HEADER_QSS)
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(12, 0, 6, 0)
@@ -151,7 +152,7 @@ class LogWindow(QWidget):
 
         # 标题
         title_label = QLabel("DeskPet 日志")
-        title_label.setStyleSheet("font-size:13px; color:#444; font-weight:bold; background:transparent;")
+        title_label.setStyleSheet(f"font-size:13px; color:{_COLOR_TEXT_TITLE}; font-weight:bold; background:transparent;")
         header_layout.addWidget(title_label)
 
         header_layout.addStretch()
@@ -159,8 +160,12 @@ class LogWindow(QWidget):
         # 关闭按钮
         close_btn = QPushButton("✕")
         close_btn.setObjectName("LogCloseBtn")
-        close_btn.setFixedSize(28, 28)
-        close_btn.setStyleSheet(BUTTON_DANGER_QSS)
+        close_btn.setFixedSize(36, 36)
+        close_btn.setStyleSheet(f"""
+            QPushButton {{ background: transparent; border: none; border-radius: 18px;
+                         font-size: 18px; color: {_COLOR_TEXT_MUTED}; }}
+            QPushButton:hover {{ background: {_COLOR_DANGER}; color: #fff; }}
+        """)
         close_btn.clicked.connect(self.hide)
         header_layout.addWidget(close_btn)
 
@@ -179,7 +184,7 @@ class LogWindow(QWidget):
         toolbar.addStretch()
 
         clear_btn = QPushButton("清空")
-        clear_btn.setStyleSheet(BUTTON_QSS)
+        clear_btn.setStyleSheet(BUTTON_PRIMARY_QSS)
         clear_btn.clicked.connect(self._clear)
         toolbar.addWidget(clear_btn)
 
@@ -188,7 +193,11 @@ class LogWindow(QWidget):
         self._log_view.setReadOnly(True)
         self._log_view.setUndoRedoEnabled(False)  # 防止 undo stack 随 trim 无限增长
         self._log_view.setFont(QFont("Consolas", 10))
-        self._log_view.setStyleSheet(TEXTEDIT_QSS)
+        self._log_view.setStyleSheet(TEXTEDIT_QSS + f"""
+            QTextEdit {{
+                background: {_COLOR_BG};
+            }}
+        """)
 
         # ── 组装 ──
         root = QVBoxLayout(self)
@@ -215,9 +224,9 @@ class LogWindow(QWidget):
         path = QPainterPath()
         path.addRoundedRect(rect, _RADIUS, _RADIUS)
         # 填充背景
-        painter.fillPath(path, QColor("#f0f0f0"))
+        painter.fillPath(path, QColor(_COLOR_BG))
         # 细描边
-        painter.setPen(QPen(QColor("#cccccc"), 1))
+        painter.setPen(QPen(QColor("#000000"), 1))
         painter.drawPath(path)
 
     # ── 标题栏拖拽 ──

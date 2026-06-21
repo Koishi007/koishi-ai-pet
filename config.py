@@ -15,7 +15,7 @@ _KEY_META = {
     "LLM_KEY":                   ("str",      "",            "connection",  False),
     "LLM_URL":                   ("str",      "",            "connection",  False),
     "OLLAMA_BASE_URL":           ("str",      "http://localhost:11434/v1", "connection", False),
-    "LLM_TIMEOUT":               ("int",      "30",          "connection",  False),
+    "LLM_TIMEOUT":               ("float",    "30",          "connection",  False),
     "LLM_MAX_RETRIES":           ("int",      "3",           "connection",  False),
     "LLM_RETRY_DELAY":           ("float",    "1",           "connection",  False),
     "LLM_RETRY_MAX_DELAY":       ("float",    "8",           "connection",  False),
@@ -81,7 +81,7 @@ class Config:
         self.LLM_URL = os.getenv("LLM_URL", "")
         self.OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
 
-        self.LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", "30"))
+        self.LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "30"))
         self.LLM_MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "3"))
         self.LLM_RETRY_DELAY = float(os.getenv("LLM_RETRY_DELAY", "1"))
         self.LLM_RETRY_MAX_DELAY = float(os.getenv("LLM_RETRY_MAX_DELAY", "8"))
