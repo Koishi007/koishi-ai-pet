@@ -255,3 +255,34 @@ QFrame[frameShape="4"] {
     color: """ + _COLOR_BORDER + """;
 }
 """
+
+# ── Tab Bar（设置界面用）
+
+TAB_BAR_QSS = """
+QTabWidget::pane {
+    border: 1px solid """ + _COLOR_BORDER + """;
+    border-radius: 6px;
+    background: """ + _COLOR_SURFACE + """;
+    padding: 4px;
+}
+QTabBar::tab {
+    background: """ + _COLOR_SURFACE + """;
+    border: 1px solid """ + _COLOR_BORDER + """;
+    border-bottom: none;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+    padding: 6px 14px;
+    font-size: 12px;
+    color: """ + _COLOR_TEXT_SEC + """;
+    margin-right: 2px;
+}
+QTabBar::tab:selected {
+    background: """ + _COLOR_SURFACE + """;
+    color: """ + _COLOR_TEXT + """;
+    font-weight: bold;
+    border-bottom: 2px solid """ + _COLOR_ACCENT + """;
+}
+QTabBar::tab:hover:!selected {
+    background: #e8e8e8;
+}
+"""
