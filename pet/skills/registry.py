@@ -22,6 +22,7 @@ class SkillDef:
     description: str
     methods: dict[str, SkillMethod] = field(default_factory=dict)
     when: str = ""
+    menu_items: list[dict] = field(default_factory=list)  # ← 新增
 
 
 class SkillRegistry:
@@ -43,6 +44,13 @@ class SkillRegistry:
             name=method_name, description=description,
             args=args or {}, handler=handler, when=when,
         )
+
+    def add_menu_action(self, skill_name: str, label: str,
+                        handler: Callable):
+        """注册一个技能右键子菜单项。handler 在点击时调用。"""
+        skill = self._skills[skill_name]
+        skill.menu_items.append({"label": label, "handler": handler})
+        logger.info(f"[SkillRegistry] menu item added: {skill_name} › {label}")
 
     def get_handler(self, full_name: str) -> Callable | None:
         parts = full_name.split(".", 1)
