@@ -14,7 +14,7 @@ from pet.ui.emotion import EmotionBubble
 from pet.ui.chat_bubble import ChatBubble
 from pet.ui.feed_bubble import FeedBubble
 from pet.agent import PetAgent
-from pet.brain.prompts import INTERACT_FED
+from pet.brain.prompts import interact_fed_prompt
 from pet.skills import load_skills
 from pet.skills.context import SKILL_CTX
 from config import config
@@ -109,7 +109,7 @@ def main():
     feed_bubble = FeedBubble(window)
     window.set_feed_bubble(feed_bubble)
     feed_bubble.feed_submitted.connect(
-        lambda text: agent.trigger("interact", hint=INTERACT_FED.format(food=text))
+        lambda text: agent.trigger("interact", hint=interact_fed_prompt(text))
     )
 
     agent.action_requested.connect(window.queue_enqueue_action)

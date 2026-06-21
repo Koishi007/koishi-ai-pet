@@ -6,6 +6,9 @@ from pet.action.registry import generate_action_section
 from pet.skills.registry import SKILL_REGISTRY
 from config import config
 
+# context_builder._build_system 用于注入感受描述的锚点标记
+FEELING_MARKER = "<<FEELING>>"
+
 
 def _action_params():
     mid_s = config.SCHEDULER_MID_MS / 1000
@@ -137,11 +140,14 @@ _CHAT_INTRO = """=== 对话模式 ===
 - 涉及方向/距离的指令，参考窗口探测数据精确执行"""
 
 class _Lazy:
-    """延迟求值包装器，避免 lambda 闭包陷阱。"""
+    """延迟求值包装器，避免 lambda 闭包陷阱，首次求值后缓存。"""
     def __init__(self, fn):
         self.fn = fn
+        self._cached = None
     def __str__(self):
-        return self.fn()
+        if self._cached is None:
+            self._cached = self.fn()
+        return self._cached
 
 _PERCEPTION_SECTIONS = {
     "autonomous_vision":     [_VISION_INTRO, _WINDOW_GUIDE, _VISION_CONTENT_GUIDE, _Lazy(generate_action_section), _VISION_CONSTRAINTS],
@@ -196,12 +202,12 @@ def _autonomous_task() -> list[str]:
         "10. 避免重复 Recent 中的行为和台词",
         "11. 台词、动作、互动方式全部由你的人格描述决定",
         "12. 必须查看[记忆存储指导]判断是否输出Memory行，如果值得，必须输出",
-        "13. 若存在[当前状态]中的【本轮强制要求】，必须无条件遵守",
+        "13. 你的言行必须反映「你现在的状态」中的感受——饿的时候没力气，疯的时候说不着边际的话",
     ]
 
     format_guide = (
         f"=== 输出格式 ===\n"
-        f"必须按顺序输出：Summary → Emotion(可选) → Speech → Action(≥{min_actions}个) → Skill(可选) → Memory(可选) → Mood(可选)：\n"
+        f"必须按顺序输出：Summary → Emotion(可选) → Speech → Action(≥{min_actions}个) → Skill(可选) → Memory(可选) → Mood(可选) → Vitals(可选)：\n"
         f"  Summary: <观察到的屏幕内容和行为决策，≤50字>\n"
         f"  Emotion: happy\n"
         f"  Speech: 又有新窗口了，我过去看看\n"
@@ -216,16 +222,17 @@ def _autonomous_task() -> list[str]:
         f"  Skill: {{\"name\": \"skill.method\", \"args\": {{...}}}}\n"
         f"  Memory: user_fact 用户叫xxx，住在xx | keywords:[具体姓名],[居住地点] | importance:5\n"
         f"  Mood: joy+1 affection-1\n"
+        f"  Vitals: satiety-2 energy-3\n"
         f"\n"
     )
 
-    return [format_guide, _MOOD_GUIDE] + constraints
+    return [format_guide] + constraints + [_MOOD_GUIDE]
 
 
 def _chat_task() -> list[str]:
     parts = [
         "=== 输出格式 ===\n"
-        "按顺序输出：Summary → Emotion(可选) → Speech → Action(≥3个) → Skill(可选) → Memory(可选) → Mood(可选)：\n"
+        "按顺序输出：Summary → Emotion(可选) → Speech → Action(≥3个) → Skill(可选) → Memory(可选) → Mood(可选) → Vitals(可选)：\n"
         "  Summary: <对话内容和行为决策，≤50字>\n"
         "  Emotion: happy\n"
         "  Speech: 好嘞，我跳过去看看！\n"
@@ -233,7 +240,8 @@ def _chat_task() -> list[str]:
         "  Action: thinking duration=15\n"
         '  Skill: {"name": "skill.method", "args": {}}\n'
         "  Memory: user_fact 用户叫xxx，住在xx | keywords:[具体姓名],[居住地点] | importance:5\n"
-        "  Mood: affection+1 joy+1",
+        "  Mood: affection+1 joy+1\n"
+        "  Vitals: satiety-2 energy-3",
         "=== 硬性约束 ===\n"
         "1. Summary 必须在最前面，≤50字\n"
         "2. 至少 3 个 Action，每行一个动作，格式严格为 Action: 动作名 [参数...]\n"
@@ -245,7 +253,7 @@ def _chat_task() -> list[str]:
         "8. 用户要求使用技能时，在可用技能中搜索，找到必须调用，找不到按人格回复\n"
         "9. Emotion 可选: happy, excited, sad, angry, surprised, thinking, sleepy, love, cool, shy, scared, hungry, curious, proud, bored\n"
         "10. 必须查看[记忆存储指导]判断是否输出Memory行，如果值得，必须输出\n"
-        "11. 若存在[当前状态]中的【本轮强制要求】，必须无条件遵守",
+        "11. 你的言行必须反映「你现在的状态」中的感受",
         _MOOD_GUIDE,
     ]
     return parts
@@ -269,7 +277,7 @@ def _interact_task() -> list[str]:
         "4. 动作名和参数必须在 Action: 同行，禁止换行再写动作名\n"
         "5. Speech 是本能反应而非分析，≤20字，由个性决定语气\n"
         "6. 禁止输出 Skill 行、Memory 行\n"
-        "7. 参考系统提示中的当前生理/心理状态：状态影响你的即时反应和 Mood/Vitals 参数变化\n"
+        "7. 你的反应必须反映「你现在的状态」中的感受\n"
         "8. Emotion 可选: happy, excited, sad, angry, surprised, thinking, sleepy, love, cool, shy, scared, hungry, curious, proud, bored",
     ]
 
@@ -304,9 +312,21 @@ def build_system_prompt(mode: str, task: str) -> str:
     if task not in _TASK_SECTIONS:
         raise ValueError(f"Unknown task: {task!r}, expected one of {list(_TASK_SECTIONS)}")
 
+    _VALID_COMBOS = {
+        ("autonomous_vision", "autonomous"),
+        ("autonomous_non_vision", "autonomous"),
+        ("chat_vision", "chat"),
+        ("chat_non_vision", "chat"),
+        ("interact", "interact"),
+        ("skill", "skill_round"),
+    }
+    if (mode, task) not in _VALID_COMBOS:
+        raise ValueError(f"Invalid mode-task combination: ({mode!r}, {task!r})")
+
     sections: list[str] = []
 
     # personality 统一在顶层注入
+    sections.append(FEELING_MARKER)
     if config.PET_PERSONALITY:
         sections.append(f"=== 你的性格 ===\n{config.PET_PERSONALITY}")
 
@@ -336,23 +356,34 @@ def _base_autonomous(context: str, mode: str) -> str:
     if mode == "vision":
         return (
             f"{context}\n\n"
-            f"⚠ 仔细看截图：识别窗口里的实际内容（代码/网页/聊天/视频等），基于内容决定台词，禁止空洞无物。\n"
-            f"⚠ 当前生理、心理状态（饱食/精力/好感/愉悦/理智）决定你的行为倾向和语气，必须遵守本轮强制要求。\n\n"
-            f"根据窗口探测数据和截图输出动作序列：\n"
-            f"• 有窗口 → drive 走到附近 + bounce 跳上窗口顶部，参数直接用探测数据的「相对桌宠」值\n"
-            f"• 无窗口 → 巡视桌面、找地方坐下\n"
-            f"• bounce 的 height 用探测数据的「上跳_N_px」值\n"
-            f"• 用人格语气评论窗口内容，禁止重复说过的内容，禁止只说过去看看这种没有实际内容的对话\n"
-            f"• 避免重复 Recent 中的行为\n"
-            f"• Summary 必须基于截图和窗口探测数据描述实际看到的内容"
+            f"按以下步骤思考和行动：\n\n"
+            f"1. 看截图，识别窗口内容——理解用户正在做什么（代码/网页/聊天/视频等）\n"
+            f"2. 回想你的感受（系统提示「你现在的状态」），决定你此刻的语气、能量和态度\n"
+            f"3. 把感受和截图内容结合起来，说一句符合当下心境的话——\n"
+            f"   饿就没力气多说话、疯就说不着边际的胡话、开心就热情评论、低落就简短消极\n"
+            f"4. 规划动作序列：先用移动类动作接近目标，中间穿插驻留类动作丰富表现，最后用耗时动作收尾，按输出格式要求凑满时长\n"
+            f"   • 有窗口 → drive 走到附近 + bounce 跳上窗口顶部，参数用探测数据的「相对桌宠」和「上跳_N_px」\n"
+            f"   • 无窗口 → 巡视桌面或找地方坐下\n"
+            f"5. 检查截图和对话中是否发现值得记住的信息——用户身份、偏好、重要事件等\n"
+            f"   有则输出 Memory: [类别] 记忆内容 | keywords:关键词 | importance:1-5\n"
+            f"6. 检查你的感受——如果理智不正常，翻看可用技能找点疯狂的事做；正常时如有需要也可使用技能\n"
+            f"7. 按顺序写出完整输出（Summary → Emotion → Speech → Actions → Mood → Vitals）\n"
+            f"8. Summary 必须基于截图和探测数据描述实际看到的内容"
         )
     return (
         f"{context}\n\n"
-        f"⚠ 当前生理、心理状态（饱食/精力/好感/愉悦/理智）决定你的行为倾向和语气，必须遵守本轮强制要求。\n\n"
-        f"根据窗口探测数据和你的性格输出动作序列。"
-        f"用人格语气评论窗口内容。"
-        f"drive 方向可随机。"
-        f"避免重复 Recent 中的行为。"
+        f"按以下步骤思考和行动：\n\n"
+        f"1. 回想你的感受（系统提示「你现在的状态」），决定你此刻的语气、能量和态度\n"
+        f"2. 说一句符合当下心境的话——饿就没力气多说话、疯就说不着边际的胡话、开心就热情评论、低落就简短消极\n"
+        f"3. 规划动作序列：先移动，中间穿插驻留动作，按输出格式要求凑满时长\n"
+        f"   • 有窗口 → drive 走到附近，用人格语气评论窗口内容\n"
+        f"   • 无窗口 → 巡视桌面或找地方坐下\n"
+        f"   • drive 方向可随机\n"
+        f"4. 检查窗口内容和对话中是否发现值得记住的信息——用户身份、偏好、重要事件等\n"
+        f"   有则输出 Memory: [类别] 记忆内容 | keywords:关键词 | importance:1-5\n"
+        f"5. 检查你的感受——如果理智不正常，翻看可用技能找点疯狂的事做；正常时如有需要也可使用技能\n"
+        f"6. 按顺序写出完整输出（Summary → Emotion → Speech → Actions → Mood → Vitals）\n"
+        f"7. 禁止重复 Recent 中的行为和台词"
     )
 
 
@@ -368,10 +399,18 @@ def chat_vision_user_prompt(user_message: str, context: str) -> str:
     return (
         f"=== 用户对你说 ===\n{user_message}\n\n"
         f"{context}\n\n"
-        "⚠ 仔细看截图：识别窗口内容，结合画面回应用户，禁止空洞台词。\n"
-        "⚠ 当前生理、心理状态（饱食/精力/好感/愉悦/理智）影响你的语气和行为倾向，必须遵守本轮强制要求。\n"
-        "请回应用户。根据用户意图输出 Speech + Action以及其他可选输出行。"
-        "参考「近期对话/行为记录」保持对话连贯，不要重复之前说过的话。"
+        "按以下步骤思考和行动：\n\n"
+        "1. 理解用户说了什么，判断意图\n"
+        "2. 看截图，识别窗口内容——结合画面理解语境\n"
+        "3. 回想你的感受（系统提示「你现在的状态」），决定你此刻的语气和能量\n"
+        "4. 把感受和用户消息结合起来，说一句符合当下心境的话——\n"
+        "   饿就没力气多说话、疯就说不着边际的胡话、开心就热情回应、低落就简短消极\n"
+        "5. 规划配合对话的动作序列，按输出格式要求凑满时长\n"
+        "6. 检查用户消息和对话中是否发现值得记住的信息——身份、偏好、重要事件等\n"
+        "   有则输出 Memory: [类别] 记忆内容 | keywords:关键词 | importance:1-5\n"
+        "7. 用户要求使用技能时必须调用；你的感受也可能暗示需要用技能做点不寻常的事\n"
+        "8. 按顺序写出完整输出（Summary → Emotion → Speech → Actions → Mood → Vitals）\n"
+        "9. 参考「近期对话/行为记录」保持连贯，禁止重复说过的话"
     )
 
 
@@ -379,9 +418,17 @@ def chat_non_vision_user_prompt(user_message: str, context: str) -> str:
     return (
         f"=== 用户对你说 ===\n{user_message}\n\n"
         f"{context}\n\n"
-        "⚠ 当前生理、心理状态（饱食/精力/好感/愉悦/理智）影响你的语气和行为倾向，必须遵守本轮强制要求。\n"
-        "请回应用户。根据用户意图输出 Speech + Action以及其他可选输出行。"
-        "参考「近期对话/行为记录」保持对话连贯，不要重复之前说过的话。"
+        "按以下步骤思考和行动：\n\n"
+        "1. 理解用户说了什么，判断意图\n"
+        "2. 回想你的感受（系统提示「你现在的状态」），决定你此刻的语气和能量\n"
+        "3. 把感受和用户消息结合起来，说一句符合当下心境的话——\n"
+        "   饿就没力气多说话、疯就说不着边际的胡话、开心就热情回应、低落就简短消极\n"
+        "4. 规划配合对话的动作序列，按输出格式要求凑满时长\n"
+        "5. 检查用户消息和对话中是否发现值得记住的信息——身份、偏好、重要事件等\n"
+        "   有则输出 Memory: [类别] 记忆内容 | keywords:关键词 | importance:1-5\n"
+        "6. 用户要求使用技能时必须调用；你的感受也可能暗示需要用技能做点不寻常的事\n"
+        "7. 按顺序写出完整输出（Summary → Emotion → Speech → Actions → Mood → Vitals）\n"
+        "8. 参考「近期对话/行为记录」保持连贯，禁止重复说过的话"
     )
 
 
@@ -409,7 +456,10 @@ INTERACT_WINDOW_DISAPPEARED = config.INTERACT_WINDOW_DISAPPEARED_PROMPT or (
     "你刚才站在的窗口消失了（关闭/最小化/被遮挡），用一句话（≤20字）根据你的人格表达反应"
 )
 
-INTERACT_FED = config.INTERACT_FED_PROMPT or (
-    "用户给你投喂了{food}，根据你的人格用一句话（≤15字）表达反应。"
-    "同时根据投喂的食物决定Vitals和Mood变化"
-)
+def interact_fed_prompt(food: str) -> str:
+    """生成喂食交互的 user prompt。支持 .env 全覆盖。"""
+    template = config.INTERACT_FED_PROMPT or (
+        "用户给你投喂了{food}，根据你的人格用一句话（≤15字）表达反应。"
+        "同时根据投喂的食物决定Vitals和Mood变化"
+    )
+    return template.format(food=food)

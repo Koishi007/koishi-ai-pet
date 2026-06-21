@@ -499,7 +499,7 @@ class Behavior(BrainMixin):
                              content=f"[Skill结果] {result_text[:100]}")
 
             history.append({"role": "assistant", "content": current_content})
-            history.append(self.ctx.build_skill_result(result_text, images))
+            history.append(self.ctx.build_skill_result_message(result_text, images))
 
             sys = system_content if round_idx == 0 else short_system
             messages = [{"role": "system", "content": sys}] + history
