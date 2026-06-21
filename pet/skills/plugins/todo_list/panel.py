@@ -17,7 +17,8 @@ logger = logging.getLogger(__name__)
 class TodoPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._storage = TodoStorage()
+        self._core = todo_core._instance
+        self._storage = self._core._storage
         self.setWindowTitle("待办事项")
         self.resize(420, 520)
         self.setWindowFlags(
@@ -102,8 +103,18 @@ class TodoPanel(QWidget):
         title, ok = QInputDialog.getText(self, "添加待办", "任务标题:")
         if not ok or not title.strip():
             return
-        self._storage.add(title=title.strip())
+        result = self._storage.add(title=title.strip())
         self._refresh()
+        if result and result.get("due_date"):
+            try:
+                from pet.skills.plugins.todo_list.reminder import _to_timestamp
+                from pet.skills.context import SKILL_CTX
+                ts = _to_timestamp(result["due_date"])
+                import time
+                if ts > int(time.time() * 1000):
+                    SKILL_CTX.register_alarm(ts, lambda: None, key=f"todo_{result['id']}")
+            except Exception:
+                pass
 
     def _on_complete(self):
         tid = self._current_id()
