@@ -248,14 +248,17 @@ class SettingsWindow(QWidget):
 
         self._fields = {}
 
-        # Brain 模式
+        # 调用模式
         self._brain_combo = QComboBox()
         self._brain_combo.addItems(["local", "llm", "ollama"])
         self._fields["BRAIN"] = self._brain_combo
-        form.addRow("Brain 模式:", self._brain_combo)
+        form.addRow("调用模式:", self._brain_combo)
 
-        form.addRow("API 地址:", self._line("LLM_URL", "https://api.example.com/v1"))
-        form.addRow("Ollama 地址:", self._line("OLLAMA_BASE_URL", "http://localhost:11434/v1"))
+        self._url_edit = self._line("LLM_URL", "https://api.example.com/v1")
+        form.addRow("API 地址:", self._url_edit)
+
+        self._ollama_url_edit = self._line("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+        form.addRow("Ollama 地址:", self._ollama_url_edit)
 
         # API Key + toggle
         key_row = QHBoxLayout()
@@ -291,11 +294,21 @@ class SettingsWindow(QWidget):
         self._btn_fetch_models.clicked.connect(self._fetch_models)
         model_row.addWidget(self._btn_fetch_models)
         form.addRow("模型名称:", model_row)
-        form.addRow("请求超时(秒):", self._line("LLM_TIMEOUT", "30"))
-        form.addRow("最大重试次数:", self._line("LLM_MAX_RETRIES", "3"))
-        form.addRow("重试延迟(秒):", self._line("LLM_RETRY_DELAY", "1"))
-        form.addRow("最大重试延迟(秒):", self._line("LLM_RETRY_MAX_DELAY", "8"))
-        form.addRow("", self._check("LLM_CACHE_PROMPT", "Prompt 缓存"))
+
+        self._timeout_edit = self._line("LLM_TIMEOUT", "30")
+        form.addRow("请求超时(秒):", self._timeout_edit)
+
+        self._retries_edit = self._line("LLM_MAX_RETRIES", "3")
+        form.addRow("最大重试次数:", self._retries_edit)
+
+        self._retry_delay_edit = self._line("LLM_RETRY_DELAY", "1")
+        form.addRow("重试延迟(秒):", self._retry_delay_edit)
+
+        self._retry_max_delay_edit = self._line("LLM_RETRY_MAX_DELAY", "8")
+        form.addRow("最大重试延迟(秒):", self._retry_max_delay_edit)
+
+        self._cache_check = self._check("LLM_CACHE_PROMPT", "Prompt 缓存")
+        form.addRow("", self._cache_check)
 
         layout.addLayout(form)
 
@@ -318,7 +331,35 @@ class SettingsWindow(QWidget):
         self._test_output.setStyleSheet(TEXTEDIT_QSS)
         layout.addWidget(self._test_output)
 
+        # 模式切换联动
+        self._brain_combo.currentTextChanged.connect(self._on_mode_changed)
+
         layout.addStretch()
+        return w
+
+    def _on_mode_changed(self, mode: str):
+        """根据调用模式启用/禁用对应字段。"""
+        llm_fields = [self._url_edit, self._llm_key_edit, self._key_toggle,
+                      self._cache_check]
+        ollama_fields = [self._ollama_url_edit]
+        common_fields = [self._model_edit, self._btn_fetch_models,
+                         self._timeout_edit, self._retries_edit,
+                         self._retry_delay_edit, self._retry_max_delay_edit,
+                         self._btn_test, self._label_test, self._test_output]
+
+        if mode == "local":
+            for w in llm_fields + ollama_fields + common_fields:
+                w.setEnabled(False)
+        elif mode == "ollama":
+            for w in llm_fields:
+                w.setEnabled(False)
+            for w in ollama_fields + common_fields:
+                w.setEnabled(True)
+        else:  # llm
+            for w in ollama_fields:
+                w.setEnabled(False)
+            for w in llm_fields + common_fields:
+                w.setEnabled(True)
         return w
 
     # ── Tab 2: 行为 ──
