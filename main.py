@@ -138,11 +138,20 @@ def main():
         if tray.tray_icon else None
     )
 
+    tray.set_agent(agent)
+
     def _shutdown():
         logger.info("shutting down...")
         logging.getLogger().removeHandler(_log_handler)
         try:
             agent.behavior.llm_stats.save()
+        except Exception:
+            pass
+        # 清理设置窗口
+        try:
+            from pet.ui.settings_window import SettingsWindow
+            if SettingsWindow._instance:
+                SettingsWindow._instance.close()
         except Exception:
             pass
         try:
