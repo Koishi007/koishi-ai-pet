@@ -144,24 +144,18 @@ class TodoStorage:
         """启动时加载：所有未完成且带 due_date 的任务。
 
         Args:
-            now_iso: 当前时间的 ISO 字符串（含时区一致）。为 None 时回退到 datetime('now') 遗留行为。
+            now_iso: 当前时间的 ISO 字符串（含时区一致）。为 None 时回退到 Python local time。
         """
+        if now_iso is None:
+            now_iso = datetime.now().isoformat()
         with self._lock:
-            if now_iso is not None:
-                rows = self._conn.execute(
-                    """SELECT * FROM todos
-                       WHERE status='pending' AND due_date IS NOT NULL
-                       AND due_date > ?
-                       ORDER BY due_date ASC""",
-                    (now_iso,)
-                ).fetchall()
-            else:
-                rows = self._conn.execute(
-                    """SELECT * FROM todos
-                       WHERE status='pending' AND due_date IS NOT NULL
-                       AND due_date > datetime('now')
-                       ORDER BY due_date ASC"""
-                ).fetchall()
+            rows = self._conn.execute(
+                """SELECT * FROM todos
+                   WHERE status='pending' AND due_date IS NOT NULL
+                   AND due_date > ?
+                   ORDER BY due_date ASC""",
+                (now_iso,)
+            ).fetchall()
         return [dict(r) for r in rows]
 
     def close(self):

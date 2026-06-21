@@ -1,13 +1,15 @@
 """Todo 管理面板 — 右键菜单「查看待办」弹出的独立窗口。"""
 
+from __future__ import annotations
+
 import logging
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
-    QPushButton, QLineEdit, QComboBox, QLabel, QInputDialog, QMessageBox,
+    QPushButton, QComboBox, QLabel, QInputDialog, QMessageBox,
 )
 from PySide6.QtCore import Qt
 
-from pet.skills.plugins.todo_list.storage import TodoStorage
+import pet.skills.plugins.todo_list.core as todo_core
 
 logger = logging.getLogger(__name__)
 
@@ -121,5 +123,4 @@ class TodoPanel(QWidget):
             self._refresh()
 
     def closeEvent(self, event):
-        self._storage.close()
         super().closeEvent(event)

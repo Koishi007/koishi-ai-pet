@@ -1,5 +1,7 @@
 """技能上下文 — 暴露宠物能力供插件主动调用。"""
 
+from __future__ import annotations
+
 import logging
 from typing import Callable
 

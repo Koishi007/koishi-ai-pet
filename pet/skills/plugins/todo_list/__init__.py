@@ -2,6 +2,8 @@
 支持添加/查看/完成/删除任务，分类、优先级、截止日期，到点通过 LLM 提醒。
 """
 
+from __future__ import annotations
+
 import logging
 
 from pet.skills.plugins.todo_list.core import TodoListTool
@@ -16,7 +18,11 @@ SKILL_DESCRIPTION = (
     "可按状态/优先级/分类筛选，支持设置截止日期（到点提醒）。"
 )
 
-_instance = TodoListTool()
+try:
+    _instance = TodoListTool()
+except Exception as e:
+    logger.error(f"[todo] Failed to initialize TodoListTool: {e}")
+    _instance = None
 _reminder: ReminderManager | None = None
 
 
@@ -27,9 +33,32 @@ def _show_panel():
     panel.show()
 
 
+def _add_with_reminder(title: str, priority: str = "medium",
+                        category: str = "", due_date: str = "",
+                        notes: str = "") -> dict:
+    """添加待办并注册提醒。"""
+    result = _instance.add(title=title, priority=priority,
+                           category=category, due_date=due_date, notes=notes)
+    if result and not result.get("error") and result.get("due_date") and _reminder:
+        _reminder.on_task_added(result)
+    return result
+
+
+def _update_with_reset(todo_id: int, title: str = "", priority: str = "",
+                        category: str = "", due_date: str = "",
+                        notes: str = "") -> dict:
+    """Update a todo and reset/reschedule reminders if due_date changed."""
+    result = _instance.update(todo_id=todo_id, title=title, priority=priority,
+                              category=category, due_date=due_date, notes=notes)
+    if result and not result.get("error") and due_date and _reminder:
+        _reminder.reset_fired(todo_id)
+        _reminder.on_task_added(result.get("item", result))
+    return result
+
+
 def _quick_add():
     """右键菜单「添加待办」回调 — 弹出快速添加输入框。"""
-    from PySide6.QtWidgets import QInputDialog, QApplication
+    from PySide6.QtWidgets import QInputDialog
     # 获取活跃窗口作为 parent（可能为 None，仍可工作）
     title, ok = QInputDialog.getText(
         None, "添加待办", "任务标题:")
@@ -43,6 +72,9 @@ def _quick_add():
 
 
 def register(registry):
+    if _instance is None:
+        logger.error("[todo] Skipping registration — TodoListTool init failed")
+        return
     skill = registry.register(SKILL_NAME, SKILL_DESCRIPTION)
     skill.when = "用户需要管理待办事项、记录任务、或查看任务列表时"
 
@@ -51,7 +83,7 @@ def register(registry):
     registry.add_method(
         SKILL_NAME, "add",
         "添加新待办事项",
-        handler=_instance.add,
+        handler=_add_with_reminder,
         when="用户说「帮我记一个待办」「添加任务」时",
         args={
             "title": {"type": "str", "required": True, "desc": "任务标题"},
@@ -107,7 +139,7 @@ def register(registry):
     registry.add_method(
         SKILL_NAME, "update",
         "修改已有任务的内容、优先级、截止日期等",
-        handler=_instance.update,
+        handler=_update_with_reset,
         when="用户说「修改待办」「把xxx改成」时",
         args={
             "id": {"type": "int", "required": True, "desc": "任务ID"},

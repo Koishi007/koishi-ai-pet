@@ -1,6 +1,6 @@
 {
   "desc": "钓鱼",
-  "tick_counts": 90,
+  "tick_counts": 120,
   "frame_ratios": [0.125, 0.125, 0.125, 0.125, 0.125, 0.125, 0.125, 0.125],
   "loop": false,
   "note": ""
