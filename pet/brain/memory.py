@@ -73,18 +73,23 @@ class LightweightDeduplicator:
 class MemoryStore:
 
     MAX_MEMORIES = 200
+    # 记忆被召回后多长时间内禁止被 LLM 再次保存（冷却期，秒）
+    RECALL_COOLDOWN_SECONDS = 300  # 5 分钟
 
     def __init__(self, db_path: str | None = None, dedup_threshold: float = 0.6):
         if db_path is None:
             db_path = str(Path(__file__).resolve().parent.parent.parent / "pet.db")
-        
+
         self._db_path = db_path
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._lock = threading.Lock()
-        
+
+        # 召回冷却：记录每条记忆最近一次被召回的时间戳
+        self._recall_times: dict[int, datetime] = {}
+
         self._create_table()
-        
+
         self._deduplicator = LightweightDeduplicator(sim_threshold=dedup_threshold)
         logger.info(f"[MemoryStore] 初始化完成，轻量去重阈值: {dedup_threshold}")
 
@@ -108,16 +113,32 @@ class MemoryStore:
     def save(self, category: str, content: str, keywords: list[str], importance: int = 3):
         with self._lock:
             existing, similarity = self._find_similar(content, keywords)
-            
+
             if existing:
-                # 智能合并策略：保留较长的内容，合并关键词，取最高重要性
+                # 冷却期检查：如果这条记忆刚被召回过，LLM 可能只是把看到的记忆复述回来
+                # 跳过保存以打断正反馈循环
+                last_recall = self._recall_times.get(existing["id"])
+                if last_recall:
+                    elapsed = (datetime.now() - last_recall).total_seconds()
+                    if elapsed < self.RECALL_COOLDOWN_SECONDS:
+                        logger.info(
+                            f"[MemoryStore] 记忆冷却中，跳过保存 (距召回 {elapsed:.0f}s): {content[:20]}..."
+                        )
+                        return
+
+                # 合并策略：保留较长内容和合并关键词
+                # 不刷新 created_at，也不轻易提升 importance ——
+                # 否则每次被召回后 LLM 重复输出 Memory: 行会形成正反馈循环
                 merged_content = content if len(content) >= len(existing["content"]) else existing["content"]
                 merged_keywords = list(set(existing["keywords"].split(",") + keywords))
-                merged_importance = max(existing["importance"], importance)
-                
+                # importance 只在真正新增信息时才提升：新内容比旧内容更长才算
+                merged_importance = existing["importance"]
+                if len(content) > len(existing["content"]):
+                    merged_importance = max(existing["importance"], importance)
+
                 self._conn.execute(
-                    "UPDATE memories SET content=?, keywords=?, importance=?, created_at=? WHERE id=?",
-                    (merged_content, ",".join(merged_keywords), merged_importance, datetime.now().isoformat(), existing["id"])
+                    "UPDATE memories SET content=?, keywords=?, importance=? WHERE id=?",
+                    (merged_content, ",".join(merged_keywords), merged_importance, existing["id"])
                 )
                 logger.info(f"[MemoryStore] 记忆合并 (相似度:{similarity:.2f}): {content[:20]}...")
             else:
@@ -125,7 +146,7 @@ class MemoryStore:
                     "INSERT INTO memories (category, content, keywords, importance, created_at) VALUES (?,?,?,?,?)",
                     (category, content, ",".join(keywords), importance, datetime.now().isoformat())
                 )
-            
+
             self._conn.commit()
             self._enforce_capacity()
 
@@ -137,7 +158,7 @@ class MemoryStore:
         if not cat_match:
             logger.warning(f"[MemoryStore] 无法解析 memory 行: {line}")
             return
-            
+
         category = cat_match.group(1)
         rest = cat_match.group(2)
 
@@ -225,6 +246,11 @@ class MemoryStore:
 
         if not results:
             return ""
+
+        # 记录被召回的记忆 ID 和时间，用于冷却期去重
+        now = datetime.now()
+        for m in results:
+            self._recall_times[m["id"]] = now
 
         lines = []
         for m in results:

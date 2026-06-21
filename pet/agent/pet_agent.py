@@ -10,7 +10,7 @@ from pet.agent.scheduled_tasks import ScheduledTasks
 from pet.agent.state import StateMachine
 from pet.agent.screen_reader import ScreenReader
 from pet.brain.memory import MemoryStore
-from pet.action.registry import DEFAULT_ACTION_DURATIONS
+from pet.action.registry import default_duration, _DURATION_ACTION_DEFS
 from pet.pulse.vitals import Vitals
 from pet.pulse.mood import Mood
 
@@ -146,8 +146,8 @@ class PetAgent(QObject):
 
     def _emit_action(self, name: str, args, kwargs):
         kw = dict(kwargs) if kwargs else {}
-        if "duration" not in kw and name in DEFAULT_ACTION_DURATIONS:
-            kw["duration"] = DEFAULT_ACTION_DURATIONS[name]
+        if "duration" not in kw and name in _DURATION_ACTION_DEFS:
+            kw["duration"] = default_duration(name)
             logger.debug(f"[PetAgent] backfill default duration for '{name}': {kw['duration']}s")
         self.action_requested.emit(name, args or (), kw)
     def _autonomous_pipeline(self, pet_x=0, pet_y=0):
