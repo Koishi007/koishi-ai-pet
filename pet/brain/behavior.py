@@ -384,7 +384,7 @@ class Behavior(BrainMixin):
             elif lower.startswith("vitals:") and vitals_line is None:
                 vitals_line = line.split(":", 1)[1].strip()
         if not actions:
-            actions.append(ActionStep("idle"))
+            actions.append(ActionStep("sit", kwargs={"duration": 5}))
         mood_deltas = self._parse_mood_line(mood_line) if mood_line else None
         vitals_deltas = self._parse_vitals_line(vitals_line) if vitals_line else None
         return BehaviorOutput(actions=actions, speech=speech, summary=summary, memory_line=memory_line, emotion=emotion, mood_deltas=mood_deltas, vitals_deltas=vitals_deltas)
@@ -578,13 +578,12 @@ class Behavior(BrainMixin):
         return full_content
 
     _LOCAL_ACTIONS = [
-        ("idle", "Just hanging out..."),
+        ("sit", "Taking a little break."),
         ("drive", "Riding my little scooter!"),
         ("walk", "Bouncy bouncy!"),
         ("shake_arms", "Yay! So happy!"),
         ("look_around", "What's going on over there?"),
         ("stretch", "Ahh, that's better..."),
-        ("sit", "Taking a little break."),
         ("sleep", "Getting sleepy... zzz..."),
         ("thinking", "Hmm..."),
     ]
