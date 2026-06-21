@@ -202,4 +202,6 @@ CLAUDE.md
 
 /.vscode
 
-/docs/_build/
+/docs
+
+/.superpowers
