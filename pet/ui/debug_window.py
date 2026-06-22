@@ -72,6 +72,7 @@ class DebugWindow(QWidget):
         self._pos_timer = QTimer(self)
         self._pos_timer.timeout.connect(self._refresh_pos)
         self._pos_timer.timeout.connect(self._refresh_llm_stats)
+        self._pos_timer.timeout.connect(self._refresh_context)
         self._pos_timer.start(1000)
 
     def showEvent(self, event):
