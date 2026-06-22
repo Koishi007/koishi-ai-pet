@@ -205,7 +205,7 @@ if config.VOICE_INPUT_ENABLED and config.XF_APPID:
 
 ### 设置 UI
 
-在「行为」tab 底部新增一栏「语音输入」：
+在「通用」tab 底部新增一栏「语音输入」：
 
 ```
 [X] 启用语音输入
