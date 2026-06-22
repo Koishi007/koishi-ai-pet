@@ -579,7 +579,12 @@ class SettingsWindow(QWidget):
                 continue
             if meta["category"] == "connection":
                 needs_rebuild_client = True
-            if meta["category"] == "behavior":
+            if meta["category"] == "behavior" and key in (
+                "SCHEDULER_FAST_MS", "SCHEDULER_MID_MS", "SCHEDULER_SLOW_MS",
+                "SCHEDULER_IDLE_TIMEOUT_MS", "ACTION_TIMEOUT_MS",
+                "SCHEDULER_AUTO_START_FAST", "SCHEDULER_AUTO_START_MID",
+                "SCHEDULER_AUTO_START_SLOW",
+            ):
                 needs_scheduler_update = True
 
         # 调度器更新（必须在主线程，QTimer 是 Qt 对象）

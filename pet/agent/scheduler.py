@@ -126,7 +126,7 @@ class Scheduler(QObject):
     def update_config(self):
         """运行时更新调度器配置（设置界面修改调度参数后调用）。
 
-        仅更新现有定时器的间隔，不销毁重建，避免重置计时进度。
+        仅更新间隔变化的定时器，未变化的不操作以免重启计数。
         """
         if not self._initialized:
             return
@@ -136,8 +136,9 @@ class Scheduler(QObject):
             "slow": config.SCHEDULER_SLOW_MS,
         }
         for name in self._VALID_NAMES:
-            if name in self._timers:
-                self._timers[name].setInterval(intervals[name])
+            t = self._timers.get(name)
+            if t is not None and t.interval() != intervals[name]:
+                t.setInterval(intervals[name])
         self._idle_timeout_ms = config.SCHEDULER_IDLE_TIMEOUT_MS
         logger.info("[Scheduler] config updated — intervals adjusted")
 
