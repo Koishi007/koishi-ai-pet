@@ -728,30 +728,45 @@ class SettingsWindow(QWidget):
     # ── 热键录制 ──
 
     def _on_capture_hotkey(self):
-        """点击"录制"按钮后，捕捉用户按下的下一个按键。"""
+        """点击"录制"按钮后，捕捉用户按下的下一个按键。再次点击取消录制。"""
         from pynput import keyboard
 
+        logger = logging.getLogger(__name__)
         if self._capture_listener and self._capture_listener.running:
+            logger.info("[Settings] capture cancelled by user")
+            self._capture_listener.stop()
+            self._capture_listener = None
+            self._capture_btn.setText("录制")
             return
+        logger.info("[Settings] starting hotkey capture")
         self._capture_btn.setText("录制中...")
         self._capture_listener = keyboard.Listener(on_press=self._on_captured_key)
         self._capture_listener.daemon = True
         self._capture_listener.start()
+        logger.info(f"[Settings] listener running={self._capture_listener.running}")
 
     def _on_captured_key(self, key):
+        logger = logging.getLogger(__name__)
+        logger.info(f"[Settings] captured key: {key!r}")
         try:
             key_name = key.char.lower() if hasattr(key, 'char') and key.char else key.name.lower()
-        except Exception:
+        except Exception as e:
+            logger.warning(f"[Settings] key name extraction failed: {e}")
             key_name = str(key).lower().replace("key.", "")
 
+        logger.info(f"[Settings] key_name={key_name!r}")
         from PySide6.QtCore import QTimer
         QTimer.singleShot(0, lambda: self._hotkey_display.setText(key_name))
         QTimer.singleShot(0, self._on_capture_done)
-        self._capture_listener.stop()
+        try:
+            self._capture_listener.stop()
+        except Exception as e:
+            logger.warning(f"[Settings] listener stop failed: {e}")
         self._capture_listener = None
 
     def _on_capture_done(self):
         self._capture_btn.setText("录制")
+        logging.getLogger(__name__).info("[Settings] capture done")
 
     # ── 语音连接测试 ──
 
