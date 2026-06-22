@@ -95,7 +95,7 @@ class ContextBuilder:
         if self._memory_store:
             memory_text = self._memory_store.retrieve_context("")
             if memory_text:
-                content += f"\n\n[你对主人的记忆]\n{memory_text}"
+                content += f"\n\n[你对用户的记忆]\n{memory_text}"
         return content
 
     # internal
@@ -116,7 +116,7 @@ class ContextBuilder:
         if self._memory_store:
             memory_text = self._memory_store.retrieve_context(user_message)
             if memory_text:
-                content += f"\n\n[你对主人的记忆]\n{memory_text}"
+                content += f"\n\n[你对用户的记忆]\n{memory_text}"
 
         return content
 
@@ -152,32 +152,32 @@ class ContextBuilder:
             if key == "satiety":
                 if value >= 80:    return "刚吃饱，"
                 elif value >= 60:  return None
-                elif value >= 40:  return "肚子有点空了，想让主人喂点吃的。"
-                elif value >= 20:  return "饿得肚子咕咕叫，想让主人喂点吃的。"
-                else:              return "快要饿死了，眼前发黑，想让主人喂点吃的。"
+                elif value >= 40:  return "肚子有点空了，想吃点东西。"
+                elif value >= 20:  return "饿得肚子咕咕叫，想吃点东西。"
+                else:              return "快要饿死了，眼前发黑，想吃点东西。"
             elif key == "energy":
                 if value >= 80:    return "浑身充满力气，"
                 elif value >= 60:  return None
                 elif value >= 40:  return "眼皮开始打架了，想找地方休息。"
-                elif value >= 20:  return "累得抬不起手，想让主人放下它好好歇歇。"
-                else:              return "连站都站不稳了，只想瘫着不动，想让主人放下它休息。"
+                elif value >= 20:  return "累得抬不起手，想被放下好好歇歇。"
+                else:              return "连站都站不稳了，只想瘫着不动，想被放下休息。"
             elif key == "affection":
-                if value >= 80:    return "特别亲近主人，"
+                if value >= 80:    return "特别亲近，"
                 elif value >= 60:  return None
-                elif value >= 40:  return "对主人感觉一般，"
-                elif value >= 20:  return "不太想搭理主人，"
-                else:              return "讨厌主人"
+                elif value >= 40:  return "感觉一般，"
+                elif value >= 20:  return "不太想搭理人，"
+                else:              return "不想搭理人，"
             elif key == "joy":
                 if value >= 80:    return "开心得想转圈，"
                 elif value >= 60:  return None
-                elif value >= 40:  return "心情有点闷，想让主人陪它玩一玩。"
-                elif value >= 20:  return "心里沉甸甸的，笑不出来，想让主人摸摸头（点击宠物）安慰它。"
-                else:              return "绝望到想消失，想让主人摸摸头（点击宠物）好好安慰它。"
+                elif value >= 40:  return "心情有点闷，想找人陪玩。"
+                elif value >= 20:  return "心里沉甸甸的，笑不出来，想被摸摸头（点击宠物）安慰一下。"
+                else:              return "绝望到想消失，想被摸摸头（点击宠物）好好安慰一下。"
             elif key == "sanity":
                 # 注意：仅在 sanity < 60 时调用（正常值在上层处理）
-                if value >= 40:    return "有点神神叨叨的，想让主人摸摸头（点击宠物）来清醒一点。想用技能做点不寻常的事。"
-                elif value >= 20:  return "脑子快炸了，想让主人摸摸头（点击宠物）来清醒一点。想对空气说话，对着屏幕傻笑，手痒想搞破坏——翻翻可用技能，搜些荒诞的关键词，或者创建个奇怪的文件。"
-                else:              return "理智彻底崩坏，控制不住自己，想让主人摸摸头（点击宠物）来清醒一点。疯狂翻可用技能：搜猎奇、恐怖主题相关的东西、创建包含病娇、恐怖内容的文件、打开乱七八糟的网页，什么都想试试。"
+                if value >= 40:    return "有点神神叨叨的，想被摸摸头（点击宠物）来清醒一点。想用技能做点不寻常的事。"
+                elif value >= 20:  return "脑子快炸了，想被摸摸头（点击宠物）来清醒一点。想对空气说话，对着屏幕傻笑，手痒想搞破坏——翻翻可用技能，搜些荒诞的关键词，或者创建个奇怪的文件。"
+                else:              return "理智彻底崩坏，控制不住自己，想被摸摸头（点击宠物）来清醒一点。疯狂翻可用技能：搜猎奇、恐怖主题相关的东西、创建包含病娇、恐怖内容的文件、打开乱七八糟的网页，什么都想试试。"
             return None
 
         parts: list[str] = []

@@ -130,15 +130,15 @@ class Mood(QObject):
 
         # 好感度
         if self._affection >= 70:
-            parts.append("很亲近主人")
+            parts.append("很亲近")
         elif self._affection >= 50:
-            parts.append("对主人还算友好")
+            parts.append("还算友好")
         elif self._affection >= self._thresholds.affection_low:
             parts.append("变得冷淡了")
         elif self._affection >= self._thresholds.affection_estranged:
-            parts.append("与主人生疏了")
+            parts.append("变得生疏了")
         else:
-            parts.append("完全不信任主人")
+            parts.append("完全不信任")
 
         # 愉悦度
         if self._joy >= 70:
@@ -228,7 +228,7 @@ class Mood(QObject):
             if not self._was_aff_estranged:
                 self._was_aff_estranged = True
                 self.affection_estranged.emit()
-                logger.warning("[Mood] 与主人生疏！好感度 < estranged 阈值")
+                logger.warning("[Mood] 好感度变得生疏！< estranged 阈值")
         elif self._affection < t.affection_low:
             if not self._was_aff_low:
                 self._was_aff_low = True
