@@ -302,6 +302,7 @@ QCheckBox:disabled {
 QCheckBox::indicator {
     width: 14px;
     height: 14px;
+    margin: 3px 0;
     background: """ + _COLOR_SURFACE + """;
     border: 1px solid """ + _COLOR_BORDER_FOCUS + """;
     border-radius: 3px;

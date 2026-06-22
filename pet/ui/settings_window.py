@@ -229,7 +229,7 @@ class SettingsWindow(QWidget):
         layout.setContentsMargins(8, 8, 8, 8)
 
         form = QFormLayout()
-        form.setSpacing(6)
+        form.setSpacing(8)
 
         self._fields = {}
 
