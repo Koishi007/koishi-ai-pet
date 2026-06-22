@@ -420,6 +420,25 @@ class SettingsWindow(QWidget):
         form.addRow("", self._check("SHOW_TRAY", "显示托盘图标"))
 
         layout.addLayout(form)
+
+        # ── 语音输入 ──
+        voice_group = QGroupBox("语音输入")
+        voice_layout = QVBoxLayout(voice_group)
+
+        voice_enable = self._check("VOICE_INPUT_ENABLED", "启用语音输入")
+        voice_layout.addWidget(voice_enable)
+
+        voice_form = QFormLayout()
+        voice_form.setSpacing(6)
+        voice_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        voice_form.addRow("热键:", self._line("VOICE_HOTKEY", "F8"))
+        voice_form.addRow("讯飞 APPID:", self._line("XF_APPID", ""))
+        voice_form.addRow("讯飞 API Key:", self._line("XF_API_KEY", ""))
+        voice_form.addRow("讯飞 API Secret:", self._line("XF_API_SECRET", ""))
+        voice_layout.addLayout(voice_form)
+
+        layout.addWidget(voice_group)
+
         layout.addStretch()
         return w
 
