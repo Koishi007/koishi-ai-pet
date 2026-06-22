@@ -560,7 +560,6 @@ class SettingsWindow(QWidget):
         """保存所有修改并即时生效。"""
         values, invalid_keys = self._collect_values()
         if invalid_keys:
-            # 构建字段友好名称映射
             bad_names = ", ".join(invalid_keys)
             self._msg("输入有误",
                       f"以下字段包含无效数值，未能保存：\n{bad_names}\n\n请检查数值型字段.")
