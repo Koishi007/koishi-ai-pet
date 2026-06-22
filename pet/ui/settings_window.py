@@ -582,22 +582,23 @@ class SettingsWindow(QWidget):
             if meta["category"] == "behavior":
                 needs_scheduler_update = True
 
-        # 运行时钩子（在后台线程执行，避免阻塞 GUI）
-        if needs_rebuild_client or needs_scheduler_update:
-            def _apply_hooks():
+        # 调度器更新（必须在主线程，QTimer 是 Qt 对象）
+        if needs_scheduler_update and self.agent and hasattr(self.agent, 'scheduler'):
+            try:
+                self.agent.scheduler.update_config()
+            except Exception as e:
+                logger.exception(f"[Settings] scheduler.update_config failed: {e}")
+
+        # LLM 客户端重建（在后台线程执行，避免阻塞 GUI）
+        if needs_rebuild_client and self.agent and hasattr(self.agent, 'behavior'):
+            def _rebuild():
                 try:
-                    if needs_rebuild_client and self.agent and hasattr(self.agent, 'behavior'):
-                        self.agent.behavior.rebuild_client()
+                    self.agent.behavior.rebuild_client()
                 except Exception as e:
                     logger.exception(f"[Settings] rebuild_client failed: {e}")
-                try:
-                    if needs_scheduler_update and self.agent and hasattr(self.agent, 'scheduler'):
-                        self.agent.scheduler.update_config()
-                except Exception as e:
-                    logger.exception(f"[Settings] scheduler.update_config failed: {e}")
-                logger.info("[Settings] runtime hooks applied")
+                logger.info("[Settings] rebuild_client complete")
 
-            t = threading.Thread(target=_apply_hooks, daemon=True, name="settings-hooks")
+            t = threading.Thread(target=_rebuild, daemon=True, name="settings-rebuild")
             t.start()
 
         if needs_restart_keys:
