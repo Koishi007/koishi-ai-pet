@@ -11,9 +11,9 @@ from config import config
 
 # 动作时长参数定义：(名称, 最小秒数, 最大秒数, 占调度间隔比例)
 _DURATION_ACTION_DEFS = {
-    "sit":      (10, 0.20),
-    "thinking": ( 5, 0.10),
-    "sleep":    (10, 0.20),
+    "sit":      (10, 0.4),
+    "thinking": ( 5, 0.2),
+    "sleep":    (10, 0.4),
 }
 
 
@@ -23,7 +23,7 @@ def default_duration(action: str) -> int:
         raise KeyError(f"Unknown duration action: {action}")
     floor, ratio = _DURATION_ACTION_DEFS[action]
     mid_s = config.SCHEDULER_MID_MS / 1000
-    target_s = int(mid_s * 0.5)
+    target_s = int(mid_s * 0.8)
     return max(floor, int(target_s * ratio))
 
 
@@ -70,7 +70,7 @@ def _build_duration_registry() -> dict[str, ActionDef]:
         "bounce": ActionDef(
             name="bounce",
             category="移动",
-            description="弹跳移动。适合跳跃到其他窗口上。direction=left/right 指定水平方向，distance 水平距离，height 向上跳跃高度）",
+            description="弹跳移动。适合跳跃到其他窗口上。direction=left/right 指定水平方向，distance 水平距离，height 向上跳跃高度",
             params=["direction: left | right", "distance: 水平像素(范围0-800，0代表垂直往上跳，此时方向任意)", "height: 向上跳跃高度（必须大于0）"],
             usage_example="Action: bounce direction=right distance=400 height=200",
         ),
@@ -112,7 +112,7 @@ def _build_duration_registry() -> dict[str, ActionDef]:
         "fade_out": ActionDef(
             name="fade_out",
             category="显隐",
-            description="淡出隐藏。窗口从可见到透明，与 fade_out 成对使用（必须先 out 后 in），中间可以夹带其他动作。禁止单独出现。",
+            description="淡出隐藏。窗口从可见到透明，与 fade_in 成对使用（必须先 out 后 in），中间可以夹带其他动作。禁止单独出现。",
             params=[],
             usage_example="Action: fade_out",
         ),

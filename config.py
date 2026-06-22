@@ -30,7 +30,7 @@ _KEY_META = {
     "SCHEDULER_AUTO_START_MID":  {"type": "bool",     "default": True,          "category": "behavior",   "needs_restart": False, "hidden": False, "description": "自动启动 mid_tick(自主决策)"},
     "SCHEDULER_AUTO_START_SLOW": {"type": "bool",     "default": True,          "category": "behavior",   "needs_restart": False, "hidden": True,  "description": "自动启动 slow_tick"},
     "SCHEDULER_IDLE_TIMEOUT_MS": {"type": "int",      "default": 900000,        "category": "behavior",   "needs_restart": False, "hidden": True,  "description": "空闲超时(毫秒)，超过后进入休眠"},
-    "ACTION_TIMEOUT_MS":         {"type": "int",      "default": 15000,         "category": "behavior",   "needs_restart": False, "hidden": True,  "description": "单个动作超时(毫秒)"},
+    "ACTION_TIMEOUT_MS":         {"type": "int",      "default": 45000,         "category": "behavior",   "needs_restart": False, "hidden": True,  "description": "单个动作超时(毫秒)"},
     "SANITY_CRITICAL_THRESHOLD": {"type": "int",      "default": 20,            "category": "behavior",   "needs_restart": False, "hidden": False, "description": "理智临界值，低于该值导致异常行为"},
     "INTERACT_GRABBED_PROMPT":      {"type": "str",   "default": "",            "category": "behavior",   "needs_restart": False, "hidden": False, "description": "被抓取时的自定义回复 prompt"},
     "INTERACT_RELEASED_PROMPT":     {"type": "str",   "default": "",            "category": "behavior",   "needs_restart": False, "hidden": False, "description": "被放下时的自定义回复 prompt"},
