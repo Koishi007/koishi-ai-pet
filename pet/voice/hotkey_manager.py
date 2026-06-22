@@ -1,7 +1,4 @@
-"""全局热键管理器，使用 pynput 监听按键。
-
-当前仅支持单键热键（如 F8），按下切换录音开/关。
-"""
+"""全局热键管理器，使用 pynput 监听按键。"""
 
 import logging
 
@@ -14,10 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class HotkeyManager(QObject):
-    """全局热键监听。
-
-    每次按键 → 切换录音状态，根据当前状态发出 voice_start 或 voice_stop。
-    """
+    """全局热键监听。每次按键切换录音开/关。"""
 
     voice_start = Signal()
     voice_stop = Signal()

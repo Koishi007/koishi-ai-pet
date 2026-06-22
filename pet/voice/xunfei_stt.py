@@ -1,9 +1,4 @@
-"""讯飞语音听写 (iat) WebSocket API 封装
-
-长连接模式：connect() 在启动时建立连接，通过 ping_interval 保持心跳。
-按下热键时 start_recording() 开始推送音频，松开后 stop_recording() 等待结果。
-连接断开后自动重连。
-"""
+"""讯飞语音听写 (iat) WebSocket API 封装"""
 
 import base64
 import hashlib
@@ -30,18 +25,15 @@ STATUS_LAST_FRAME = 2
 
 
 class XunfeiSTT(QObject):
-    """讯飞语音听写流式 WebSocket 客户端（长连接）。
+    """讯飞语音听写流式 WebSocket 客户端。
 
-    生命周期：
-      connect()  → 建立 WS 连接，保持心跳
-      disconnect() → 关闭连接
-
-    每轮识别：
-      start_recording() → send_audio()*N → stop_recording() → done 信号
+    connect() → websocket 连接
+    start_recording() / send_audio() / stop_recording() → 每轮识别
+    disconnect() → 关闭连接
     """
 
-    partial_result = Signal(str)  # 中间识别结果
-    done = Signal(str)            # 最终完整结果
+    partial_result = Signal(str)
+    done = Signal(str)
     connected = Signal()
     disconnected = Signal()
     error = Signal(str)
@@ -51,8 +43,6 @@ class XunfeiSTT(QObject):
         self._ws: websocket.WebSocketApp | None = None
         self._thread: threading.Thread | None = None
         self._connected = False
-
-        # 识别会话状态
         self._recording = False
         self._result_text = ""
         self._done_emitted = False

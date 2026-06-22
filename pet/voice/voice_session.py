@@ -1,4 +1,4 @@
-"""语音会话编排：长连接 + 热键触发识别。"""
+"""语音会话编排：麦克风采集 → 讯飞识别"""
 
 import logging
 
@@ -11,12 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class VoiceSession(QObject):
-    """编排麦克风采集和讯飞识别。
-
-    connect() — 启动时建立 WS 长连接
-    start_recording() / stop_recording() — 每轮识别
-    disconnect() — 清理
-    """
+    """编排麦克风采集和讯飞识别。"""
 
     partial_text = Signal(str)
     transcription_done = Signal(str)
