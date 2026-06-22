@@ -114,6 +114,16 @@ class DebugWindow(QWidget):
         header_layout.addWidget(title_lbl)
         header_layout.addStretch()
 
+        min_btn = QPushButton("—")
+        min_btn.setFixedSize(36, 36)
+        min_btn.setStyleSheet(f"""
+            QPushButton {{ background: transparent; border: none; border-radius: 18px;
+                         font-size: 18px; color: {_COLOR_TEXT_MUTED}; }}
+            QPushButton:hover {{ background: #87CEFA; color: #fff; }}
+        """)
+        min_btn.clicked.connect(self.showMinimized)
+        header_layout.addWidget(min_btn)
+
         close_btn = QPushButton("✕")
         close_btn.setFixedSize(36, 36)
         close_btn.setStyleSheet(f"""

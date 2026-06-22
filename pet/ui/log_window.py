@@ -157,6 +157,17 @@ class LogWindow(QWidget):
 
         header_layout.addStretch()
 
+        # 最小化按钮
+        min_btn = QPushButton("—")
+        min_btn.setFixedSize(36, 36)
+        min_btn.setStyleSheet(f"""
+            QPushButton {{ background: transparent; border: none; border-radius: 18px;
+                         font-size: 18px; color: {_COLOR_TEXT_MUTED}; }}
+            QPushButton:hover {{ background: #87CEFA; color: #fff; }}
+        """)
+        min_btn.clicked.connect(self.showMinimized)
+        header_layout.addWidget(min_btn)
+
         # 关闭按钮
         close_btn = QPushButton("✕")
         close_btn.setObjectName("LogCloseBtn")
