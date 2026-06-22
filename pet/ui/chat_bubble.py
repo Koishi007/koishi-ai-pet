@@ -169,8 +169,6 @@ class ChatBubble(QWidget):
             self._collapse()
             self.hide_bubble()
 
-    # ── 语音输入（实时文字展示）──
-
     def submit_voice_text(self):
         """把当前输入框的文字当消息提交并收起（按下停止键时调用）。"""
         if self._input.text().strip():
