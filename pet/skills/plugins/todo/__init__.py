@@ -102,7 +102,7 @@ def register(registry):
         handler=_complete_with_notify,
         when="用户说「完成了」「做完了」「恢复这个任务」时",
         args={
-            "id": {"type": "int", "required": True, "desc": "任务ID"},
+            "todo_id": {"type": "int", "required": True, "desc": "任务ID"},
         },
     )
 
@@ -112,7 +112,7 @@ def register(registry):
         handler=_instance.delete,
         when="用户说「删除任务」「取消这个待办」时",
         args={
-            "id": {"type": "int", "required": True, "desc": "任务ID"},
+            "todo_id": {"type": "int", "required": True, "desc": "任务ID"},
         },
     )
 
@@ -122,7 +122,7 @@ def register(registry):
         handler=_instance.update,
         when="用户说「修改待办」「把xxx改成」时",
         args={
-            "id": {"type": "int", "required": True, "desc": "任务ID"},
+            "todo_id": {"type": "int", "required": True, "desc": "任务ID"},
             "title": {"type": "str", "required": True, "desc": "新标题"},
         },
     )

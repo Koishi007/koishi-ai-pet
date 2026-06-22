@@ -480,7 +480,7 @@ class Behavior(BrainMixin):
         return ActionStep(name, tuple(args), kwargs)
 
     def _execute_with_skills(self, first_content: str, system_content: str, on_chunk=None,
-                             on_stream_end=None, max_rounds: int = 3) -> BehaviorOutput:
+                             on_stream_end=None, max_rounds: int = 5) -> BehaviorOutput:
         from pet.skills.executor import SkillExecutor
 
         executor = SkillExecutor()

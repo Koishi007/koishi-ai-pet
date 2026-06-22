@@ -16,9 +16,10 @@ class TodoListTool:
         if not title or not title.strip():
             return {"error": "标题不能为空"}
         todo = self._storage.add(title=title.strip())
+        todo["todo_id"] = todo.pop("id")
         return {
             **todo,
-            "summary": f"已添加待办: #{todo['id']}「{todo['title']}」",
+            "summary": f"已添加待办: #{todo['todo_id']}「{todo['title']}」",
         }
 
     def list_todos(self, status: str = "pending") -> dict:
@@ -26,10 +27,12 @@ class TodoListTool:
         items = self._storage.list(status=None if status == "all" else status)
         if not items:
             return {"summary": "没有待办事项。", "items": []}
+        for t in items:
+            t["todo_id"] = t.pop("id")
         lines = [f"共 {len(items)} 条："]
         for t in items:
             mark = "✓" if t["status"] == "done" else "○"
-            lines.append(f"  #{t['id']} {mark} {t['title']}")
+            lines.append(f"  #{t['todo_id']} {mark} {t['title']}")
         return {"summary": "\n".join(lines), "items": items}
 
     def toggle(self, todo_id: int) -> dict:
@@ -38,6 +41,7 @@ class TodoListTool:
         if result is None:
             return {"error": f"未找到 id={todo_id} 的任务"}
         label = "已完成" if result["status"] == "done" else "已恢复为待办"
+        result["todo_id"] = result.pop("id")
         return {
             "summary": f"{label}: #{todo_id}「{result['title']}」",
             "item": result,
@@ -57,6 +61,7 @@ class TodoListTool:
         result = self._storage.update(todo_id, title.strip())
         if result is None:
             return {"error": f"未找到 id={todo_id} 的任务"}
+        result["todo_id"] = result.pop("id")
         return {
             "summary": f"已更新 #{todo_id}「{result['title']}」",
             "item": result,
