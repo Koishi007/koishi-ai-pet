@@ -573,6 +573,10 @@ class DebugWindow(QWidget):
         self.pet.particles.spawn(effect)
 
     def _refresh_context(self):
+        scroll_bar = self.ctx_output.verticalScrollBar()
+        prev_scroll = scroll_bar.value()
+        prev_max = scroll_bar.maximum()
+
         self.ctx_output.clear()
         if not self.agent or not hasattr(self.agent.behavior, '_context'):
             self.ctx_output.append("（无 agent 或 Behavior 不可用）")
@@ -593,6 +597,10 @@ class DebugWindow(QWidget):
             self.ctx_output.append(
                 f"#{i} [{prefix}] {score:.1f}分 | {age_str}前\n  {e.content[:120]}"
             )
+
+        # 内容追加后恢复滚动位置，新内容追加到底部时不跳转
+        if prev_max == scroll_bar.maximum():
+            scroll_bar.setValue(prev_scroll)
 
     def _clear_context(self):
         if self.agent and hasattr(self.agent.behavior, 'clear_context'):
