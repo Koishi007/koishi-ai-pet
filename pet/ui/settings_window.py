@@ -115,6 +115,7 @@ class SettingsWindow(QWidget):
         self._models_worker = None
         self._voice_thread = None
         self._voice_worker = None
+        self._capture_listener = None
         self._fields = {}
         self._snapshot = {}
 
@@ -730,28 +731,27 @@ class SettingsWindow(QWidget):
         """点击"录制"按钮后，捕捉用户按下的下一个按键。"""
         from pynput import keyboard
 
+        if self._capture_listener and self._capture_listener.running:
+            return
         self._capture_btn.setText("录制中...")
-        self._capture_btn.setEnabled(False)
+        self._capture_listener = keyboard.Listener(on_press=self._on_captured_key)
+        self._capture_listener.daemon = True
+        self._capture_listener.start()
 
-        def on_press(key):
-            try:
-                key_name = key.char.lower() if hasattr(key, 'char') and key.char else key.name.lower()
-            except Exception:
-                key_name = str(key).lower().replace("key.", "")
+    def _on_captured_key(self, key):
+        try:
+            key_name = key.char.lower() if hasattr(key, 'char') and key.char else key.name.lower()
+        except Exception:
+            key_name = str(key).lower().replace("key.", "")
 
-            from PySide6.QtCore import QTimer
-            QTimer.singleShot(0, lambda: self._hotkey_display.setText(key_name))
-            QTimer.singleShot(0, self._on_capture_done)
-            listener.stop()
-
-        listener = keyboard.Listener(on_press=on_press)
-        listener.daemon = True
-        listener.start()
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(0, lambda: self._hotkey_display.setText(key_name))
+        QTimer.singleShot(0, self._on_capture_done)
+        self._capture_listener.stop()
+        self._capture_listener = None
 
     def _on_capture_done(self):
-        """录制完成后恢复按钮状态。"""
         self._capture_btn.setText("录制")
-        self._capture_btn.setEnabled(True)
 
     # ── 语音连接测试 ──
 
