@@ -12,7 +12,6 @@ import json
 import logging
 import ssl
 import threading
-import time
 from datetime import datetime
 from urllib.parse import urlencode
 from wsgiref.handlers import format_date_time
@@ -28,8 +27,6 @@ logger = logging.getLogger(__name__)
 STATUS_FIRST_FRAME = 0
 STATUS_CONTINUE_FRAME = 1
 STATUS_LAST_FRAME = 2
-
-_RECONNECT_DELAY = 5  # 重连间隔（秒）
 
 
 class XunfeiSTT(QObject):
@@ -53,7 +50,6 @@ class XunfeiSTT(QObject):
         super().__init__(parent)
         self._ws: websocket.WebSocketApp | None = None
         self._thread: threading.Thread | None = None
-        self._should_reconnect = False
         self._connected = False
 
         # 识别会话状态
@@ -64,14 +60,13 @@ class XunfeiSTT(QObject):
     # ── 连接管理 ──
 
     def connect(self):
-        """建立 WebSocket 长连接并保持心跳。"""
+        """建立 WebSocket 连接。"""
         if self._connected:
             return
         if not self._check_credentials():
             return
 
         url = self._build_url()
-        self._should_reconnect = True
 
         self._ws = websocket.WebSocketApp(
             url,
@@ -99,8 +94,7 @@ class XunfeiSTT(QObject):
         return True
 
     def disconnect(self):
-        """关闭连接，停止重连。"""
-        self._should_reconnect = False
+        """关闭连接。"""
         self._connected = False
         self._recording = False
         if self._ws:
@@ -127,28 +121,22 @@ class XunfeiSTT(QObject):
 
         self.disconnected.emit()
 
-        if self._should_reconnect:
-            logger.info(f"[XunfeiSTT] reconnecting in {_RECONNECT_DELAY}s...")
-            time.sleep(_RECONNECT_DELAY)
-            if self._should_reconnect:
-                self.connect()
-
     def _on_error(self, ws, error):
         logger.error(f"[XunfeiSTT] error: {error}")
 
     # ── 识别会话 ──
 
     def start_recording(self):
-        """开始一轮识别：发送第一帧（含 business 配置）。"""
+        """开始一轮识别：连接（按需）+ 发送第一帧。"""
         if self._recording:
             return
         self._recording = True
         self._result_text = ""
         self._done_emitted = False
 
+        # 按需建立连接
         if not self._connected:
             self.connect()
-            time.sleep(0.5)
 
         payload = {
             "common": {"app_id": config.XF_APPID},

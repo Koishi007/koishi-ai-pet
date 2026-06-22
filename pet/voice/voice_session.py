@@ -36,18 +36,15 @@ class VoiceSession(QObject):
         self._stt.done.connect(self._on_stt_done)
         self._stt.error.connect(self.error.emit)
 
-    def connect(self):
-        """启动时建立 WS 长连接。"""
-        self._stt.connect()
-
     def disconnect(self):
-        """关闭 WS 连接，停止一切。"""
+        """关闭连接，停止一切。"""
         self._mic.stop()
         self._stt.disconnect()
 
     def start_recording(self):
-        """开始录音+识别。"""
+        """开始录音+识别（按需建立 WS 连接）。"""
         if self._recording:
+            return
             return
         self._recording = True
         self._stt.start_recording()
