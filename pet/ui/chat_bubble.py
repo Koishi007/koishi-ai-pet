@@ -171,6 +171,13 @@ class ChatBubble(QWidget):
 
     # ── 语音输入（实时文字展示）──
 
+    def set_recording_icon(self, recording: bool):
+        """切换按钮图标：录音中显示 audio_recording 图标。"""
+        if recording:
+            self._btn.setIcon(QIcon(str(BASE_DIR / "assets" / "icon" / "audio_recording.png")))
+        else:
+            self._btn.setIcon(QIcon(str(BASE_DIR / "assets" / "icon" / "chat.png")))
+
     def show_voice_input(self):
         """自动展开输入框供语音输入。"""
         self.show_bubble()

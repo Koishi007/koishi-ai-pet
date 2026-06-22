@@ -148,8 +148,13 @@ def main():
         _voice_session.partial_text.connect(chat_bubble.set_voice_text)
         _voice_session.transcription_done.connect(chat_bubble.set_voice_text)
 
-        # 录音开始 → 自动展开输入框
+        # 录音开始 → 自动展开输入框 + 切换图标
         _voice_session.recording_started.connect(chat_bubble.show_voice_input)
+        _voice_session.recording_started.connect(lambda: chat_bubble.set_recording_icon(True))
+
+        # 录音结束 → 恢复图标
+        _voice_session.recording_stopped.connect(lambda: chat_bubble.set_recording_icon(False))
+        _voice_session.transcription_done.connect(lambda _: chat_bubble.set_recording_icon(False))
 
         # 错误日志
         _voice_session.error.connect(lambda msg: logger.error(f"[Voice] {msg}"))
