@@ -39,7 +39,7 @@ _KEY_META = {
     # ── Appearance ──
     "VISION_ENABLED":            {"type": "bool",     "default": False,         "category": "appearance", "needs_restart": False, "hidden": False, "description": "启用视觉理解(需多模态模型支持)"},
     "VISION_SCALE":              {"type": "float",    "default": 1.0,           "category": "appearance", "needs_restart": False, "hidden": False, "description": "截图缩放比例(0.1~1.0)"},
-    "SKILLS_ENABLED":            {"type": "str_list", "default": ["system_monitor", "browser", "file", "weather", "web_search"], "category": "appearance", "needs_restart": True,  "hidden": False, "description": "启用的技能插件(逗号分隔, *=全部)"},
+    "SKILLS_ENABLED":            {"type": "str_list", "default": ["*"],         "category": "appearance", "needs_restart": True,  "hidden": False, "description": "启用的技能插件(逗号分隔, *=全部)"},
     "PET_WIDTH":                 {"type": "int",      "default": 125,           "category": "appearance", "needs_restart": True,  "hidden": False, "description": "宠物窗口宽度(px)"},
     "PET_HEIGHT":                {"type": "int",      "default": 125,           "category": "appearance", "needs_restart": True,  "hidden": False, "description": "宠物窗口高度(px)"},
     "PET_FPS":                   {"type": "int",      "default": 15,            "category": "appearance", "needs_restart": True,  "hidden": True,  "description": "动画帧率"},
