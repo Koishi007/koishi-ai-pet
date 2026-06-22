@@ -26,7 +26,7 @@ from pet.ui.styles import (
 logger = logging.getLogger(__name__)
 
 _W = 520
-_H = 600
+_H = 720
 
 
 class _LLMTestWorker(QObject):
@@ -113,6 +113,8 @@ class SettingsWindow(QWidget):
         self._llm_worker = None
         self._models_thread = None
         self._models_worker = None
+        self._voice_thread = None
+        self._voice_worker = None
         self._fields = {}
         self._snapshot = {}
 
@@ -441,7 +443,7 @@ class SettingsWindow(QWidget):
         # ── 语音输入 ──
         voice_group = QGroupBox("语音输入")
         voice_layout = QVBoxLayout(voice_group)
-        voice_layout.setSpacing(6)
+        voice_layout.setSpacing(8)
 
         voice_enable = self._check("VOICE_INPUT_ENABLED", "启用语音输入")
         voice_layout.addWidget(voice_enable)
@@ -452,15 +454,15 @@ class SettingsWindow(QWidget):
 
         # 热键：只读显示 + 录制按钮
         hotkey_row = QHBoxLayout()
+        hotkey_row.setSpacing(6)
         self._hotkey_display = QLineEdit()
         self._hotkey_display.setReadOnly(True)
         self._hotkey_display.setPlaceholderText("点击右侧按钮设置")
         self._hotkey_display.setStyleSheet(INPUT_HIGHLIGHT_QSS)
-        self._hotkey_display.setFixedWidth(80)
         self._fields["VOICE_HOTKEY"] = self._hotkey_display
         hotkey_row.addWidget(self._hotkey_display)
         self._capture_btn = QPushButton("录制")
-        self._capture_btn.setFixedSize(60, 28)
+        self._capture_btn.setStyleSheet(BUTTON_PRIMARY_QSS)
         self._capture_btn.clicked.connect(self._on_capture_hotkey)
         hotkey_row.addWidget(self._capture_btn)
         voice_form.addRow("热键:", hotkey_row)
@@ -472,21 +474,26 @@ class SettingsWindow(QWidget):
 
         # 连接测试（与 LLM 测试同风格）
         test_row = QHBoxLayout()
-        test_row.addStretch()
+        test_row.setSpacing(6)
         self._voice_btn_test = QPushButton("测试连接")
-        self._voice_btn_test.setFixedSize(100, 28)
+        self._voice_btn_test.setStyleSheet(BUTTON_PRIMARY_QSS)
         self._voice_btn_test.clicked.connect(self._on_test_voice_connection)
         test_row.addWidget(self._voice_btn_test)
         self._voice_label_test = QLabel("就绪")
         self._voice_label_test.setStyleSheet(f"color:{_COLOR_TEXT_SEC}; font-size:11px;")
         test_row.addWidget(self._voice_label_test)
+        test_row.addStretch()
         voice_layout.addLayout(test_row)
 
         self._voice_test_output = QTextEdit()
         self._voice_test_output.setReadOnly(True)
         self._voice_test_output.setMaximumHeight(60)
         self._voice_test_output.setFont(QFont("Consolas", 9))
-        self._voice_test_output.setStyleSheet(TEXTEDIT_QSS)
+        self._voice_test_output.setStyleSheet(TEXTEDIT_QSS + f"""
+            QTextEdit {{
+                background: {_COLOR_BG};
+            }}
+        """)
         voice_layout.addWidget(self._voice_test_output)
 
         layout.addWidget(voice_group)
