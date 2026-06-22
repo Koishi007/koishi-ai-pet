@@ -1,8 +1,9 @@
+import json
+import logging
 import os
-from dotenv import load_dotenv
-from pet.settings import load_user_settings, save_user_setting, delete_user_settings
+from pet.settings import load_user_settings, save_user_setting, delete_user_settings, settings_path
 
-load_dotenv()
+logger = logging.getLogger(__name__)
 
 
 # key: dict with keys: type, default, category, needs_restart, hidden, description[, enum, placeholder, minimum, maximum]
@@ -72,55 +73,51 @@ def _convert(raw, type_name):
 class Config:
 
     def __init__(self):
-        self._load_env()
+        self._load_defaults()
         self._load_user_settings()
+        self._generate_schema()
 
-    def _load_env(self):
-        """Load defaults from environment variables into instance attributes."""
-        self.BRAIN = os.getenv("BRAIN", "local")
-        self.LLM_MODEL = os.getenv("LLM_MODEL", "")
-        self.LLM_KEY = os.getenv("LLM_KEY", "")
-        self.LLM_URL = os.getenv("LLM_URL", "")
-        self.OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+    def _load_defaults(self):
+        """Load all default values from _KEY_META into instance attributes."""
+        for key, meta in _KEY_META.items():
+            default = meta["default"]
+            if meta["type"] == "str_list" and isinstance(default, list):
+                default = list(default)
+            setattr(self, key, default)
 
-        self.LLM_TIMEOUT = float(os.getenv("LLM_TIMEOUT", "30"))
-        self.LLM_MAX_RETRIES = int(os.getenv("LLM_MAX_RETRIES", "3"))
-        self.LLM_RETRY_DELAY = float(os.getenv("LLM_RETRY_DELAY", "1"))
-        self.LLM_RETRY_MAX_DELAY = float(os.getenv("LLM_RETRY_MAX_DELAY", "8"))
-        self.LLM_CACHE_PROMPT = os.getenv("LLM_CACHE_PROMPT", "").lower() in ("1", "true", "yes")
+    _TYPE_MAP = {"str": "string", "int": "integer", "float": "number", "bool": "boolean", "str_list": "array"}
 
-        self.VISION_ENABLED = os.getenv("VISION_ENABLED", "false").lower() == "true"
-        self.VISION_SCALE = float(os.getenv("VISION_SCALE", "1"))
+    def _generate_schema(self):
+        """Write settings-schema.json to the same directory as settings.json."""
+        schema = {
+            "$schema": "https://json-schema.org/draft-07/schema#",
+            "title": "DeskPet Settings",
+            "description": "DeskPet 桌面宠物全部配置项说明。\nhidden: true 的字段不在 UI 显示，可直接编辑 settings.json。\nneeds_restart: true 的字段修改后需重启生效。",
+            "properties": {},
+        }
+        for key, meta in _KEY_META.items():
+            entry = {
+                "type": self._TYPE_MAP.get(meta["type"], "string"),
+                "default": meta["default"],
+                "description": meta.get("description", ""),
+                "category": meta["category"],
+                "needs_restart": meta["needs_restart"],
+                "hidden": meta["hidden"],
+            }
+            if meta.get("enum"):
+                entry["enum"] = meta["enum"]
+            if meta.get("minimum") is not None:
+                entry["minimum"] = meta["minimum"]
+            if meta.get("maximum") is not None:
+                entry["maximum"] = meta["maximum"]
+            schema["properties"][key] = entry
 
-        self.PET_WIDTH = int(os.getenv("PET_WIDTH", "125"))
-        self.PET_HEIGHT = int(os.getenv("PET_HEIGHT", "125"))
-        self.PET_FPS = int(os.getenv("PET_FPS", "15"))
-        self.BUBBLE_MAX_WIDTH = int(os.getenv("BUBBLE_MAX_WIDTH", "300"))
-        self.BUBBLE_FONT_SIZE = int(os.getenv("BUBBLE_FONT_SIZE", "14"))
-        self.LOG_LEVEL = os.getenv("LOG_LEVEL", "DEBUG")
-
-        self.ACTION_TIMEOUT_MS = int(os.getenv("ACTION_TIMEOUT_MS", "15000"))
-
-        self.SCHEDULER_AUTO_START_FAST = os.getenv("SCHEDULER_AUTO_START_FAST", "true").lower() == "true"
-        self.SCHEDULER_AUTO_START_MID = os.getenv("SCHEDULER_AUTO_START_MID", "true").lower() == "true"
-        self.SCHEDULER_AUTO_START_SLOW = os.getenv("SCHEDULER_AUTO_START_SLOW", "true").lower() == "true"
-        self.SCHEDULER_FAST_MS = int(os.getenv("SCHEDULER_FAST_MS", "1000"))
-        self.SCHEDULER_MID_MS = int(os.getenv("SCHEDULER_MID_MS", "300000"))
-        self.SCHEDULER_SLOW_MS = int(os.getenv("SCHEDULER_SLOW_MS", "300000"))
-        self.SCHEDULER_IDLE_TIMEOUT_MS = int(os.getenv("SCHEDULER_IDLE_TIMEOUT_MS", "900000"))
-
-        self.PET_PERSONALITY = os.getenv("PET_PERSONALITY", "")
-
-        self.INTERACT_GRABBED_PROMPT = os.getenv("INTERACT_GRABBED_PROMPT", "")
-        self.INTERACT_RELEASED_PROMPT = os.getenv("INTERACT_RELEASED_PROMPT", "")
-        self.INTERACT_WINDOW_DISAPPEARED_PROMPT = os.getenv("INTERACT_WINDOW_DISAPPEARED_PROMPT", "")
-        self.INTERACT_FED_PROMPT = os.getenv("INTERACT_FED_PROMPT", "")
-
-        self.SKILLS_ENABLED = os.getenv("SKILLS_ENABLED", "").split(",") if os.getenv("SKILLS_ENABLED") else []
-
-        self.SANITY_CRITICAL_THRESHOLD = int(os.getenv("SANITY_CRITICAL_THRESHOLD", "20"))
-        self.SHOW_TRAY = os.getenv("SHOW_TRAY", "true").lower() == "true"
-        self.HIDE_CONSOLE = os.getenv("HIDE_CONSOLE", "true").lower() == "true"
+        path = os.path.join(os.path.dirname(settings_path()), "settings-schema.json")
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(schema, f, ensure_ascii=False, indent=2)
+        except OSError as e:
+            logger.warning(f"[Config] Failed to write schema: {e}")
 
     def _load_user_settings(self):
         """Read overrides from settings.json and update instance attributes."""
@@ -150,10 +147,9 @@ class Config:
         return (True, needs_restart)
 
     def reset(self, keys: list[str]):
-        """Remove specified keys from settings.json and fall back to .env defaults."""
+        """Remove specified keys from settings.json and fall back to _KEY_META defaults."""
         delete_user_settings(keys)
-        # re-read defaults from environment variables
-        self._load_env()
+        self._load_defaults()
         self._load_user_settings()
 
 
