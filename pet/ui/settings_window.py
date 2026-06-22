@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import threading
+import logging
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QLineEdit, QCheckBox, QComboBox, QTextEdit, QTabWidget,
@@ -580,18 +582,23 @@ class SettingsWindow(QWidget):
             if meta["category"] == "behavior":
                 needs_scheduler_update = True
 
-        # 运行时钩子
-        if needs_rebuild_client and self.agent and hasattr(self.agent, 'behavior'):
-            try:
-                self.agent.behavior.rebuild_client()
-            except Exception as e:
-                logger.exception(f"[Settings] rebuild_client failed: {e}")
+        # 运行时钩子（在后台线程执行，避免阻塞 GUI）
+        if needs_rebuild_client or needs_scheduler_update:
+            def _apply_hooks():
+                try:
+                    if needs_rebuild_client and self.agent and hasattr(self.agent, 'behavior'):
+                        self.agent.behavior.rebuild_client()
+                except Exception as e:
+                    logger.exception(f"[Settings] rebuild_client failed: {e}")
+                try:
+                    if needs_scheduler_update and self.agent and hasattr(self.agent, 'scheduler'):
+                        self.agent.scheduler.update_config()
+                except Exception as e:
+                    logger.exception(f"[Settings] scheduler.update_config failed: {e}")
+                logger.info("[Settings] runtime hooks applied")
 
-        if needs_scheduler_update and self.agent and hasattr(self.agent, 'scheduler'):
-            try:
-                self.agent.scheduler.update_config()
-            except Exception as e:
-                logger.exception(f"[Settings] scheduler.update_config failed: {e}")
+            t = threading.Thread(target=_apply_hooks, daemon=True, name="settings-hooks")
+            t.start()
 
         if needs_restart_keys:
             self._msg("设置已保存", "已保存。部分设置须重启后生效。")
