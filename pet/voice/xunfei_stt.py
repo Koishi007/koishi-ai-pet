@@ -235,11 +235,7 @@ class XunfeiSTT(QObject):
         return base + "?" + urlencode(params)
 
     def test_connection(self, app_id: str = "", api_key: str = "", api_secret: str = "") -> bool:
-        """测试连接是否可用。
-
-        可传入自定义凭证（如设置页未保存的表单值），
-        不传则使用当前 config 值。
-        """
+        """测试连接是否可用（建立 WS 即代表成功）。"""
         app_id = app_id or config.XF_APPID
         api_key = api_key or config.XF_API_KEY
         api_secret = api_secret or config.XF_API_SECRET
@@ -251,32 +247,12 @@ class XunfeiSTT(QObject):
             url = self._build_url_custom(app_id, api_key, api_secret)
             ok = [False]
 
-            def on_msg(ws, msg):
-                try:
-                    if json.loads(msg).get("code") == 0:
-                        ok[0] = True
-                except Exception:
-                    pass
+            def on_open(ws):
+                ok[0] = True
+                ws.close()
 
-            ws = websocket.WebSocketApp(
-                url,
-                on_message=on_msg,
-                on_error=lambda ws, e: None,
-                on_close=lambda ws, *a: None,
-            )
-
-            def send_test(ws):
-                ws.send(json.dumps({
-                    "common": {"app_id": app_id},
-                    "business": {"domain": "iat", "language": "zh_cn", "accent": "mandarin"},
-                    "data": {"status": 0, "format": "audio/L16;rate=16000", "audio": "", "encoding": "raw"},
-                }))
-                ws.send(json.dumps({
-                    "data": {"status": 2, "format": "audio/L16;rate=16000", "audio": "", "encoding": "raw"},
-                }))
-
-            ws.on_open = send_test
-            ws.run_forever(sslopt={"cert_reqs": ssl.CERT_NONE}, ping_interval=0)
+            ws = websocket.WebSocketApp(url, on_open=on_open)
+            ws.run_forever(sslopt={"cert_reqs": ssl.CERT_NONE})
             return ok[0]
         except Exception as e:
             logger.warning(f"[XunfeiSTT] test_connection failed: {e}")
