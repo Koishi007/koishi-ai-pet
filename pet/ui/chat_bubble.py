@@ -5,7 +5,6 @@ from pathlib import Path
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLineEdit, QBoxLayout
 from PySide6.QtCore import Qt, QSize, QTimer, QPoint, Signal, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup, QEvent
 from PySide6.QtGui import QFont, QIcon
-from config import config
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -14,8 +13,6 @@ class ChatBubble(QWidget):
     """聊天交互气泡 - 悬停桌宠时显示，点击展开输入框。"""
 
     chat_submitted = Signal(str)  # 用户提交消息时发出
-    voice_started = Signal()   # 麦克风按下
-    voice_stopped = Signal()   # 麦克风松开
 
     _INPUT_STYLE = (
         "QLineEdit {"
@@ -66,9 +63,6 @@ class ChatBubble(QWidget):
 
         self._input.installEventFilter(self)
 
-        if config.VOICE_INPUT_ENABLED and config.XF_APPID:
-            self._voice_btn.show()
-
         self.hide()
 
     def _setup_ui(self):
@@ -105,32 +99,6 @@ class ChatBubble(QWidget):
         self._input.returnPressed.connect(self._on_submit)
         self._input.hide()
         self._layout.addWidget(self._input)
-
-        # 录音按钮
-        self._voice_btn = QPushButton()
-        self._voice_btn.setFixedSize(32, 32)
-        self._voice_btn.setText("\U0001f3a4")
-        self._voice_btn.setStyleSheet(
-            "QPushButton {"
-            "  background: rgba(255,255,255,220);"
-            "  border: 1px solid #ccc;"
-            "  border-radius: 16px;"
-            "  font-size: 16px;"
-            "}"
-            "QPushButton:hover {"
-            "  background: rgba(240,240,255,240);"
-            "  border-color: #aaa;"
-            "}"
-            "QPushButton:checked {"
-            "  background: rgba(255,80,80,230);"
-            "  border-color: #d00;"
-            "}"
-        )
-        self._voice_btn.setCheckable(True)
-        self._voice_btn.pressed.connect(self._on_voice_pressed)
-        self._voice_btn.released.connect(self._on_voice_released)
-        self._voice_btn.hide()
-        self._layout.addWidget(self._voice_btn)
 
         self.adjustSize()
 
@@ -201,31 +169,20 @@ class ChatBubble(QWidget):
             self._collapse()
             self.hide_bubble()
 
-    # ── 语音输入 ──
+    # ── 语音输入（实时文字展示）──
 
-    def show_voice_btn(self, visible: bool):
-        self._voice_btn.setVisible(visible)
+    def show_voice_input(self):
+        """自动展开输入框供语音输入。"""
+        self.show_bubble()
+        if not self._expanded:
+            self._expand()
+        self._input.setFocus()
 
     def set_voice_text(self, text: str):
+        """实时更新识别文字到输入框。"""
         self._input.setText(text)
         if not self._expanded:
             self._expand()
-
-    def set_recording(self, recording: bool):
-        self._voice_btn.setChecked(recording)
-        if recording:
-            self._input.setPlaceholderText("正在聆听...")
-            self._voice_btn.setToolTip("松开结束")
-        else:
-            self._input.setPlaceholderText("说点什么...")
-            self._voice_btn.setToolTip("按住说话")
-        self._input.setFocus()
-
-    def _on_voice_pressed(self):
-        self.voice_started.emit()
-
-    def _on_voice_released(self):
-        self.voice_stopped.emit()
 
     # ── 显示/隐藏 ──
 

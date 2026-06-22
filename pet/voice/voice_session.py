@@ -1,11 +1,11 @@
-"""语音会话编排：MicCapture 麦克风采集 → XunfeiSTT 讯飞识别 完整流程。"""
+"""语音会话编排：长连接 + 热键触发识别。"""
 
 import logging
 
 from PySide6.QtCore import QObject, Signal
 
 from pet.voice.mic_capture import MicCapture
-from pet.voice.xunfei_stt import STATUS_CONTINUE_FRAME, STATUS_FIRST_FRAME, XunfeiSTT
+from pet.voice.xunfei_stt import XunfeiSTT
 
 logger = logging.getLogger(__name__)
 
@@ -13,12 +13,13 @@ logger = logging.getLogger(__name__)
 class VoiceSession(QObject):
     """编排麦克风采集和讯飞识别。
 
-    调用 start() 开始录音+识别，stop() 结束。
-    识别文字实时通过 partial_text 发出。
+    connect() — 启动时建立 WS 长连接
+    start_recording() / stop_recording() — 每轮识别
+    disconnect() — 清理
     """
 
-    partial_text = Signal(str)        # 实时中间结果
-    transcription_done = Signal(str)  # 结束后的完整文字
+    partial_text = Signal(str)
+    transcription_done = Signal(str)
     recording_started = Signal()
     recording_stopped = Signal()
     error = Signal(str)
@@ -28,69 +29,57 @@ class VoiceSession(QObject):
         self._mic = MicCapture(self)
         self._stt = XunfeiSTT(self)
         self._recording = False
-        self._mic_started = False
 
-        # 连接信号
         self._mic.audio_chunk.connect(self._on_audio_chunk)
-        self._mic.started.connect(self._on_mic_started)
-        self._mic.error_occurred.connect(self._on_error)
+        self._mic.error_occurred.connect(self.error.emit)
         self._stt.partial_result.connect(self.partial_text.emit)
         self._stt.done.connect(self._on_stt_done)
-        self._stt.error.connect(self._on_error)
+        self._stt.error.connect(self.error.emit)
 
-    def start(self):
+    def connect(self):
+        """启动时建立 WS 长连接。"""
+        self._stt.connect()
+
+    def disconnect(self):
+        """关闭 WS 连接，停止一切。"""
+        self._mic.stop()
+        self._stt.disconnect()
+
+    def start_recording(self):
         """开始录音+识别。"""
         if self._recording:
             return
         self._recording = True
-        self._first_chunk = True
-        self._mic_started = False
+        self._stt.start_recording()
         self._mic.start()
-        self._stt.start()
         self.recording_started.emit()
-        logger.info("[VoiceSession] start")
-
-    def _on_mic_started(self):
-        self._mic_started = True
+        logger.info("[VoiceSession] recording started")
 
     def _on_audio_chunk(self, data: bytes):
-        """Mic 每帧 PCM 数据 → 推给讯飞。"""
         if not self._recording:
             return
-        status = STATUS_FIRST_FRAME if self._first_chunk else STATUS_CONTINUE_FRAME
-        self._first_chunk = False
-        self._stt.send_audio(data, status)
+        self._stt.send_audio(data)
+
+    def stop_recording(self):
+        """结束录音，等待识别结果。"""
+        if not self._recording:
+            return
+        self._recording = False
+        self._mic.stop()
+        self._stt.stop_recording()
+        self.recording_stopped.emit()
+        logger.info("[VoiceSession] recording stopped")
 
     def _on_stt_done(self, text: str):
-        """讯飞识别完成。"""
         self.transcription_done.emit(text)
-        self._cleanup()
 
-    def _on_error(self, msg: str):
-        logger.error(f"[VoiceSession] error: {msg}")
-        self.error.emit(msg)
-        self._cleanup()
-
-    def stop(self):
-        """结束录音+识别。"""
-        if not self._recording:
-            return
-        self._recording = False
-        self._mic.stop()
-        self._stt.stop()
-        self.recording_stopped.emit()
-        logger.info("[VoiceSession] stop")
-
-    def force_stop(self):
-        """立即停止，不等待结果。"""
-        self._recording = False
-        self._mic.stop()
-        self._stt.force_stop()
-        self.recording_stopped.emit()
-
-    def _cleanup(self):
-        self._recording = False
+    def test_connection(self, app_id="", api_key="", api_secret="") -> bool:
+        return self._stt.test_connection(app_id, api_key, api_secret)
 
     @property
     def is_recording(self) -> bool:
         return self._recording
+
+    @property
+    def is_connected(self) -> bool:
+        return self._stt.is_connected

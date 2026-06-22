@@ -71,6 +71,23 @@ class _ModelsFetchWorker(QObject):
             self.finished.emit(False, [], str(e))
 
 
+class _VoiceTestWorker(QObject):
+    """子线程执行讯飞语音连接测试。"""
+    finished = Signal(bool)  # success
+
+    def __init__(self, app_id, api_key, api_secret):
+        super().__init__()
+        self._app_id = app_id
+        self._api_key = api_key
+        self._api_secret = api_secret
+
+    def run(self):
+        from pet.voice.xunfei_stt import XunfeiSTT
+        stt = XunfeiSTT()
+        ok = stt.test_connection(self._app_id, self._api_key, self._api_secret)
+        self.finished.emit(ok)
+
+
 class SettingsWindow(QWidget):
     _instance: SettingsWindow | None = None
 
@@ -437,6 +454,12 @@ class SettingsWindow(QWidget):
         voice_form.addRow("讯飞 API Secret:", self._line("XF_API_SECRET", ""))
         voice_layout.addLayout(voice_form)
 
+        # 连接测试按钮
+        test_btn = QPushButton("测试连接")
+        test_btn.setFixedHeight(28)
+        test_btn.clicked.connect(self._on_test_voice_connection)
+        voice_layout.addWidget(test_btn)
+
         layout.addWidget(voice_group)
 
         layout.addStretch()
@@ -664,6 +687,32 @@ class SettingsWindow(QWidget):
             self._test_output.append(f"错误: {content}")
             self._label_test.setText("❌ 失败")
         self._btn_test.setEnabled(True)
+
+    # ── 语音连接测试 ──
+
+    def _on_test_voice_connection(self):
+        """从表单读取讯飞凭证并测试连接。"""
+        app_id = self._fields["XF_APPID"].text().strip() if "XF_APPID" in self._fields else ""
+        api_key = self._fields["XF_API_KEY"].text().strip() if "XF_API_KEY" in self._fields else ""
+        api_secret = self._fields["XF_API_SECRET"].text().strip() if "XF_API_SECRET" in self._fields else ""
+
+        if not app_id or not api_key or not api_secret:
+            self._msg("提示", "请先填写讯飞 APPID、API Key 和 API Secret。")
+            return
+
+        self._voice_thread = QThread()
+        self._voice_worker = _VoiceTestWorker(app_id, api_key, api_secret)
+        self._voice_worker.moveToThread(self._voice_thread)
+        self._voice_thread.started.connect(self._voice_worker.run)
+        self._voice_worker.finished.connect(self._on_voice_test_result)
+        self._voice_worker.finished.connect(self._voice_thread.quit)
+        self._voice_thread.start()
+
+    def _on_voice_test_result(self, success: bool):
+        if success:
+            self._msg("连接测试", "✅ 讯飞语音连接成功！")
+        else:
+            self._msg("连接测试", "❌ 连接失败，请检查凭证是否正确。", warning=True)
 
     # ── 获取模型列表 ──
 

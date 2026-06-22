@@ -5,7 +5,6 @@
 """
 
 import logging
-from threading import Thread
 
 from pynput import keyboard
 from PySide6.QtCore import QObject, Signal
