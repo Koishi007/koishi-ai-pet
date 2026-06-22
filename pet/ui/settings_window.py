@@ -142,6 +142,15 @@ class SettingsWindow(QWidget):
         title.setStyleSheet(f"font-size:13px; color:{_COLOR_TEXT_TITLE}; font-weight:bold; background:transparent;")
         title_row.addWidget(title)
         title_row.addStretch()
+        btn_minimize = QPushButton("—")
+        btn_minimize.setFixedSize(36, 36)
+        btn_minimize.setStyleSheet(f"""
+            QPushButton {{ background: transparent; border: none; border-radius: 18px;
+                         font-size: 18px; color: {_COLOR_TEXT_MUTED}; }}
+            QPushButton:hover {{ background: #87CEFA; color: #fff; }}
+        """)
+        btn_minimize.clicked.connect(self.showMinimized)
+        title_row.addWidget(btn_minimize)
         btn_close = QPushButton("✕")
         btn_close.setFixedSize(36, 36)
         btn_close.setStyleSheet(f"""
