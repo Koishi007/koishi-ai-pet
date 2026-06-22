@@ -154,6 +154,11 @@ def main():
         # 错误日志
         _voice_session.error.connect(lambda msg: logger.error(f"[Voice] {msg}"))
 
+        # 非正常结束时重置热键状态
+        _voice_session.error.connect(lambda _: _hotkey_mgr.reset())
+        _voice_session.recording_stopped.connect(_hotkey_mgr.reset)
+        _voice_session.transcription_done.connect(lambda _: _hotkey_mgr.reset())
+
         _hotkey_mgr.start()
         logger.info("[Main] voice input initialized")
 
