@@ -462,7 +462,7 @@ INTERACT_WINDOW_DISAPPEARED = config.INTERACT_WINDOW_DISAPPEARED_PROMPT or (
 )
 
 def interact_fed_prompt(food: str) -> str:
-    """生成喂食交互的 user prompt。支持 .env 全覆盖。"""
+    """生成喂食交互的 user prompt。支持配置全覆盖。"""
     template = config.INTERACT_FED_PROMPT or (
         "用户给你投喂了{food}，根据你的人格用一句话（≤15字）表达反应。"
         "同时根据投喂的食物决定Vitals和Mood变化"
