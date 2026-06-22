@@ -91,9 +91,6 @@ class _VoiceTestWorker(QObject):
 class SettingsWindow(QWidget):
     _instance: SettingsWindow | None = None
 
-    voice_config_changed = Signal()  # 讯飞语音设置变更时触发
-    on_voice_config_changed = None   # main.py 设置的重连回调
-
     @classmethod
     def show_instance(cls, agent, parent=None):
         """单例模式 — 获取或创建设置窗口并显示。"""
@@ -632,20 +629,6 @@ class SettingsWindow(QWidget):
                 self.agent.scheduler.update_config()
             except Exception as e:
                 logger.exception(f"[Settings] scheduler.update_config failed: {e}")
-
-        # 语音配置变更 → 重新连接
-        voice_keys = {"XF_APPID", "XF_API_KEY", "XF_API_SECRET", "VOICE_INPUT_ENABLED", "VOICE_HOTKEY"}
-        if voice_keys & values.keys():
-            self.voice_config_changed.emit()
-            # 热重载 WS 连接
-            if self.agent and hasattr(self.agent, '_voice_session') and self.agent._voice_session:
-                vs = self.agent._voice_session
-                try:
-                    vs.disconnect()
-                    vs.connect()
-                    logger.info("[Settings] voice session reconnected")
-                except Exception as e:
-                    logger.warning(f"[Settings] voice reconnect failed: {e}")
 
         # LLM 客户端重建（在后台线程执行，避免阻塞 GUI）
         if needs_rebuild_client and self.agent and hasattr(self.agent, 'behavior'):

@@ -81,11 +81,7 @@ class XunfeiSTT(QObject):
         logger.info("[XunfeiSTT] connecting...")
 
     def _run(self):
-        self._ws.run_forever(
-            sslopt={"cert_reqs": ssl.CERT_NONE},
-            ping_interval=30,
-            ping_timeout=10,
-        )
+        self._ws.run_forever(sslopt={"cert_reqs": ssl.CERT_NONE})
 
     def _check_credentials(self) -> bool:
         if not config.XF_APPID or not config.XF_API_KEY or not config.XF_API_SECRET:
