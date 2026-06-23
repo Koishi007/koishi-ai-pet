@@ -387,6 +387,25 @@ class VectorRetriever(_MemoryRetriever):
 
     def _create_vec_table(self):
         with self._lock:
+            # 检测已有表的维度是否匹配，不匹配则重建
+            try:
+                existing = self._conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='memories_vec'"
+                ).fetchone()
+                if existing:
+                    import sqlite_vec
+                    test_vec = sqlite_vec.serialize_float32([0.0] * self._dim)
+                    self._conn.execute(
+                        "INSERT INTO memories_vec (memory_id, embedding) VALUES (-1, ?)",
+                        (test_vec,)
+                    )
+                    self._conn.execute("DELETE FROM memories_vec WHERE memory_id=-1")
+                    self._conn.commit()
+            except Exception:
+                logger.warning(f"[VectorRetriever] dimension mismatch or table error, recreating memories_vec with dim={self._dim}")
+                self._conn.execute("DROP TABLE IF EXISTS memories_vec")
+                self._conn.commit()
+
             self._conn.execute(
                 f"CREATE VIRTUAL TABLE IF NOT EXISTS memories_vec USING vec0("
                 f"memory_id INTEGER PRIMARY KEY, "

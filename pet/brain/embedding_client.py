@@ -27,6 +27,7 @@ class EmbeddingClient:
             resp = self._client.embeddings.create(
                 model=self._model,
                 input=texts,
+                dimensions=self._dim,
             )
         except Exception as e:
             raise EmbeddingError(f"Embedding API call failed: {e}") from e
