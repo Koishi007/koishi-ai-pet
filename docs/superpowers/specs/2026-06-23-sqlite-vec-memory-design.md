@@ -41,7 +41,7 @@ EmbeddingClient
 
 ## Configuration
 
-在 `config.py` 的 `_KEY_META` 中新增 5 个字段，类别均为 `connection`，在设置 UI 中归类为「记忆设置」分组：
+在 `config.py` 的 `_KEY_META` 中新增 5 个字段，类别为 `memory`（新类别，不触发现有 `connection`/`behavior` 运行时钩子），在设置 UI 中视觉归类为「记忆设置」分组：
 
 | 配置项 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
