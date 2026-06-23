@@ -407,7 +407,7 @@ class VectorRetriever(_MemoryRetriever):
     def _upsert_vector(self, memory_id: int, vector):
         """将预计算的 vector 写入 memories_vec（纯 DB 操作，不含网络 I/O）。"""
         import sqlite_vec
-        vec_bytes = sqlite_vec.serialize_float32([vector])
+        vec_bytes = sqlite_vec.serialize_float32(vector)
         self._conn.execute("DELETE FROM memories_vec WHERE memory_id=?", (memory_id,))
         self._conn.execute(
             "INSERT INTO memories_vec (memory_id, embedding) VALUES (?,?)",
@@ -478,7 +478,7 @@ class VectorRetriever(_MemoryRetriever):
         if vector is not None:
             try:
                 import sqlite_vec
-                vec_bytes = sqlite_vec.serialize_float32([vector])
+                vec_bytes = sqlite_vec.serialize_float32(vector)
                 cursor = self._conn.execute(
                     "SELECT memory_id, distance FROM memories_vec WHERE embedding MATCH ? ORDER BY distance LIMIT 5",
                     (vec_bytes,)
@@ -506,7 +506,7 @@ class VectorRetriever(_MemoryRetriever):
             vectors = self._embedder.embed(text)
             query_vec = vectors[0]
             import sqlite_vec
-            vec_bytes = sqlite_vec.serialize_float32([query_vec])
+            vec_bytes = sqlite_vec.serialize_float32(query_vec)
 
             cursor = self._conn.execute(
                 "SELECT memory_id, distance FROM memories_vec WHERE embedding MATCH ? ORDER BY distance LIMIT ?",
