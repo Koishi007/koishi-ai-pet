@@ -524,6 +524,7 @@ class MemoryStore:
 
         self._create_table()
         self._retriever = self._build_retriever(dedup_threshold)
+        logger.info(f"[MemoryStore] database: {self._db_path}, retriever: {type(self._retriever).__name__}")
 
     def _create_table(self):
         with self._lock:
@@ -565,10 +566,21 @@ class MemoryStore:
                 and config.EMBEDDING_MODEL
                 and self._try_load_vec_extension()):
             try:
-                from pet.brain.embedding_client import EmbeddingClient
+                logger.info("[MemoryStore] embedding config OK, initializing VectorRetriever")
                 return VectorRetriever(self._conn, dedup_threshold=dedup_threshold)
             except Exception as e:
                 logger.warning(f"[MemoryStore] VectorRetriever init failed: {e}, falling back to KeywordRetriever")
+        else:
+            reasons = []
+            if not config.EMBEDDING_ENABLED:
+                reasons.append("EMBEDDING_ENABLED=False")
+            if not config.EMBEDDING_URL:
+                reasons.append("EMBEDDING_URL not set")
+            if not config.EMBEDDING_KEY:
+                reasons.append("EMBEDDING_KEY not set")
+            if not config.EMBEDDING_MODEL:
+                reasons.append("EMBEDDING_MODEL not set")
+            logger.info(f"[MemoryStore] vector mode disabled ({', '.join(reasons)}), using KeywordRetriever")
         return KeywordRetriever(self._conn, dedup_threshold=dedup_threshold)
 
     def save(self, category, content, keywords, importance=3):
