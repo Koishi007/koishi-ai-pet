@@ -1,4 +1,3 @@
-
 import logging
 
 from PySide6.QtCore import QObject, QPropertyAnimation, QTimer, Signal
@@ -40,7 +39,9 @@ class ActionQueue(QObject):
         self._cursor = 0
         self._disconnect_active()
         self._actions._stop_drive(switch_idle=False)
-        # 停止正在播放的动画，防止 clear 后无人监听 animation_finished 导致卡帧
+        # 停止所有运行中的位置动画（walk hop 等），防止 clear 后宠物继续滑行
+        self._actions.stop_all_anims()
+        # 停止正在播放的帧动画，防止 clear 后无人监听 animation_finished 导致卡帧
         self._actions._anim.stop()
         self._running = False
         self.changed.emit()
@@ -57,6 +58,7 @@ class ActionQueue(QObject):
     def stop(self):
         self._disconnect_active()
         self._actions._stop_drive(switch_idle=False)
+        self._actions.stop_all_anims()
         self._actions._anim.stop()
         self._running = False
         self._stopped = True

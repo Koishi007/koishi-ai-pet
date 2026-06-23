@@ -50,6 +50,13 @@ class PetActions(QObject):
             if a.state() == QPropertyAnimation.State.Running
         ]
 
+    def stop_all_anims(self):
+        """停止所有运行中的窗口位置动画（walk hop、move_to 等），防止 clear/stop 后宠物继续滑行。"""
+        for anim in self._win_anims:
+            if anim.state() == QPropertyAnimation.State.Running:
+                anim.stop()
+        self._win_anims.clear()
+
     def move_to(self, start_pos, end_pos, duration=500, callback=None):
         """将窗口从 start_pos 移动到 end_pos，自动限制在屏幕内。"""
         self._cleanup_stopped_anims()
