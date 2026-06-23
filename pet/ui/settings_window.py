@@ -261,7 +261,7 @@ class SettingsWindow(QWidget):
         content = QWidget()
         inner = QVBoxLayout(content)
         inner.setContentsMargins(8, 8, 8, 8)
-        inner.setSpacing(0)
+        inner.setSpacing(10)
 
         form = QFormLayout()
         form.setSpacing(8)
