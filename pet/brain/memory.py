@@ -575,6 +575,7 @@ class MemoryStore:
         """Try to load sqlite-vec extension. Return True if available."""
         try:
             import sqlite_vec
+            self._conn.enable_load_extension(True)
             sqlite_vec.load(self._conn)
             return True
         except Exception as e:
