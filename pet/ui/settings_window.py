@@ -53,6 +53,33 @@ class _LLMTestWorker(QObject):
             self.finished.emit(False, str(e), elapsed)
 
 
+class _EmbeddingTestWorker(QObject):
+    """子线程执行 Embedding 连通性测试。"""
+    finished = Signal(bool, str, float)  # success, content_or_error, elapsed
+
+    def __init__(self, url, key, model, dim):
+        super().__init__()
+        self._url = url
+        self._key = key
+        self._model = model
+        self._dim = dim
+
+    def run(self):
+        import time
+        start = time.time()
+        try:
+            from pet.brain.embedding_client import EmbeddingClient
+            client = EmbeddingClient(self._url, self._key, self._model, self._dim)
+            vectors = client.embed("测试")
+            elapsed = time.time() - start
+            vec_count = len(vectors)
+            vec_dim = len(vectors[0]) if vectors else 0
+            self.finished.emit(True, f"向量维度: {vec_dim}, 响应正常 ({vec_count} 条)", elapsed)
+        except Exception as e:
+            elapsed = time.time() - start
+            self.finished.emit(False, str(e), elapsed)
+
+
 class _ModelsFetchWorker(QObject):
     """子线程获取模型列表。"""
     finished = Signal(bool, list, str)  # success, model_ids, error_msg
@@ -117,6 +144,8 @@ class SettingsWindow(QWidget):
         self._models_worker = None
         self._voice_thread = None
         self._voice_worker = None
+        self._embedding_thread = None
+        self._embedding_worker = None
         self._capture_listener = None
         self._fields = {}
         self._snapshot = {}
@@ -482,6 +511,30 @@ class SettingsWindow(QWidget):
         memory_form.addRow("向量维度:", self._line("EMBEDDING_DIM", "2048", QIntValidator(64, 8192)))
         memory_layout.addLayout(memory_form)
 
+        # 连接测试
+        mem_test_row = QHBoxLayout()
+        mem_test_row.setSpacing(6)
+        self._btn_mem_test = QPushButton("测试连接")
+        self._btn_mem_test.setStyleSheet(BUTTON_PRIMARY_QSS)
+        self._btn_mem_test.clicked.connect(self._test_embedding)
+        mem_test_row.addWidget(self._btn_mem_test)
+        self._label_mem_test = QLabel("就绪")
+        self._label_mem_test.setStyleSheet(f"color:{_COLOR_TEXT_SEC}; font-size:11px;")
+        mem_test_row.addWidget(self._label_mem_test)
+        mem_test_row.addStretch()
+        memory_layout.addLayout(mem_test_row)
+
+        self._mem_test_output = QTextEdit()
+        self._mem_test_output.setReadOnly(True)
+        self._mem_test_output.setMaximumHeight(60)
+        self._mem_test_output.setFont(QFont("Consolas", 9))
+        self._mem_test_output.setStyleSheet(TEXTEDIT_QSS + f"""
+            QTextEdit {{
+                background: {_COLOR_BG};
+            }}
+        """)
+        memory_layout.addWidget(self._mem_test_output)
+
         # 重启提示
         memory_hint = QLabel("修改记忆设置后需重启生效。")
         memory_hint.setStyleSheet(f"color:{_COLOR_WARNING}; font-size:11px; font-weight:bold;")
@@ -816,6 +869,55 @@ class SettingsWindow(QWidget):
             self._label_test.setText("❌ 失败")
         self._btn_test.setEnabled(True)
 
+    # ── Embedding 连通性测试 ──
+
+    def _test_embedding(self):
+        """在子线程测试 Embedding 连通性。"""
+        if self._embedding_thread is not None and self._embedding_thread.isRunning():
+            return
+
+        url = self._fields["EMBEDDING_URL"].text().strip()
+        key = self._fields["EMBEDDING_KEY"].text().strip()
+        model = self._fields["EMBEDDING_MODEL"].text().strip()
+        dim_str = self._fields["EMBEDDING_DIM"].text().strip()
+        try:
+            dim = int(dim_str) if dim_str else 2048
+        except ValueError:
+            self._mem_test_output.clear()
+            self._mem_test_output.append("⚠ 向量维度格式无效")
+            return
+
+        if not url or not key or not model:
+            self._mem_test_output.clear()
+            self._mem_test_output.append("⚠ 请先填写 API 地址、Key 和模型名")
+            self._label_mem_test.setText("未配置")
+            return
+
+        self._mem_test_output.clear()
+        self._mem_test_output.append("测试中...")
+        self._btn_mem_test.setEnabled(False)
+        self._label_mem_test.setText("测试中...")
+
+        self._embedding_thread = QThread()
+        self._embedding_worker = _EmbeddingTestWorker(url, key, model, dim)
+        self._embedding_worker.moveToThread(self._embedding_thread)
+        self._embedding_thread.started.connect(self._embedding_worker.run)
+        self._embedding_worker.finished.connect(self._on_embedding_test_result)
+        self._embedding_worker.finished.connect(self._embedding_thread.quit)
+        self._embedding_thread.start()
+
+    def _on_embedding_test_result(self, success: bool, content: str, elapsed: float):
+        self._mem_test_output.clear()
+        if success:
+            self._mem_test_output.append(f"✅ 连接成功 ({elapsed:.1f}s)")
+            self._mem_test_output.append(f"响应: {content[:200]}")
+            self._label_mem_test.setText("✅ 正常")
+        else:
+            self._mem_test_output.append(f"❌ 连接失败 ({elapsed:.1f}s)")
+            self._mem_test_output.append(f"错误: {content}")
+            self._label_mem_test.setText("❌ 失败")
+        self._btn_mem_test.setEnabled(True)
+
     # ── 热键录制 ──
 
     def _on_capture_hotkey(self):
@@ -995,6 +1097,9 @@ class SettingsWindow(QWidget):
         if self._models_thread is not None and self._models_thread.isRunning():
             self._models_thread.quit()
             self._models_thread.wait(2000)
+        if self._embedding_thread is not None and self._embedding_thread.isRunning():
+            self._embedding_thread.quit()
+            self._embedding_thread.wait(2000)
         super().closeEvent(event)
 
     # ── 窗口拖拽 ──
