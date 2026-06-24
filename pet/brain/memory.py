@@ -25,12 +25,31 @@ except ImportError:
     logger.info("jieba 未安装，关键词提取将使用正则降级方案")
 
 STOP_WORDS = {
-    "的", "了", "是", "在", "我", "有", "和", "就", "不", "人", "都", "一",
-    "一个", "上", "也", "很", "到", "说", "要", "去", "你", "会", "着",
-    "没有", "看", "好", "自己", "这", "他", "她", "它", "吗", "吧", "啊",
-    "呢", "什么", "那", "可以", "这个", "那个", "还", "能", "对", "让",
-    "但", "而", "或", "如果", "因为", "所以", "把", "被", "从", "比",
+    # ── 助词 ──
+    "的", "地", "得", "了", "着", "过", "吗", "呢", "吧", "啊", "呀", "哦", "哇", "嘛", "呗", "么",
+    # ── 代词 ──
+    "我", "你", "他", "她", "它", "我们", "你们", "他们", "她们", "它们",
+    "这", "那", "这个", "那个", "这些", "那些", "这里", "那里", "这样", "那样",
+    "自己", "别人", "大家", "俺", "咱", "谁", "什么", "怎么", "怎样", "为什么", "哪", "哪里",
+    # ── 介词 / 连词 ──
+    "在", "和", "与", "及", "或", "把", "被", "让", "给", "对", "从", "向", "往", "于",
+    "以", "为", "由", "跟", "同", "至于", "关于", "除了",
+    "因为", "所以", "如果", "虽然", "但是", "而且", "并且", "还是", "或者", "然后", "接着", "由于", "即使", "只要", "只有",
+    # ── 副词 ──
+    "很", "非常", "太", "更", "最", "也", "还", "就", "都", "已经", "正在", "将要", "马上", "立刻",
+    "不", "没", "没有", "不是", "不要", "不能", "别", "勿", "未", "莫",
+    "会", "能", "可以", "应该", "可能", "必须", "需要", "或许", "也许",
+    "又", "再", "只", "只是", "只有", "仅仅", "甚至", "其实", "确实", "真的", "当然",
+    "一定", "肯定", "大概", "也许", "经常", "偶尔", "一直", "总是", "从不", "永远",
+    "比如", "例如", "其实", "不过", "此外", "另外",
+    # ── 高频无意义动词 ──
+    "是", "有", "说", "做", "看", "想", "觉得", "知道", "感觉", "认为", "需要", "要", "去", "来", "到", "上", "下", "进", "出",
+    # ── 量词 / 数量词 ──
+    "个", "些", "种", "类", "一", "二", "三", "几", "多", "少",
+    # ── 时间泛指 ──
+    "现在", "以前", "以后", "之前", "之后", "今天", "明天", "昨天", "刚才", "马上", "未来",
 }
+
 
 
 class LightweightDeduplicator:
@@ -103,7 +122,9 @@ class _MemoryRetriever(ABC):
     def __init__(self, conn: sqlite3.Connection, dedup_threshold: float = 0.6):
         self._conn = conn
         self._conn.row_factory = sqlite3.Row
-        self._lock = threading.Lock()
+        # RLock（可重入）：允许同一线程多次获取，防止公共方法互调时死锁
+        # 约定：公共方法自行获取锁，_ 前缀私有方法假设调用方已持锁
+        self._lock = threading.RLock()
 
         # 召回冷却：记录每条记忆最近一次被召回的时间戳
         self._recall_times: dict[int, datetime] = {}
@@ -143,27 +164,31 @@ class _MemoryRetriever(ABC):
         return self._HALF_LIFE.get(level, self._HALF_LIFE["L2"]).get(importance, 45)
 
     def _effective_importance(self, row: dict) -> float:
-        """计算有效重要性：base + access_boost 后乘衰减因子。"""
+        """计算有效重要性：base * decay(基于创建时间) + recency_bonus(基于访问频次)。"""
         base = row.get("importance", 3)
         access_count = row.get("access_count", 0)
-        access_boost = math.log2(1 + access_count) * 0.5
-        boosted = min(5.0, base + access_boost)
 
         half_life = self._half_life(row)
         if half_life == float("inf"):
-            return boosted
+            # L1 不衰减，仅加 recency_bonus
+            recency_bonus = min(0.5, math.log2(1 + access_count) * 0.1)
+            return min(5.0, base + recency_bonus)
 
-        # 时间基准：优先 last_accessed_at，回退 created_at
-        time_str = row.get("last_accessed_at") or row.get("created_at")
+        # 衰减基于 created_at（信息自然老化，不因访问而重置）
+        time_str = row.get("created_at")
         if not time_str:
-            return boosted
+            return base
         try:
             ref_time = datetime.fromisoformat(time_str)
         except Exception:
-            return boosted
+            return base
         age_days = (datetime.now() - ref_time).total_seconds() / 86400
         decay = 0.5 ** (age_days / half_life)
-        return boosted * decay
+
+        # 访问频次作为独立加成（回忆强化），上限 0.5
+        recency_bonus = min(0.5, math.log2(1 + access_count) * 0.1)
+
+        return base * decay + recency_bonus
 
     @staticmethod
     def _merge_level(existing_level: str, new_level: str) -> str:
@@ -610,9 +635,9 @@ class VectorRetriever(_MemoryRetriever):
                 if content_changed:
                     vector = self._generate_embedding(content)
                     if vector is not None:
-                        with self._lock:
-                            self._upsert_vector(existing["id"], vector)
-                            self._conn.commit()
+                        # 已在 self._lock 内，无需再次获取
+                        self._upsert_vector(existing["id"], vector)
+                        self._conn.commit()
                 return
 
         # Phase 2: 关键词未命中 → 生成 embedding 做向量语义去重
@@ -747,7 +772,7 @@ class MemoryStore:
         self._db_path = db_path
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
 
         self._create_table()
         self._retriever = self._build_retriever(dedup_threshold)
@@ -781,7 +806,10 @@ class MemoryStore:
                 self._conn.execute("ALTER TABLE memories ADD COLUMN last_accessed_at TEXT")
                 # 回填已有数据
                 self._conn.execute("UPDATE memories SET last_accessed_at = created_at WHERE last_accessed_at IS NULL")
-            self._conn.execute("CREATE INDEX IF NOT EXISTS idx_level ON memories(level)")
+            # 复合索引：覆盖 query_core 的 WHERE level != 'L3' ORDER BY importance DESC
+            self._conn.execute("CREATE INDEX IF NOT EXISTS idx_level_importance ON memories(level, importance DESC)")
+            # 部分索引：仅索引 L3 行，加速 enforce_capacity 的过期清理
+            self._conn.execute("CREATE INDEX IF NOT EXISTS idx_l3_access ON memories(level, last_accessed_at) WHERE level='L3'")
             self._conn.commit()
 
     def _try_load_vec_extension(self) -> bool:
