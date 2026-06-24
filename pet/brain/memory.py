@@ -88,6 +88,7 @@ class _MemoryRetriever(ABC):
     # 以下值从 config 动态读取，通过 property 暴露
 
     _BLOCKED_TTL = 120  # 被拦截的记忆内容保留时间（秒）
+    _DUPLICATE_THRESHOLD = 0.85  # 近似重复阈值，高于此值才触发冷却拦截
 
     @property
     def MAX_MEMORIES(self) -> int:
@@ -485,7 +486,9 @@ class KeywordRetriever(_MemoryRetriever):
             existing, similarity = self._find_similar(content, keywords)
 
             if existing:
-                if self._is_in_cooldown(existing["id"], content):
+                # 仅近似重复(≥0.85)才受冷却限制；中等相似视为合理更新，允许合并
+                text_sim = self._deduplicator.compute_similarity(content, existing["content"])
+                if text_sim >= self._DUPLICATE_THRESHOLD and self._is_in_cooldown(existing["id"], content):
                     return
 
                 merged_content, merged_keywords, merged_importance, merged_level, _ = self._do_merge(
@@ -589,7 +592,9 @@ class VectorRetriever(_MemoryRetriever):
         with self._lock:
             existing, similarity = self._keyword_find_similar(content, keywords)
             if existing:
-                if self._is_in_cooldown(existing["id"], content):
+                # 仅近似重复(≥0.85)才受冷却限制；中等相似视为合理更新，允许合并
+                text_sim = self._deduplicator.compute_similarity(content, existing["content"])
+                if text_sim >= self._DUPLICATE_THRESHOLD and self._is_in_cooldown(existing["id"], content):
                     return
                 merged_content, merged_keywords, merged_importance, merged_level, content_changed = self._do_merge(
                     existing, content, keywords, importance, level
@@ -620,8 +625,8 @@ class VectorRetriever(_MemoryRetriever):
                 # 向量相似但内容差异大 → 视为新记忆，不走冷却
                 text_sim = self._deduplicator.compute_similarity(content, existing["content"])
                 if text_sim >= self._deduplicator.sim_threshold:
-                    # 内容确实相似，检查冷却
-                    if self._is_in_cooldown(existing["id"], content):
+                    # 仅近似重复(≥0.85)才受冷却限制；中等相似视为合理更新，允许合并
+                    if text_sim >= self._DUPLICATE_THRESHOLD and self._is_in_cooldown(existing["id"], content):
                         return
                     merged_content, merged_keywords, merged_importance, merged_level, content_changed = self._do_merge(
                         existing, content, keywords, importance, level
