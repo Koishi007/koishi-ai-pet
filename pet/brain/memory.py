@@ -87,6 +87,8 @@ class _MemoryRetriever(ABC):
     # 记忆被召回后多长时间内禁止被 LLM 再次保存
     # 以下值从 config 动态读取，通过 property 暴露
 
+    _BLOCKED_TTL = 120  # 被拦截的记忆内容保留时间（秒）
+
     @property
     def MAX_MEMORIES(self) -> int:
         from config import config
@@ -104,6 +106,9 @@ class _MemoryRetriever(ABC):
 
         # 召回冷却：记录每条记忆最近一次被召回的时间戳
         self._recall_times: dict[int, datetime] = {}
+
+        # 最近被冷却拦截的记忆内容（用于上下文反馈，避免 LLM 重复输出）
+        self._recently_blocked: list[tuple[str, datetime]] = []
 
         self._deduplicator = LightweightDeduplicator(sim_threshold=dedup_threshold)
         logger.info(f"[{self.__class__.__name__}] 初始化完成，轻量去重阈值: {dedup_threshold}")
@@ -166,8 +171,8 @@ class _MemoryRetriever(ABC):
 
     # ── Shared concrete methods ──
 
-    def _is_in_cooldown(self, memory_id: int) -> bool:
-        """检查记忆是否在召回冷却期内。"""
+    def _is_in_cooldown(self, memory_id: int, content: str = "") -> bool:
+        """检查记忆是否在召回冷却期内。content 用于记录被拦截的内容。"""
         last_recall = self._recall_times.get(memory_id)
         if last_recall:
             elapsed = (datetime.now() - last_recall).total_seconds()
@@ -175,8 +180,22 @@ class _MemoryRetriever(ABC):
                 logger.info(
                     f"[{self.__class__.__name__}] 记忆冷却中，跳过保存 (距召回 {elapsed:.0f}s)"
                 )
+                if content:
+                    self._record_blocked(content)
                 return True
         return False
+
+    def _record_blocked(self, content: str):
+        """记录被冷却拦截的记忆内容，供上下文反馈使用。"""
+        self._recently_blocked.append((content, datetime.now()))
+        # 清理过期记录
+        cutoff = datetime.now() - timedelta(seconds=self._BLOCKED_TTL)
+        self._recently_blocked = [(c, t) for c, t in self._recently_blocked if t > cutoff]
+
+    def get_recently_blocked(self) -> list[str]:
+        """返回最近被拦截的记忆内容列表（未过期的）。"""
+        cutoff = datetime.now() - timedelta(seconds=self._BLOCKED_TTL)
+        return [c for c, t in self._recently_blocked if t > cutoff]
 
     @staticmethod
     def _do_merge(existing, content: str, keywords: list[str], importance: int, level: str = "L2"):
@@ -297,6 +316,15 @@ class _MemoryRetriever(ABC):
         for m in results:
             tag = "（重要）" if self._effective_importance(m) >= 3.5 else ""
             lines.append(f"- {m['content']}{tag}")
+
+        # 附加最近被拦截的记忆，提示 LLM 不要重复输出
+        blocked = self.get_recently_blocked()
+        if blocked:
+            lines.append("")
+            lines.append("（以下信息已记录或正在保存，请勿重复输出 Memory 行）")
+            for b in blocked:
+                lines.append(f"- {b}")
+
         return "\n".join(lines)
 
     def _extract_keywords(self, text: str) -> list[str]:
@@ -457,7 +485,7 @@ class KeywordRetriever(_MemoryRetriever):
             existing, similarity = self._find_similar(content, keywords)
 
             if existing:
-                if self._is_in_cooldown(existing["id"]):
+                if self._is_in_cooldown(existing["id"], content):
                     return
 
                 merged_content, merged_keywords, merged_importance, merged_level, _ = self._do_merge(
@@ -561,7 +589,7 @@ class VectorRetriever(_MemoryRetriever):
         with self._lock:
             existing, similarity = self._keyword_find_similar(content, keywords)
             if existing:
-                if self._is_in_cooldown(existing["id"]):
+                if self._is_in_cooldown(existing["id"], content):
                     return
                 merged_content, merged_keywords, merged_importance, merged_level, content_changed = self._do_merge(
                     existing, content, keywords, importance, level
@@ -589,19 +617,28 @@ class VectorRetriever(_MemoryRetriever):
             existing, similarity = self._find_similar_with_vector(content, keywords, vector)
 
             if existing:
-                if self._is_in_cooldown(existing["id"]):
-                    return
-                merged_content, merged_keywords, merged_importance, merged_level, content_changed = self._do_merge(
-                    existing, content, keywords, importance, level
-                )
-                self._conn.execute(
-                    "UPDATE memories SET content=?, keywords=?, importance=?, level=? WHERE id=?",
-                    (merged_content, ",".join(merged_keywords), merged_importance, merged_level, existing["id"])
-                )
-                if content_changed and vector is not None:
-                    self._upsert_vector(existing["id"], vector)
-                logger.info(f"[VectorRetriever] memory merged via vector (sim:{similarity:.2f}): {content[:20]}...")
-            else:
+                # 向量相似但内容差异大 → 视为新记忆，不走冷却
+                text_sim = self._deduplicator.compute_similarity(content, existing["content"])
+                if text_sim >= self._deduplicator.sim_threshold:
+                    # 内容确实相似，检查冷却
+                    if self._is_in_cooldown(existing["id"], content):
+                        return
+                    merged_content, merged_keywords, merged_importance, merged_level, content_changed = self._do_merge(
+                        existing, content, keywords, importance, level
+                    )
+                    self._conn.execute(
+                        "UPDATE memories SET content=?, keywords=?, importance=?, level=? WHERE id=?",
+                        (merged_content, ",".join(merged_keywords), merged_importance, merged_level, existing["id"])
+                    )
+                    if content_changed and vector is not None:
+                        self._upsert_vector(existing["id"], vector)
+                    logger.info(f"[VectorRetriever] memory merged via vector (sim:{similarity:.2f}): {content[:20]}...")
+                else:
+                    # 内容差异大 → 保存为新记忆
+                    logger.info(f"[VectorRetriever] vector similar but text diff ({text_sim:.2f}), save as new: {content[:20]}...")
+                    existing = None  # 标记为需要新建
+
+            if not existing:
                 self._conn.execute(
                     "INSERT INTO memories (category, content, keywords, importance, level, created_at, has_embedding) VALUES (?,?,?,?,?,?,0)",
                     (category, content, ",".join(keywords), importance, level, datetime.now().isoformat())
