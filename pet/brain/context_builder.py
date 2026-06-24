@@ -1,5 +1,6 @@
 """LLM 请求上下文的构建"""
 
+from datetime import datetime
 from typing import Optional
 
 from pet.brain import prompts
@@ -54,7 +55,7 @@ class ContextBuilder:
         mode = "chat_vision" if vision else "chat_non_vision"
         system = self._build_system(mode, "chat", user_message=user_message)
         history = self._build_history()
-        ctx = window_context + "\n" + history
+        ctx = self._time_prefix() + "\n" + window_context + "\n" + history
         if vision:
             user_content = prompts.chat_vision_user_prompt(user_message, ctx)
             return [
@@ -120,9 +121,28 @@ class ContextBuilder:
 
         return content
 
+    def _time_prefix(self) -> str:
+        """当前时间信息，注入 user prompt 顶部（不放 system prompt 以免破坏缓存）。"""
+        now = datetime.now()
+        weekday = "工作日" if now.weekday() < 5 else "周末"
+        hour = now.hour
+        if hour < 6:
+            period = "凌晨"
+        elif hour < 12:
+            period = "上午"
+        elif hour < 14:
+            period = "中午"
+        elif hour < 18:
+            period = "下午"
+        elif hour < 22:
+            period = "晚上"
+        else:
+            period = "深夜"
+        return f"当前时间: {now.strftime('%Y-%m-%d %H:%M')} {weekday} {period}"
+
     def _build_user_context(self, window_context: str) -> str:
         """窗口探测文本 + 历史对话（非当前输入）+ 近期行为历史（给 decide 模式用）。"""
-        ctx = window_context or "no context"
+        ctx = self._time_prefix() + "\n" + (window_context or "no context")
         if self._brain:
             user_msgs = self._brain.get_recent_user_messages(3, skip_last=1)
             if user_msgs:

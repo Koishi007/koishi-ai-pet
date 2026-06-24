@@ -2,6 +2,7 @@
 
 import sqlite3
 import re
+import math
 import logging
 import threading
 from datetime import datetime, timedelta
@@ -94,13 +95,58 @@ class _MemoryRetriever(ABC):
     # ── Abstract methods (subclass-specific) ──
 
     @abstractmethod
-    def save(self, category: str, content: str, keywords: list[str], importance: int): ...
+    def save(self, category: str, content: str, keywords: list[str], importance: int, level: str = "L2"): ...
 
     @abstractmethod
     def find_similar(self, content: str, keywords: list[str]) -> Tuple[Optional[dict], float]: ...
 
     @abstractmethod
     def query_by_text(self, text: str, limit: int = 3) -> list[dict]: ...
+
+    # ── 记忆分级与衰减 ──
+
+    _LEVEL_ORDER = {"L1": 0, "L2": 1, "L3": 2}
+    _HALF_LIFE = {
+        "L1": {},  # L1 不衰减
+        "L2": {5: 90, 4: 60, 3: 45, 2: 30, 1: 21},
+        "L3": {5: 3, 4: 3, 3: 2, 2: 1, 1: 1},
+    }
+
+    def _half_life(self, row: dict) -> float:
+        """返回半衰期天数，L1 返回 inf。"""
+        level = row.get("level", "L2")
+        if level == "L1":
+            return float("inf")
+        importance = row.get("importance", 3)
+        return self._HALF_LIFE.get(level, self._HALF_LIFE["L2"]).get(importance, 45)
+
+    def _effective_importance(self, row: dict) -> float:
+        """计算有效重要性：base + access_boost 后乘衰减因子。"""
+        base = row.get("importance", 3)
+        access_count = row.get("access_count", 0)
+        access_boost = math.log2(1 + access_count) * 0.5
+        boosted = min(5.0, base + access_boost)
+
+        half_life = self._half_life(row)
+        if half_life == float("inf"):
+            return boosted
+
+        # 时间基准：优先 last_accessed_at，回退 created_at
+        time_str = row.get("last_accessed_at") or row.get("created_at")
+        if not time_str:
+            return boosted
+        try:
+            ref_time = datetime.fromisoformat(time_str)
+        except Exception:
+            return boosted
+        age_days = (datetime.now() - ref_time).total_seconds() / 86400
+        decay = 0.5 ** (age_days / half_life)
+        return boosted * decay
+
+    @staticmethod
+    def _merge_level(existing_level: str, new_level: str) -> str:
+        """合并时取较高 level（L1 > L2 > L3）。"""
+        return min(existing_level, new_level, key=lambda l: _MemoryRetriever._LEVEL_ORDER.get(l, 1))
 
     # ── Shared concrete methods ──
 
@@ -117,15 +163,16 @@ class _MemoryRetriever(ABC):
         return False
 
     @staticmethod
-    def _do_merge(existing, content: str, keywords: list[str], importance: int):
-        """合并策略：保留较长内容和合并关键词，返回 (content, keywords, importance, content_changed)。"""
+    def _do_merge(existing, content: str, keywords: list[str], importance: int, level: str = "L2"):
+        """合并策略：保留较长内容和合并关键词，取较高 level，返回 (content, keywords, importance, level, content_changed)。"""
         merged_content = content if len(content) >= len(existing["content"]) else existing["content"]
         merged_keywords = list(set(existing["keywords"].split(",") + keywords))
         merged_importance = existing["importance"]
+        merged_level = _MemoryRetriever._merge_level(existing.get("level", "L2"), level)
         content_changed = len(content) > len(existing["content"])
         if content_changed:
             merged_importance = max(existing["importance"], importance)
-        return merged_content, merged_keywords, merged_importance, content_changed
+        return merged_content, merged_keywords, merged_importance, merged_level, content_changed
 
     def save_from_line(self, line: str):
         """Parse and save a memory from LLM output line."""
@@ -144,6 +191,7 @@ class _MemoryRetriever(ABC):
         content = parts[0] if parts else rest
         keywords = []
         importance = 3
+        level = "L2"
 
         for part in parts[1:]:
             part_stripped = part.strip()
@@ -155,21 +203,41 @@ class _MemoryRetriever(ABC):
                     importance = int(part_stripped[11:].strip())
                 except ValueError:
                     pass
+            elif part_stripped.startswith("level:"):
+                lvl = part_stripped[6:].strip().upper()
+                if lvl in ("L1", "L2", "L3"):
+                    level = lvl
 
         if not keywords:
             keywords = self._extract_keywords(content)
 
         importance = max(1, min(5, importance))
-        self.save(category, content, keywords, importance)
+        # 级别-重要性一致性兜底
+        # L1 是核心事实，importance 至少为 3
+        if level == "L1" and importance < 3:
+            importance = 3
+        # L3 是临时信息，importance 最高不超过 4（5 仅留给 L1/L2 核心记忆）
+        if level == "L3" and importance > 4:
+            importance = 4
+        # 自动降级：importance <= 2 且非 L1 → L3
+        if importance <= 2 and level != "L1":
+            level = "L3"
+        self.save(category, content, keywords, importance, level)
 
     def query_core(self, limit: int = 5) -> list[dict]:
         with self._lock:
             rows = self._conn.execute(
-                "SELECT * FROM memories WHERE importance >= 4 ORDER BY importance DESC, created_at DESC LIMIT ?",
-                (limit,)
+                "SELECT * FROM memories WHERE level != 'L3' ORDER BY importance DESC, created_at DESC LIMIT ?",
+                (limit * 5,)
             ).fetchall()
-        self.touch(rows)
-        return [dict(r) for r in rows]
+        result_dicts = [dict(r) for r in rows]
+        # 按 effective_importance 过滤和排序
+        scored = [(r, self._effective_importance(r)) for r in result_dicts]
+        filtered = [r for r, s in scored if s >= 3.5]
+        filtered.sort(key=lambda r: self._effective_importance(r), reverse=True)
+        filtered = filtered[:limit]
+        self.touch(filtered)
+        return filtered
 
     def query_recent(self, hours: int = 24, limit: int = 3) -> list[dict]:
         since = (datetime.now() - timedelta(hours=hours)).isoformat()
@@ -211,7 +279,7 @@ class _MemoryRetriever(ABC):
 
         lines = []
         for m in results:
-            tag = "（重要）" if m["importance"] >= 4 else ""
+            tag = "（重要）" if self._effective_importance(m) >= 3.5 else ""
             lines.append(f"- {m['content']}{tag}")
         return "\n".join(lines)
 
@@ -271,7 +339,7 @@ class _MemoryRetriever(ABC):
 
         with self._lock:
             rows = self._conn.execute(
-                f"SELECT * FROM memories WHERE {conditions} ORDER BY importance DESC, created_at DESC LIMIT ?",
+                f"SELECT * FROM memories WHERE {conditions} AND level != 'L3' ORDER BY importance DESC, created_at DESC LIMIT ?",
                 params + [limit * 3]
             ).fetchall()
 
@@ -279,8 +347,10 @@ class _MemoryRetriever(ABC):
             row_kws = set(row["keywords"].split(","))
             return len(row_kws & set(keywords))
 
-        rows = sorted(rows, key=match_score, reverse=True)[:limit]
         result_dicts = [dict(r) for r in rows]
+        # 先按关键词命中数筛选，再按 effective_importance 排序
+        result_dicts.sort(key=lambda r: (match_score(r), self._effective_importance(r)), reverse=True)
+        result_dicts = result_dicts[:limit]
         self.touch(result_dicts)
         return result_dicts
 
@@ -291,11 +361,12 @@ class _MemoryRetriever(ABC):
             ids = ids_or_rows
         else:
             ids = [r["id"] for r in ids_or_rows]
+        now = datetime.now().isoformat()
         with self._lock:
             placeholders = ",".join(["?"] * len(ids))
             self._conn.execute(
-                f"UPDATE memories SET access_count = access_count + 1 WHERE id IN ({placeholders})",
-                ids
+                f"UPDATE memories SET access_count = access_count + 1, last_accessed_at = ? WHERE id IN ({placeholders})",
+                [now] + ids
             )
             self._conn.commit()
 
@@ -303,23 +374,56 @@ class _MemoryRetriever(ABC):
         """容量控制（需在已有 lock 内调用）"""
         count = self._conn.execute("SELECT COUNT(*) FROM memories").fetchall()[0][0]
         if count <= self.MAX_MEMORIES:
+            # 未超容量，但仍执行轻量 L3 硬清理（仅当存在过期 L3 时才写）
+            cutoff_l3 = (datetime.now() - timedelta(days=3)).isoformat()
+            stale = self._conn.execute(
+                "SELECT 1 FROM memories WHERE level='L3' AND COALESCE(last_accessed_at, created_at) < ? LIMIT 1",
+                (cutoff_l3,)
+            ).fetchone()
+            if stale:
+                self._conn.execute(
+                    "DELETE FROM memories WHERE level='L3' AND COALESCE(last_accessed_at, created_at) < ?",
+                    (cutoff_l3,)
+                )
+                self._conn.commit()
             return
 
-        cutoff = (datetime.now() - timedelta(days=30)).isoformat()
+        # 阶段 0：L3 硬清理 — 超过 3 天未访问的 L3 记忆直接删除
+        cutoff_l3 = (datetime.now() - timedelta(days=3)).isoformat()
         self._conn.execute(
-            "DELETE FROM memories WHERE importance <= 2 AND created_at < ? AND access_count <= 1",
-            (cutoff,)
+            "DELETE FROM memories WHERE level='L3' AND COALESCE(last_accessed_at, created_at) < ?",
+            (cutoff_l3,)
         )
         self._conn.commit()
 
         count = self._conn.execute("SELECT COUNT(*) FROM memories").fetchall()[0][0]
-        if count > self.MAX_MEMORIES:
-            excess = count - self.MAX_MEMORIES
-            self._conn.execute(
-                "DELETE FROM memories WHERE id IN (SELECT id FROM memories ORDER BY importance ASC, created_at ASC LIMIT ?)",
-                (excess,)
-            )
-            self._conn.commit()
+        if count <= self.MAX_MEMORIES:
+            return
+
+        # 阶段 1：删除 L3 中 access_count <= 1 的旧记忆
+        cutoff = (datetime.now() - timedelta(days=1)).isoformat()
+        self._conn.execute(
+            "DELETE FROM memories WHERE level='L3' AND COALESCE(last_accessed_at, created_at) < ? AND access_count <= 1",
+            (cutoff,)
+        )
+        self._conn.commit()
+
+        # 阶段 2：L1 完全豁免，仅在 L2/L3 中按 effective_importance 淘汰
+        total = self._conn.execute("SELECT COUNT(*) FROM memories").fetchall()[0][0]
+        if total > self.MAX_MEMORIES:
+            rows = self._conn.execute(
+                "SELECT id, importance, access_count, level, created_at, last_accessed_at FROM memories WHERE level != 'L1'"
+            ).fetchall()
+            sorted_rows = sorted(rows, key=lambda r: self._effective_importance(dict(r)))
+            excess = total - self.MAX_MEMORIES
+            ids_to_delete = [r["id"] for r in sorted_rows[:excess]]
+            if ids_to_delete:
+                placeholders = ",".join(["?"] * len(ids_to_delete))
+                self._conn.execute(
+                    f"DELETE FROM memories WHERE id IN ({placeholders})",
+                    ids_to_delete
+                )
+                self._conn.commit()
 
     def close(self):
         with self._lock:
@@ -330,7 +434,7 @@ class _MemoryRetriever(ABC):
 
 class KeywordRetriever(_MemoryRetriever):
 
-    def save(self, category: str, content: str, keywords: list[str], importance: int = 3):
+    def save(self, category: str, content: str, keywords: list[str], importance: int = 3, level: str = "L2"):
         with self._lock:
             existing, similarity = self._find_similar(content, keywords)
 
@@ -338,18 +442,18 @@ class KeywordRetriever(_MemoryRetriever):
                 if self._is_in_cooldown(existing["id"]):
                     return
 
-                merged_content, merged_keywords, merged_importance, _ = self._do_merge(
-                    existing, content, keywords, importance
+                merged_content, merged_keywords, merged_importance, merged_level, _ = self._do_merge(
+                    existing, content, keywords, importance, level
                 )
                 self._conn.execute(
-                    "UPDATE memories SET content=?, keywords=?, importance=? WHERE id=?",
-                    (merged_content, ",".join(merged_keywords), merged_importance, existing["id"])
+                    "UPDATE memories SET content=?, keywords=?, importance=?, level=? WHERE id=?",
+                    (merged_content, ",".join(merged_keywords), merged_importance, merged_level, existing["id"])
                 )
                 logger.info(f"[KeywordRetriever] 记忆合并 (相似度:{similarity:.2f}): {content[:20]}...")
             else:
                 self._conn.execute(
-                    "INSERT INTO memories (category, content, keywords, importance, created_at) VALUES (?,?,?,?,?)",
-                    (category, content, ",".join(keywords), importance, datetime.now().isoformat())
+                    "INSERT INTO memories (category, content, keywords, importance, level, created_at) VALUES (?,?,?,?,?,?)",
+                    (category, content, ",".join(keywords), importance, level, datetime.now().isoformat())
                 )
 
             self._conn.commit()
@@ -434,19 +538,19 @@ class VectorRetriever(_MemoryRetriever):
         )
         self._conn.execute("UPDATE memories SET has_embedding=1 WHERE id=?", (memory_id,))
 
-    def save(self, category: str, content: str, keywords: list[str], importance: int = 3):
+    def save(self, category: str, content: str, keywords: list[str], importance: int = 3, level: str = "L2"):
         # Phase 1: 关键词优先去重
         with self._lock:
             existing, similarity = self._keyword_find_similar(content, keywords)
             if existing:
                 if self._is_in_cooldown(existing["id"]):
                     return
-                merged_content, merged_keywords, merged_importance, content_changed = self._do_merge(
-                    existing, content, keywords, importance
+                merged_content, merged_keywords, merged_importance, merged_level, content_changed = self._do_merge(
+                    existing, content, keywords, importance, level
                 )
                 self._conn.execute(
-                    "UPDATE memories SET content=?, keywords=?, importance=? WHERE id=?",
-                    (merged_content, ",".join(merged_keywords), merged_importance, existing["id"])
+                    "UPDATE memories SET content=?, keywords=?, importance=?, level=? WHERE id=?",
+                    (merged_content, ",".join(merged_keywords), merged_importance, merged_level, existing["id"])
                 )
                 self._conn.commit()
                 self.enforce_capacity()
@@ -469,20 +573,20 @@ class VectorRetriever(_MemoryRetriever):
             if existing:
                 if self._is_in_cooldown(existing["id"]):
                     return
-                merged_content, merged_keywords, merged_importance, content_changed = self._do_merge(
-                    existing, content, keywords, importance
+                merged_content, merged_keywords, merged_importance, merged_level, content_changed = self._do_merge(
+                    existing, content, keywords, importance, level
                 )
                 self._conn.execute(
-                    "UPDATE memories SET content=?, keywords=?, importance=? WHERE id=?",
-                    (merged_content, ",".join(merged_keywords), merged_importance, existing["id"])
+                    "UPDATE memories SET content=?, keywords=?, importance=?, level=? WHERE id=?",
+                    (merged_content, ",".join(merged_keywords), merged_importance, merged_level, existing["id"])
                 )
                 if content_changed and vector is not None:
                     self._upsert_vector(existing["id"], vector)
                 logger.info(f"[VectorRetriever] memory merged via vector (sim:{similarity:.2f}): {content[:20]}...")
             else:
                 self._conn.execute(
-                    "INSERT INTO memories (category, content, keywords, importance, created_at, has_embedding) VALUES (?,?,?,?,?,0)",
-                    (category, content, ",".join(keywords), importance, datetime.now().isoformat())
+                    "INSERT INTO memories (category, content, keywords, importance, level, created_at, has_embedding) VALUES (?,?,?,?,?,?,0)",
+                    (category, content, ",".join(keywords), importance, level, datetime.now().isoformat())
                 )
                 new_id = self._conn.execute("SELECT last_insert_rowid()").fetchall()[0][0]
                 if vector is not None:
@@ -535,7 +639,9 @@ class VectorRetriever(_MemoryRetriever):
             if not vec_rows:
                 return []
 
-            memory_ids = [r[0] for r in vec_rows]
+            # distance → similarity (0~1)
+            id_to_sim = {r[0]: 1.0 - min(r[1], 1.0) for r in vec_rows}
+            memory_ids = list(id_to_sim.keys())
 
             with self._lock:
                 rows = self._conn.execute(
@@ -545,9 +651,22 @@ class VectorRetriever(_MemoryRetriever):
 
             id_to_row = {r["id"]: dict(r) for r in rows}
             ordered = [id_to_row[mid] for mid in memory_ids if mid in id_to_row]
+            # 严格隔离 L3：不参与向量检索
+            ordered = [r for r in ordered if r.get("level", "L2") != "L3"]
 
-            # Re-rank by importance DESC, then created_at DESC
-            ordered.sort(key=lambda r: (r["importance"], r["created_at"]), reverse=True)
+            # 加权重排序：相似度为主（0.7），effective_importance 归一化加权（0.2），时效性加权（0.1）
+            now = datetime.now()
+            def rerank_score(r):
+                sim = id_to_sim.get(r["id"], 0.0)
+                eff_imp = self._effective_importance(r) / 5.0
+                try:
+                    age_hours = (now - datetime.fromisoformat(r.get("created_at", ""))).total_seconds() / 3600
+                except Exception:
+                    age_hours = 9999
+                recency = 1.0 / (1.0 + age_hours / 24)
+                return 0.7 * sim + 0.2 * eff_imp + 0.1 * recency
+
+            ordered.sort(key=rerank_score, reverse=True)
             ordered = ordered[:limit]
 
             self.touch([r["id"] for r in ordered])
@@ -589,11 +708,20 @@ class MemoryStore:
             """)
             self._conn.execute("CREATE INDEX IF NOT EXISTS idx_importance ON memories(importance DESC)")
             self._conn.execute("CREATE INDEX IF NOT EXISTS idx_created ON memories(created_at DESC)")
-            # Add has_embedding column idempotently
+            # Idempotent column migrations
             cursor = self._conn.execute("PRAGMA table_info(memories)")
             cols = [row[1] for row in cursor.fetchall()]
             if "has_embedding" not in cols:
                 self._conn.execute("ALTER TABLE memories ADD COLUMN has_embedding INTEGER DEFAULT 0")
+            if "level" not in cols:
+                self._conn.execute("ALTER TABLE memories ADD COLUMN level TEXT DEFAULT 'L2'")
+                # 存量数据按 importance 重新分级
+                self._conn.execute("UPDATE memories SET level='L3' WHERE importance <= 2")
+            if "last_accessed_at" not in cols:
+                self._conn.execute("ALTER TABLE memories ADD COLUMN last_accessed_at TEXT")
+                # 回填已有数据
+                self._conn.execute("UPDATE memories SET last_accessed_at = created_at WHERE last_accessed_at IS NULL")
+            self._conn.execute("CREATE INDEX IF NOT EXISTS idx_level ON memories(level)")
             self._conn.commit()
 
     def _try_load_vec_extension(self) -> bool:
@@ -636,14 +764,19 @@ class MemoryStore:
         logger.info(f"[MemoryStore] vector mode disabled ({', '.join(reasons)}), using KeywordRetriever")
         return KeywordRetriever(self._conn, dedup_threshold=dedup_threshold)
 
-    def save(self, category, content, keywords, importance=3):
-        return self._retriever.save(category, content, keywords, importance)
+    def save(self, category, content, keywords, importance=3, level="L2"):
+        return self._retriever.save(category, content, keywords, importance, level)
 
     def save_from_line(self, line: str):
         return self._retriever.save_from_line(line)
 
     def retrieve_context(self, user_message: str) -> str:
         return self._retriever.retrieve_context(user_message)
+
+    def maintenance(self):
+        """定期维护：L3 硬清理 + 容量控制。"""
+        with self._retriever._lock:
+            self._retriever.enforce_capacity()
 
     def close(self):
         self._retriever.close()

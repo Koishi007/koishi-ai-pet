@@ -31,6 +31,7 @@ class ScheduledTasks:
         scheduler.register("slow", self._agent.vitals.check_thresholds)
         scheduler.register("slow", self._agent.mood.save)
         scheduler.register("slow", self._agent.mood.check_thresholds)
+        scheduler.register("slow", self._memory_maintenance)
 
     # ── mid ──
 
@@ -120,3 +121,10 @@ class ScheduledTasks:
             sm.transition(PetState.IDLE)
             logger.info(f"[{ts}] [PetAgent] slow_tick: woke up, emitting stretch")
             self._agent._emit_action("stretch", (), {})
+
+    def _memory_maintenance(self):
+        """定期维护记忆：L3 硬清理 + 容量控制。"""
+        try:
+            self._agent.behavior._memory_store.maintenance()
+        except Exception as e:
+            logger.debug(f"[ScheduledTasks] memory maintenance skipped: {e}")
