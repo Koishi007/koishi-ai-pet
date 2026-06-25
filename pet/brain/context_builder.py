@@ -37,7 +37,7 @@ class ContextBuilder:
             return self._build_multi_turn_autonomous(system, window_context, vision, base64_img)
 
         # 非多轮模式：压扁文本
-        ctx_str = self._build_user_context(window_context)
+        ctx_str = self._build_one_turn_autonomous(window_context)
         return self._wrap_user_prompt(system, ctx_str, vision, base64_img,
                                       prompt_fn=prompts.autonomous_vision_user_prompt if vision
                                       else prompts.autonomous_non_vision_user_prompt)
@@ -54,7 +54,7 @@ class ContextBuilder:
             return self._build_multi_turn_chat(system, user_message, window_context, vision, base64_img)
 
         # 非多轮模式：压扁文本
-        history = self._build_history()
+        history = self._build_one_turn_chat()
         ctx = self._time_prefix() + "\n" + window_context + "\n" + history
         prompt_fn = prompts.chat_vision_user_prompt if vision else prompts.chat_non_vision_user_prompt
         user_content = prompt_fn(user_message, ctx)
@@ -193,8 +193,8 @@ class ContextBuilder:
             period = "深夜"
         return f"当前时间: {now.strftime('%Y-%m-%d %H:%M')} {weekday} {period}"
 
-    def _build_user_context(self, window_context: str) -> str:
-        """窗口探测文本 + 历史对话（去重后）+ 近期行为历史（给 decide 模式用）。"""
+    def _build_one_turn_autonomous(self, window_context: str) -> str:
+        """单轮自主决策的用户文本"""
         ctx = self._time_prefix() + "\n" + (window_context or "no context")
         if self._brain:
             # 使用去重方法一次遍历获取 user 消息 + 全部上下文
@@ -208,8 +208,8 @@ class ContextBuilder:
                 ctx += f"\nRecent: {recent}"
         return ctx
 
-    def _build_history(self) -> str:
-        """近期对话/行为记录的格式化文本（给 chat 模式用）"""
+    def _build_one_turn_chat(self) -> str:
+        """单轮对话的用户文本"""
         if self._brain:
             text = self._brain.get_context_for_llm(
                 9, skip_last=1, token_budget=config.CONTEXT_TOKEN_BUDGET,

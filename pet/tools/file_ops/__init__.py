@@ -45,6 +45,7 @@ def register(registry):
             "path": {"type": "str", "required": True, "desc": "文件路径"},
             "content": {"type": "str", "required": True, "desc": "写入内容"},
             "mode": {"type": "str", "required": False, "default": "w",
-                     "desc": "写入模式: w=覆盖, a=追加"},
+                     "desc": "写入模式: w=覆盖, a=追加",
+                     "enum": ["w", "a"]},
         },
     )

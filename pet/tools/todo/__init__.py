@@ -89,7 +89,8 @@ def register(registry):
         handler=_instance.list_todos,
         args={
             "status": {"type": "str", "required": False, "default": "pending",
-                       "desc": "状态: pending/done/all"},
+                       "desc": "状态: pending/done/all",
+                       "enum": ["pending", "done", "all"]},
         },
     )
 

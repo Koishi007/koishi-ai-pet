@@ -16,6 +16,7 @@ def register(registry):
         TOOL_NAME, "search",
         "搜索网络获取最新信息（返回标题和摘要，速度快）",
         handler=search,
+        timeout=15.0,
         args={
             "query": {
                 "type": "str",
@@ -33,6 +34,7 @@ def register(registry):
                 "required": False,
                 "default": "zh-CN",
                 "desc": "语言/区域代码（zh-CN / en-US / ja-JP 等）",
+                "enum": ["zh-CN", "en-US", "ja-JP"],
             },
         },
     )
@@ -40,6 +42,7 @@ def register(registry):
         TOOL_NAME, "deep_search",
         "深度搜索：搜索后自动抓取前几条结果的页面正文，信息更完整详细（比 search 慢）",
         handler=deep_search,
+        timeout=60.0,
         args={
             "query": {
                 "type": "str",
@@ -57,6 +60,7 @@ def register(registry):
                 "required": False,
                 "default": "zh-CN",
                 "desc": "语言/区域代码",
+                "enum": ["zh-CN", "en-US", "ja-JP"],
             },
             "extract_top": {
                 "type": "int",

@@ -53,6 +53,7 @@ def register(registry):
             TOOL_NAME, "read_url",
             "用无头浏览器打开URL并提取页面正文文本，能获取完整内容（包括需要滚动才能看到的部分）",
             handler=_instance.read_url,
+            timeout=30.0,
             args={
                 "url": {"type": "str", "required": True, "desc": "要读取的网页地址（包含 http/https）"},
                 "max_chars": {"type": "int", "required": False, "desc": "最大返回字符数", "default": 8000},
@@ -63,6 +64,7 @@ def register(registry):
             TOOL_NAME, "screenshot_url",
             "用无头浏览器打开URL并截图，可以\"看到\"网页外观",
             handler=_instance.screenshot_url,
+            timeout=30.0,
             args={
                 "url": {"type": "str", "required": True, "desc": "要截图的网页地址（包含 http/https）"},
                 "width": {"type": "int", "required": False, "desc": "视口宽度(px)", "default": 1280},

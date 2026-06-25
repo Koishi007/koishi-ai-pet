@@ -156,6 +156,7 @@ class PetAgent(QObject):
 
         window_context = self._build_window_context(pet_x, pet_y)
         context = window_context if window_context else ""
+        self.behavior.add_context(role="user", content="(自主决策触发)")
 
         stream_started = False
         self._active_stream_id += 1

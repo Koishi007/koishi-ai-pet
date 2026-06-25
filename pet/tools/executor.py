@@ -2,6 +2,7 @@
 
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 
@@ -57,7 +58,9 @@ class ToolExecutor:
             return ToolResult(name=call.name, success=False, error=err)
 
         try:
-            data = method.handler(**validated_args)
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(method.handler, **validated_args)
+                data = future.result(timeout=method.timeout)
             logger.info(f"[ToolExecutor] {call.name} -> {str(data)[:100]}")
             image_b64 = None
             image_mime = "image/png"
@@ -67,6 +70,9 @@ class ToolExecutor:
                 image_mime = data.pop("__image_mime__", "image/png")
                 context_brief = data.pop("__context__", "")
             return ToolResult(name=call.name, success=True, data=data, image_b64=image_b64, image_mime=image_mime, context_brief=context_brief)
+        except TimeoutError:
+            logger.warning(f"[ToolExecutor] {call.name} timed out after {method.timeout}s")
+            return ToolResult(name=call.name, success=False, error=f"工具执行超时（{method.timeout}s）")
         except TypeError as e:
             logger.error(f"[ToolExecutor] {call.name} TypeError: {e}")
             return ToolResult(name=call.name, success=False, error=f"参数不匹配: {e}")
@@ -76,13 +82,7 @@ class ToolExecutor:
 
     @staticmethod
     def _lookup_method(full_name: str):
-        parts = full_name.split(".", 1)
-        if len(parts) != 2:
-            return None
-        tool = TOOL_REGISTRY._tools.get(parts[0])
-        if not tool:
-            return None
-        return tool.methods.get(parts[1])
+        return TOOL_REGISTRY.get_method(full_name)
 
     @staticmethod
     def _validate_args(provided: dict, schema: dict) -> tuple[dict, str]:
@@ -99,6 +99,9 @@ class ToolExecutor:
                 expected_type = _TYPE_MAP.get(type_name, object)
                 if expected_type is not object and not isinstance(value, expected_type):
                     return {}, f"参数 {key!r} 类型错误，期望 {type_name}，实际 {type(value).__name__}"
+                enum_values = spec.get("enum")
+                if enum_values and value not in enum_values:
+                    return {}, f"参数 {key!r} 值 {value!r} 不在允许范围 {enum_values} 内"
                 validated[key] = value
             elif required:
                 return {}, f"缺少必需参数 {key!r} ({type_name})"
@@ -114,8 +117,9 @@ class ToolExecutor:
     @staticmethod
     def _normalize(data: Any) -> str:
         if isinstance(data, dict):
-            summary = data.pop("summary", None)
-            json_str = json.dumps(data, ensure_ascii=False)
+            summary = data.get("summary")
+            clean = {k: v for k, v in data.items() if k != "summary"}
+            json_str = json.dumps(clean, ensure_ascii=False)
             return f"{summary}\n{json_str}" if summary else json_str
         elif isinstance(data, str):
             return data

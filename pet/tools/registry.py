@@ -13,6 +13,7 @@ class ToolMethod:
     description: str
     args: dict = field(default_factory=dict)
     handler: Callable = None
+    timeout: float = 30.0
 
 
 @dataclass
@@ -35,11 +36,13 @@ class ToolRegistry:
         return tool
 
     def add_method(self, tool_name: str, method_name: str,
-                   description: str, handler: Callable, args: dict = None):
+                   description: str, handler: Callable, args: dict = None,
+                   timeout: float = None):
         tool = self._tools[tool_name]
         tool.methods[method_name] = ToolMethod(
             name=method_name, description=description,
             args=args or {}, handler=handler,
+            timeout=timeout if timeout is not None else 30.0,
         )
 
     def add_menu_action(self, tool_name: str, label: str,
@@ -49,7 +52,8 @@ class ToolRegistry:
         tool.menu_items.append({"label": label, "handler": handler})
         logger.info(f"[ToolRegistry] menu item added: {tool_name} > {label}")
 
-    def get_handler(self, full_name: str) -> Callable | None:
+    def get_method(self, full_name: str) -> ToolMethod | None:
+        """通过 'tool_name.method_name' 获取方法对象。"""
         parts = full_name.split(".", 1)
         if len(parts) != 2:
             return None
@@ -59,7 +63,10 @@ class ToolRegistry:
         tool = self._tools.get(tool_name)
         if not tool:
             return None
-        method = tool.methods.get(method_name)
+        return tool.methods.get(method_name)
+
+    def get_handler(self, full_name: str) -> Callable | None:
+        method = self.get_method(full_name)
         return method.handler if method else None
 
     @property
@@ -111,6 +118,8 @@ class ToolRegistry:
                     }
                     if "default" in spec:
                         prop["default"] = spec["default"]
+                    if "enum" in spec:
+                        prop["enum"] = spec["enum"]
                     properties[arg_name] = prop
                     if spec.get("required"):
                         required.append(arg_name)
