@@ -205,4 +205,4 @@ def alert() -> dict:
 
 ## 📜 许可
 
-MIT
+GPL-3.0
