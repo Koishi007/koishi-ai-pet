@@ -138,7 +138,7 @@ class ContextBuilder:
         """多轮消息模式：自主决策。"""
         token_budget = config.CONTEXT_TOKEN_BUDGET
         history_msgs = self._brain.get_multi_turn_messages(
-            max_entries=8, skip_last=0, token_budget=token_budget,
+            max_entries=config.CONTEXT_HISTORY_ENTRIES, skip_last=0, token_budget=token_budget,
         )
 
         # 当前 user prompt：时间 + 窗口探测 + 决策指令
@@ -165,7 +165,7 @@ class ContextBuilder:
         """多轮消息模式：用户对话。"""
         token_budget = config.CONTEXT_TOKEN_BUDGET
         history_msgs = self._brain.get_multi_turn_messages(
-            max_entries=8, skip_last=1, token_budget=token_budget,
+            max_entries=config.CONTEXT_HISTORY_ENTRIES, skip_last=1, token_budget=token_budget,
         )
 
         # 当前 user prompt：时间 + 窗口探测 + 用户消息

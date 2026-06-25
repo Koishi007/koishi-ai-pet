@@ -28,8 +28,12 @@ def target_sequence_duration() -> int:
 
 
 def min_action_count() -> int:
-    """动作序列的最少动作数，基于目标总时长动态计算。"""
-    return max(4, math.ceil(target_sequence_duration() / 15))
+    """动作序列的最少动作数，基于目标总时长动态计算。
+
+    除数由 config.LLM_ACTION_MIN_DIVISOR 控制（默认 25）：
+    数值越大，单个动作平均时长越长，动作数下限越低。
+    """
+    return max(4, math.ceil(target_sequence_duration() / config.LLM_ACTION_MIN_DIVISOR))
 
 
 def default_duration(action: str) -> int:
@@ -69,65 +73,51 @@ def _build_duration_registry() -> dict[str, ActionDef]:
         "drive": ActionDef(
             name="drive",
             category="移动",
-            description="骑小电驴。必须指定方向（left/right）和距离（300-1000px）。不可指定 duration。",
-            params=["direction: left | right", "distance: 像素，500-1000"],
+            description="骑小电驴",
+            params=["direction=left/right", "distance=500-1000"],
             usage_example="Action: drive right 800",
         ),
         "walk": ActionDef(
             name="walk",
             category="移动",
-            description="行走。一蹦一蹦地走，活泼可爱。必须指定方向（left/right）和距离（300-1000px）。不可指定 duration。",
-            params=["direction: left | right", "distance: 像素，500-1000"],
+            description="行走",
+            params=["direction=left/right", "distance=500-1000"],
             usage_example="Action: walk right 800",
         ),
         "bounce": ActionDef(
             name="bounce",
             category="移动",
-            description="弹跳移动。适合跳跃到其他窗口上。direction=left/right 指定水平方向，distance 水平距离，height 向上跳跃高度",
-            params=["direction: left | right", "distance: 水平像素(范围0-800，0代表垂直往上跳，此时方向任意)", "height: 向上跳跃高度（必须大于0）"],
+            description="弹跳移动",
+            params=["direction=left/right", "distance=0-800", "height>0"],
             usage_example="Action: bounce direction=right distance=400 height=200",
         ),
         "shake_arms": ActionDef(
             name="shake_arms",
             category="驻留",
-            description="开心摇晃手臂，表达兴奋或喜悦，无需参数。",
+            description="开心摇晃手臂",
             params=[],
             usage_example="Action: shake_arms",
         ),
         "look_around": ActionDef(
             name="look_around",
             category="驻留",
-            description="张望/环顾四周，穿插在 walk 和 sit 之间，无需参数。",
+            description="张望环顾四周",
             params=[],
             usage_example="Action: look_around",
         ),
         "stretch": ActionDef(
             name="stretch",
             category="驻留",
-            description="伸展/伸懒腰，穿插在 walk 和 sit 之间，无需参数。",
+            description="伸懒腰",
             params=[],
             usage_example="Action: stretch",
         ),
         "fishing": ActionDef(
             name="fishing",
             category="驻留",
-            description="钓鱼。拿出钓竿左右摇晃，并不能真的钓到鱼",
+            description="钓鱼，不能真的钓到鱼",
             params=[],
             usage_example="Action: fishing",
-        ),
-        "fade_in": ActionDef(
-            name="fade_in",
-            category="显隐",
-            description="淡入显示。从透明到可见，与 fade_out 成对使用（必须先 out 后 in），中间可以夹带其他动作。禁止单独出现。",
-            params=[],
-            usage_example="Action: fade_in",
-        ),
-        "fade_out": ActionDef(
-            name="fade_out",
-            category="显隐",
-            description="淡出隐藏。从可见到透明，与 fade_in 成对使用（必须先 out 后 in），中间可以夹带其他动作。禁止单独出现。",
-            params=[],
-            usage_example="Action: fade_out",
         ),
     }
 
@@ -136,17 +126,33 @@ def _build_duration_registry() -> dict[str, ActionDef]:
         lo, hi = duration_range(name)
         dur = default_duration(name)
         desc_map = {
-            "sit": "坐下。耗时动作，必须写 duration=秒，适合收尾撑时长。",
-            "sleep": "睡觉。耗时动作，必须写 duration=秒，适合安静场景收尾。",
-            "thinking": "沉思/思考。耗时动作，必须写 duration=秒，站着不动但表情思考状。",
+            "sit": "坐下收尾",
+            "sleep": "睡觉收尾",
+            "thinking": "沉思",
         }
         result[name] = ActionDef(
             name=name,
             category="驻留",
             description=desc_map[name],
-            params=[f"duration: 秒，{lo}-{hi}"],
+            params=[f"duration={lo}-{hi}秒"],
             usage_example=f"Action: {name} duration={dur}",
         )
+
+    # 显隐动作放最后，保持 移动→驻留→显隐 的展示顺序
+    result["fade_in"] = ActionDef(
+        name="fade_in",
+        category="显隐",
+        description="淡入(与fade_out成对)",
+        params=[],
+        usage_example="Action: fade_in",
+    )
+    result["fade_out"] = ActionDef(
+        name="fade_out",
+        category="显隐",
+        description="淡出(与fade_in成对)",
+        params=[],
+        usage_example="Action: fade_out",
+    )
 
     return result
 
@@ -156,28 +162,30 @@ REGISTRY: dict[str, ActionDef] = _build_duration_registry()
 
 
 def generate_action_section(exclude: list[str] | None = None) -> str:
-    """动态生成动作表描述，每次调用时根据当前 config 计算时长范围。"""
+    """动态生成动作表描述，每次调用时根据当前 config 计算时长范围。
+
+    紧凑格式：每个动作单行，保留动作名、参数名、取值范围与示例值，
+    仅删除冗余描述性文字以压缩 prompt 体积。
+    """
     # 重新构建 REGISTRY 以反映最新的 config
     registry = _build_duration_registry()
     _exclude = set(exclude or [])
-    categories: dict[str, list[str]] = {"移动": [], "驻留": [], "显隐": []}
+    included = len(registry) - len(_exclude)
+    lines = [f"=== 可用动作（共 {included} 个）==="]
     for name, a in registry.items():
         if name in _exclude:
             continue
-        params_str = "，".join(a.params) if a.params else "无额外参数"
         if a.params:
-            params_str = " 参数：" + params_str
-        entry = f"- {a.name}: {a.description}{params_str}"
-        if a.usage_example:
-            entry += f"\n  示例：{a.usage_example}"
-        categories[a.category].append(entry)
-
-    included = len(registry) - len(_exclude)
-    lines = [f"=== 可用动作（共 {included} 个）==="]
-    for cat_label in ("移动", "驻留", "显隐"):
-        if categories[cat_label]:
-            lines.append(f"\n--- {cat_label} ---")
-            lines.extend(categories[cat_label])
+            entry = f"- {a.name} [{' '.join(a.params)}] {a.description}"
+        else:
+            entry = f"- {a.name} 无参数 {a.description}"
+        # 示例去掉 "Action: " 前缀；无参数动作示例与动作名相同，省略
+        ex = a.usage_example
+        if ex.startswith("Action: "):
+            ex = ex[len("Action: "):]
+        if ex and ex != a.name:
+            entry += f" | 示例: {ex}"
+        lines.append(entry)
     return "\n".join(lines)
 
 

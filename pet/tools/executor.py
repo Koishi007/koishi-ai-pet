@@ -2,7 +2,7 @@
 
 import json
 import logging
-from concurrent.futures import ThreadPoolExecutor
+import threading
 from dataclasses import dataclass
 from typing import Any
 
@@ -58,9 +58,28 @@ class ToolExecutor:
             return ToolResult(name=call.name, success=False, error=err)
 
         try:
-            with ThreadPoolExecutor(max_workers=1) as pool:
-                future = pool.submit(method.handler, **validated_args)
-                data = future.result(timeout=method.timeout)
+            box: dict[str, Any] = {}
+
+            def _runner() -> None:
+                # 捕获 BaseException 以匹配原 ThreadPoolExecutor future 的语义
+                try:
+                    box["data"] = method.handler(**validated_args)
+                except BaseException as exc:
+                    box["error"] = exc
+
+            worker = threading.Thread(target=_runner, daemon=True)
+            worker.start()
+            worker.join(timeout=method.timeout)
+
+            if worker.is_alive():
+                # 超时：守护线程仍在后台运行，不阻塞返回
+                logger.warning(f"[ToolExecutor] {call.name} timed out after {method.timeout}s")
+                return ToolResult(name=call.name, success=False, error=f"工具执行超时（{method.timeout}s）")
+
+            if "error" in box:
+                raise box["error"]
+
+            data = box.get("data")
             logger.info(f"[ToolExecutor] {call.name} -> {str(data)[:100]}")
             image_b64 = None
             image_mime = "image/png"
@@ -70,9 +89,6 @@ class ToolExecutor:
                 image_mime = data.pop("__image_mime__", "image/png")
                 context_brief = data.pop("__context__", "")
             return ToolResult(name=call.name, success=True, data=data, image_b64=image_b64, image_mime=image_mime, context_brief=context_brief)
-        except TimeoutError:
-            logger.warning(f"[ToolExecutor] {call.name} timed out after {method.timeout}s")
-            return ToolResult(name=call.name, success=False, error=f"工具执行超时（{method.timeout}s）")
         except TypeError as e:
             logger.error(f"[ToolExecutor] {call.name} TypeError: {e}")
             return ToolResult(name=call.name, success=False, error=f"参数不匹配: {e}")

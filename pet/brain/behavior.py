@@ -109,7 +109,7 @@ class Behavior(BrainMixin):
         logger.info(f"[{t}] [Behavior]   model: {self._model}, context({len(context)} chars): \"{ctx_preview}\"")
         logger.info(f"[{t}] [Behavior]   history: {self.context_count()} entries")
 
-        return self._call_llm_and_parse(messages, messages[0]["content"], tag)
+        return self._call_llm_and_parse(messages, messages[0]["content"], tag, max_tokens=config.LLM_MAX_TOKENS_AUTONOMOUS)
 
     def autonomous_decide_stream(self, context: str = "", screenshot: bool = True,
                       on_chunk=None, on_stream_end=None) -> BehaviorOutput:
@@ -122,7 +122,7 @@ class Behavior(BrainMixin):
             messages = self.ctx.build_autonomous_decide(context, screenshot=screenshot)
             is_vision = isinstance(messages[1]["content"], list)
             tag = "autonomous_decide_vision_stream" if is_vision else "autonomous_decide_stream"
-            return self._stream_and_parse(messages, on_chunk=on_chunk, on_stream_end=on_stream_end, tag=tag)
+            return self._stream_and_parse(messages, on_chunk=on_chunk, on_stream_end=on_stream_end, tag=tag, max_tokens=config.LLM_MAX_TOKENS_AUTONOMOUS)
         finally:
             self._lock.release()
 
@@ -130,7 +130,7 @@ class Behavior(BrainMixin):
         if not self._client:
             return self._decide_local()
         messages = self.ctx.build_interact(event_hint)
-        return self._call_llm_and_parse(messages, messages[0]["content"], "interact")
+        return self._call_llm_and_parse(messages, messages[0]["content"], "interact", max_tokens=config.LLM_MAX_TOKENS_INTERACT)
 
     def interact_decide_stream(self, event_hint: str,
                                on_chunk=None, on_stream_end=None) -> BehaviorOutput:
@@ -143,7 +143,7 @@ class Behavior(BrainMixin):
             messages = self.ctx.build_interact(event_hint)
             return self._stream_and_parse(
                 messages, on_chunk=on_chunk, on_stream_end=on_stream_end,
-                tag="interact"
+                tag="interact", max_tokens=config.LLM_MAX_TOKENS_INTERACT
             )
         finally:
             self._lock.release()
@@ -164,7 +164,7 @@ class Behavior(BrainMixin):
         logger.info(f"[{t}] [Behavior]   model: {self._model}")
         logger.info(f"[{t}] [Behavior]   history: {self.context_count()} entries")
 
-        return self._call_llm_and_parse(messages, messages[0]["content"], tag)
+        return self._call_llm_and_parse(messages, messages[0]["content"], tag, max_tokens=config.LLM_MAX_TOKENS_CHAT)
 
     def chat_decide_stream(self, user_message: str, context: str, screenshot: bool = True,
                            on_chunk=None, on_stream_end=None) -> BehaviorOutput:
@@ -180,7 +180,7 @@ class Behavior(BrainMixin):
             messages = self.ctx.build_chat_decide(user_message, context, screenshot=screenshot)
             is_vision = isinstance(messages[1]["content"], list)
             tag = "chat_decide_vision_stream" if is_vision else "chat_decide_stream"
-            return self._stream_and_parse(messages, on_chunk=on_chunk, on_stream_end=on_stream_end, tag=tag)
+            return self._stream_and_parse(messages, on_chunk=on_chunk, on_stream_end=on_stream_end, tag=tag, max_tokens=config.LLM_MAX_TOKENS_CHAT)
         finally:
             self._lock.release()
 
@@ -188,7 +188,7 @@ class Behavior(BrainMixin):
     def _llm_call(self, messages: list, max_tokens: int = 4000, tools: list = None):
         self.llm_stats.increment()
         t0 = time.perf_counter()
-        kwargs = {"model": self._model, "messages": messages, "max_tokens": max_tokens}
+        kwargs = {"model": self._model, "messages": messages, "max_tokens": max_tokens, "temperature": config.LLM_TEMPERATURE}
         if tools:
             kwargs["tools"] = tools
         resp = self._client.chat.completions.create(**kwargs)
@@ -199,7 +199,7 @@ class Behavior(BrainMixin):
     def _llm_call_stream(self, messages: list, max_tokens: int = 4000, tools: list = None):
         self.llm_stats.increment()
         from pet.brain.llm_retry import llm_stream_with_retry
-        kwargs = {"model": self._model, "messages": messages, "max_tokens": max_tokens, "stream": True}
+        kwargs = {"model": self._model, "messages": messages, "max_tokens": max_tokens, "temperature": config.LLM_TEMPERATURE, "stream": True}
         if tools:
             kwargs["tools"] = tools
         return llm_stream_with_retry(
@@ -221,7 +221,7 @@ class Behavior(BrainMixin):
         t = datetime.now().strftime("%H:%M:%S")
         logger.info(f"[{t}] [Behavior]   prompt_chars: {total} ({tag})")
 
-    def _call_llm_and_parse(self, messages: list, system_content: str, tag: str) -> BehaviorOutput:
+    def _call_llm_and_parse(self, messages: list, system_content: str, tag: str, max_tokens: int = 4000) -> BehaviorOutput:
         t = datetime.now().strftime("%H:%M:%S")
         self._apply_cache_control(messages)
         self._dump_context(tag, messages)
@@ -229,7 +229,7 @@ class Behavior(BrainMixin):
         try:
             from pet.tools.registry import TOOL_REGISTRY
             tools_param = TOOL_REGISTRY.to_openai_tools()
-            resp = self._llm_call(messages, tools=tools_param if tools_param else None)
+            resp = self._llm_call(messages, max_tokens=max_tokens, tools=tools_param if tools_param else None)
             msg = resp.choices[0].message
             content = msg.content or ""
             logger.info(f"[{t}] [Behavior] === LLM RESPONSE ({tag}) ===")
@@ -247,7 +247,7 @@ class Behavior(BrainMixin):
                     }
                 return self._handle_tool_calls(
                     messages, tool_calls_map, content,
-                    tag=tag, tools_param=tools_param,
+                    tag=tag, tools_param=tools_param, max_tokens=max_tokens,
                 )
 
             result = self._parse_behavior(content)
@@ -258,7 +258,7 @@ class Behavior(BrainMixin):
             logger.warning(f"[{t}] [Behavior]   falling back to local")
             return self._decide_local()
 
-    def _stream_and_parse(self, messages: list, on_chunk=None, on_stream_end=None, tag: str = "") -> BehaviorOutput:
+    def _stream_and_parse(self, messages: list, on_chunk=None, on_stream_end=None, tag: str = "", max_tokens: int = 4000) -> BehaviorOutput:
         self._apply_cache_control(messages)
         self._dump_context(tag, messages)
         self._log_prompt_size(messages, tag)
@@ -266,7 +266,7 @@ class Behavior(BrainMixin):
         try:
             from pet.tools.registry import TOOL_REGISTRY
             tools_param = TOOL_REGISTRY.to_openai_tools()
-            stream = self._llm_call_stream(messages, tools=tools_param if tools_param else None)
+            stream = self._llm_call_stream(messages, max_tokens=max_tokens, tools=tools_param if tools_param else None)
 
             buffer = ""
             actions = []
@@ -366,7 +366,7 @@ class Behavior(BrainMixin):
                 return self._handle_tool_calls(
                     messages, accumulated_tool_calls, first_content,
                     on_chunk=on_chunk, on_stream_end=on_stream_end, tag=tag,
-                    tools_param=tools_param,
+                    tools_param=tools_param, max_tokens=max_tokens,
                 )
 
             raw = "\n".join(
@@ -519,7 +519,7 @@ class Behavior(BrainMixin):
 
     def _handle_tool_calls(self, messages, tool_calls_map, first_content,
                             on_chunk=None, on_stream_end=None, tag="", tools_param=None,
-                            max_rounds=5) -> BehaviorOutput:
+                            max_rounds=5, max_tokens: int = 4000) -> BehaviorOutput:
         """执行 tool_calls 并循环直到 LLM 不再请求工具。"""
         import json as _json
         from pet.tools.executor import ToolExecutor, ToolCall
@@ -528,6 +528,7 @@ class Behavior(BrainMixin):
         current_messages = list(messages)
         speech_streamed = False
         tool_log = []  # 记录工具调用摘要，用于写入上下文
+        final_instruction_added = False  # 最终轮精简指令是否已追加
 
         for round_idx in range(max_rounds):
             # 构建 assistant 消息（含 tool_calls）
@@ -550,8 +551,11 @@ class Behavior(BrainMixin):
                 assistant_msg["content"] = first_content
             current_messages.append(assistant_msg)
 
-            # 执行每个工具调用
-            for idx in sorted(tool_calls_map.keys()):
+            # 执行工具调用（并行或串行）
+            sorted_indices = sorted(tool_calls_map.keys())
+
+            def _exec_tool(idx):
+                """执行单个工具调用，返回 (idx, tc, result, tool_brief, result_text)。"""
                 tc = tool_calls_map[idx]
                 try:
                     args = _json.loads(tc["arguments"] or "{}")
@@ -564,6 +568,25 @@ class Behavior(BrainMixin):
                 if result.success and isinstance(result.data, dict):
                     tool_brief = result.data.get("summary", "")
                 result_text = executor._normalize(result.data) if result.success else result.error
+                return idx, tc, result, tool_brief, result_text
+
+            tool_results = {}
+            use_parallel = config.LLM_TOOL_PARALLEL and len(sorted_indices) > 1
+            if use_parallel:
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor(max_workers=len(sorted_indices)) as pool:
+                    futures = {pool.submit(_exec_tool, idx): idx for idx in sorted_indices}
+                    for future in concurrent.futures.as_completed(futures):
+                        res = future.result()
+                        tool_results[res[0]] = res
+            else:
+                for idx in sorted_indices:
+                    res = _exec_tool(idx)
+                    tool_results[res[0]] = res
+
+            # 按 index 排序后依次 append（保持顺序一致性）
+            for idx in sorted_indices:
+                _, tc, result, tool_brief, result_text = tool_results[idx]
                 current_messages.append({
                     "role": "tool",
                     "tool_call_id": tc["id"],
@@ -572,9 +595,17 @@ class Behavior(BrainMixin):
                 logger.info(f"[Behavior] tool_round_{round_idx+1} {tc['name']} -> {'OK' if result.success else 'FAIL'}")
                 tool_log.append(f"{tc['name']} → {result.context_brief or tool_brief or result_text[:200]}")
 
+            # 最终轮精简指令（仅追加一次，引导模型直接输出最终行为）
+            if not final_instruction_added:
+                current_messages.append({
+                    "role": "user",
+                    "content": "工具已执行完毕，直接输出最终行为（Summary+Speech+Action），无需重复分析；有值得记忆的信息才输出 Memory"
+                })
+                final_instruction_added = True
+
             # 再次调用 LLM
             t0 = time.perf_counter()
-            stream = self._llm_call_stream(current_messages, tools=tools_param)
+            stream = self._llm_call_stream(current_messages, max_tokens=max_tokens, tools=tools_param)
             content, new_tool_calls = self._consume_stream(stream, on_chunk=on_chunk, on_stream_end=on_stream_end, tag=f"{tag}_round_{round_idx+1}", t0=t0)
             if on_chunk:
                 speech_streamed = speech_streamed or bool(content)
