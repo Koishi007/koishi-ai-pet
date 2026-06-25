@@ -13,3 +13,4 @@ sqlite-vec>=0.1.0
 
 pyobjc-framework-Quartz; sys_platform == "darwin"
 pyobjc-framework-AppKit; sys_platform == "darwin"
+python-xlib; sys_platform == "linux"
