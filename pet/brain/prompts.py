@@ -227,7 +227,7 @@ def build_system_prompt(mode: str, task: str, include_feeling_marker: bool = Tru
     Args:
         mode: "autonomous_vision" | "autonomous_non_vision" | "chat_vision" | "chat_non_vision" | "interact"
         task: "autonomous" | "chat" | "interact"
-        include_feeling_marker: 是否注入 <<FEELING>> 锚点（skill_round 等精简 prompt 不需要）
+        include_feeling_marker: 是否注入 <<FEELING>> 锚点
     """
     if mode not in _PERCEPTION_SECTIONS:
         raise ValueError(f"Unknown mode: {mode!r}, expected one of {list(_PERCEPTION_SECTIONS)}")
