@@ -186,7 +186,7 @@ class BrainMixin:
         with self._ctx_lock:
             self._context.clear()
         if self._db_conn:
-            self._save_context()
+            self._do_save()  # 立即写入，绕过 debounce
 
     def context_count(self) -> int:
         with self._ctx_lock:

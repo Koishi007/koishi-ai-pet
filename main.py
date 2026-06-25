@@ -109,7 +109,8 @@ def main():
     feed_bubble = FeedBubble(window)
     window.set_feed_bubble(feed_bubble)
     feed_bubble.feed_submitted.connect(
-        lambda text: agent.trigger("interact", hint=interact_fed_prompt(text), record_context=True)
+        lambda text: agent.trigger("interact", hint=interact_fed_prompt(text),
+                                    record_context=True, context_hint=f"用户投喂了{text}")
     )
 
     agent.action_requested.connect(window.queue_enqueue_action)
