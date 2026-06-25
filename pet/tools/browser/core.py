@@ -42,7 +42,7 @@ class BrowserTool:
         except webbrowser.Error as e:
             logger.error(f"[BrowserTool] open_url failed: {e}")
             return {"error": f"无法打开浏览器: {e}", "url": url}
-        return {"status": "opened", "url": url,
+        return {"status": "success", "url": url,
                 "__context__": f"打开网页 {url}"}
 
     def search(self, query: str) -> dict:
@@ -53,7 +53,7 @@ class BrowserTool:
         except webbrowser.Error as e:
             logger.error(f"[BrowserTool] search failed: {e}")
             return {"error": f"无法打开浏览器: {e}", "query": query}
-        return {"status": "searching", "query": query, "url": url,
+        return {"status": "success", "query": query, "url": url,
                 "__context__": f"浏览器搜索「{query}」"}
 
     def screenshot_url(self, url: str, width: int = 1280, height: int = 800,
@@ -77,7 +77,7 @@ class BrowserTool:
                 img_b64 = base64.b64encode(screenshot_bytes).decode("ascii")
                 logger.info(f"[BrowserTool] screenshot_url: {url} → {len(screenshot_bytes)} bytes JPEG")
                 return {
-                    "status": "captured",
+                    "status": "success",
                     "url": url,
                     "size": f"{width}x{height}",
                     "__image__": img_b64,
@@ -134,7 +134,7 @@ class BrowserTool:
 
                 logger.info(f"[BrowserTool] read_url: {url} → {len(text)} chars")
                 return {
-                    "status": "read",
+                    "status": "success",
                     "url": url,
                     "title": title,
                     "text": text,
