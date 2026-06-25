@@ -1,5 +1,6 @@
 """可被 LLM 调用的动作定义。"""
 
+import math
 from dataclasses import dataclass, field
 from typing import List
 
@@ -9,12 +10,26 @@ from config import config
 # ── 耗时类动作的动态时长计算 ──
 # 每次调用时读取 config.SCHEDULER_MID_MS，确保 settings.json 修改后立即生效
 
-# 动作时长参数定义：(名称, 最小秒数, 最大秒数, 占调度间隔比例)
+# 动作时长参数定义：(名称, 最小秒数, 占调度间隔比例)
 _DURATION_ACTION_DEFS = {
     "sit":      (10, 0.4),
     "thinking": ( 5, 0.2),
     "sleep":    (10, 0.4),
 }
+
+# 动作序列总时长占调度间隔的比例
+_SEQUENCE_RATIO = 0.9
+
+
+def target_sequence_duration() -> int:
+    """动作序列的目标总时长（秒），基于调度间隔动态计算。"""
+    mid_s = config.SCHEDULER_MID_MS / 1000
+    return int(mid_s * _SEQUENCE_RATIO)
+
+
+def min_action_count() -> int:
+    """动作序列的最少动作数，基于目标总时长动态计算。"""
+    return max(4, math.ceil(target_sequence_duration() / 15))
 
 
 def default_duration(action: str) -> int:
@@ -22,9 +37,7 @@ def default_duration(action: str) -> int:
     if action not in _DURATION_ACTION_DEFS:
         raise KeyError(f"Unknown duration action: {action}")
     floor, ratio = _DURATION_ACTION_DEFS[action]
-    mid_s = config.SCHEDULER_MID_MS / 1000
-    target_s = int(mid_s * 0.8)
-    return max(floor, int(target_s * ratio))
+    return max(floor, int(target_sequence_duration() * ratio))
 
 
 def duration_range(action: str) -> tuple[int, int]:
