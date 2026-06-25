@@ -534,10 +534,16 @@ class Behavior(BrainMixin):
             openai_tool_calls = []
             for idx in sorted(tool_calls_map.keys()):
                 tc = tool_calls_map[idx]
+                # 清洗 arguments：解析后重新序列化，避免流式拼接残留导致 400
+                try:
+                    clean_args = _json.dumps(_json.loads(tc["arguments"] or "{}"), ensure_ascii=False)
+                except _json.JSONDecodeError:
+                    clean_args = "{}"
+                tc["arguments"] = clean_args
                 openai_tool_calls.append({
                     "id": tc["id"],
                     "type": "function",
-                    "function": {"name": tc["name"], "arguments": tc["arguments"]},
+                    "function": {"name": tc["name"], "arguments": clean_args},
                 })
             assistant_msg = {"role": "assistant", "tool_calls": openai_tool_calls}
             if first_content.strip():
