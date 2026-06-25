@@ -300,7 +300,7 @@ class PetAgent(QObject):
                            context_hint: str = ""):
         if record_context:
             store_hint = context_hint if context_hint else hint
-            self.behavior.add_context(role="system", content=store_hint)
+            self.behavior.add_context(role="user", content=store_hint)
         stream_started = False
         self._active_stream_id += 1
         my_stream_id = self._active_stream_id
