@@ -36,6 +36,11 @@ class ToolContext:
         if self._check_agent():
             self._agent.speak_requested.emit(text, duration)
 
+    def speech_random(self, texts: list[str], duration: int = 3000):
+        """随机选择一条台词发射。"""
+        import random
+        self.speech(random.choice(texts), duration)
+
     def action(self, name: str, args: tuple = (), kwargs: dict = None):
         if self._check_agent():
             self._agent.action_requested.emit(name, args, kwargs or {})

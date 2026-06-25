@@ -8,12 +8,12 @@ TOOL_DESCRIPTION = "网络搜索，获取实时信息、新闻、百科知识"
 
 
 def _search(**kw):
-    TOOL_CTX.speech("搜搜看…", 3000)
+    TOOL_CTX.speech_random(["搜搜看…", "查查看…", "找找看…", "搜一下…"])
     return search(**kw)
 
 
 def _deep_search(**kw):
-    TOOL_CTX.speech("搜搜看…", 3000)
+    TOOL_CTX.speech_random(["搜搜看…", "查查看…", "找找看…", "搜一下…"])
     return deep_search(**kw)
 
 

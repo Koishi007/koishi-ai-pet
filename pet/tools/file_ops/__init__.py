@@ -8,22 +8,22 @@ _instance = FileOpsTool()
 
 
 def _list_dir(**kw):
-    TOOL_CTX.speech("看看有什么…", 3000)
+    TOOL_CTX.speech_random(["看看有什么…", "翻翻看…", "瞄一眼…", "看看都有啥…"])
     return _instance.list_dir(**kw)
 
 
 def _read_file(**kw):
-    TOOL_CTX.speech("读读看…", 3000)
+    TOOL_CTX.speech_random(["读读看…", "看看写了啥…", "瞄一眼…", "读一下…"])
     return _instance.read_file(**kw)
 
 
 def _write_note(**kw):
-    TOOL_CTX.speech("记东西…", 3000)
+    TOOL_CTX.speech_random(["记东西…", "写下来…", "记一下…", "别忘了…"])
     return _instance.write_note(**kw)
 
 
 def _write_file(**kw):
-    TOOL_CTX.speech("嗯…写写看…", 3000)
+    TOOL_CTX.speech_random(["嗯…写写看…", "写一下…", "动笔了…", "写写看…"])
     return _instance.write_file(**kw)
 
 

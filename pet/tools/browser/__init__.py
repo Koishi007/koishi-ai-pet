@@ -13,22 +13,22 @@ _instance = BrowserTool()
 
 
 def _open_url(**kw):
-    TOOL_CTX.speech("打开看看…", 3000)
+    TOOL_CTX.speech_random(["打开看看…", "开一下…", "瞧瞧这个…", "打开…"])
     return _instance.open_url(**kw)
 
 
 def _search(**kw):
-    TOOL_CTX.speech("搜一下…", 3000)
+    TOOL_CTX.speech_random(["搜一下…", "搜搜看…", "查查看…", "找找…"])
     return _instance.search(**kw)
 
 
 def _read_url(**kw):
-    TOOL_CTX.speech("读一读网页…", 3000)
+    TOOL_CTX.speech_random(["读一读网页…", "看看写了什么…", "读读看…", "瞄一眼…"])
     return _instance.read_url(**kw)
 
 
 def _screenshot_url(**kw):
-    TOOL_CTX.speech("看看网页…", 3000)
+    TOOL_CTX.speech_random(["看看网页…", "瞄一眼…", "瞧瞧…", "看看…"])
     return _instance.screenshot_url(**kw)
 
 
