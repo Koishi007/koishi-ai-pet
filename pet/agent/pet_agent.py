@@ -153,10 +153,8 @@ class PetAgent(QObject):
             logger.debug(f"[PetAgent] backfill default duration for '{name}': {kw['duration']}s")
         self.action_requested.emit(name, args or (), kw)
     def _autonomous_pipeline(self, pet_x=0, pet_y=0):
-
         window_context = self._build_window_context(pet_x, pet_y)
         context = window_context if window_context else ""
-        self.behavior.add_context(role="user", content="(自主决策触发)")
 
         stream_started = False
         self._active_stream_id += 1

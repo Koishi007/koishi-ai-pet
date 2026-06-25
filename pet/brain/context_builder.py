@@ -75,7 +75,7 @@ class ContextBuilder:
         """多轮消息模式：自主决策。"""
         token_budget = config.CONTEXT_TOKEN_BUDGET
         history_msgs = self._brain.get_multi_turn_messages(
-            max_entries=8, skip_last=1, token_budget=token_budget,
+            max_entries=8, skip_last=0, token_budget=token_budget,
         )
 
         # 当前 user prompt：时间 + 窗口探测 + 决策指令
@@ -199,7 +199,7 @@ class ContextBuilder:
         if self._brain:
             # 使用去重方法一次遍历获取 user 消息 + 全部上下文
             user_msgs, recent = self._brain.get_context_with_user_messages(
-                max_entries=6, max_user_msgs=3, skip_last=1,
+                max_entries=6, max_user_msgs=3, skip_last=0,
                 token_budget=config.CONTEXT_TOKEN_BUDGET,
             )
             if user_msgs:
