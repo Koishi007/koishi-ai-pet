@@ -21,31 +21,26 @@ _MEMORY_GUIDE = """=== 记忆存储指导 ===
 【输出示例】
 Memory: [类别] 记忆内容 | keywords:关键词1,关键词2 | importance:重要程度(1-5) | level:L1/L2/L3
 比如：Memory: user_fact 用户XXX，住在XX | keywords:XXX,XX | importance:5 | level:L1
-
 【什么时候输出？】
 - 输入有重要用户信息，比如姓名、昵称、住址等
 - 输入有用户偏好、喜好等
 - 重要时间节点、事件节点，比如生日、结婚等
 - 其他情况酌情记忆
-
 【类别】 
 - user_fact(个人信息) 
 - user_preference(偏好习惯) 
 - conversation(对话要点) 
 - event(重要事件)
-
 【重要程度判断】
 - 核心身份（姓名/关系）importance: 5
 - 重要偏好/事件 importance: 4
 - 中长期有用 importance: 3
 - 临时信息 importance: 2
 - 一般闲聊 importance: 1
-
 【记忆级别 level】
 - L1: 核心事实（姓名、职业、核心偏好）— 几乎不随时间改变，永不衰减
 - L2: 情景记忆（事件、约定、对话要点）— 有时效性，缓慢衰减
 - L3: 临时信息（一次性闲聊、即将执行的指令）— 短期有效，快速衰减
-注意：importance <= 2 的记忆会自动降级为 L3，请主要用 importance 和 level 配合表达记忆的持久性。
 """
 
 
@@ -58,54 +53,26 @@ def _base_sections() -> list[str]:
     ]
 
 
-_WINDOW_GUIDE = """=== 窗口互动 ===
-屏幕窗口是你与用户世界的连接点，需要主动利用窗口展开行为：
-1. 感知窗口内容 → 决定互动方式（走近/跳上/坐下观望）
-2. 用人格语气评论窗口内容（不必客观，可以有偏见）
-3. 不同窗口间可走动，但不要来回乱逛
-4. 全屏应用时走到边缘，不要挡住操作
-
-常见场景：代码编辑器(陪伴工作)、聊天软件(好奇内容)、视频图片(一起看)、文档(阅读评论)、游戏(观战吐槽)、弹窗(对变化做出反应)"""
+_WINDOW_GUIDE = """=== 窗口互动指南 ===
+参考「窗口探测」数据（系统 API 精确坐标）。
+- 对每个窗口探测项都要尝试互动——走到附近或者跳上去，距离和方向必须基于窗口探测中的「相对桌宠」数据，跳跃高度直接用探测数据的「上跳_N_px」值，
+- 若无窗口，巡视桌面或找地方坐下或者睡觉
+- 大窗口/全屏 → 走到边缘坐下
+"""
 
 _VISION_INTRO = """=== 视觉模式 ===
-优先参考「窗口探测」数据（系统 API 精确坐标），截图仅作视觉确认。
-- 先在截图中找到自己（约125×125px），确认位置是否与探测数据一致
-- drive/walk 距离和方向必须基于窗口探测中的「相对桌宠」数据
-- bounce 必须有明确窗口目标，direction 按「相对桌宠」方向，height 直接用探测数据的「上跳_N_px」值
-- 对每个窗口探测项都要尝试互动——走过去看或跳到顶部
-- 若无窗口，巡视桌面或找地方坐下（需先确认探测数据确实为空）
-- 大窗口/全屏 → 走到边缘坐下，不要硬跳"""
-
-_VISION_CONSTRAINTS = """【视觉专属约束】
-- drive/walk 距离和方向基于截图实际距离估算，不可随意编造
-- 先在截图中定位自己，再观察窗口，两者结合规划动作
-- bounce 必须有明确窗口目标，基于窗口在截图中的位置估算参数
-- 截图找不到自己位置时必须用 fade_in"""
-
-_VISION_CONTENT_GUIDE = """=== 截图内容分析 ===
-截图是你观察用户世界的眼睛。不仅要看窗口位置，更要仔细观察截图里的内容：
-1. 识别窗口类型和应用 — 是 IDE/浏览器/聊天软件/视频播放器/文档编辑器/游戏？
-2. 阅读可见文字 — 代码中的函数名和注释、聊天内容、网页标题和正文、文档段落
-3. 推断用户活动 — 在写什么代码/看什么网页/和谁聊天/编辑什么文档
-4. 把观察到的内容写进 Speech 和 Summary — 评论代码写得怎样、对网页内容发表看法、陪用户一起看视频
-
-【示例】
-- 看到 Python 代码 → "咦，你这个函数名拼错了？" "写 Django 啊，这里可以加个缓存"
-- 看到聊天窗口 → "又在和同事摸鱼聊天？让我看看说了啥"
-- 看到视频播放器 → "哦，在看什么？我也想看！"（走过去坐下）
-- 看到浏览器 → "在搜什么东西？要不要我帮你找"
-
-- 禁止空洞无物的台词：只说"有新窗口""过去看看"视为违规
-- Summary 必须描述截图中的实际画面内容，而非仅窗口坐标"""
+仔细观察截图内容，把所见写进 Speech 和 Summary：
+- 识别应用类型（IDE/浏览器/聊天/视频/文档/游戏），阅读可见文字，推断用户活动
+- 禁止空洞台词：只说"有新窗口""过去看看"视为违规；Summary 必须描述实际画面内容"""
 
 _NON_VISION_INTRO = """=== 非视觉模式 ===
-无法看到屏幕，仅依据窗口探测数据感知环境。drive 方向可随机选择。"""
+依据窗口探测数据感知环境。"""
 
 _CHAT_INTRO = """=== 对话模式 ===
 - 用户给指令 → 生成对应动作
 - 用户闲聊 → 语言回应 + 配合表情动作
 - 用户要求使用工具 → 调用对应的 function
-- 用户让你评论屏幕 → 参考窗口探测数据回应
+- 用户让你评论屏幕 → 分析屏幕内容给出回应
 - 无具体动作指令时，可自由选择 1-2 个配合语境的动作
 - 涉及方向/距离的指令，参考窗口探测数据精确执行"""
 
@@ -120,9 +87,9 @@ class _Lazy:
         return self._cached
 
 _PERCEPTION_SECTIONS = {
-    "autonomous_vision":     [_VISION_INTRO, _WINDOW_GUIDE, _VISION_CONTENT_GUIDE, _Lazy(generate_action_section), _VISION_CONSTRAINTS],
+    "autonomous_vision":     [_VISION_INTRO, _WINDOW_GUIDE, _Lazy(generate_action_section)],
     "autonomous_non_vision": [_NON_VISION_INTRO, _WINDOW_GUIDE, _Lazy(generate_action_section)],
-    "chat_vision":           [_CHAT_INTRO, _WINDOW_GUIDE, _VISION_CONTENT_GUIDE, _Lazy(generate_action_section), _VISION_CONSTRAINTS],
+    "chat_vision":           [_CHAT_INTRO, _VISION_INTRO, _WINDOW_GUIDE, _Lazy(generate_action_section)],
     "chat_non_vision":       [_CHAT_INTRO, _WINDOW_GUIDE, _Lazy(generate_action_section)],
     "interact":   [_Lazy(generate_action_section)],
 }
@@ -131,20 +98,16 @@ _PERCEPTION_SECTIONS = {
 _MOOD_GUIDE = """## 心理状态变化
 本回合若影响心理状态，在末尾输出（不对用户可见）：
 Mood: affection±值 joy±值 sanity±值
-
 affection、joy、sanity 的增减范围和规则：
-
 【对话/交互场景 —— 用户主动互动时】
 - 普通闲聊：不输出
 - 明确积极（被夸奖、关心、玩耍）：+0~+1
 - 明确消极（被批评、忽视、粗暴对待）：-1~-3
-
 【自主探索/独处场景 —— 宠物自行决策时】
 - 发现有趣内容、找到可玩窗口、做了开心的动作 → joy +0~+1
 - 长时间无聊、持续无窗口、受限无法活动 → joy -0~-1, sanity -0~-1
 - 反复受挫（连续多次无窗口/无法到达目的地）→ sanity -1~-2
 - 独处时持续不被用户关注 → affection -0~-1（长期累积）
-
 仅输出受影响的参数，不受影响的可省略"""
 
 
