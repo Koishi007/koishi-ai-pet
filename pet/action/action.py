@@ -24,7 +24,6 @@ class PetActions(QObject):
 
         self.gravity = GravitySystem(window, animator, self._win_anims, parent=self)
 
-        # 普通行走状态（自包含，不依赖 gravity 内部行走逻辑）
         self._walking: bool = False
         self._walk_sign: int = 1       # 1=右, -1=左
         self._walk_speed: float = 3.0  # px/tick（约 100px/s @ 30ms tick）
@@ -168,7 +167,7 @@ class PetActions(QObject):
         self._walk_target_x = self._walk_start_x + self._walk_sign * distance
         self._walking = True
         self.gravity.suppress_idle = True
-        self.gravity.pause_timer()  # 行走期间暂停重力，由本方法 timer 接管
+        self.gravity.pause_timer()  # 暂停重力，由本方法 timer 接管
 
         self._walk_timer.timeout.connect(self._driving_tick)
         self._walk_timer.start()
@@ -194,7 +193,7 @@ class PetActions(QObject):
         self.walk_finished.emit()
 
     def _driving_tick(self):
-        """开车行驶 tick：水平位移 + 垂直检测，丝滑无顿挫。"""
+        """开车行驶 tick"""
         from PySide6.QtWidgets import QApplication
         from pet.brain.window_detector import get_visible_windows, get_window_rect, is_window_occluded
 

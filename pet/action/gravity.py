@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class GravitySystem(QObject):
-    """定时检测桌宠是否悬空并模拟下落，支持甩出投掷物理。"""
+    """定时检测桌宠是否悬空并模拟下落，甩出投掷物理。"""
 
     falling_started = Signal()  # 进入下落状态时发出
     landed = Signal()           # 落地时发出

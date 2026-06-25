@@ -106,7 +106,7 @@ class PetAgent(QObject):
                 self._async_brain(self._autonomous_pipeline, pet_x, pet_y)
             else:
                 def _non_stream(px, py):
-                    wctx = self._build_window_context(px, py)
+                    wctx = self.behavior.ctx.build_window_context(px, py, int(self._pet_window.winId()) if self._pet_window else 0)
                     return self.behavior.autonomous_decide(wctx or "", screenshot=screenshot)
                 self._async_brain(_non_stream, pet_x, pet_y)
 
@@ -153,7 +153,7 @@ class PetAgent(QObject):
             logger.debug(f"[PetAgent] backfill default duration for '{name}': {kw['duration']}s")
         self.action_requested.emit(name, args or (), kw)
     def _autonomous_pipeline(self, pet_x=0, pet_y=0):
-        window_context = self._build_window_context(pet_x, pet_y)
+        window_context = self.behavior.ctx.build_window_context(pet_x, pet_y, int(self._pet_window.winId()) if self._pet_window else 0)
         context = window_context if window_context else ""
 
         stream_started = False
@@ -182,85 +182,6 @@ class PetAgent(QObject):
         if stream_started:
             self.speak_stream_end.emit(5000)
         return result
-
-    _MAX_WINDOWS = 10  # 窗口探测上下文最多输出的窗口数
-
-    def _build_window_context(self, pet_x: int, pet_y: int) -> str:
-        try:
-            from pet.brain.window_detector import get_visible_windows, is_window_occluded
-            from PySide6.QtWidgets import QApplication
-            windows = get_visible_windows()
-        except Exception:
-            return ""
-
-        pet_w, pet_h = 125, 125
-        pet_hwnd = int(self._pet_window.winId()) if self._pet_window else 0
-        dpr = QApplication.primaryScreen().devicePixelRatio() if QApplication.primaryScreen() else 1.0
-
-        # 收集有效窗口并打分
-        scored = []
-        for win in windows:
-            left, top, right, bottom = tuple(v / dpr for v in win["rect"])
-            w, h = right - left, bottom - top
-            title = win["title"].strip()
-            if not title or len(title) > 50:
-                continue
-            if abs(left - pet_x) < 10 and abs(top - pet_y) < 10 and w == pet_w and h == pet_h:
-                continue
-            if w < 200 or h < 100:
-                continue
-            if is_window_occluded(win["hwnd"], threshold=0.8, skip_hwnd=pet_hwnd):
-                continue
-
-            dx_walk = (left + w // 2) - (pet_x + pet_w // 2)  # 目标: 窗口中部
-            dy_top = top - (pet_y + pet_h)
-            dist = abs(dx_walk)
-            jump_px = abs(dy_top)
-
-            # 打分：距离近 + 尺寸大 + 可跳跃 = 高优先级
-            dist_score = 1000.0 / (dist + 1.0)
-            size_score = min(w * h / 100000.0, 5.0)
-            if jump_px <= 400:
-                reach_score = 2.0
-            elif jump_px <= 800:
-                reach_score = 1.0
-            else:
-                reach_score = 0.0
-            total = dist_score + size_score + reach_score
-
-            direction = "右" if dx_walk > 0 else "左"
-            if jump_px <= 400:
-                reachable = "可跳"
-            elif jump_px <= 800:
-                reachable = "勉强可跳"
-            else:
-                reachable = "禁止跳跃（距离过高）"
-
-            scored.append((total, title, left, top, right, bottom, w, h,
-                          direction, dist, jump_px, reachable))
-
-        # 按分降序，取前 N
-        scored.sort(key=lambda x: x[0], reverse=True)
-        top = scored[:self._MAX_WINDOWS]
-
-        lines = ["=== 窗口探测（系统 API，坐标精确） ==="]
-        lines.append(f"桌宠位置: 左{pet_x} 上{pet_y} (宽{pet_w} 高{pet_h})")
-
-        if not top:
-            lines.append("未发现适合跳转的窗口。")
-        else:
-            for i, (score, title, left, top, right, bottom, w, h,
-                    direction, dist, jump_px, reachable) in enumerate(top, 1):
-                lines.append(
-                    f"{i}. \"{title}\" ｜ "
-                    f"范围: 左{left} 上{top} 右{right} 下{bottom} (宽{w} 高{h}) ｜ "
-                    f"相对桌宠: {direction}走{dist}px, 上跳{jump_px}px 到窗口顶 "
-                    f"({reachable})"
-                )
-            if len(scored) > self._MAX_WINDOWS:
-                lines.append(f"... 及另外 {len(scored) - self._MAX_WINDOWS} 个窗口（相关性较低，已省略）")
-
-        return "\n".join(lines)
 
     def _trigger_interact(self, hint: str = "", delay_ms: int = 100,
                           cooldown_ms: int = 15000, record_context: bool = False,
@@ -353,7 +274,7 @@ class PetAgent(QObject):
     def _chat_pipeline(self, message: str, pet_x: int, pet_y: int):
         self.behavior.add_context(role="user", content=message)
 
-        window_context = self._build_window_context(pet_x, pet_y)
+        window_context = self.behavior.ctx.build_window_context(pet_x, pet_y, int(self._pet_window.winId()) if self._pet_window else 0)
         context = window_context if window_context else "当前无窗口信息"
 
         stream_started = False

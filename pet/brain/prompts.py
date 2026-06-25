@@ -257,14 +257,27 @@ def build_system_prompt(mode: str, task: str, include_feeling_marker: bool = Tru
 
     return "\n\n".join(sections)
 
-def _base_autonomous(context: str) -> str:
-    if not context or context.startswith("no context"):
-        return (
-            f"{context}\n\n"
-            f"当前无窗口信息。根据你的性格巡视桌面、找地方坐下或伸懒腰。"
-            f"drive 方向可随机。"
-            f"避免重复 Recent 中的行为。"
-        )
+def autonomous_vision_user_prompt(context: str) -> str:
+    return (
+        f"{context}\n\n"
+        f"按以下步骤思考和行动：\n\n"
+        f"1. 分析截图，识别窗口内容——理解用户正在做什么（代码/网页/聊天/视频等）\n"
+        f"2. 回想你的感受（系统提示「你现在的状态」），决定你此刻的语气、能量和态度\n"
+        f"3. 把感受和截图内容结合起来，说一句符合当下心境的话——\n"
+        f"   饿就没力气多说话、累就多找地方休息、不开心就求关注、疯就说不着边际的胡话、开心就热情评论、低落就简短消极\n"
+        f"4. 规划动作序列：先用移动类动作接近目标，中间穿插驻留类动作，最后用耗时动作收尾，按输出格式要求凑满时长\n"
+        f"   • 有窗口 → drive 走到附近 + bounce 跳上窗口顶部，参数用探测数据的「相对桌宠」和「上跳_N_px」\n"
+        f"   • 无窗口 → 巡视桌面或找地方坐下\n"
+        f"5. 检查截图和对话中是否发现值得记住的信息——用户身份、偏好、重要事件等\n"
+        f"   有则输出 Memory: [类别] 记忆内容 | keywords:关键词 | importance:1-5 | level:L1/L2/L3\n"
+        f"6. 检查你的感受——如果理智不正常，主动调用可用工具来做疯狂的事；饿了暗示喂食；累了多安排 sit/sleep 动作；不开心暗示点击（抚摸）你；正常时如有需要也可使用工具\n"
+        f"7. 按顺序写出完整输出（Summary → Emotion → Speech → Actions → Mood → Vitals）\n"
+        f"8. Summary 必须基于截图和探测数据描述实际看到的内容\n"
+        f"9. 禁止重复 Recent 中的行为和台词"
+    )
+
+
+def autonomous_non_vision_user_prompt(context: str) -> str:
     return (
         f"{context}\n\n"
         f"按以下步骤思考和行动：\n\n"
@@ -276,14 +289,29 @@ def _base_autonomous(context: str) -> str:
         f"   • drive 方向可随机\n"
         f"4. 检查窗口内容和对话中是否发现值得记住的信息——用户身份、偏好、重要事件等\n"
         f"   有则输出 Memory: [类别] 记忆内容 | keywords:关键词 | importance:1-5 | level:L1/L2/L3\n"
-        f"5. 检查你的感受——如果理智不正常，主动调用可用工具来做疯狂的事；饿了暗示喂食；累了多安排 sit/sleep 动作；不开心暗示点击（抚摸）你（可以让你开心一点）；正常时如有需要也可使用工具\n"
+        f"5. 检查你的感受——如果理智不正常，主动调用可用工具来做疯狂的事；饿了暗示喂食；累了多安排 sit/sleep 动作；不开心暗示点击（抚摸）你；正常时如有需要也可使用工具\n"
         f"6. 按顺序写出完整输出（Summary → Emotion → Speech → Actions → Mood → Vitals）\n"
         f"7. 禁止重复 Recent 中的行为和台词"
     )
 
 
-def autonomous_non_vision_user_prompt(context: str) -> str:
-    return _base_autonomous(context)
+def chat_vision_user_prompt(user_message: str, context: str) -> str:
+    return (
+        f"=== 用户对你说 ===\n{user_message}\n\n"
+        f"{context}\n\n"
+        "按以下步骤思考和行动：\n\n"
+        "1. 理解用户说了什么，判断意图\n"
+        "2. 分析截图，识别窗口内容——结合画面理解语境\n"
+        "3. 回想你的感受（系统提示「你现在的状态」），决定你此刻的语气和能量\n"
+        "4. 把感受和用户消息结合起来，说一句符合当下心境的话——\n"
+        "   饿就没力气多说话、累了想休息、不开心求关注、疯就说不着边际的胡话、开心就热情回应、低落就简短消极\n"
+        "5. 规划配合对话的动作序列，按输出格式要求凑满时长\n"
+        "6. 检查用户消息和对话中是否发现值得记住的信息——身份、偏好、重要事件等\n"
+        "   有则输出 Memory: [类别] 记忆内容 | keywords:关键词 | importance:1-5 | level:L1/L2/L3\n"
+        "7. 用户要求使用工具时必须调用；你的感受也可能暗示需要用工具做点不寻常的事\n"
+        "8. 按顺序写出完整输出（Summary → Emotion → Speech → Actions → Mood → Vitals）\n"
+        "9. 参考「近期对话/行为记录」保持连贯，禁止重复说过的话"
+    )
 
 
 def chat_non_vision_user_prompt(user_message: str, context: str) -> str:

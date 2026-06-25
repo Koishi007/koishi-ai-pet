@@ -50,20 +50,37 @@ def _show_panel():
 
 def _add_with_notify(title: str) -> dict:
     """添加待办 + Windows 通知。"""
+    TOOL_CTX.speech_random(["记一下…", "写下来…", "别忘了…", "记一下…"])
     result = _instance.add(title=title)
     if "error" not in result:
         TOOL_CTX.notify("待办已添加", title.strip())
     return result
 
 
+def _list_todos(**kw):
+    TOOL_CTX.speech_random(["看看还有什么事…", "翻翻待办…", "什么事没做…", "看看待办…"])
+    return _instance.list_todos(**kw)
+
+
 def _complete_with_notify(todo_id: int) -> dict:
     """切换完成状态 + Windows 通知。"""
+    TOOL_CTX.speech_random(["完成…", "搞定…", "好耶…", "做完啦…"])
     result = _instance.toggle(todo_id)
     if "error" not in result:
         item = result.get("item", {})
         label = "已完成" if item.get("status") == "done" else "已恢复"
         TOOL_CTX.notify(f"待办{label}", item.get("title", ""))
     return result
+
+
+def _delete(**kw):
+    TOOL_CTX.speech_random(["删掉…", "划掉…", "不要了…", "去掉…"])
+    return _instance.delete(**kw)
+
+
+def _update(**kw):
+    TOOL_CTX.speech_random(["改一下…", "修修看…", "调整一下…", "改改…"])
+    return _instance.update(**kw)
 
 
 def register(registry):
@@ -86,7 +103,7 @@ def register(registry):
     registry.add_method(
         TOOL_NAME, "list",
         "查询任务列表",
-        handler=_instance.list_todos,
+        handler=_list_todos,
         args={
             "status": {"type": "str", "required": False, "default": "pending",
                        "desc": "状态: pending/done/all",
@@ -106,7 +123,7 @@ def register(registry):
     registry.add_method(
         TOOL_NAME, "delete",
         "删除指定任务",
-        handler=_instance.delete,
+        handler=_delete,
         args={
             "todo_id": {"type": "int", "required": True, "desc": "任务ID"},
         },
@@ -115,7 +132,7 @@ def register(registry):
     registry.add_method(
         TOOL_NAME, "update",
         "修改已有任务的标题",
-        handler=_instance.update,
+        handler=_update,
         args={
             "todo_id": {"type": "int", "required": True, "desc": "任务ID"},
             "title": {"type": "str", "required": True, "desc": "新标题"},

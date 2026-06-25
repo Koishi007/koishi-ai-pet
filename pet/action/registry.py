@@ -118,14 +118,14 @@ def _build_duration_registry() -> dict[str, ActionDef]:
         "fade_in": ActionDef(
             name="fade_in",
             category="显隐",
-            description="淡入显示。窗口从透明到可见，与 fade_out 成对使用（必须先 out 后 in），中间可以夹带其他动作。禁止单独出现。",
+            description="淡入显示。从透明到可见，与 fade_out 成对使用（必须先 out 后 in），中间可以夹带其他动作。禁止单独出现。",
             params=[],
             usage_example="Action: fade_in",
         ),
         "fade_out": ActionDef(
             name="fade_out",
             category="显隐",
-            description="淡出隐藏。窗口从可见到透明，与 fade_in 成对使用（必须先 out 后 in），中间可以夹带其他动作。禁止单独出现。",
+            description="淡出隐藏。从可见到透明，与 fade_in 成对使用（必须先 out 后 in），中间可以夹带其他动作。禁止单独出现。",
             params=[],
             usage_example="Action: fade_out",
         ),
