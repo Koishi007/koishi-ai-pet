@@ -187,8 +187,7 @@ class PetWindow(TransparentWindow):
         self._press_pos = None
         self.particles.spawn("hearts")
         if self._agent is not None:
-            self._agent.mood.modify_sanity(2.0)
-            self._agent.mood.modify_affection(1.0)
+            self._agent.mood.modify_sanity(1.0)
             self._agent.mood.modify_joy(1.0)
 
     def mouseMoveEvent(self, event: QMouseEvent):
