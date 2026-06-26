@@ -266,6 +266,7 @@ class Behavior(BrainMixin):
                     messages, tool_calls_map, content,
                     tag=tag, tools_param=tools_param, max_tokens=max_tokens,
                     max_rounds=config.LLM_TOOL_MAX_ROUNDS,
+                    speech_streamed=speech_streamed,
                 )
 
             result = self._parse_behavior(content)
@@ -400,6 +401,7 @@ class Behavior(BrainMixin):
                     on_chunk=on_chunk, on_stream_end=None, tag=tag,
                     tools_param=tools_param, max_tokens=max_tokens,
                     max_rounds=config.LLM_TOOL_MAX_ROUNDS,
+                    speech_streamed=speech_streamed,
                 )
 
             raw = "\n".join(
@@ -552,14 +554,14 @@ class Behavior(BrainMixin):
 
     def _handle_tool_calls(self, messages, tool_calls_map, first_content,
                             on_chunk=None, on_stream_end=None, tag="", tools_param=None,
-                            max_rounds=5, max_tokens: int = 4000) -> BehaviorOutput:
+                            max_rounds=5, max_tokens: int = 4000,
+                            speech_streamed: bool = False) -> BehaviorOutput:
         """执行 tool_calls 并循环直到 LLM 不再请求工具。"""
         import json as _json
         from pet.tools.executor import ToolExecutor, ToolCall
 
         executor = ToolExecutor()
         current_messages = list(messages)
-        speech_streamed = False
         tool_log = []  # 记录工具调用摘要，用于写入上下文
         final_instruction_added = False  # 最终轮精简指令是否已追加
 
@@ -804,4 +806,5 @@ class Behavior(BrainMixin):
                         logger.debug(f"[{t}] [Behavior] --- msg[{i}] role={m['role']} part[{j}] text ---\n{part['text']}")
                     else:
                         logger.debug(f"[{t}] [Behavior] --- msg[{i}] role={m['role']} part[{j}] {part['type']} len={len(str(part))} --- (binary omitted)")
+        logger.debug(f"[{t}] [Behavior] ====== END CONTEXT ({tag}) ======")
         logger.debug(f"[{t}] [Behavior] ====== END CONTEXT ({tag}) ======")

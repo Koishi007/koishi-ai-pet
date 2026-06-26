@@ -32,11 +32,13 @@ def register(registry):
 
     registry.add_method(
         TOOL_NAME, "list_dir",
-        "列出指定目录内容（限桌面/文档）",
+        "列出指定目录内容（限桌面/文档，分页每页50项）",
         handler=_list_dir,
         args={
             "path": {"type": "str", "required": False, "default": "~/Desktop",
                      "desc": "目录路径，默认桌面"},
+            "page": {"type": "int", "required": False, "default": 1,
+                     "desc": "页码，从1开始"},
         },
     )
     registry.add_method(

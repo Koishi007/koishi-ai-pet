@@ -35,7 +35,9 @@ class FileOpsTool:
                 continue
         raise PermissionError(f"不允许访问: {abs_path}")
 
-    def list_dir(self, path: str = "~/Desktop") -> dict:
+    _PAGE_SIZE = 50
+
+    def list_dir(self, path: str = "~/Desktop", page: int = 1) -> dict:
         try:
             abs_path = self._check_path(path)
         except PermissionError as e:
@@ -43,11 +45,29 @@ class FileOpsTool:
         if not os.path.isdir(abs_path):
             return {"error": "目录不存在"}
         try:
-            items = os.listdir(abs_path)[:30]
+            all_items = sorted(os.listdir(abs_path))
         except PermissionError:
             return {"error": f"无权限读取目录: {abs_path}"}
-        return {"path": abs_path, "items": items, "count": len(items),
-                "__context__": f"列出目录 {abs_path}（{len(items)}项）"}
+        total = len(all_items)
+        page_size = self._PAGE_SIZE
+        total_pages = (total + page_size - 1) // page_size if total else 1
+        page = max(1, min(page, total_pages))
+        start = (page - 1) * page_size
+        items = all_items[start:start + page_size]
+        result = {
+            "path": abs_path,
+            "items": items,
+            "count": len(items),
+            "total": total,
+            "page": page,
+            "total_pages": total_pages,
+            "has_next": page < total_pages,
+            "has_prev": page > 1,
+        }
+        if total_pages > 1:
+            result["hint"] = f"第 {page}/{total_pages} 页（每页 {page_size} 项），has_next={result['has_next']}"
+        result["__context__"] = f"列出目录 {abs_path}（第{page}/{total_pages}页，{len(items)}/{total}项）"
+        return result
 
     def read_file(self, path: str, max_chars: int = 500) -> dict:
         abs_path = self._check_path(path)
