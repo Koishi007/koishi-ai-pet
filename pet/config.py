@@ -64,9 +64,9 @@ _KEY_META = {
     "VOICE_HOTKEY":              {"type": "str",      "default": "F8",          "category": "behavior",   "needs_restart": False, "hidden": False, "description": "语音输入全局热键"},
     # ── Memory ──
     "EMBEDDING_ENABLED":         {"type": "bool",     "default": False,          "category": "memory",   "needs_restart": True,  "hidden": False, "description": "启用向量记忆(需配置下方 API)"},
-    "EMBEDDING_URL":             {"type": "str",      "default": "",             "category": "memory",   "needs_restart": True,  "hidden": False, "description": "Embedding API 地址(需兼容 OpenAI 格式)", "placeholder": "https://open.bigmodel.cn/api/paas/v4"},
+    "EMBEDDING_URL":             {"type": "str",      "default": "",             "category": "memory",   "needs_restart": True,  "hidden": False, "description": "Embedding API 地址(需兼容 OpenAI 格式)"},
     "EMBEDDING_KEY":             {"type": "str",      "default": "",             "category": "memory",   "needs_restart": True,  "hidden": False, "description": "Embedding API Key"},
-    "EMBEDDING_MODEL":           {"type": "str",      "default": "",             "category": "memory",   "needs_restart": True,  "hidden": False, "description": "Embedding 模型名", "placeholder": "embedding-3"},
+    "EMBEDDING_MODEL":           {"type": "str",      "default": "",             "category": "memory",   "needs_restart": True,  "hidden": False, "description": "Embedding 模型名"},
     "EMBEDDING_DIM":             {"type": "int",      "default": 2048,           "category": "memory",   "needs_restart": True,  "hidden": False, "description": "向量维度(需与模型匹配)", "minimum": 64, "maximum": 8192},
     "EMBEDDING_DEDUP_THRESHOLD": {"type": "float",    "default": 0.6,            "category": "memory",   "needs_restart": False, "hidden": True,  "description": "向量语义去重距离阈值(0~1)"},
     "MEMORY_MAX_CAPACITY":       {"type": "int",      "default": 200,            "category": "memory",   "needs_restart": False, "hidden": False, "description": "记忆最大容量"},
