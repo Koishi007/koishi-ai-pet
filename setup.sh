@@ -129,7 +129,7 @@ Name=Koishi AI Pet
 Comment=AI 桌面虚拟宠物
 Exec=$LAUNCHER_CMD
 Path=$SCRIPT_DIR
-Icon=$SCRIPT_DIR/assets/icon/sys_tray.png
+Icon=$SCRIPT_DIR/assets/icon/index.ico
 Terminal=false
 Categories=Utility;
 EOF
@@ -151,7 +151,7 @@ elif [ "$OS_NAME" = "macOS" ]; then
     mkdir -p "$APP_DIR/Contents/Resources"
 
     # 生成 .app 图标（PNG → ICNS）
-    ICON_SRC="$SCRIPT_DIR/assets/icon/sys_tray.png"
+    ICON_SRC="$SCRIPT_DIR/assets/icon/index.ico"
     ICON_ICNS="$APP_DIR/Contents/Resources/applet.icns"
     if [ -f "$ICON_SRC" ]; then
         "$VENV_DIR/bin/python" -c "from PIL import Image; img=Image.open('$ICON_SRC'); img.save('$ICON_ICNS', format='ICNS')" 2>/dev/null || \

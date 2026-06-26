@@ -11,7 +11,7 @@ from PySide6.QtWidgets import QPushButton
 _PROJECT_ROOT = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..",
 )
-ICON_PATH = os.path.join(_PROJECT_ROOT, "assets", "icon", "sys_tray.png")
+ICON_PATH = os.path.join(_PROJECT_ROOT, "assets", "icon", "index.ico")
 SETTING_ICON_PATH = os.path.join(_PROJECT_ROOT, "assets", "icon", "setting.png")
 SHOW_ICON_PATH = os.path.join(_PROJECT_ROOT, "assets", "icon", "show.png")
 HIDE_ICON_PATH = os.path.join(_PROJECT_ROOT, "assets", "icon", "hide.png")

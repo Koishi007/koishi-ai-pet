@@ -77,7 +77,7 @@ class SystemTrayManager(QObject):
 
     def _update_tooltip(self):
         """定时更新托盘 tooltip，显示 pulse 参数 + 进程资源。"""
-        lines = ["DeskPet"]
+        lines = ["Koishi"]
         # pulse 参数
         agent = self.pet._agent if self.pet else None
         if agent:

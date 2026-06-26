@@ -88,7 +88,7 @@ echo   完成
 if not exist "%~dp0venv\Scripts\koishi.exe" (
     echo.
     echo [错误] 未找到 venv\Scripts\koishi.exe
-    echo        请确认 pyproject.toml 中已配置 [project.scripts] koishi = "..."
+    echo        请确认 pyproject.toml 中已配置 [project.gui-scripts] koishi = "..."
     echo        可手动启动：venv\Scripts\python.exe -m pet
     pause
     exit /b 1
@@ -98,15 +98,8 @@ if not exist "%~dp0venv\Scripts\koishi.exe" (
 echo.
 echo [4/4] 创建桌面快捷方式...
 
-:: 生成快捷方式图标（PNG 转 ICO）
-set "ICON_SRC=%~dp0assets\icon\sys_tray.png"
-set "ICON_ICO=%~dp0assets\icon\sys_tray.ico"
-if exist "%ICON_SRC%" (
-    "%~dp0venv\Scripts\python.exe" -c "from PIL import Image; img=Image.open(r'%ICON_SRC%'); img.save(r'%ICON_ICO%', format='ICO', sizes=[(256,256),(48,48),(32,32),(16,16)])" 2>nul
-    if not exist "%ICON_ICO%" (
-        echo [警告] 图标转换失败，快捷方式将使用默认图标
-    )
-)
+:: 图标直接使用 index.ico
+set "ICON_ICO=%~dp0assets\icon\index.ico"
 
 :: 读取真实桌面路径（兼容 OneDrive 重定向）
 for /f "usebackq tokens=2,*" %%a in (`reg query "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders" /v Desktop 2^>nul`) do set "DESKTOP=%%b"
@@ -117,7 +110,7 @@ set "SHORTCUT=!DESKTOP!\Koishi AI Pet.lnk"
 :: 始终覆盖重建，避免旧快捷方式指向失效路径
 if exist "!SHORTCUT!" del /q "!SHORTCUT!"
 
-:: 设置图标路径（若 ICO 生成失败则留空，使用 koishi.exe 默认图标）
+:: 设置图标路径（若 index.ico 不存在则留空，使用 koishi.exe 默认图标）
 set "ICON_ARG="
 if exist "%ICON_ICO%" set "ICON_ARG=$sc.IconLocation='%ICON_ICO%'; "
 

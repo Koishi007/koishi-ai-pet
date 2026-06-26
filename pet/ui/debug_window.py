@@ -44,7 +44,7 @@ class DebugWindow(QWidget):
             self.agent.speak_requested.connect(self._on_agent_speech)
             self.agent.emotion_requested.connect(self._on_agent_emotion)
 
-        self.setWindowTitle("DeskPet 调试面板")
+        self.setWindowTitle("调试面板")
         self.setObjectName("FlatWindow")
         self.setMinimumSize(1000, 850)
         self.setMaximumSize(1000, 850)

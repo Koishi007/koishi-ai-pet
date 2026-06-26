@@ -114,7 +114,7 @@ class LogWindow(QWidget):
 
     def __init__(self, relay: _LogRelay, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("DeskPet 日志")
+        self.setWindowTitle("日志")
         self.setObjectName("LogWindowRoot")
         self.setMinimumSize(520, 350)
         self.resize(620, 440)
