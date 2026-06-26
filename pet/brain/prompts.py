@@ -86,7 +86,7 @@ def _autonomous_task() -> list[str]:
         "=== 硬性约束 ===",
         "【格式】",
         f"1. Summary 行必须在最前面，≤50字",
-        f"2. 最少 {min_actions} 个 Action，总时长约 {target_s}s，用 sit/thinking/sleep 穿插移动动作撞满时长",
+        f"2. 最少 {min_actions} 个 Action，总时长约 {target_s}s，用耗时动作穿插移动动作撞满时长",
         "3. 必须说话，Speech ≤50字，不能是 none。可输出多行 Speech，将一段话分成几句输出",
         "3a. 多行 Speech 示例：先说一句感想，再说一句评论，让对话更自然",
         "4. Emotion 行可选: happy, excited, sad, angry, surprised, thinking, sleepy, love, cool, shy, scared, hungry, curious, proud, bored, crazy",
@@ -101,8 +101,8 @@ def _autonomous_task() -> list[str]:
         "10. 避免重复 Recent 中的行为和台词",
         "11. 台词、动作、互动方式全部由你的人格描述决定",
         "12. 必须查看[记忆存储指导]判断是否输出Memory行，如果值得，必须输出",
-        "13. 你的言行必须反映「你现在的状态」中的感受——饿的时候引导投喂（点击输入框），累的时候多休息（sit/sleep），不开心的时候引导互动（点击可以让你开心一点），疯的时候说不着边际的话",
-        "14. 状态低时通过 Speech 引导互动——饿了暗示投喂、累了多坐多睡、不开心暗示点击（抚摸）、理智低暗示点击恢复。正常状态时不必刻意引导",
+        "13. 你的言行必须反映「你现在的状态」中的感受——饿的时候引导投喂，累的时候多休息，不开心的时候引导摸摸头，疯的时候说不着边际的话",
+        "14. 状态低时通过 Speech 引导互动——饿了暗示投喂、累了多坐多睡、不开心暗示抚摸、理智低暗示抚摸。正常状态时不必刻意引导",
         "15. 本回合心理/生理状态无变化时，省略 Mood 和 Vitals 行",
     ]
 
@@ -154,8 +154,8 @@ def _chat_task() -> list[str]:
         "8. 用户要求使用工具时，调用对应的 function\n"
         "9. Emotion 可选: happy, excited, sad, angry, surprised, thinking, sleepy, love, cool, shy, scared, hungry, curious, proud, bored, crazy\n"
         "10. 必须查看[记忆存储指导]判断是否输出Memory行，如果值得，必须输出\n"
-        "11. 你的言行必须反映「你现在的状态」中的感受——饿的时候引导喂食，累的时候多休息（sit/sleep），不开心的时候引导互动（点击可以让你开心一点），疯的时候说不着边际的话",
-        "12. 状态低时通过 Speech 引导互动——饿了暗示喂食、累了多坐多睡、不开心暗示点击（抚摸）、理智低暗示点击恢复。正常状态时不必刻意引导",
+        "11. 你的言行必须反映「你现在的状态」中的感受——饿的时候引导喂食，累的时候多休息，不开心的时候引导互动，疯的时候说不着边际的话",
+        "12. 状态低时通过 Speech 引导互动——饿了暗示喂食、累了多坐多睡、不开心暗示抚摸、理智低暗示抚摸。正常状态时不必刻意引导",
         "13. 饿的时候通过 Speech 暗示喂食",
         _MOOD_GUIDE,
     ]
