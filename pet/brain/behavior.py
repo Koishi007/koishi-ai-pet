@@ -391,11 +391,12 @@ class Behavior(BrainMixin):
                     ([f"Vitals: {vitals_holder[0]}"] if vitals_holder else [])
                 )
                 logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] [Behavior]   tool_calls: {len(accumulated_tool_calls)}")
-                if on_stream_end:
-                    on_stream_end()
+                # 不在此处调用 on_stream_end：保持气泡流不中断，
+                # 后续 tool call 轮次的 speech 可继续追加到同一气泡。
+                # 流的收尾由 pipeline 的 if stream_started 处理。
                 return self._handle_tool_calls(
                     messages, accumulated_tool_calls, first_content,
-                    on_chunk=on_chunk, on_stream_end=on_stream_end, tag=tag,
+                    on_chunk=on_chunk, on_stream_end=None, tag=tag,
                     tools_param=tools_param, max_tokens=max_tokens,
                 )
 
