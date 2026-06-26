@@ -128,6 +128,74 @@ class _VoiceTestWorker(QObject):
         self.finished.emit(ok)
 
 
+class MarkdownEdit(QWidget):
+    """支持 Markdown 渲染的文本编辑器。点击按钮切换编辑/预览模式。"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._raw_text = ""
+        self._editing = False
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(2)
+
+        # 工具栏
+        toolbar = QHBoxLayout()
+        toolbar.setContentsMargins(0, 0, 0, 0)
+        self._toggle_btn = QPushButton("编辑")
+        self._toggle_btn.setFixedWidth(72)
+        self._toggle_btn.setStyleSheet(BUTTON_PRIMARY_QSS)
+        self._toggle_btn.clicked.connect(self._toggle_mode)
+        toolbar.addWidget(self._toggle_btn)
+        toolbar.addStretch()
+        layout.addLayout(toolbar)
+
+        # 文本区域
+        self._edit = QTextEdit()
+        self._edit.setAcceptRichText(False)
+        self._edit.setReadOnly(True)
+        self._edit.setPlaceholderText("点击「编辑」按钮输入 Markdown")
+        layout.addWidget(self._edit)
+
+    def setPlainText(self, text: str):
+        """存储原始 Markdown 源码并按当前模式渲染。"""
+        self._raw_text = text or ""
+        if self._editing:
+            self._edit.setPlainText(self._raw_text)
+        else:
+            self._edit.document().setMarkdown(self._raw_text)
+
+    def toPlainText(self) -> str:
+        """始终返回原始 Markdown 源码。"""
+        if self._editing:
+            self._raw_text = self._edit.toPlainText()
+        return self._raw_text
+
+    def setMinimumHeight(self, h: int):
+        self._edit.setMinimumHeight(h)
+
+    def _toggle_mode(self):
+        """切换编辑/预览模式。"""
+        if self._editing:
+            self._raw_text = self._edit.toPlainText()
+            self._editing = False
+            self._edit.setReadOnly(True)
+            self._edit.document().setMarkdown(self._raw_text)
+            self._toggle_btn.setText("编辑")
+        else:
+            self._editing = True
+            self._edit.setReadOnly(False)
+            self._edit.setPlainText(self._raw_text)
+            self._toggle_btn.setText("预览")
+            self._edit.setFocus()
+
+    def focusOutEvent(self, event):
+        if self._editing:
+            self._raw_text = self._edit.toPlainText()
+        super().focusOutEvent(event)
+
+
 class SettingsWindow(QWidget):
     _instance: SettingsWindow | None = None
 
@@ -308,10 +376,9 @@ class SettingsWindow(QWidget):
         self._fields[key] = cb
         return cb
 
-    def _text_area(self, key: str) -> QTextEdit:
-        """创建 QTextEdit 并注册到 _fields。"""
-        te = QTextEdit()
-        te.setAcceptRichText(False)
+    def _text_area(self, key: str) -> MarkdownEdit:
+        """创建 MarkdownEdit 并注册到 _fields。"""
+        te = MarkdownEdit()
         self._fields[key] = te
         return te
 
@@ -702,7 +769,7 @@ class SettingsWindow(QWidget):
         form = QVBoxLayout(content)
         form.setContentsMargins(8, 8, 8, 8)
 
-        form.addWidget(QLabel("宠物人格 Prompt"))
+        form.addWidget(QLabel("宠物人格提示词"))
         te = self._text_area("PET_PERSONALITY")
         te.setMinimumHeight(240)
         form.addWidget(te)
@@ -711,12 +778,14 @@ class SettingsWindow(QWidget):
         sep.setFixedHeight(8)
         form.addWidget(sep)
 
-        form.addWidget(QLabel("交互 Prompt"))
+        form.addWidget(QLabel("交互提示词"))
         for label, key in [("抓取", "INTERACT_GRABBED_PROMPT"),
                            ("放下", "INTERACT_RELEASED_PROMPT"),
                            ("窗口消失", "INTERACT_WINDOW_DISAPPEARED_PROMPT")]:
             form.addWidget(QLabel(label))
-            form.addWidget(self._text_area(key))
+            ta = self._text_area(key)
+            ta.setMinimumHeight(240)
+            form.addWidget(ta)
 
         scroll.setWidget(content)
         layout.addWidget(scroll)
@@ -741,7 +810,7 @@ class SettingsWindow(QWidget):
             elif isinstance(widget, QComboBox):
                 idx = widget.findText(str(value))
                 widget.setCurrentIndex(max(idx, 0))
-            elif isinstance(widget, QTextEdit):
+            elif isinstance(widget, (QTextEdit, MarkdownEdit)):
                 widget.setPlainText(str(value))
         self._take_snapshot()
 
@@ -755,7 +824,7 @@ class SettingsWindow(QWidget):
                 self._snapshot[key] = widget.isChecked()
             elif isinstance(widget, QComboBox):
                 self._snapshot[key] = widget.currentText()
-            elif isinstance(widget, QTextEdit):
+            elif isinstance(widget, (QTextEdit, MarkdownEdit)):
                 self._snapshot[key] = widget.toPlainText()
 
     def _is_dirty(self) -> bool:
@@ -769,7 +838,7 @@ class SettingsWindow(QWidget):
                 current = widget.isChecked()
             elif isinstance(widget, QComboBox):
                 current = widget.currentText()
-            elif isinstance(widget, QTextEdit):
+            elif isinstance(widget, (QTextEdit, MarkdownEdit)):
                 current = widget.toPlainText()
             else:
                 continue
@@ -814,7 +883,7 @@ class SettingsWindow(QWidget):
                 result[key] = widget.isChecked()
             elif isinstance(widget, QComboBox):
                 result[key] = widget.currentText()
-            elif isinstance(widget, QTextEdit):
+            elif isinstance(widget, (QTextEdit, MarkdownEdit)):
                 result[key] = widget.toPlainText()
         return result, invalid_keys
 
