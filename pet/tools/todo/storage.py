@@ -11,13 +11,13 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 def _find_project_root() -> Path:
-    """从当前文件向上查找包含 config.py 的目录作为项目根。"""
+    """从当前文件向上查找包含 pyproject.toml 的目录作为项目根。"""
     cur = Path(__file__).resolve().parent
     for _ in range(10):
-        if (cur / "config.py").exists():
+        if (cur / "pyproject.toml").exists():
             return cur
         cur = cur.parent
-    # 回退：假设 pet/tools/todo/ → 3 层 parent to project root
+    # 回退：假设 pet/tools/todo/ → 4 层 parent to project root
     return Path(__file__).resolve().parent.parent.parent.parent
 
 

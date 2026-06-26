@@ -14,7 +14,7 @@ from pet.action.registry import default_duration, _DURATION_ACTION_DEFS
 from pet.pulse.vitals import Vitals
 from pet.pulse.mood import Mood
 
-from config import config
+from pet.config import config
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +67,7 @@ class PetAgent(QObject):
         self.state_machine = StateMachine(parent=self)
         self.state_machine.state_changed.connect(self.state_changed)
         self._pet_window = None
-        self._voice_session = None  # main.py 设置
+        self._voice_session = None  # pet/app.py 设置
 
         self._tasks = ScheduledTasks(self)
         self._tasks.register_all(self.scheduler)

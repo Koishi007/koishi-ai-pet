@@ -25,7 +25,7 @@ from PySide6.QtCore import Qt, QTimer, QObject, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QApplication
 
-from config import config
+from pet.config import config
 
 logger = logging.getLogger(__name__)
 

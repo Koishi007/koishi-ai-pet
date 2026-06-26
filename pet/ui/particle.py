@@ -8,7 +8,7 @@ from PySide6.QtCore import Qt, QTimer, QObject, Signal, QPointF
 from PySide6.QtGui import QPainter, QColor, QPen, QFont, QPolygonF, QPainterPath
 from PySide6.QtWidgets import QWidget
 
-from config import config
+from pet.config import config
 
 logger = logging.getLogger(__name__)
 

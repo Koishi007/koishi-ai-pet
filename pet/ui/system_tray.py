@@ -11,7 +11,7 @@ from PySide6.QtCore import QObject, QTimer, Qt
 from pet.ui.styles import ICON_PATH, MENU_QSS
 from pet.ui.settings_window import SettingsWindow
 
-from config import config
+from pet.config import config
 
 logger = logging.getLogger(__name__)
 

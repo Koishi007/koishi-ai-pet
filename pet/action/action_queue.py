@@ -2,7 +2,7 @@ import logging
 
 from PySide6.QtCore import QObject, QPropertyAnimation, QTimer, Signal
 
-from config import config
+from pet.config import config
 
 logger = logging.getLogger(__name__)
 

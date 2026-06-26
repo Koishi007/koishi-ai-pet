@@ -4,7 +4,7 @@ import math
 from dataclasses import dataclass, field
 from typing import List
 
-from config import config
+from pet.config import config
 
 
 # ── 耗时类动作的动态时长计算 ──

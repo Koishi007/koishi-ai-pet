@@ -10,7 +10,7 @@ from openai import (
     APIConnectionError, APITimeoutError, RateLimitError,
     InternalServerError, AuthenticationError, BadRequestError, NotFoundError,
 )
-from config import config
+from pet.config import config
 
 logger = logging.getLogger(__name__)
 

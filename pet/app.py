@@ -1,10 +1,14 @@
+"""DeskPet 桌面宠物 — 主入口"""
+
 import ctypes
 import logging
 import os
 import sys
 from logging.handlers import TimedRotatingFileHandler
+
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 from PySide6.QtGui import QIcon
+
 from pet.ui.log_window import _LogRelay, LogWindowHandler
 from pet.ui.styles import ICON_PATH
 from pet.ui.pet_window import PetWindow
@@ -17,7 +21,7 @@ from pet.agent import PetAgent
 from pet.brain.prompts import interact_fed_prompt
 from pet.tools import load_tools
 from pet.tools.context import TOOL_CTX
-from config import config
+from pet.config import config
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +43,7 @@ def main():
         logging.getLogger(_lib).setLevel(logging.WARNING)
 
     # 文件日志：按天切分，保留 3 天
-    _log_dir = "logs"
+    _log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
     os.makedirs(_log_dir, exist_ok=True)
     _file_handler = TimedRotatingFileHandler(
         filename=os.path.join(_log_dir, "deskpet.log"),
@@ -96,7 +100,7 @@ def main():
     window.set_agent(agent)
     window.set_app(app)
     window.set_log_relay(_log_relay)
-    agent.set_pet_window(window)  # 供窗口坐标探测用
+    agent.set_pet_window(window)
     bubble = SpeechBubble(window)
     emotion_bubble = EmotionBubble(window)
 
@@ -144,26 +148,21 @@ def main():
         from pet.voice.hotkey_manager import HotkeyManager
 
         _voice_session = VoiceSession()
-        agent._voice_session = _voice_session  # 供设置窗口热重载
+        agent._voice_session = _voice_session
         _hotkey_mgr = HotkeyManager()
 
-        # 热键 → 语音（push-to-talk：按下开始，松开停止）
         _hotkey_mgr.voice_start.connect(_voice_session.start_recording)
         _hotkey_mgr.voice_stop.connect(_voice_session.stop_recording)
 
-        # 语音 → 气泡 UI（实时文字展示）
         _voice_session.partial_text.connect(chat_bubble.set_voice_text)
         _voice_session.transcription_done.connect(chat_bubble.finalize_voice_text)
 
-        # 全局回车拦截（语音输入完成后，通过 pynput 捕获回车提交）
         chat_bubble.enter_intercept.connect(_hotkey_mgr.set_intercept_enter)
         _hotkey_mgr.enter_pressed.connect(chat_bubble._on_submit)
 
-        # 录音开始 → 自动展开输入框 + 切换图标
         _voice_session.recording_started.connect(chat_bubble.show_voice_input)
         _voice_session.recording_started.connect(lambda: chat_bubble.set_recording_icon(True))
 
-        # 录音结束 → 恢复图标
         _voice_session.recording_stopped.connect(lambda: chat_bubble.set_recording_icon(False))
         _voice_session.transcription_done.connect(lambda _: chat_bubble.set_recording_icon(False))
 
@@ -187,7 +186,6 @@ def main():
 
     def _shutdown():
         logger.info("shutting down...")
-        # 语音模块清理（各自独立 try/except，避免阻断后续保存）
         if _hotkey_mgr:
             try:
                 _hotkey_mgr.stop()
@@ -198,20 +196,16 @@ def main():
                 _voice_session.disconnect()
             except Exception as e:
                 logger.warning(f"shutdown: voice disconnect failed: {e}")
-        # 先保存数据，再移除日志 handler
         try:
             agent.behavior.llm_stats.save()
             agent.behavior.llm_stats.close()
         except Exception as e:
             logger.warning(f"shutdown: llm_stats save failed: {e}")
-        # 保存上下文并记录关闭时间
         try:
             agent.behavior._save_context(record_shutdown=True)
         except Exception as e:
             logger.warning(f"shutdown: context save failed: {e}")
-        # 移除日志 handler（放在最后，确保前面步骤的日志能输出）
         logging.getLogger().removeHandler(_log_handler)
-        # 清理设置窗口
         try:
             from pet.ui.settings_window import SettingsWindow
             if SettingsWindow._instance:
@@ -224,13 +218,9 @@ def main():
             window.close()
             tray.hide()
         except RuntimeError:
-            pass  # C++ 对象可能已被 Qt 提前销毁
+            pass
 
     app.aboutToQuit.connect(_shutdown)
 
     logger.info("Entering event loop")
     sys.exit(app.exec())
-
-
-if __name__ == "__main__":
-    main()

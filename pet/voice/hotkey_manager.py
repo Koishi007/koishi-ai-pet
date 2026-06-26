@@ -5,7 +5,7 @@ import logging
 from pynput import keyboard
 from PySide6.QtCore import QObject, Signal
 
-from config import config
+from pet.config import config
 
 logger = logging.getLogger(__name__)
 

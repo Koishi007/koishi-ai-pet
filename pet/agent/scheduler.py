@@ -7,7 +7,7 @@ from typing import Callable
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
-from config import config
+from pet.config import config
 
 logger = logging.getLogger(__name__)
 

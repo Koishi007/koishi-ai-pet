@@ -4,7 +4,7 @@ import logging
 from datetime import datetime
 
 from pet.agent.state import PetState
-from config import config
+from pet.config import config
 
 logger = logging.getLogger(__name__)
 

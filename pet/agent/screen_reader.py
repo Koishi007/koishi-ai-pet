@@ -8,7 +8,7 @@ from typing import Optional
 from PIL import Image
 import mss
 
-from config import config
+from pet.config import config
 
 logger = logging.getLogger(__name__)
 

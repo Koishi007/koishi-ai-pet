@@ -14,7 +14,7 @@ from wsgiref.handlers import format_date_time
 import websocket
 from PySide6.QtCore import QObject, Signal
 
-from config import config
+from pet.config import config
 
 logger = logging.getLogger(__name__)
 

@@ -4,7 +4,7 @@ import logging
 
 from PySide6.QtCore import QPoint, QTimer, QPropertyAnimation, QEasingCurve, QObject, Signal
 from PySide6.QtWidgets import QWidget
-from config import config
+from pet.config import config
 from pet.action.gravity import GravitySystem
 
 logger = logging.getLogger(__name__)

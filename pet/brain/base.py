@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from config import config
+from pet.config import config
 
 logger = logging.getLogger(__name__)
 

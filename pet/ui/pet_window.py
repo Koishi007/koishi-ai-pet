@@ -12,7 +12,7 @@ from pet.ui.settings_window import SettingsWindow
 from pet.action import PetActions, ActionQueue
 from pet.brain.prompts import INTERACT_GRABBED, INTERACT_RELEASED, INTERACT_WINDOW_DISAPPEARED
 from pet.tools.registry import TOOL_REGISTRY
-from config import config
+from pet.config import config
 
 logger = logging.getLogger(__name__)
 

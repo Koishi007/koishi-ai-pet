@@ -11,7 +11,7 @@ from difflib import SequenceMatcher
 from typing import Optional, List, Tuple
 from abc import ABC, abstractmethod
 
-from config import config
+from pet.config import config
 
 logger = logging.getLogger(__name__)
 
@@ -111,12 +111,12 @@ class _MemoryRetriever(ABC):
 
     @property
     def MAX_MEMORIES(self) -> int:
-        from config import config
+        from pet.config import config
         return config.MEMORY_MAX_CAPACITY
 
     @property
     def RECALL_COOLDOWN_SECONDS(self) -> int:
-        from config import config
+        from pet.config import config
         return config.MEMORY_RECALL_COOLDOWN_S
 
     def __init__(self, conn: sqlite3.Connection, dedup_threshold: float = 0.6):
@@ -550,7 +550,7 @@ class VectorRetriever(_MemoryRetriever):
     def __init__(self, conn: sqlite3.Connection, dedup_threshold: float = 0.6):
         super().__init__(conn, dedup_threshold)
 
-        from config import config
+        from pet.config import config
         from pet.brain.embedding_client import EmbeddingClient
         self._embedder = EmbeddingClient(
             url=config.EMBEDDING_URL,
@@ -824,7 +824,7 @@ class MemoryStore:
             return False
 
     def _build_retriever(self, dedup_threshold: float) -> _MemoryRetriever:
-        from config import config
+        from pet.config import config
         reasons = []
         vec_ok = False
 

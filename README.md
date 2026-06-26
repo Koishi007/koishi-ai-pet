@@ -1,4 +1,4 @@
-# Koishi DeskPet 🐾
+# Koishi AI Pet 🐾
 
 > 基于 PySide6 + LLM 的 Windows 桌面 AI 虚拟宠物，形象来自东方Project的古明地恋，能感知屏幕、与窗口互动、与你对话。
 
@@ -16,38 +16,54 @@
 
 ```
 DeskPet/
-├── main.py                    # 入口
-├── config.py                  # 全局配置
-├── requirements.txt
-├── assets/actions/            # 帧动画素材（idle、walk、sit、sleep…）
+├── pyproject.toml              # 项目配置 & 依赖
+├── assets/actions/             # 帧动画素材（idle、walk、sit、sleep…）
 └── pet/
-    ├── action/                # 动作系统：注册、ActionQueue、重力模拟
-    ├── agent/                 # 调度层：PetAgent、Scheduler、StateMachine
-    ├── brain/                 # LLM 集成：Behavior、prompts、memory、window_detector
-    ├── pulse/                 # 心理数值引擎：Mood（好感/愉悦/理智）、Vitals（饱食/精力）
-    ├── tools/                 # 工具系统：Registry、Executor、内置工具
-    ├── ui/                    # Qt 界面：宠物窗口、气泡、聊天框、托盘、设置
-    └── voice/                 # 语音输入：麦克风采集、讯飞 STT
+    ├── app.py                  # 主入口
+    ├── config.py              # 全局配置
+    ├── action/                 # 动作系统：注册、ActionQueue、重力模拟
+    ├── agent/                  # 调度层：PetAgent、Scheduler、StateMachine
+    ├── brain/                  # LLM 集成：Behavior、prompts、memory、window_detector
+    ├── pulse/                  # 心理数值引擎：Mood（好感/愉悦/理智）、Vitals（饱食/精力）
+    ├── tools/                  # 工具系统：Registry、Executor、内置工具
+    ├── ui/                     # Qt 界面：宠物窗口、气泡、聊天框、托盘、设置
+    └── voice/                  # 语音输入：麦克风采集、讯飞 STT
 ```
 
 ## 🚀 快速开始
 
-### 1. 安装依赖（需要安装Python 3.12.x）
+### Windows
 
+1. 安装 Python 3.11+：[python.org/downloads](https://www.python.org/downloads/)（勾选 **"Add Python to PATH"**）
+2. **双击 `setup.bat`**，自动完成安装和桌面快捷方式创建
+3. 双击桌面 **"Koishi AI Pet"** 快捷方式启动
 
-```bash
-pip install -r requirements.txt
-```
-
-### 2. 设置
-
-首次启动自动生成默认配置，也可通过托盘右键或者右键宠物菜单 →「设置」进行修改。
-
-### 3. 启动
+### macOS / Linux
 
 ```bash
-python main.py
+# 一键安装
+chmod +x setup.sh && ./setup.sh
+
+# 或手动安装
+python3 -m venv venv
+source venv/bin/activate
+pip install -e .
+
+# 启动
+./venv/bin/koishi
+# 或
+python -m pet
 ```
+
+> 首次启动会自动生成默认配置，也可通过右键菜单 →「设置」修改。
+
+
+## 推荐模型供应商
+**Mimo v2.5**：价格便宜，原生多模态，作为主要调度模型。
+**智谱embedding-3**：价格便宜，快速上手，作为记忆设置的向量模型
+
+> 若不配置向量模型，也有基于关键词匹配的基础记忆功能
+
 
 ## 🧩 内置工具
 
@@ -172,10 +188,6 @@ def alert() -> dict:
 - **超时保护**：handler 在线程池中执行，超时后自动终止并返回错误
 - **异常隔离**：handler 异常会被捕获，译为错误信息传给 LLM，不影响主流程
 - **序列化友好**：返回的 dict 必须能被 `json.dumps(ensure_ascii=False)` 序列化
-
-## 📝 日志
-
-应用日志按天切分，保留 3 天，输出至 `logs/deskpet.log`。日志级别由设置中的 `LOG_LEVEL` 控制。
 
 ## 📜 许可
 

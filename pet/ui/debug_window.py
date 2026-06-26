@@ -23,7 +23,7 @@ from pet.ui.speech_bubble import SpeechBubble
 from pet.ui.emotion import EmotionBubble, EMOTION_MAP
 from pet.ui.particle import ParticleWidget
 from pet.brain.behavior import Behavior
-from config import config
+from pet.config import config
 
 
 class DebugWindow(QWidget):

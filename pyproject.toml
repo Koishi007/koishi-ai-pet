@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=64.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "koishi-ai-pet"
+version = "1.0.0"
+description = "古明地恋AI桌宠"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "GPL-3.0-only" }
+authors = [
+    { name = "Koishi007" },
+]
+
+dependencies = [
+    "PySide6==6.11.1",
+    "PySide6_Addons==6.11.1",
+    "PySide6_Essentials==6.11.1",
+    "shiboken6==6.11.1",
+    "openai>=1.0.0",
+    "psutil>=5.9.0",
+    "mss>=9.0.0",
+    "Pillow>=10.0.0",
+    "numpy>=1.24.0",
+    "tenacity>=8.2.0",
+    "jieba>=0.42.1",
+    "sqlite-vec>=0.1.0",
+    "pyobjc-framework-Quartz; sys_platform == 'darwin'",
+    "pyobjc-framework-AppKit; sys_platform == 'darwin'",
+    "python-xlib; sys_platform == 'linux'",
+]
+
+[project.urls]
+Homepage = "https://github.com/Koishi007/koishi-ai-pet"
+
+[project.gui-scripts]
+koishi = "pet.app:main"
+
+[tool.setuptools.packages.find]
+include = ["pet*"]

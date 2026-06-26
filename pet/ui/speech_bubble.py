@@ -3,7 +3,7 @@
 from PySide6.QtWidgets import QLabel, QWidget
 from PySide6.QtCore import Qt, QTimer, QPoint, QPropertyAnimation, QParallelAnimationGroup, QEasingCurve
 from PySide6.QtGui import QPainter, QColor, QPen, QPolygon
-from config import config
+from pet.config import config
 
 TAIL_HEIGHT = 10
 

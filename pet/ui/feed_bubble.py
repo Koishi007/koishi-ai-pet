@@ -5,7 +5,7 @@ from pathlib import Path
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLineEdit, QBoxLayout
 from PySide6.QtCore import Qt, QSize, QTimer, QPoint, Signal, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup, QEvent
 from PySide6.QtGui import QFont, QIcon
-from config import config
+from pet.config import config
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 

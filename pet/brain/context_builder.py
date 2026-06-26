@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Optional
 
 from pet.brain import prompts
-from config import config
+from pet.config import config
 
 
 class ContextBuilder:

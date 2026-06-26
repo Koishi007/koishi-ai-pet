@@ -12,7 +12,7 @@ from pet.brain.base import BrainMixin
 from pet.brain.context_builder import ContextBuilder
 from pet.brain.llm_stats import LlmStats
 from pet.action.registry import ACTION_NAMES
-from config import config
+from pet.config import config
 from pet.brain.llm_retry import llm_retry
 
 logger = logging.getLogger(__name__)

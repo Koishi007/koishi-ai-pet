@@ -2,7 +2,7 @@
 
 from PySide6.QtWidgets import QLabel, QWidget
 from PySide6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve
-from config import config
+from pet.config import config
 
 # 情绪名 → emoji 映射
 EMOTION_MAP = {
