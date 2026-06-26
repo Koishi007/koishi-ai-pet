@@ -1,6 +1,6 @@
 # Koishi AI Pet 🐾
 
-> 基于 PySide6 + LLM 的 Windows 桌面 AI 虚拟宠物，形象来自东方Project的古明地恋，能感知屏幕、与窗口互动、与你对话。
+> 基于 PySide6 + LLM 的桌面 AI 虚拟宠物，形象来自东方Project的古明地恋，能感知屏幕、与窗口互动、与你对话。
 
 ## ✨ 项目功能
 
@@ -20,7 +20,7 @@ DeskPet/
 ├── assets/actions/             # 帧动画素材（idle、walk、sit、sleep…）
 └── pet/
     ├── app.py                  # 主入口
-    ├── config.py              # 全局配置
+    ├── config.py               # 全局配置
     ├── action/                 # 动作系统：注册、ActionQueue、重力模拟
     ├── agent/                  # 调度层：PetAgent、Scheduler、StateMachine
     ├── brain/                  # LLM 集成：Behavior、prompts、memory、window_detector
@@ -60,9 +60,13 @@ python -m pet
 
 ## 推荐模型供应商
 **Mimo v2.5**：价格便宜，原生多模态，作为主要调度模型。
+
+> ollama路径未经测试，如有问题可提issue
+
 **智谱embedding-3**：价格便宜，快速上手，作为记忆设置的向量模型
 
 > 若不配置向量模型，也有基于关键词匹配的基础记忆功能
+
 
 
 ## 🧩 内置工具
