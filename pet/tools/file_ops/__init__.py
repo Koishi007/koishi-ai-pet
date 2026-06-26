@@ -43,12 +43,14 @@ def register(registry):
     )
     registry.add_method(
         TOOL_NAME, "read_file",
-        "读取文本文件前500字符（限桌面/文档）",
+        "读取文本文件（限桌面/文档，每次1000字符，支持 offset 翻页，最多读5000字符）",
         handler=_read_file,
         args={
             "path": {"type": "str", "required": True, "desc": "文件路径"},
-            "max_chars": {"type": "int", "required": False, "default": 500,
-                          "desc": "最大读取字符数"},
+            "max_chars": {"type": "int", "required": False, "default": 1000,
+                          "desc": "本次读取最大字符数"},
+            "offset": {"type": "int", "required": False, "default": 0,
+                       "desc": "读取起始位置（字符偏移），从0开始，上限5000"},
         },
     )
     registry.add_method(

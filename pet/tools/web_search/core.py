@@ -55,7 +55,7 @@ def _extract_text(url: str, max_chars: int = 2000) -> str:
 
 
 
-def _search_searxng(query: str, count: int, language: str, cfg: dict) -> dict:
+def _search_searxng(query: str, count: int, language: str, cfg: dict, page: int = 1) -> dict:
     base_url = cfg.get("searxng_url", "").rstrip("/").removesuffix("/search")
     if not base_url:
         return {"summary": "搜索失败：未配置 searxng_url，请在 web_search/config.json 中设置"}
@@ -65,7 +65,7 @@ def _search_searxng(query: str, count: int, language: str, cfg: dict) -> dict:
         "format": "json",
         "categories": "general",
         "language": language,
-        "pageno": 1,
+        "pageno": page,
     }
 
     # SearXNG 实例可能配置了 API key（settings.yml 中的 secret_key）
@@ -106,16 +106,18 @@ def _search_searxng(query: str, count: int, language: str, cfg: dict) -> dict:
 
 
 
-def _search_bing(query: str, count: int, market: str, cfg: dict) -> dict:
+def _search_bing(query: str, count: int, market: str, cfg: dict, page: int = 1) -> dict:
     api_key = cfg.get("bing_search_key", "")
     if not api_key:
         return {"summary": "搜索失败：未配置 bing_search_key，请在 web_search/config.json 中设置"}
 
     count = max(1, min(count, 10))
+    offset = (page - 1) * count
     headers = {"Ocp-Apim-Subscription-Key": api_key}
     params = {
         "q": query,
         "count": count,
+        "offset": offset,
         "mkt": market,
         "responseFilter": "Webpages",
         "textDecorations": True,
@@ -222,13 +224,14 @@ def check_connectivity() -> bool:
 
 
 
-def search(query: str, count: int = 5, language: str = "zh-CN") -> dict:
+def search(query: str, count: int = 5, language: str = "zh-CN", page: int = 1) -> dict:
     """网络搜索 — 智能路由：优先使用 SearXNG，未配置/失败则 fallback 到 Bing。
 
     Args:
         query:    搜索关键词
         count:    返回结果数量（1-10）
         language: 语言/区域代码，如 zh-CN / en-US / ja-JP（SearXNG 用 language，Bing 用 market）
+        page:     页码，从1开始（第2页获取更多结果）
     """
     cfg = _load_config()
     backend = cfg.get("backend", "auto")
@@ -236,16 +239,20 @@ def search(query: str, count: int = 5, language: str = "zh-CN") -> dict:
     if backend in ("searxng", "auto"):
         searxng_url = cfg.get("searxng_url", "")
         if searxng_url:
-            result = _search_searxng(query, count, language, cfg)
+            result = _search_searxng(query, count, language, cfg, page)
             if "搜索失败" not in str(result.get("summary", "")):
-                result["__context__"] = f"搜索「{query}」"
+                result["page"] = page
+                result["has_next"] = len(result.get("summary", "").split("\n")) > 1
+                result["__context__"] = f"搜索「{query}」（第{page}页）"
                 return result
             logger.info("[web_search] SearXNG failed, falling back to Bing")
 
     bing_key = cfg.get("bing_search_key", "")
     if bing_key:
-        result = _search_bing(query, count, language, cfg)
-        result["__context__"] = f"搜索「{query}」"
+        result = _search_bing(query, count, language, cfg, page)
+        result["page"] = page
+        result["has_next"] = len(result.get("summary", "").split("\n")) > 1
+        result["__context__"] = f"搜索「{query}」（第{page}页）"
         return result
 
     searxng_ok = bool(cfg.get("searxng_url", ""))
@@ -259,7 +266,7 @@ def search(query: str, count: int = 5, language: str = "zh-CN") -> dict:
 
 
 def deep_search(query: str, count: int = 5, language: str = "zh-CN",
-                extract_top: int = 2, max_chars: int = 2000) -> dict:
+                extract_top: int = 2, max_chars: int = 2000, page: int = 1) -> dict:
     """深度搜索 — 先搜索，再抓取前 N 条结果的正文摘要。
 
     相比 search() 只返回标题+snippet，deep_search 会访问搜索结果页面，
@@ -271,8 +278,9 @@ def deep_search(query: str, count: int = 5, language: str = "zh-CN",
         language:    语言/区域代码
         extract_top: 抓取正文的结果条数（1-3，越多越慢）
         max_chars:   每条正文最大字符数
+        page:        页码，从1开始
     """
-    base_result = search(query, count, language)
+    base_result = search(query, count, language, page)
     summary = base_result.get("summary", "")
     if "搜索失败" in summary:
         return base_result

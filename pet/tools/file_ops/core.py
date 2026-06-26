@@ -69,16 +69,38 @@ class FileOpsTool:
         result["__context__"] = f"列出目录 {abs_path}（第{page}/{total_pages}页，{len(items)}/{total}项）"
         return result
 
-    def read_file(self, path: str, max_chars: int = 500) -> dict:
+    _MAX_OFFSET = 5000  # offset 上限，防止翻页耗尽轮次
+
+    def read_file(self, path: str, max_chars: int = 1000, offset: int = 0) -> dict:
         abs_path = self._check_path(path)
         if not os.path.isfile(abs_path):
             return {"error": "文件不存在"}
+        if offset >= self._MAX_OFFSET:
+            return {"error": f"已读取至 offset={offset}，达到上限 {self._MAX_OFFSET}，不再翻页"}
         try:
             with open(abs_path, "r", encoding="utf-8") as f:
+                f.seek(offset)
                 content = f.read(max_chars)
-            truncated = len(content) >= max_chars
-            return {"path": abs_path, "content": content, "truncated": truncated,
-                    "__context__": f"读取文件 {abs_path}（{len(content)}字符{'，已截断' if truncated else ''}）"}
+            actual_offset = offset
+            has_next = len(content) >= max_chars
+            next_offset = actual_offset + len(content)
+            # 到达上限则标记无下一页
+            if next_offset >= self._MAX_OFFSET:
+                has_next = False
+            result = {
+                "path": abs_path,
+                "content": content,
+                "offset": actual_offset,
+                "chars_read": len(content),
+                "has_next": has_next,
+            }
+            if has_next:
+                result["next_offset"] = next_offset
+                result["hint"] = f"还有更多内容，用 offset={next_offset} 读取下一段"
+            elif next_offset >= self._MAX_OFFSET:
+                result["hint"] = f"已达读取上限（{self._MAX_OFFSET}字符）"
+            result["__context__"] = f"读取文件 {abs_path}（offset={actual_offset}，{len(content)}字符{'，还有更多' if has_next else ''}）"
+            return result
         except Exception as e:
             return {"error": str(e)}
 
