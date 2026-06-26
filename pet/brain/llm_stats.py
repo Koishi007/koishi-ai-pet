@@ -3,7 +3,8 @@
 import sqlite3
 import logging
 import threading
-from pathlib import Path
+
+from pet.db import get_db_path
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +16,7 @@ class LlmStats:
 
     def __init__(self, db_path: str | None = None):
         if db_path is None:
-            db_path = str(Path(__file__).resolve().parent.parent.parent / "pet.db")
+            db_path = get_db_path()
         self._lock = threading.Lock()
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.execute(self._TABLE_SQL)

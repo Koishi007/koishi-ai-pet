@@ -6,12 +6,12 @@ import math
 import logging
 import threading
 from datetime import datetime, timedelta
-from pathlib import Path
 from difflib import SequenceMatcher
 from typing import Optional, List, Tuple
 from abc import ABC, abstractmethod
 
 from pet.config import config
+from pet.db import get_db_path
 
 logger = logging.getLogger(__name__)
 
@@ -767,7 +767,7 @@ class MemoryStore:
 
     def __init__(self, db_path: str | None = None, dedup_threshold: float = 0.6):
         if db_path is None:
-            db_path = str(Path(__file__).resolve().parent.parent.parent / "pet.db")
+            db_path = get_db_path()
 
         self._db_path = db_path
         self._conn = sqlite3.connect(db_path, check_same_thread=False)

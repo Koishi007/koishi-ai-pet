@@ -82,5 +82,10 @@ class ToolContext:
         else:
             self._pending_callbacks.append(callback)
 
+    def db_path(self) -> str:
+        """返回数据库路径，供工具使用。"""
+        from pet.db import get_db_path
+        return get_db_path()
+
 
 TOOL_CTX = ToolContext()

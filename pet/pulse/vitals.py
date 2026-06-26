@@ -5,14 +5,15 @@ import random
 import sqlite3
 import threading
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import QObject, Signal
 
+from pet.db import get_db_path
+
 logger = logging.getLogger(__name__)
 
-_DB_PATH = str(Path(__file__).resolve().parent.parent.parent / "pet.db")
+_DB_PATH = get_db_path()
 
 
 

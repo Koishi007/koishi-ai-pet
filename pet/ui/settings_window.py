@@ -261,6 +261,32 @@ class SettingsWindow(QWidget):
         self._fields[key] = edit
         return edit
 
+    def _secret_row(self, key: str, placeholder: str = "",
+                    stylesheet: str = INPUT_HIGHLIGHT_QSS) -> QHBoxLayout:
+        """带显示/隐藏按钮的密钥输入行，注册到 _fields。"""
+        row = QHBoxLayout()
+        edit = QLineEdit()
+        edit.setEchoMode(QLineEdit.EchoMode.Password)
+        edit.setPlaceholderText(placeholder)
+        edit.setStyleSheet(stylesheet)
+        self._fields[key] = edit
+        row.addWidget(edit)
+
+        toggle = QPushButton()
+        toggle.setIcon(QIcon(SHOW_ICON_PATH))
+        toggle.setFixedWidth(28)
+        toggle.setCheckable(True)
+        toggle.toggled.connect(
+            lambda checked: (
+                toggle.setIcon(QIcon(HIDE_ICON_PATH if checked else SHOW_ICON_PATH)),
+                edit.setEchoMode(
+                    QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password
+                )
+            )[:0]  # suppress True from lambda
+        )
+        row.addWidget(toggle)
+        return row
+
     def _check(self, key: str, label: str) -> QCheckBox:
         """创建 QCheckBox 并注册到 _fields。"""
         cb = QCheckBox(label)
@@ -310,26 +336,9 @@ class SettingsWindow(QWidget):
         form.addRow("Ollama 地址:", self._ollama_url_edit)
 
         # API Key + toggle
-        key_row = QHBoxLayout()
-        self._llm_key_edit = QLineEdit()
-        self._llm_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        self._llm_key_edit.setPlaceholderText("sk-...")
-        self._llm_key_edit.setStyleSheet(INPUT_HIGHLIGHT_QSS)
-        self._fields["LLM_KEY"] = self._llm_key_edit
-        key_row.addWidget(self._llm_key_edit)
-        self._key_toggle = QPushButton()
-        self._key_toggle.setIcon(QIcon(SHOW_ICON_PATH))
-        self._key_toggle.setFixedWidth(28)
-        self._key_toggle.setCheckable(True)
-        self._key_toggle.toggled.connect(
-            lambda checked: (
-                self._key_toggle.setIcon(QIcon(HIDE_ICON_PATH if checked else SHOW_ICON_PATH)),
-                self._llm_key_edit.setEchoMode(
-                    QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password
-                )
-            )[:0]  # suppress True from lambda
-        )
-        key_row.addWidget(self._key_toggle)
+        key_row = self._secret_row("LLM_KEY", "sk-...")
+        self._llm_key_edit = self._fields["LLM_KEY"]
+        self._key_toggle = key_row.itemAt(1).widget()  # 暴露给页面跳转用
         form.addRow("API Key:", key_row)
 
         # 模型名称 + 获取按钮
@@ -487,26 +496,7 @@ class SettingsWindow(QWidget):
         memory_form.addRow("API 地址:", self._line("EMBEDDING_URL", "https://open.bigmodel.cn/api/paas/v4"))
 
         # API Key + toggle
-        mem_key_row = QHBoxLayout()
-        self._mem_key_edit = QLineEdit()
-        self._mem_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        self._mem_key_edit.setPlaceholderText("")
-        self._mem_key_edit.setStyleSheet(INPUT_HIGHLIGHT_QSS)
-        self._fields["EMBEDDING_KEY"] = self._mem_key_edit
-        mem_key_row.addWidget(self._mem_key_edit)
-        self._mem_key_toggle = QPushButton()
-        self._mem_key_toggle.setIcon(QIcon(SHOW_ICON_PATH))
-        self._mem_key_toggle.setFixedWidth(28)
-        self._mem_key_toggle.setCheckable(True)
-        self._mem_key_toggle.toggled.connect(
-            lambda checked: (
-                self._mem_key_toggle.setIcon(QIcon(HIDE_ICON_PATH if checked else SHOW_ICON_PATH)),
-                self._mem_key_edit.setEchoMode(
-                    QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password
-                )
-            )[:0]
-        )
-        mem_key_row.addWidget(self._mem_key_toggle)
+        mem_key_row = self._secret_row("EMBEDDING_KEY")
         memory_form.addRow("API Key:", mem_key_row)
         memory_form.addRow("模型名:", self._line("EMBEDDING_MODEL", "embedding-3"))
         memory_form.addRow("向量维度:", self._line("EMBEDDING_DIM", "2048", QIntValidator(64, 8192)))
@@ -613,8 +603,8 @@ class SettingsWindow(QWidget):
         voice_form.addRow("热键:", hotkey_row)
 
         voice_form.addRow("讯飞 APPID:", self._line("XF_APPID", ""))
-        voice_form.addRow("讯飞 API Key:", self._line("XF_API_KEY", ""))
-        voice_form.addRow("讯飞 API Secret:", self._line("XF_API_SECRET", ""))
+        voice_form.addRow("讯飞 API Key:", self._secret_row("XF_API_KEY"))
+        voice_form.addRow("讯飞 API Secret:", self._secret_row("XF_API_SECRET"))
         voice_layout.addLayout(voice_form)
 
         # 连接测试（与 LLM 测试同风格）

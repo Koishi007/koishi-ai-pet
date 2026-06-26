@@ -6,27 +6,15 @@ import sqlite3
 import threading
 import logging
 from datetime import datetime
-from pathlib import Path
+
+from pet.tools.context import TOOL_CTX
 
 logger = logging.getLogger(__name__)
-
-def _find_project_root() -> Path:
-    """从当前文件向上查找包含 pyproject.toml 的目录作为项目根。"""
-    cur = Path(__file__).resolve().parent
-    for _ in range(10):
-        if (cur / "pyproject.toml").exists():
-            return cur
-        cur = cur.parent
-    # 回退：假设 pet/tools/todo/ → 4 层 parent to project root
-    return Path(__file__).resolve().parent.parent.parent.parent
-
-
-_DEFAULT_DB = str(_find_project_root() / "pet.db")
 
 
 class TodoStorage:
     def __init__(self, db_path: str | None = None):
-        self._db_path = db_path or _DEFAULT_DB
+        self._db_path = db_path or TOOL_CTX.db_path()
         self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._lock = threading.Lock()
