@@ -12,9 +12,9 @@ logger = logging.getLogger(__name__)
 def settings_path() -> str:
     """返回跨平台 settings.json 路径，确保目录存在。
 
-    Windows: %APPDATA%/DeskPet/settings.json
-    macOS:   ~/Library/Application Support/DeskPet/settings.json
-    Linux:   ~/.config/DeskPet/settings.json
+    Windows: %APPDATA%/KoishiAI/settings.json
+    macOS:   ~/Library/Application Support/KoishiAI/settings.json
+    Linux:   ~/.config/KoishiAI/settings.json
     """
     if sys.platform == "win32":
         base = os.environ.get("APPDATA", str(Path.home() / "AppData" / "Roaming"))
@@ -24,7 +24,7 @@ def settings_path() -> str:
         # XDG_CONFIG_HOME 或 ~/.config
         base = os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))
 
-    app_dir = os.path.join(base, "DeskPet")
+    app_dir = os.path.join(base, "KoishiAI")
     os.makedirs(app_dir, exist_ok=True)
     return os.path.join(app_dir, "settings.json")
 

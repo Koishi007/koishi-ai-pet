@@ -1,4 +1,4 @@
-"""DeskPet 桌面宠物 — 主入口"""
+"""KoishiAI 桌面宠物 — 主入口"""
 
 import ctypes
 import logging
@@ -22,6 +22,7 @@ from pet.brain.prompts import interact_fed_prompt
 from pet.tools import load_tools
 from pet.tools.context import TOOL_CTX
 from pet.config import config
+from pet.auto_start import set_auto_start
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,7 @@ def main():
     _log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
     os.makedirs(_log_dir, exist_ok=True)
     _file_handler = TimedRotatingFileHandler(
-        filename=os.path.join(_log_dir, "deskpet.log"),
+        filename=os.path.join(_log_dir, "koishiai.log"),
         when="midnight",
         interval=1,
         backupCount=3,
@@ -75,15 +76,18 @@ def main():
         except Exception:
             pass
 
-    logger.info("===== DeskPet 启动 =====")
+    logger.info("===== KoishiAI 启动 =====")
     logger.info(f"BRAIN={config.BRAIN}, MODEL={config.LLM_MODEL}")
 
     # 启动时加载工具插件
     load_tools(config.TOOLS_ENABLED)
 
+    # 应用开机自启设置
+    set_auto_start(config.AUTO_START_ON_BOOT)
+
     if sys.platform == "win32":
         try:
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("DeskPet.App.1")
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("KoishiAI.App.1")
         except Exception:
             pass
 

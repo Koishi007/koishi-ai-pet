@@ -18,7 +18,7 @@
 ## 📦 项目结构
 
 ```
-DeskPet/
+KoishiAI/
 ├── pyproject.toml              # 项目配置 & 依赖
 ├── assets/actions/             # 帧动画素材（idle、walk、sit、sleep…）
 └── pet/

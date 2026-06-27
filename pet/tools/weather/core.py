@@ -26,7 +26,7 @@ _WMO_CODES: dict[int, str] = {
 
 
 def _fetch_json(url: str) -> dict | None:
-    req = Request(url, headers={"User-Agent": "DeskPet/1.0"})
+    req = Request(url, headers={"User-Agent": "KoishiAI/1.0"})
     try:
         with urlopen(req, timeout=10) as resp:
             return json.loads(resp.read().decode())

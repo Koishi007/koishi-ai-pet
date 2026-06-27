@@ -14,6 +14,7 @@ from PySide6.QtCore import Qt, QThread, Signal, QObject
 from PySide6.QtGui import QIcon, QFont, QPainter, QPainterPath, QPen, QColor, QIntValidator, QDoubleValidator
 
 from pet.config import config, _KEY_META
+from pet.auto_start import set_auto_start
 from pet.ui.styles import (
     ICON_PATH, SETTING_ICON_PATH, SHOW_ICON_PATH, HIDE_ICON_PATH, PANEL_QSS, BUTTON_QSS, BUTTON_PRIMARY_QSS,
     INPUT_QSS, INPUT_HIGHLIGHT_QSS, COMBOBOX_QSS, TEXTEDIT_QSS, CHECKBOX_QSS,
@@ -684,6 +685,7 @@ class SettingsWindow(QWidget):
         tools_edit.setPlaceholderText("* 表示全部，多个用逗号分隔")
         form.addRow("启用工具:", tools_edit)
         form.addRow("", self._check("SHOW_TRAY", "显示托盘图标"))
+        form.addRow("", self._check("AUTO_START_ON_BOOT", "开机自动启动"))
 
         inner.addLayout(form)
 
@@ -911,6 +913,10 @@ class SettingsWindow(QWidget):
                 needs_rebuild_client = True
             if meta["category"] == "behavior":
                 needs_scheduler_update = True
+
+        # 即时应用开机自启设置
+        if "AUTO_START_ON_BOOT" in values:
+            set_auto_start(values["AUTO_START_ON_BOOT"])
 
         if needs_scheduler_update and self.agent and hasattr(self.agent, 'scheduler'):
             try:
