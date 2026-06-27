@@ -1,4 +1,4 @@
-"""knowledge 工具 — 轻量 RAG 知识库。支持语义检索、添加、管理知识条目。"""
+"""knowledge 工具 — 轻量 RAG 知识库。只读检索，写入/删除仅限面板操作。"""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from pet.tools.context import TOOL_CTX
 logger = logging.getLogger(__name__)
 
 TOOL_NAME = "knowledge"
-TOOL_DESCRIPTION = "RAG 知识库。可语义检索用户录入的知识、文档片段，支持添加和管理条目。"
+TOOL_DESCRIPTION = "RAG 知识库。可语义检索用户手动录入的知识和文档，只读。"
 
 _instance = None
 _panel = None
@@ -42,6 +42,7 @@ def _search(query: str, limit: int = 3) -> dict:
     """LLM 调用入口：语义检索知识库。"""
     if not _instance:
         return {"error": "知识库未初始化"}
+    TOOL_CTX.speech_random(["让我想想…", "翻翻笔记…", "我记得…", "查一下…"])
     limit = max(1, min(limit, 10))
     results = _instance.search(query, limit=limit)
     if not results:
@@ -61,22 +62,11 @@ def _search(query: str, limit: int = 3) -> dict:
     }
 
 
-def _add(title: str, content: str, tags: str = "") -> dict:
-    """LLM 调用入口：添加知识条目。"""
-    if not _instance:
-        return {"error": "知识库未初始化"}
-    if not title.strip() or not content.strip():
-        return {"error": "标题和内容不能为空"}
-    TOOL_CTX.speech_random(["记下来…", "学到了…", "存一下…"])
-    result = _instance.add_document(title=title, content=content, tags=tags, source="llm")
-    result["summary"] = f"已添加知识:「{title}」，共 {result['chunks']} 个分块"
-    return result
-
-
 def _list(page: int = 1) -> dict:
     """LLM 调用入口：列出知识条目。"""
     if not _instance:
         return {"error": "知识库未初始化"}
+    TOOL_CTX.speech_random(["看看有什么…", "翻翻知识库…", "都记了些什么…"])
     data = _instance.list_documents(page=page, page_size=20)
     docs = data["documents"]
     if not docs:
@@ -93,16 +83,6 @@ def _list(page: int = 1) -> dict:
         "total_pages": data["total_pages"],
         "has_next": data["has_next"],
     }
-
-
-def _delete(doc_id: int) -> dict:
-    """LLM 调用入口：删除知识条目。"""
-    if not _instance:
-        return {"error": "知识库未初始化"}
-    ok = _instance.delete_document(doc_id)
-    if not ok:
-        return {"error": f"未找到 id={doc_id} 的知识条目"}
-    return {"deleted": True, "doc_id": doc_id, "summary": f"已删除知识 #{doc_id}"}
 
 
 def register(registry):
@@ -133,35 +113,12 @@ def register(registry):
     )
 
     registry.add_method(
-        TOOL_NAME, "add",
-        "添加一条知识到知识库（自动分块和向量化）。"
-        "当用户告诉你需要记住的信息、或对话中产生了值得长期保存的知识时调用。",
-        handler=_add,
-        args={
-            "title": {"type": "str", "required": True, "desc": "知识标题/摘要"},
-            "content": {"type": "str", "required": True, "desc": "知识全文内容"},
-            "tags": {"type": "str", "required": False, "default": "",
-                     "desc": "标签(逗号分隔)"},
-        },
-        timeout=60.0,
-    )
-
-    registry.add_method(
         TOOL_NAME, "list",
         "分页列出知识库中的条目。",
         handler=_list,
         args={
             "page": {"type": "int", "required": False, "default": 1,
                      "desc": "页码(从1开始)"},
-        },
-    )
-
-    registry.add_method(
-        TOOL_NAME, "delete",
-        "删除指定知识条目。",
-        handler=_delete,
-        args={
-            "doc_id": {"type": "int", "required": True, "desc": "文档ID"},
         },
     )
 
