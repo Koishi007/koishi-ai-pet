@@ -121,6 +121,13 @@ def _build_duration_registry() -> dict[str, ActionDef]:
             params=[],
             usage_example="Action: fishing",
         ),
+        "rotate": ActionDef(
+            name="rotate",
+            category="驻留",
+            description="开心地原地转圈",
+            params=[],
+            usage_example="Action: rotate",
+        ),
     }
 
     # 动态生成带 duration 参数的动作

@@ -103,9 +103,9 @@ class ScheduledTasks:
         else:
             self._dark_heart_tick = 0
 
-        # stars: shake_arms 播放中散发
+        # stars: shake_arms和rotate 播放中散发
         cur = win.action_queue.current_action_name()
-        if cur == "shake_arms":
+        if cur == "shake_arms" or cur == "rotate":
             self._star_tick += 1
             if self._star_tick % 2 == 0:
                 win.particles.spawn("stars")

@@ -434,7 +434,9 @@ class PetActions(QObject):
 
     def finger_heart(self, duration=None):
         self._anim.play("finger_heart", duration=duration)
-        
+
+    def rotate(self, **_kw):
+        self._anim.play("rotate")
         
     def _fade_in_safety_check(self):
         try:

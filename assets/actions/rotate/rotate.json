@@ -1,0 +1,7 @@
+{
+  "desc": "旋转",
+  "tick_counts": 30,
+  "frame_ratios": [0.2, 0.2, 0.2, 0.2, 0.2],
+  "loop": false,
+  "note": "单次播放"
+}
