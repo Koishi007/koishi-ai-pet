@@ -22,11 +22,12 @@ _KEY_META = {
     "LLM_RETRY_DELAY":           {"type": "float",    "default": 1,             "category": "connection", "needs_restart": False, "hidden": True,  "description": "重试延迟(秒)"},
     "LLM_RETRY_MAX_DELAY":       {"type": "float",    "default": 4,             "category": "connection", "needs_restart": False, "hidden": True,  "description": "最大重试延迟(秒)"},
     "LLM_CACHE_PROMPT":          {"type": "bool",     "default": False,         "category": "connection", "needs_restart": False, "hidden": False, "description": "启用 Prompt 缓存"},
-    "LLM_MAX_TOKENS_INTERACT":    {"type": "int",      "default": 600,           "category": "connection", "needs_restart": False, "hidden": False, "description": "交互模式LLM输出Token上限"},
+    "LLM_MAX_TOKENS_INTERACT":    {"type": "int",      "default": 800,           "category": "connection", "needs_restart": False, "hidden": False, "description": "交互模式LLM输出Token上限"},
     "LLM_MAX_TOKENS_CHAT":        {"type": "int",      "default": 1500,          "category": "connection", "needs_restart": False, "hidden": False, "description": "聊天模式LLM输出Token上限"},
     "LLM_MAX_TOKENS_AUTONOMOUS":  {"type": "int",      "default": 2500,          "category": "connection", "needs_restart": False, "hidden": False, "description": "自主模式LLM输出Token上限"},
     "LLM_TEMPERATURE":            {"type": "float",    "default": 0.7,           "category": "connection", "needs_restart": False, "hidden": False, "description": "LLM 采样温度"},
     "LLM_TOOL_PARALLEL":          {"type": "bool",     "default": True,          "category": "connection", "needs_restart": False, "hidden": True,  "description": "LLM 工具并行调用"},
+    "LLM_TOOL_MAX_ROUNDS":        {"type": "int",      "default": 5,             "category": "connection", "needs_restart": False, "hidden": False, "description": "工具调用最大轮次"},
     "LLM_ACTION_MIN_DIVISOR":     {"type": "int",      "default": 25,            "category": "connection", "needs_restart": False, "hidden": True,  "description": "动作权重最小除数"},
     # ── Behavior ──
     "SCHEDULER_FAST_MS":         {"type": "int",      "default": 1000,          "category": "behavior",   "needs_restart": False, "hidden": True,  "description": "fast_tick 间隔(毫秒)"},
@@ -67,7 +68,7 @@ _KEY_META = {
     "EMBEDDING_URL":             {"type": "str",      "default": "",             "category": "memory",   "needs_restart": True,  "hidden": False, "description": "Embedding API 地址(需兼容 OpenAI 格式)", "placeholder": "https://open.bigmodel.cn/api/paas/v4"},
     "EMBEDDING_KEY":             {"type": "str",      "default": "",             "category": "memory",   "needs_restart": True,  "hidden": False, "description": "Embedding API Key"},
     "EMBEDDING_MODEL":           {"type": "str",      "default": "",             "category": "memory",   "needs_restart": True,  "hidden": False, "description": "Embedding 模型名", "placeholder": "embedding-3"},
-    "EMBEDDING_DIM":             {"type": "int",      "default": 2048,           "category": "memory",   "needs_restart": True,  "hidden": False, "description": "向量维度(需与模型匹配)", "minimum": 64, "maximum": 8192},
+    "EMBEDDING_DIM":             {"type": "int",      "default": 256,           "category": "memory",   "needs_restart": True,  "hidden": False, "description": "向量维度(需与模型匹配)", "minimum": 64, "maximum": 8192},
     "EMBEDDING_DEDUP_THRESHOLD": {"type": "float",    "default": 0.6,            "category": "memory",   "needs_restart": False, "hidden": True,  "description": "向量语义去重距离阈值(0~1)"},
     "MEMORY_MAX_CAPACITY":       {"type": "int",      "default": 200,            "category": "memory",   "needs_restart": False, "hidden": False, "description": "记忆最大容量"},
     "MEMORY_RECALL_COOLDOWN_S":  {"type": "int",      "default": 300,            "category": "memory",   "needs_restart": False, "hidden": True,  "description": "记忆召回冷却时间(秒)"},
@@ -79,7 +80,7 @@ _KEY_META = {
     "CONTEXT_HISTORY_ENTRIES":   {"type": "int",      "default": 8,              "category": "behavior", "needs_restart": False, "hidden": False, "description": "上下文历史条目数"},
     "CONTEXT_MAX_SUMMARIES":     {"type": "int",      "default": 5,              "category": "behavior", "needs_restart": False, "hidden": True,  "description": "上下文最大摘要数"},
     "CONTEXT_HALF_LIFE_S":       {"type": "int",      "default": 1800,           "category": "behavior", "needs_restart": False, "hidden": True,  "description": "上下文评分半衰期(秒)"},
-    "CONTEXT_TOKEN_BUDGET":      {"type": "int",      "default": 1500,           "category": "behavior", "needs_restart": False, "hidden": True,  "description": "上下文token预算上限"},
+    "CONTEXT_TOKEN_BUDGET":      {"type": "int",      "default": 4096,           "category": "behavior", "needs_restart": False, "hidden": True,  "description": "上下文token预算上限"},
     
     "CONTEXT_PERSIST_ENABLED":   {"type": "bool",     "default": True,           "category": "behavior", "needs_restart": False, "hidden": True,  "description": "启用上下文持久化"},
 }

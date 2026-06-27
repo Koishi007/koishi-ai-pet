@@ -152,7 +152,7 @@ class LogWindow(QWidget):
         header_layout.addWidget(icon_label)
 
         # 标题
-        title_label = QLabel("DeskPet 日志")
+        title_label = QLabel("日志")
         title_label.setStyleSheet(f"font-size:13px; color:{_COLOR_TEXT_TITLE}; font-weight:bold; background:transparent;")
         header_layout.addWidget(title_label)
 

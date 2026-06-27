@@ -116,7 +116,7 @@ class DebugWindow(QWidget):
         except Exception:
             pass
 
-        title_lbl = QLabel("DeskPet 调试面板")
+        title_lbl = QLabel("调试面板")
         title_lbl.setStyleSheet(f"font-size:13px; color:{_COLOR_TEXT_TITLE}; font-weight:bold; background:transparent;")
         header_layout.addWidget(title_lbl)
         header_layout.addStretch()

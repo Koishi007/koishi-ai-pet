@@ -295,7 +295,7 @@ class PetAgent(QObject):
             if self._cancel_flag or my_stream_id != self._active_stream_id:
                 return
             if stream_started:
-                self.speak_stream_end.emit(8000)
+                self.speak_stream_end.emit(4000)
                 stream_started = False
 
         result = self.behavior.chat_decide_stream(
@@ -304,7 +304,7 @@ class PetAgent(QObject):
         )
 
         if stream_started:
-            self.speak_stream_end.emit(8000)
+            self.speak_stream_end.emit(4000)
         return result
 
     def _async_brain(self, fn, *args, on_result=None, on_error=None):
@@ -381,9 +381,9 @@ class PetAgent(QObject):
                 role="assistant",
                 content=f"did {', '.join(action_names)}, said: {result.speech or '(silent)'}")
             if result.speech and not result.speech_streamed:
-                self.speak_stream_start.emit()
-                self.speak_stream_chunk.emit(result.speech)
-                self.speak_stream_end.emit(4000)
+                parts = result.speech_parts if result.speech_parts else [result.speech]
+                for part in parts:
+                    self.speak_requested.emit(part, 5000)
             if result.summary:
                 self.behavior.add_context(role="assistant", content=result.summary, is_summary=True)
             for step in result.actions:

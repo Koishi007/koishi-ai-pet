@@ -195,7 +195,7 @@ class BrainMixin:
     def get_multi_turn_messages(self, max_entries: int = 10,
                                 skip_last: int = 0,
                                 token_budget: int = 0) -> list[dict]:
-        """构建多轮消息列表（供多轮消息模式使用）。
+        """构建多轮消息列表。
         返回 [{"role": "user"/"assistant", "content": "..."}, ...]
         system 角色条目合并到相邻的 user 消息中。"""
         with self._ctx_lock:

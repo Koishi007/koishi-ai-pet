@@ -428,6 +428,12 @@ class PetActions(QObject):
 
     def fishing(self, **_kw):
         self._anim.play("fishing")
+
+    def calling(self, duration=None):
+        self._anim.play("calling", duration=duration)
+
+    def finger_heart(self, duration=None):
+        self._anim.play("finger_heart", duration=duration)
         
         
     def _fade_in_safety_check(self):

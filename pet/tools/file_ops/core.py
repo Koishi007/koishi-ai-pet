@@ -35,7 +35,9 @@ class FileOpsTool:
                 continue
         raise PermissionError(f"不允许访问: {abs_path}")
 
-    def list_dir(self, path: str = "~/Desktop") -> dict:
+    _PAGE_SIZE = 50
+
+    def list_dir(self, path: str = "~/Desktop", page: int = 1) -> dict:
         try:
             abs_path = self._check_path(path)
         except PermissionError as e:
@@ -43,22 +45,62 @@ class FileOpsTool:
         if not os.path.isdir(abs_path):
             return {"error": "目录不存在"}
         try:
-            items = os.listdir(abs_path)[:30]
+            all_items = sorted(os.listdir(abs_path))
         except PermissionError:
             return {"error": f"无权限读取目录: {abs_path}"}
-        return {"path": abs_path, "items": items, "count": len(items),
-                "__context__": f"列出目录 {abs_path}（{len(items)}项）"}
+        total = len(all_items)
+        page_size = self._PAGE_SIZE
+        total_pages = (total + page_size - 1) // page_size if total else 1
+        page = max(1, min(page, total_pages))
+        start = (page - 1) * page_size
+        items = all_items[start:start + page_size]
+        result = {
+            "path": abs_path,
+            "items": items,
+            "count": len(items),
+            "total": total,
+            "page": page,
+            "total_pages": total_pages,
+            "has_next": page < total_pages,
+            "has_prev": page > 1,
+        }
+        if total_pages > 1:
+            result["hint"] = f"第 {page}/{total_pages} 页（每页 {page_size} 项），has_next={result['has_next']}"
+        result["__context__"] = f"列出目录 {abs_path}（第{page}/{total_pages}页，{len(items)}/{total}项）"
+        return result
 
-    def read_file(self, path: str, max_chars: int = 500) -> dict:
+    _MAX_OFFSET = 5000  # offset 上限，防止翻页耗尽轮次
+
+    def read_file(self, path: str, max_chars: int = 1000, offset: int = 0) -> dict:
         abs_path = self._check_path(path)
         if not os.path.isfile(abs_path):
             return {"error": "文件不存在"}
+        if offset >= self._MAX_OFFSET:
+            return {"error": f"已读取至 offset={offset}，达到上限 {self._MAX_OFFSET}，不再翻页"}
         try:
             with open(abs_path, "r", encoding="utf-8") as f:
+                f.seek(offset)
                 content = f.read(max_chars)
-            truncated = len(content) >= max_chars
-            return {"path": abs_path, "content": content, "truncated": truncated,
-                    "__context__": f"读取文件 {abs_path}（{len(content)}字符{'，已截断' if truncated else ''}）"}
+            actual_offset = offset
+            has_next = len(content) >= max_chars
+            next_offset = actual_offset + len(content)
+            # 到达上限则标记无下一页
+            if next_offset >= self._MAX_OFFSET:
+                has_next = False
+            result = {
+                "path": abs_path,
+                "content": content,
+                "offset": actual_offset,
+                "chars_read": len(content),
+                "has_next": has_next,
+            }
+            if has_next:
+                result["next_offset"] = next_offset
+                result["hint"] = f"还有更多内容，用 offset={next_offset} 读取下一段"
+            elif next_offset >= self._MAX_OFFSET:
+                result["hint"] = f"已达读取上限（{self._MAX_OFFSET}字符）"
+            result["__context__"] = f"读取文件 {abs_path}（offset={actual_offset}，{len(content)}字符{'，还有更多' if has_next else ''}）"
+            return result
         except Exception as e:
             return {"error": str(e)}
 

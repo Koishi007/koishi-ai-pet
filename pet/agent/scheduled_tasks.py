@@ -17,6 +17,8 @@ class ScheduledTasks:
         self._sleep_tick: int = 0
         self._dark_heart_tick: int = 0
         self._star_tick: int = 0
+        self._heart_tick: int = 0
+        self._note_tick: int = 0
 
     # ── 注册 ──
 
@@ -109,6 +111,22 @@ class ScheduledTasks:
                 win.particles.spawn("stars")
         else:
             self._star_tick = 0
+
+        # hearts: finger_heart 播放中散发
+        if cur == "finger_heart":
+            self._heart_tick += 1
+            if self._heart_tick % 2 == 0:
+                win.particles.spawn("hearts")
+        else:
+            self._heart_tick = 0
+
+        # notes: calling 播放中散发
+        if cur == "calling":
+            self._note_tick += 1
+            if self._note_tick % 2 == 0:
+                win.particles.spawn("notes")
+        else:
+            self._note_tick = 0
 
     # ── slow ──
 

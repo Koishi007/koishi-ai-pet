@@ -1,0 +1,7 @@
+{
+  "desc": "打电话",
+  "tick_counts": 60,
+  "frame_ratios": [0.9, 0.1],
+  "loop": true,
+  "note": ""
+}

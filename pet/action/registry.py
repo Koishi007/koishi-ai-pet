@@ -12,9 +12,11 @@ from pet.config import config
 
 # 动作时长参数定义：(名称, 最小秒数, 占调度间隔比例)
 _DURATION_ACTION_DEFS = {
-    "sit":      (10, 0.4),
-    "thinking": ( 5, 0.2),
-    "sleep":    (10, 0.4),
+    "sit":          (10, 0.4),
+    "thinking":     ( 5, 0.2),
+    "sleep":        (10, 0.4),
+    "calling":      ( 5, 0.2),
+    "finger_heart": ( 1, 0.01),
 }
 
 # 动作序列总时长占调度间隔的比例
@@ -87,7 +89,7 @@ def _build_duration_registry() -> dict[str, ActionDef]:
         "bounce": ActionDef(
             name="bounce",
             category="移动",
-            description="弹跳移动",
+            description="跳跃",
             params=["direction=left/right", "distance=0-800", "height>0"],
             usage_example="Action: bounce direction=right distance=400 height=200",
         ),
@@ -108,7 +110,7 @@ def _build_duration_registry() -> dict[str, ActionDef]:
         "stretch": ActionDef(
             name="stretch",
             category="驻留",
-            description="伸懒腰",
+            description="睡醒起身后伸懒腰",
             params=[],
             usage_example="Action: stretch",
         ),
@@ -126,9 +128,11 @@ def _build_duration_registry() -> dict[str, ActionDef]:
         lo, hi = duration_range(name)
         dur = default_duration(name)
         desc_map = {
-            "sit": "坐下收尾",
-            "sleep": "睡觉收尾",
+            "sit": "坐下",
+            "sleep": "睡觉",
             "thinking": "沉思",
+            "calling": "打电话消磨时间",
+            "finger_heart": "表达喜欢的比心",
         }
         result[name] = ActionDef(
             name=name,
@@ -142,14 +146,14 @@ def _build_duration_registry() -> dict[str, ActionDef]:
     result["fade_in"] = ActionDef(
         name="fade_in",
         category="显隐",
-        description="淡入(与fade_out成对)",
+        description="显示自己的身形",
         params=[],
         usage_example="Action: fade_in",
     )
     result["fade_out"] = ActionDef(
         name="fade_out",
         category="显隐",
-        description="淡出(与fade_in成对)",
+        description="突然消失不见",
         params=[],
         usage_example="Action: fade_out",
     )

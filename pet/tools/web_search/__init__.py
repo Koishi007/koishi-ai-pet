@@ -47,6 +47,12 @@ def register(registry):
                 "desc": "语言/区域代码（zh-CN / en-US / ja-JP 等）",
                 "enum": ["zh-CN", "en-US", "ja-JP"],
             },
+            "page": {
+                "type": "int",
+                "required": False,
+                "default": 1,
+                "desc": "页码，从1开始（结果不够时翻页获取更多）",
+            },
         },
     )
     registry.add_method(
@@ -78,6 +84,12 @@ def register(registry):
                 "required": False,
                 "default": 2,
                 "desc": "抓取正文的结果条数（1-3，越多越慢）",
+            },
+            "page": {
+                "type": "int",
+                "required": False,
+                "default": 1,
+                "desc": "页码，从1开始",
             },
         },
     )

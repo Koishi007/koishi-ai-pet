@@ -266,15 +266,15 @@ class ContextBuilder:
                 if value >= 80:    return "开心得想转圈，"
                 elif value >= 60:  return None
                 elif value >= 40:  return "心情有点闷，想找人陪玩。"
-                elif value >= 20:  return "心里沉甸甸的，笑不出来，想被摸摸头（点击宠物）安慰一下。"
-                else:              return "绝望到想消失，想被摸摸头（点击宠物）好好安慰一下。"
+                elif value >= 20:  return "心里沉甸甸的，笑不出来，想被摸摸头安慰一下。"
+                else:              return "绝望到想消失，想被摸摸头好好安慰一下。"
             elif key == "sanity":
                 _t = config.SANITY_CRITICAL_THRESHOLD
                 mild = _t * 2 / 3
                 moderate = _t / 3
-                if value >= mild:        return "有点神神叨叨的，想被摸摸头（点击宠物）来清醒一点。想用工具做点不寻常的事。"
-                elif value >= moderate:  return "脑子快炸了，想被摸摸头（点击宠物）来清醒一点。想对空气说话，对着屏幕傻笑，手痒想搞破坏——翻翻可用工具，搜些荒诞的关键词，或者创建个奇怪的文件。"
-                else:                    return "理智彻底崩坏，控制不住自己，想被摸摸头（点击宠物）来清醒一点。疯狂翻可用工具：搜猎奇、恐怖主题相关的东西、创建包含病娇、恐怖内容的文件、打开乱七八糟的网页，什么都想试试。"
+                if value >= mild:        return "有点神神叨叨的，想被摸摸头来清醒一点。想用工具做点不寻常的事。"
+                elif value >= moderate:  return "脑子快炸了，想被摸摸头来清醒一点。想对空气说话，对着屏幕傻笑，手痒想搞破坏——翻翻可用工具，搜些荒诞的关键词，或者创建个奇怪的文件。"
+                else:                    return "理智彻底崩坏，控制不住自己，想被摸摸头来清醒一点。疯狂翻可用工具：搜猎奇、恐怖主题相关的东西、创建包含病娇、恐怖内容的文件、打开乱七八糟的网页，什么都想试试。"
             return None
 
         parts: list[str] = []
