@@ -91,7 +91,7 @@ def _build_duration_registry() -> dict[str, ActionDef]:
             category="移动",
             description="跳跃",
             params=["direction=left/right", "distance=0-800", "height>0"],
-            usage_example="Action: bounce direction=right distance=400 height=200",
+            usage_example="Action: bounce right 400 200",
         ),
         "shake_arms": ActionDef(
             name="shake_arms",
