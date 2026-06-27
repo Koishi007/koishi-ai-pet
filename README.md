@@ -18,7 +18,7 @@
 ## 📦 项目结构
 
 ```
-DeskPet/
+KoishiAI/
 ├── pyproject.toml              # 项目配置 & 依赖
 ├── assets/actions/             # 帧动画素材（idle、walk、sit、sleep…）
 └── pet/
@@ -82,18 +82,26 @@ python -m pet
 | `todo` | 待办事项管理（pending / done） |
 | `file_ops` | 列目录、读写文件（限桌面/文档目录） |
 | `system_monitor` | CPU、内存、磁盘、电池、Top 进程 |
+| `knowledge` | RAG 知识库：语义检索、添加知识、导入 txt/md 文件 |
 
 ## 🔨 工具开发指南
 
 ### 工具骨架
 
-在 `pet/tools/` 下创建新目录，包含 `__init__.py` 和 `core.py`：
+在 `pet/tools/` 下创建新目录，包含 `__init__.py`（必须）和实现文件：
 
 ```
 pet/tools/my_tool/
-├── __init__.py    # 注册入口
-└── core.py        # 业务实现
+├── __init__.py           # 注册入口（必须）
+├── core.py               # 业务实现（推荐）
+├── config.example.json   # 私有配置模板（可选，首次自动复制为 config.json）
+└── requirements.txt      # 私有依赖（可选，首次自动安装）
 ```
+
+核心文件说明：
+- `__init__.py` — 只需定义 `TOOL_NAME`、`TOOL_DESCRIPTION`、`register()`
+- `core.py` — 业务逻辑可以放在任意文件中，加载器不关心文件名
+- `config.example.json` — 工具私有配置模板，框架首次加载时自动复制为 `config.json`（已 gitignore）
 
 `__init__.py` 模板：
 

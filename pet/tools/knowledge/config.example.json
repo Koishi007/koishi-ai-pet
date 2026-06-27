@@ -1,0 +1,9 @@
+{
+    "chunk_size": 500,
+    "chunk_overlap": 50,
+    "embedding_enabled": false,
+    "embedding_url": "",
+    "embedding_key": "",
+    "embedding_model": "",
+    "embedding_dim": 256
+}

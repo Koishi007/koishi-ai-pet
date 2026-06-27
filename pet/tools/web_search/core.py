@@ -10,8 +10,8 @@ logger = logging.getLogger(__name__)
 
 logging.getLogger("trafilatura").setLevel(logging.ERROR)
 
-_PLUGIN_DIR = Path(__file__).parent
-_CONFIG_FILE = _PLUGIN_DIR / "config.json"
+_TOOL_DIR = Path(__file__).parent
+_CONFIG_FILE = _TOOL_DIR / "config.json"
 
 _BING_ENDPOINT = "https://api.bing.microsoft.com/v7.0/search"
 

@@ -53,6 +53,7 @@ _KEY_META = {
     "BUBBLE_MAX_WIDTH":          {"type": "int",      "default": 300,           "category": "appearance", "needs_restart": True,  "hidden": False, "description": "气泡最大宽度(px)"},
     "BUBBLE_FONT_SIZE":          {"type": "int",      "default": 14,            "category": "appearance", "needs_restart": True,  "hidden": False, "description": "气泡字号"},
     "SHOW_TRAY":                 {"type": "bool",     "default": True,          "category": "appearance", "needs_restart": True,  "hidden": False, "description": "显示托盘图标"},
+    "AUTO_START_ON_BOOT":        {"type": "bool",     "default": False,         "category": "appearance", "needs_restart": False, "hidden": False, "description": "开机自动启动"},
     "HIDE_CONSOLE":              {"type": "bool",     "default": True,          "category": "appearance", "needs_restart": True,  "hidden": True,  "description": "启动时隐藏控制台窗口"},
     "LOG_LEVEL":                 {"type": "str",      "default": "DEBUG",       "category": "appearance", "needs_restart": False, "hidden": True,  "description": "日志级别(DEBUG/INFO/WARNING/ERROR)"},
     # ── Personality ──
@@ -124,8 +125,8 @@ class Config:
         """Write settings-schema.json to the same directory as settings.json."""
         schema = {
             "$schema": "https://json-schema.org/draft-07/schema#",
-            "title": "DeskPet Settings",
-            "description": "DeskPet 桌面宠物全部配置项说明。\nhidden: true 的字段不在 UI 显示，可直接编辑 settings.json。\nneeds_restart: true 的字段修改后需重启生效。",
+            "title": "KoishiAI Settings",
+            "description": "KoishiAI 桌面宠物全部配置项说明。\nhidden: true 的字段不在 UI 显示，可直接编辑 settings.json。\nneeds_restart: true 的字段修改后需重启生效。",
             "properties": {},
         }
         for key, meta in _KEY_META.items():
