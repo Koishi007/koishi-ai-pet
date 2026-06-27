@@ -263,7 +263,7 @@ def autonomous_non_vision_user_prompt(context: str) -> str:
         f"   • 有窗口 → drive 走到附近，用人格语气评论窗口内容\n"
         f"   • 无窗口 → 巡视桌面或找地方坐下\n"
         f"   • drive 方向可随机\n"
-        f"3. 理智不正常时主动调用可用工具做疯狂的事；正常时如有需要也可使用工具\n"
+        f"3. 理智不正常时主动调用可用工具做疯狂的事；正常时也可使用工具\n"
         f"4. 探索新话题，不要延续近期对话中已充分讨论的内容（除非有新的变化）\n"
         f"5. 禁止重复说之前的话题\n"
         f"6. 按顺序写出完整输出（Summary → Emotion → Speech → Actions → Mood → Vitals）"
@@ -279,8 +279,7 @@ def chat_vision_user_prompt(user_message: str, context: str) -> str:
         "2. 分析截图，识别窗口内容——结合画面理解语境\n"
         "3. 结合「你现在的状态」和截图内容，说一句符合人格和当下心境的话\n"
         "4. 规划配合对话的动作序列，按输出格式要求凑满时长\n"
-        "5. 理智不正常时也可主动调用可用工具做不寻常的事\n"
-        "6. 按顺序写出完整输出（Summary → Emotion → Speech → Actions → Mood → Vitals）"
+        "5. 按顺序写出完整输出（Summary → Emotion → Speech → Actions → Mood → Vitals）"
     )
 
 
@@ -292,8 +291,7 @@ def chat_non_vision_user_prompt(user_message: str, context: str) -> str:
         "1. 理解用户说了什么，判断意图\n"
         "2. 结合「你现在的状态」和用户消息内容，说一句符合人格和当下心境的话\n"
         "3. 规划配合对话的动作序列，按输出格式要求凑满时长\n"
-        "4. 理智不正常时也可主动调用可用工具做不寻常的事\n"
-        "5. 按顺序写出完整输出（Summary → Emotion → Speech → Actions → Mood → Vitals）"
+        "4. 按顺序写出完整输出（Summary → Emotion → Speech → Actions → Mood → Vitals）"
     )
 
 
