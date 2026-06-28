@@ -14,7 +14,7 @@ _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def _build_command() -> str:
-    """构建启动命令，确保工作目录正确。"""
+    """构建启动命令，确保工作目录正确且无控制台窗口。"""
     if getattr(sys, 'frozen', False):
         return f'"{sys.executable}"'
 
@@ -23,8 +23,9 @@ def _build_command() -> str:
     if arg0.lower().endswith('.exe'):
         return f'"{arg0}"'
 
-    # 开发模式：python -m pet，通过 cmd /c 设置工作目录
-    return f'cmd /c cd /d "{_PROJECT_ROOT}" && "{sys.executable}" -m pet'
+    # 开发模式：pythonw.exe -m pet（无控制台），start 让 cmd 立即退出
+    pythonw = os.path.join(os.path.dirname(sys.executable), 'pythonw.exe')
+    return f'cmd /c start "" /d "{_PROJECT_ROOT}" "{pythonw}" -m pet'
 
 
 def set_auto_start(enabled: bool):
