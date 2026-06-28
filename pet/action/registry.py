@@ -145,8 +145,8 @@ def _build_duration_registry() -> dict[str, ActionDef]:
             name=name,
             category="驻留",
             description=desc_map[name],
-            params=[f"duration={lo}-{hi}秒"],
-            usage_example=f"Action: {name} duration={dur}",
+            params=[f"{lo}-{hi}秒"],
+            usage_example=f"Action: {name} {dur}",
         )
 
     # 显隐动作放最后，保持 移动→驻留→显隐 的展示顺序

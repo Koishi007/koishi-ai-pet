@@ -148,10 +148,14 @@ class PetAgent(QObject):
 
     def _emit_action(self, name: str, args, kwargs):
         kw = dict(kwargs) if kwargs else {}
-        if "duration" not in kw and name in _DURATION_ACTION_DEFS:
-            kw["duration"] = default_duration(name)
-            logger.debug(f"[PetAgent] backfill default duration for '{name}': {kw['duration']}s")
-        self.action_requested.emit(name, args or (), kw)
+        arg_list = list(args or ())
+        if name in _DURATION_ACTION_DEFS:
+            if arg_list and isinstance(arg_list[0], int):
+                kw["duration"] = arg_list.pop(0)
+            else:
+                kw["duration"] = default_duration(name)
+            logger.debug(f"[PetAgent] duration for '{name}': {kw['duration']}s")
+        self.action_requested.emit(name, tuple(arg_list), kw)
     def _autonomous_pipeline(self, pet_x=0, pet_y=0):
         window_context = self.behavior.ctx.build_window_context(pet_x, pet_y, int(self._pet_window.winId()) if self._pet_window else 0)
         context = window_context if window_context else ""

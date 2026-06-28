@@ -76,7 +76,8 @@ class PetActions(QObject):
     def walk(self, direction: str = "right", distance: int = 400, bounce=25):
         """弹跳行走：每 50px 一跳，匀速，跳间留 250ms 供重力检测，悬空则自动取消。"""
         if direction not in ("left", "right"):
-            raise ValueError(f"direction must be 'left' or 'right', got '{direction}'")
+            logger.warning(f"[PetActions] walk: invalid direction {direction!r}, fallback to 'right'")
+            direction = "right"
 
         walk_action = f"walk_{direction}"
         self._anim.play(walk_action)
@@ -156,7 +157,8 @@ class PetActions(QObject):
     def drive(self, direction: str = "right", distance: int = 400):
         """骑小电驴"""
         if direction not in ("left", "right"):
-            raise ValueError(f"direction must be 'left' or 'right', got '{direction}'")
+            logger.warning(f"[PetActions] drive: invalid direction {direction!r}, fallback to 'right'")
+            direction = "right"
 
         walk_action = f"driving_{direction}"
         self._anim.play(walk_action)
