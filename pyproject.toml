@@ -7,7 +7,7 @@ name = "koishi-ai-pet"
 version = "1.0.0"
 description = "古明地恋AI桌宠"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 license = { text = "GPL-3.0-only" }
 authors = [
     { name = "Koishi007" },

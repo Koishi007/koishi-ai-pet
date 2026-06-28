@@ -32,6 +32,12 @@ for cmd in python3 python; do
         PY_MAJOR=$("$cmd" -c 'import sys; print(sys.version_info.major)' 2>/dev/null || echo "0")
         PY_MINOR=$("$cmd" -c 'import sys; print(sys.version_info.minor)' 2>/dev/null || echo "0")
         if [ "$PY_MAJOR" -gt 3 ] 2>/dev/null || { [ "$PY_MAJOR" -eq 3 ] 2>/dev/null && [ "$PY_MINOR" -ge 11 ] 2>/dev/null; }; then
+            # 检查 Python 版本上限（pyobjc 等依赖暂不支持 3.14）
+            if [ "$PY_MAJOR" -eq 3 ] 2>/dev/null && [ "$PY_MINOR" -ge 14 ] 2>/dev/null; then
+                echo -e "${YELLOW}[警告]${NC} 检测到 Python 3.14+，部分依赖（pyobjc）可能不兼容"
+                echo "       建议使用 Python 3.12~3.13：brew install python@3.12"
+                echo "       尝试继续安装..."
+            fi
             PYTHON="$cmd"
             break
         fi
