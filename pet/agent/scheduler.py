@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 def _get_idle_ms() -> int:
-    """返回系统级无输入空闲时长（毫秒），Windows / macOS 双平台。"""
+    """返回系统级无输入空闲时长（毫秒），三平台支持。"""
     if sys.platform == "darwin":
         import ctypes
         import ctypes.util
@@ -25,7 +25,7 @@ def _get_idle_ms() -> int:
             ctypes.c_ulong(0xFFFFFFFFFFFFFFFF),  # ~0 = kCGAnyInputEventType
         )
         return int(seconds * 1000)
-    else:
+    elif sys.platform == "win32":
         import ctypes
         from ctypes import wintypes
 
@@ -36,6 +36,42 @@ def _get_idle_ms() -> int:
         lii.cbSize = ctypes.sizeof(_LASTINPUTINFO)
         if ctypes.windll.user32.GetLastInputInfo(ctypes.byref(lii)):
             return ctypes.windll.kernel32.GetTickCount() - lii.dwTime
+        return 0
+    else:
+        # Linux：尝试 X11 XScreenSaver，不可用（如 Wayland）时返回 0
+        try:
+            import ctypes
+            libx11 = ctypes.cdll.LoadLibrary("libX11.so.6")
+            libxss = ctypes.cdll.LoadLibrary("libXss.so.1")
+
+            class _XScreenSaverInfo(ctypes.Structure):
+                _fields_ = [
+                    ("window", ctypes.c_ulong),
+                    ("state", ctypes.c_int),
+                    ("kind", ctypes.c_int),
+                    ("til_or_since", ctypes.c_ulong),
+                    ("idle", ctypes.c_ulong),
+                    ("eventMask", ctypes.c_ulong),
+                ]
+
+            # 64 位系统必须声明指针返回类型，否则截断地址导致段错误
+            libx11.XOpenDisplay.restype = ctypes.c_void_p
+            libx11.XDefaultRootWindow.restype = ctypes.c_ulong
+            libxss.XScreenSaverQueryInfo.argtypes = [
+                ctypes.c_void_p, ctypes.c_ulong, ctypes.POINTER(_XScreenSaverInfo)
+            ]
+
+            dpy = libx11.XOpenDisplay(None)  # None = NULL = 默认 DISPLAY
+            if dpy:
+                try:
+                    info = _XScreenSaverInfo()
+                    root = libx11.XDefaultRootWindow(dpy)
+                    libxss.XScreenSaverQueryInfo(dpy, root, ctypes.byref(info))
+                    return int(info.idle)
+                finally:
+                    libx11.XCloseDisplay(dpy)
+        except Exception as e:
+            logger.debug(f"[Scheduler] Linux idle check failed: {e}")
         return 0
 
 
@@ -261,7 +297,7 @@ class Scheduler(QObject):
         logger.info(f"[Scheduler] alarm '{key}' scheduled in {delay_ms}ms")
 
     def cancel_alarm_by_key(self, key: str):
-        """公开方法：按 key 取消一个一次性闹钟（幂等）。"""
+        """按 key 取消一个一次性闹钟（幂等）。"""
         self._pending_alarms.pop(key, None)
         self._cleanup_alarm_timer(key)
 

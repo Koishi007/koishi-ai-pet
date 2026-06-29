@@ -74,6 +74,7 @@ class PetWindow(TransparentWindow):
         self._agent = None
         self._debug_window = None
         self._log_window = None
+        self._chat_history_window = None
         self._log_relay = None
         self._app = None
         self._event_reaction = False
@@ -258,6 +259,11 @@ class PetWindow(TransparentWindow):
             log_action.triggered.connect(self._show_log_window)
             menu.addAction(log_action)
 
+            # 对话历史窗口
+            history_action = QAction("对话历史")
+            history_action.triggered.connect(self._show_chat_history)
+            menu.addAction(history_action)
+
             # 设置窗口
             settings_action = QAction("设置")
             settings_action.triggered.connect(lambda: self._open_settings())
@@ -340,6 +346,17 @@ class PetWindow(TransparentWindow):
         self._log_window.show()
         self._log_window.activateWindow()
         self._log_window.raise_()
+
+    def _show_chat_history(self):
+        if self._chat_history_window is None:
+            from pet.ui.chat_history import ChatHistoryWindow
+            store = self._agent.conversation_store if self._agent else None
+            if store is None:
+                return
+            self._chat_history_window = ChatHistoryWindow(store)
+        self._chat_history_window.show()
+        self._chat_history_window.activateWindow()
+        self._chat_history_window.raise_()
 
     def _on_falling_started(self):
         self.action_queue.pause()

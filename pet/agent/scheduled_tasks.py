@@ -34,6 +34,7 @@ class ScheduledTasks:
         scheduler.register("slow", self._agent.mood.save)
         scheduler.register("slow", self._agent.mood.check_thresholds)
         scheduler.register("slow", self._memory_maintenance)
+        scheduler.register("slow", self._conversation_cleanup)
 
     # ── mid ──
 
@@ -146,3 +147,10 @@ class ScheduledTasks:
             self._agent.behavior._memory_store.maintenance()
         except Exception as e:
             logger.debug(f"[ScheduledTasks] memory maintenance skipped: {e}")
+
+    def _conversation_cleanup(self):
+        """定期清理过期对话历史记录（保持至多 7 天）。"""
+        try:
+            self._agent.conversation_store._cleanup_old(7)
+        except Exception as e:
+            logger.debug(f"[ScheduledTasks] conversation cleanup skipped: {e}")

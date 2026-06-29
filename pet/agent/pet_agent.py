@@ -10,6 +10,7 @@ from pet.agent.scheduled_tasks import ScheduledTasks
 from pet.agent.state import StateMachine
 from pet.agent.screen_reader import ScreenReader
 from pet.brain.memory import MemoryStore
+from pet.brain.conversation_store import ConversationStore
 from pet.action.registry import default_duration, _DURATION_ACTION_DEFS
 from pet.pulse.vitals import Vitals
 from pet.pulse.mood import Mood
@@ -58,6 +59,7 @@ class PetAgent(QObject):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.memory_store = MemoryStore()
+        self.conversation_store = ConversationStore()
         self.screen_reader = ScreenReader()
         self.screen_reader.enable()
         self.vitals = Vitals(parent=self)
@@ -127,6 +129,8 @@ class PetAgent(QObject):
             self.vitals.close()
         if hasattr(self, 'mood'):
             self.mood.close()
+        if hasattr(self, 'conversation_store'):
+            self.conversation_store.close()
         logger.info("[PetAgent] stopped")
 
     def trigger(self, intent: str, **kwargs):
@@ -274,6 +278,10 @@ class PetAgent(QObject):
 
         self._async_brain(self._chat_pipeline, message, pet_x, pet_y)
         logger.info(f"[PetAgent] user chat:{message}")
+        try:
+            self.conversation_store.add("user", message)
+        except Exception:
+            pass
 
     def _chat_pipeline(self, message: str, pet_x: int, pet_y: int):
         self.behavior.add_context(role="user", content=message)
@@ -388,6 +396,11 @@ class PetAgent(QObject):
                 parts = result.speech_parts if result.speech_parts else [result.speech]
                 for part in parts:
                     self.speak_requested.emit(part, 5000)
+            if result.speech:
+                try:
+                    self.conversation_store.add("pet", result.speech)
+                except Exception:
+                    pass
             if result.summary:
                 self.behavior.add_context(role="assistant", content=result.summary, is_summary=True)
             for step in result.actions:
@@ -398,6 +411,10 @@ class PetAgent(QObject):
             logger.info(f"[{ts}] [PetAgent] ← \"{result[:60]}\"")
             self.behavior.add_context(role="assistant", content=result[:100])
             self.speak_requested.emit(result, 5000)
+            try:
+                self.conversation_store.add("pet", result)
+            except Exception:
+                pass
 
         if hasattr(result, 'memory_line') and result.memory_line:
             try:
