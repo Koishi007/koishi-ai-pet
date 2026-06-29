@@ -1,4 +1,4 @@
-"""OpenAI-compatible LLM client — 封装连接逻辑，参考 embedding_client 结构。"""
+"""OpenAI-compatible LLM client"""
 
 import logging
 import threading
@@ -10,13 +10,6 @@ logger = logging.getLogger(__name__)
 
 
 class LLMClient:
-    """LLM 客户端，封装 OpenAI 兼容 API 连接。
-
-    支持两种模式：
-    - ollama: 本地 Ollama 服务
-    - api:   通用 OpenAI 兼容 API
-    若 BRAIN=local 或缺少 API Key，client 为 None（走本地 fallback）。
-    """
 
     def __init__(self):
         self._client: OpenAI | None = None
@@ -24,7 +17,6 @@ class LLMClient:
         self._lock = threading.RLock()
         self._build()
 
-    # ── 构建 / 重建 ──
 
     def _build(self):
         brain = config.BRAIN or "local"
@@ -68,7 +60,6 @@ class LLMClient:
         )
         logger.info(f"[LLMClient] rebuild: {client_type}")
 
-    # ── 属性 ──
 
     @property
     def client(self) -> OpenAI | None:
