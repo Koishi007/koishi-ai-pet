@@ -7,9 +7,9 @@ import threading
 from dataclasses import dataclass, field
 from typing import Optional
 
-from openai import OpenAI
 from pet.brain.base import BrainMixin
 from pet.brain.context_builder import ContextBuilder
+from pet.brain.llm_client import LLMClient
 from pet.brain.llm_stats import LlmStats
 from pet.action.registry import ACTION_NAMES
 from pet.config import config
@@ -43,10 +43,8 @@ class Behavior(BrainMixin):
     def __init__(self, memory_store=None, screen_reader=None, vitals=None, mood=None):
         db_path = memory_store._db_path if memory_store else None
         super().__init__(db_path=db_path)
-        self._client = None
-        self._model = None
+        self._llm = LLMClient()
         self._lock = threading.RLock()
-        self._setup()
 
         self._actions = ACTION_NAMES
         self.ctx = ContextBuilder(
@@ -56,50 +54,23 @@ class Behavior(BrainMixin):
         self.llm_stats = LlmStats()
 
         t = datetime.now().strftime("%H:%M:%S")
-        client_type = "None (local)" if self._client is None else f"{type(self._client).__name__}(model={self._model})"
+        client_type = "None (local)" if not self._llm else f"{type(self._llm.client).__name__}(model={self._llm.model})"
         logger.info(f"[{t}] [Behavior] init: {len(self._actions)} actions, client={client_type}")
-
-    def _setup(self):
-        brain = config.BRAIN or "local"
-        key = config.LLM_KEY
-        url = config.LLM_URL
-        model = config.LLM_MODEL
-
-        logger.debug(f"[Behavior] _setup: BRAIN={brain}, model={model}, "
-                     f"key={'***' if key else 'EMPTY'}, URL={url or '(empty)'}")
-
-        if brain == "ollama":
-            self._client = OpenAI(
-                api_key="ollama",
-                base_url=config.OLLAMA_BASE_URL,
-                timeout=config.LLM_TIMEOUT,
-            )
-            self._model = model or "llama3.2"
-        elif brain == "api" and key:
-            self._client = OpenAI(
-                api_key=key,
-                base_url=url or "",
-                timeout=config.LLM_TIMEOUT,
-            )
-            self._model = model
-        else:
-            self._client = None
-            logger.warning(f"[Behavior] No client (BRAIN={brain}, key empty={not bool(key)}) → local fallback")
 
     def rebuild_client(self):
         """运行时重建 LLM 客户端（设置界面修改连接配置后调用）。"""
         with self._lock:
-            self._setup()
-        client_type = "None (local)" if self._client is None else f"{type(self._client).__name__}(model={self._model})"
+            self._llm.rebuild()
+        client_type = "None (local)" if not self._llm else f"{type(self._llm.client).__name__}(model={self._llm.model})"
         logger.info(f"[Behavior] rebuild_client: {client_type}")
 
     @property
     def has_vision(self) -> bool:
-        return self._client is not None and config.VISION_ENABLED
+        return self._llm.has_vision
     
     def autonomous_decide(self, context: str = "", screenshot: bool = True) -> BehaviorOutput:
         t = datetime.now().strftime("%H:%M:%S")
-        if not self._client:
+        if not self._llm:
             return self._decide_local()
 
         messages = self.ctx.build_autonomous_decide(context, screenshot=screenshot)
@@ -107,14 +78,14 @@ class Behavior(BrainMixin):
         tag = "autonomous_vision" if is_vision else "autonomous_non_vision"
         ctx_preview = context[:60] if context else "(empty)"
         logger.info(f"[{t}] [Behavior] === LLM REQUEST ({tag}) ===")
-        logger.info(f"[{t}] [Behavior]   model: {self._model}, context({len(context)} chars): \"{ctx_preview}\"")
+        logger.info(f"[{t}] [Behavior]   model: {self._llm.model}, context({len(context)} chars): \"{ctx_preview}\"")
         logger.info(f"[{t}] [Behavior]   history: {self.context_count()} entries")
 
         return self._retry_if_empty(self._call_llm_and_parse, messages, messages[0]["content"], tag, tag=tag, max_tokens=config.LLM_MAX_TOKENS_AUTONOMOUS)
 
     def autonomous_decide_stream(self, context: str = "", screenshot: bool = True,
                       on_chunk=None, on_stream_end=None) -> BehaviorOutput:
-        if not self._client:
+        if not self._llm:
             return self._decide_local()
         if not self._lock.acquire(timeout=0.5):
             logger.warning("[Behavior] autonomous_decide_stream: busy, skip")
@@ -128,14 +99,14 @@ class Behavior(BrainMixin):
             self._lock.release()
 
     def interact_decide(self, event_hint: str) -> BehaviorOutput:
-        if not self._client:
+        if not self._llm:
             return self._decide_local()
         messages = self.ctx.build_interact(event_hint)
         return self._retry_if_empty(self._call_llm_and_parse, messages, messages[0]["content"], "interact", tag="interact", max_tokens=config.LLM_MAX_TOKENS_INTERACT)
 
     def interact_decide_stream(self, event_hint: str,
                                on_chunk=None, on_stream_end=None) -> BehaviorOutput:
-        if not self._client:
+        if not self._llm:
             return self._decide_local()
         if not self._lock.acquire(timeout=2):
             logger.warning("[Behavior] interact_decide_stream: busy, skip")
@@ -152,21 +123,21 @@ class Behavior(BrainMixin):
         t = datetime.now().strftime("%H:%M:%S")
         logger.info(f"[{t}] [Behavior] chat_decide(msg={user_message[:50]}, ctx={context[:30]})")
 
-        if not self._client:
+        if not self._llm:
             return self._chat_decide_local(user_message)
 
         messages = self.ctx.build_chat_decide(user_message, context, screenshot=screenshot)
         is_vision = isinstance(messages[1]["content"], list)
         tag = "chat_vision" if is_vision else "chat_non_vision"
         logger.info(f"[{t}] [Behavior] === LLM REQUEST ({tag}) ===")
-        logger.info(f"[{t}] [Behavior]   model: {self._model}")
+        logger.info(f"[{t}] [Behavior]   model: {self._llm.model}")
         logger.info(f"[{t}] [Behavior]   history: {self.context_count()} entries")
 
         return self._retry_if_empty(self._call_llm_and_parse, messages, messages[0]["content"], tag, tag=tag, max_tokens=config.LLM_MAX_TOKENS_CHAT)
 
     def chat_decide_stream(self, user_message: str, context: str, screenshot: bool = True,
                            on_chunk=None, on_stream_end=None) -> BehaviorOutput:
-        if not self._client:
+        if not self._llm:
             return self._chat_decide_local(user_message)
         if not self._lock.acquire(timeout=5):
             logger.warning("[Behavior] chat_decide_stream: busy, timeout")
@@ -194,10 +165,10 @@ class Behavior(BrainMixin):
     def _llm_call(self, messages: list, max_tokens: int = 4000, tools: list = None):
         self.llm_stats.increment()
         t0 = time.perf_counter()
-        kwargs = {"model": self._model, "messages": messages, "max_tokens": max_tokens, "temperature": config.LLM_TEMPERATURE}
+        kwargs = {"model": self._llm.model, "messages": messages, "max_tokens": max_tokens, "temperature": config.LLM_TEMPERATURE}
         if tools:
             kwargs["tools"] = tools
-        resp = self._client.chat.completions.create(**kwargs)
+        resp = self._llm.client.chat.completions.create(**kwargs)
         elapsed = time.perf_counter() - t0
         usage = resp.usage
         if usage:
@@ -210,13 +181,13 @@ class Behavior(BrainMixin):
     def _llm_call_stream(self, messages: list, max_tokens: int = 4000, tools: list = None):
         self.llm_stats.increment()
         from pet.brain.llm_retry import llm_stream_with_retry
-        kwargs = {"model": self._model, "messages": messages, "max_tokens": max_tokens,
+        kwargs = {"model": self._llm.model, "messages": messages, "max_tokens": max_tokens,
                    "temperature": config.LLM_TEMPERATURE, "stream": True,
                    "stream_options": {"include_usage": True}}
         if tools:
             kwargs["tools"] = tools
         return llm_stream_with_retry(
-            lambda: self._client.chat.completions.create(**kwargs),
+            lambda: self._llm.client.chat.completions.create(**kwargs),
             tag="Behavior.stream",
         )
 
