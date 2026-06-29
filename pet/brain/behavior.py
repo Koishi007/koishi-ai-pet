@@ -546,6 +546,16 @@ class Behavior(BrainMixin):
         tool_log = []  # 记录工具调用摘要，用于写入上下文
         final_instruction_added = False  # 最终轮精简指令是否已追加
 
+        # 追踪 on_chunk 是否在 _consume_stream 中被真正调用（即检测到 Speech 内容）
+        # 仅当 Speech 被实际流式发送时才标记 speech_streamed=True，
+        # 避免非 Speech 文本（如 Summary/Action）导致误判
+        _chunk_invoked = [False]
+        _wrapped_chunk = None
+        if on_chunk:
+            def _wrapped_chunk(delta: str):
+                _chunk_invoked[0] = True
+                on_chunk(delta)
+
         for round_idx in range(max_rounds):
             # 构建 assistant 消息（含 tool_calls）
             openai_tool_calls = []
@@ -622,9 +632,10 @@ class Behavior(BrainMixin):
             # 再次调用 LLM
             t0 = time.perf_counter()
             stream = self._llm_call_stream(current_messages, max_tokens=max_tokens, tools=tools_param)
-            content, new_tool_calls = self._consume_stream(stream, on_chunk=on_chunk, on_stream_end=on_stream_end, tag=f"{tag}_round_{round_idx+1}", t0=t0)
-            if on_chunk:
-                speech_streamed = speech_streamed or bool(content)
+            _chunk_invoked[0] = False
+            content, new_tool_calls = self._consume_stream(stream, on_chunk=_wrapped_chunk, on_stream_end=on_stream_end, tag=f"{tag}_round_{round_idx+1}", t0=t0)
+            if _chunk_invoked[0]:
+                speech_streamed = True
 
             if not new_tool_calls:
                 # LLM 不再请求工具，解析最终行为

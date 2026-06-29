@@ -148,6 +148,9 @@ class SpeechBubble(QLabel):
             self._buffering = False
             if text:
                 self._enqueue(text, duration)
+                # 缓冲入队后，若气泡未活跃则立即触发播放，防止文本卡在队列中
+                if not self._is_active():
+                    self._play_next_queued()
             return
 
         self._end_stream_duration = duration
