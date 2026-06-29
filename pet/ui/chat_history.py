@@ -17,13 +17,12 @@ from PySide6.QtWidgets import (
 from pet.brain.conversation_store import ConversationStore
 from pet.ui.styles import (
     ICON_PATH, BUTTON_PRIMARY_QSS, TEXTEDIT_QSS, SCROLLBAR_QSS, LIST_QSS,
-    _COLOR_BG, _COLOR_TEXT_TITLE,
+    _COLOR_BG, _COLOR_TEXT_TITLE, TITLE_LABEL_QSS, WINDOW_RADIUS,
+    _COLOR_BUBBLE_USER, _COLOR_BUBBLE_USER_BORDER, _COLOR_BUBBLE_PET, _COLOR_BUBBLE_PET_BORDER,
     make_minimize_button, make_close_button, ensure_taskbar_icon,
 )
 
 logger = logging.getLogger(__name__)
-
-_RADIUS = 10  # 窗口圆角半径
 
 _WINDOW_QSS = """
 QWidget#ChatHistoryRoot {
@@ -111,8 +110,8 @@ class ChatBubbleDelegate(QStyledItemDelegate):
         bubble_rect = QRect(bubble_x, y, bubble_w, bubble_h)
 
         # 绘制气泡背景
-        bubble_color = QColor("#d4edda") if is_user else QColor("#d6eaf8")  # 淡绿色 / 淡蓝色
-        border_color = QColor("#b8d4be") if is_user else QColor("#b8cfe0")
+        bubble_color = QColor(_COLOR_BUBBLE_USER) if is_user else QColor(_COLOR_BUBBLE_PET)
+        border_color = QColor(_COLOR_BUBBLE_USER_BORDER) if is_user else QColor(_COLOR_BUBBLE_PET_BORDER)
 
         path = QPainterPath()
         path.addRoundedRect(bubble_rect, self._bubble_radius, self._bubble_radius)
@@ -204,7 +203,7 @@ class ChatHistoryWindow(QWidget):
 
         # 标题
         title_label = QLabel("对话历史")
-        title_label.setStyleSheet(f"font-size:13px; color:{_COLOR_TEXT_TITLE}; font-weight:bold; background:transparent;")
+        title_label.setStyleSheet(TITLE_LABEL_QSS)
         header_layout.addWidget(title_label)
 
         header_layout.addStretch()
@@ -299,7 +298,7 @@ class ChatHistoryWindow(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = self.rect().adjusted(0, 0, -1, -1)
         path = QPainterPath()
-        path.addRoundedRect(rect, _RADIUS, _RADIUS)
+        path.addRoundedRect(rect, WINDOW_RADIUS, WINDOW_RADIUS)
         painter.fillPath(path, QColor(_COLOR_BG))
         painter.setPen(QPen(QColor("#000000"), 1))
         painter.drawPath(path)

@@ -33,6 +33,17 @@ _COLOR_DANGER      = "#e81123"
 _COLOR_WARNING     = "#e67e22"
 _COLOR_HOVER_BG   = "#e0e0e0"
 
+# ── 聊天气泡色 ──
+
+_COLOR_BUBBLE_USER        = "#d4edda"
+_COLOR_BUBBLE_USER_BORDER = "#b8d4be"
+_COLOR_BUBBLE_PET         = "#d6eaf8"
+_COLOR_BUBBLE_PET_BORDER  = "#b8cfe0"
+
+# ── 通用圆角半径 ──
+
+WINDOW_RADIUS = 10
+
 # ── 窗口 / 根 ──
 
 WINDOW_QSS = """
@@ -387,6 +398,10 @@ LABEL_MONO_QSS = """
     font-size: 12px;
     color: """ + _COLOR_TEXT + """;
 """
+
+# ── 窗口标题栏标签 ──
+
+TITLE_LABEL_QSS = f"font-size:13px; color:{_COLOR_TEXT_TITLE}; font-weight:bold; background:transparent;"
 
 # ── 水平分隔线 ──
 

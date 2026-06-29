@@ -12,13 +12,9 @@ from PySide6.QtWidgets import (
 from pet.ui.styles import (
     ICON_PATH, TEXTEDIT_QSS, BUTTON_QSS, BUTTON_PRIMARY_QSS, BUTTON_DANGER_QSS, COMBOBOX_QSS, SCROLLBAR_QSS,
     _COLOR_BG, _COLOR_BORDER_DARK, _COLOR_TEXT_TITLE, _COLOR_TEXT_MUTED, _COLOR_DANGER,
+    TITLE_LABEL_QSS, WINDOW_RADIUS,
     make_minimize_button, make_close_button, ensure_taskbar_icon,
 )
-
-
-# ── 常量 ──
-
-_RADIUS = 10  # 窗口圆角半径
 
 
 # ── 跨线程日志桥接 ──
@@ -153,7 +149,7 @@ class LogWindow(QWidget):
 
         # 标题
         title_label = QLabel("日志")
-        title_label.setStyleSheet(f"font-size:13px; color:{_COLOR_TEXT_TITLE}; font-weight:bold; background:transparent;")
+        title_label.setStyleSheet(TITLE_LABEL_QSS)
         header_layout.addWidget(title_label)
 
         header_layout.addStretch()
@@ -221,7 +217,7 @@ class LogWindow(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = self.rect().adjusted(0, 0, -1, -1)
         path = QPainterPath()
-        path.addRoundedRect(rect, _RADIUS, _RADIUS)
+        path.addRoundedRect(rect, WINDOW_RADIUS, WINDOW_RADIUS)
         # 填充背景
         painter.fillPath(path, QColor(_COLOR_BG))
         # 细描边

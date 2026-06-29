@@ -4,6 +4,7 @@ from PySide6.QtWidgets import QLabel, QWidget
 from PySide6.QtCore import Qt, QTimer, QPoint, QPropertyAnimation, QParallelAnimationGroup, QEasingCurve
 from PySide6.QtGui import QPainter, QColor, QPen, QPolygon
 from pet.config import config
+from pet.ui.styles import _COLOR_BUBBLE_PET
 
 TAIL_HEIGHT = 10
 
@@ -54,9 +55,12 @@ class SpeechBubble(QLabel):
         w, h = self.width(), self.height()
         body_h = h - TAIL_HEIGHT
 
+        bubble_color = QColor(_COLOR_BUBBLE_PET)
+        bubble_color.setAlpha(230)
+
         body_rect = self.rect()
         body_rect.setHeight(body_h)
-        painter.setBrush(QColor(255, 255, 255, 220))
+        painter.setBrush(bubble_color)
         painter.setPen(QPen(QColor(200, 200, 200), 1))
         painter.drawRoundedRect(body_rect.adjusted(0, 0, -1, -1), 12, 12)
 
@@ -68,7 +72,7 @@ class SpeechBubble(QLabel):
             QPoint(cx,     h - 1),
         ])
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(255, 255, 255, 220))
+        painter.setBrush(bubble_color)
         painter.drawPolygon(tail)
 
         painter.end()
