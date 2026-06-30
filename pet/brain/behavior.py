@@ -1,5 +1,7 @@
 ﻿"""与 AI 通信，解析响应为动作序列。"""
 
+import random
+import re
 import time
 from datetime import datetime
 import logging
@@ -100,17 +102,17 @@ class Behavior(BrainMixin):
 
     def interact_decide(self, event_hint: str) -> BehaviorOutput:
         if not self._llm:
-            return self._decide_local()
+            return self._interact_decide_local(event_hint)
         messages = self.ctx.build_interact(event_hint)
         return self._retry_if_empty(self._call_llm_and_parse, messages, messages[0]["content"], "interact", tag="interact", max_tokens=config.LLM_MAX_TOKENS_INTERACT)
 
     def interact_decide_stream(self, event_hint: str,
                                on_chunk=None, on_stream_end=None) -> BehaviorOutput:
         if not self._llm:
-            return self._decide_local()
+            return self._interact_decide_local(event_hint)
         if not self._lock.acquire(timeout=2):
             logger.warning("[Behavior] interact_decide_stream: busy, skip")
-            return self._decide_local()
+            return self._interact_decide_local(event_hint)
         try:
             messages = self.ctx.build_interact(event_hint)
             return self._retry_if_empty(self._stream_and_parse, messages, tag="interact", on_chunk=on_chunk, on_stream_end=on_stream_end, max_tokens=config.LLM_MAX_TOKENS_INTERACT)
@@ -734,18 +736,17 @@ class Behavior(BrainMixin):
         return content, tool_calls_map
 
     _LOCAL_ACTIONS = [
-        ("sit", "Taking a little break."),
-        ("drive", "Riding my little scooter!"),
-        ("walk", "Bouncy bouncy!"),
-        ("shake_arms", "Yay! So happy!"),
-        ("look_around", "What's going on over there?"),
-        ("stretch", "Ahh, that's better..."),
-        ("sleep", "Getting sleepy... zzz..."),
-        ("thinking", "Hmm..."),
+        ("sit", "歇一会儿～"),
+        ("drive", "骑上我心爱的小摩托～"),
+        ("walk", "蹦蹦跳跳真开心！"),
+        ("shake_arms", "耶！太好啦！"),
+        ("look_around", "那边有什么好玩的？"),
+        ("stretch", "唔…伸个懒腰舒服多了～"),
+        ("sleep", "呼…呼… zzz…"),
+        ("thinking", "让我想想…"),
     ]
 
     def _decide_local(self) -> BehaviorOutput:
-        import random
         action, speech = random.choice(self._LOCAL_ACTIONS)
         t = datetime.now().strftime("%H:%M:%S")
         logger.info(f"[{t}] [Behavior] _decide_local → {action} / {speech}")
@@ -757,6 +758,72 @@ class Behavior(BrainMixin):
             step = ActionStep(action, args=(direction, distance))
         else:
             step = ActionStep(action)
+
+        return BehaviorOutput(
+            actions=[step],
+            speech=speech,
+            emotion="happy" if action == "shake_arms" else None,
+        )
+
+    def _interact_decide_local(self, event_hint: str) -> BehaviorOutput:
+        """本地模式下根据交互提示词生成响应。"""
+        t = datetime.now().strftime("%H:%M:%S")
+
+        # 检测投喂事件并提取食物名
+        if "投喂" in event_hint:
+            food_match = re.search(r"投喂了(.+)[。，,]", event_hint)
+            food = food_match.group(1) if food_match else "好吃的"
+
+            speeches = [
+                f"嗷呜～{food}真好吃！谢谢！",
+                f"嗯嗯，{food}好香呀～",
+                f"嘿嘿，{food}太棒啦！",
+                f"哇，{food}！好开心！",
+                f"嚼嚼嚼…{food}美味！",
+            ]
+            speech = random.choice(speeches)
+            logger.info(f"[{t}] [Behavior] _interact_decide_local(feed {food}) → {speech}")
+
+            return BehaviorOutput(
+                actions=[ActionStep("shake_arms", kwargs={"duration": 3})],
+                speech=speech,
+                emotion="love",
+                vitals_deltas={"satiety": 1.5, "energy": 0.5},
+                mood_deltas={"joy": 1.5, "affection": 1.0},
+            )
+
+        # 检测抓取事件
+        if "抓起" in event_hint or "抓住" in event_hint:
+            speech = random.choice([
+                "哎哎？快放我下来～",
+                "呜哇，被抓住了！",
+                "诶诶诶？！",
+            ])
+            logger.info(f"[{t}] [Behavior] _interact_decide_local(grab) → {speech}")
+            return BehaviorOutput(
+                actions=[ActionStep("shake_arms", kwargs={"duration": 3})],
+                speech=speech,
+                emotion="grim",
+            )
+
+        # 检测释放事件
+        if "放下" in event_hint or "释放" in event_hint:
+            speech = random.choice([
+                "呼…终于落地了。",
+                "踏实的感觉真好～",
+                "嗯哼，还是地上舒服。",
+            ])
+            logger.info(f"[{t}] [Behavior] _interact_decide_local(release) → {speech}")
+            return BehaviorOutput(
+                actions=[ActionStep("stretch", kwargs={"duration": 4})],
+                speech=speech,
+            )
+
+        # 其他交互事件：通用兜底
+        action, speech = random.choice(self._LOCAL_ACTIONS)
+        logger.info(f"[{t}] [Behavior] _interact_decide_local(generic) → {action} / {speech}")
+        step = ActionStep(action, args=(random.choice(["left", "right"]), random.randint(300, 800))) \
+            if action in ("drive", "walk") else ActionStep(action)
 
         return BehaviorOutput(
             actions=[step],
