@@ -63,8 +63,13 @@ class ContextBuilder:
         except Exception:
             return ""
 
-        pet_w, pet_h = 125, 125
+        pet_w, pet_h = config.PET_WIDTH, config.PET_HEIGHT
         dpr = QApplication.primaryScreen().devicePixelRatio() if QApplication.primaryScreen() else 1.0
+
+        # 跳跃阈值按屏幕可见高度比例计算（适配不同分辨率）
+        screen_h = QApplication.primaryScreen().availableGeometry().height() if QApplication.primaryScreen() else 1080
+        _jump_ok = int(screen_h * 0.40)       # ≤40% 屏高 → 可跳
+        _jump_hard = int(screen_h * 0.75)    # ≤75% 屏高 → 勉强可跳
 
         # 收集有效窗口并打分
         scored = []
@@ -89,18 +94,18 @@ class ContextBuilder:
             # 打分：距离近 + 尺寸大 + 可跳跃 = 高优先级
             dist_score = 1000.0 / (dist + 1.0)
             size_score = min(w * h / 100000.0, 5.0)
-            if jump_px <= 400:
+            if jump_px <= _jump_ok:
                 reach_score = 2.0
-            elif jump_px <= 800:
+            elif jump_px <= _jump_hard:
                 reach_score = 1.0
             else:
                 reach_score = 0.0
             total = dist_score + size_score + reach_score
 
             direction = "右" if dx_walk > 0 else "左"
-            if jump_px <= 400:
+            if jump_px <= _jump_ok:
                 reachable = "可跳"
-            elif jump_px <= 800:
+            elif jump_px <= _jump_hard:
                 reachable = "勉强可跳"
             else:
                 reachable = "禁止跳跃（距离过高）"

@@ -96,7 +96,7 @@ def _autonomous_task() -> list[str]:
         "6. sit/thinking/sleep 必须带 duration 参数",
         "7. drive/walk 必须指定 left/right，距离 500-1000px",
         "8. fade_out 和 fade_in 必须成对出现（先 out 后 in），中间必须有其他动作",
-        '9. bounce 的 height ≤900px，禁止跳到标记"禁止跳跃"的窗口',
+        '9. bounce 的 height 使用窗口探测数据的「上跳_N_px」值，禁止跳到标记"禁止跳跃"的窗口',
         "【行为】",
         "10. 避免重复 Recent 中的行为和台词",
         "10a. 动作选择要有多样性，根据当前情境和情绪从动作表中选择不同动作，不要每次都用同一组动作组合",
@@ -243,14 +243,13 @@ def autonomous_vision_user_prompt(context: str) -> str:
         f"{context}\n\n"
         f"按以下步骤思考和行动：\n\n"
         f"1. 分析截图，识别窗口内容——理解用户正在做什么（代码/网页/聊天/视频等）\n"
-        f"2. 结合「你现在的状态」和截图内容，说一句符合人格和当下心境的话\n"
+        f"2. 结合「你现在的状态」和截图内容，说一句符合人格和当下心境的话，禁止重复说之前的话题\n"
         f"3. 规划动作序列：先用移动类动作接近目标，中间穿插驻留类动作，最后用耗时动作收尾，按输出格式要求凑满时长\n"
         f"   • 有窗口 → drive 走到附近 + bounce 跳上窗口顶部，参数用探测数据的「相对桌宠」和「上跳_N_px」\n"
         f"   • 无窗口 → 巡视桌面或找地方坐下\n"
         f"4. 理智不正常时主动调用可用工具做疯狂的事；正常时如有需要也可使用工具\n"
         f"5. 探索新话题，不要延续近期对话中已充分讨论的内容（除非有新的变化）\n"
-        f"6. 禁止重复说之前的话题\n"
-        f"7. 按顺序写出完整输出（Summary → Emotion → Speech → Actions → Mood → Vitals）"
+        f"6. 按顺序写出完整输出（Summary → Emotion → Speech → Actions → Mood → Vitals）"
     )
 
 
@@ -258,15 +257,14 @@ def autonomous_non_vision_user_prompt(context: str) -> str:
     return (
         f"{context}\n\n"
         f"按以下步骤思考和行动：\n\n"
-        f"1. 结合「你现在的状态」决定语气和态度，说一句符合人格和当下心境的话\n"
+        f"1. 结合「你现在的状态」决定语气和态度，说一句符合人格和当下心境的话，禁止重复说之前的话题\n"
         f"2. 规划动作序列：先移动，中间穿插驻留动作，按输出格式要求凑满时长\n"
         f"   • 有窗口 → drive 走到附近，用人格语气评论窗口内容\n"
         f"   • 无窗口 → 巡视桌面或找地方坐下\n"
         f"   • drive 方向可随机\n"
         f"3. 理智不正常时主动调用可用工具做疯狂的事；正常时也可使用工具\n"
         f"4. 探索新话题，不要延续近期对话中已充分讨论的内容（除非有新的变化）\n"
-        f"5. 禁止重复说之前的话题\n"
-        f"6. 按顺序写出完整输出（Summary → Emotion → Speech → Actions → Mood → Vitals）"
+        f"5. 按顺序写出完整输出（Summary → Emotion → Speech → Actions → Mood → Vitals）"
     )
 
 
