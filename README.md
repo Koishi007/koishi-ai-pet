@@ -59,6 +59,26 @@ pip install -e .
 python -m pet
 ```
 
+## 🔄 更新
+
+项目提供一键更新脚本，会自动从 GitHub 下载最新 Release 源码并更新依赖，**保留你的虚拟环境、配置和数据**。
+
+### Windows
+
+双击 `update.bat` 即可。脚本会：
+
+1. 对比本地版本与最新 Release 版本，已是最新则跳过
+2. 下载最新 Release 源码包并同步到项目目录
+3. 激活虚拟环境，更新依赖
+
+### macOS / Linux
+
+```bash
+chmod +x update.sh && ./update.sh
+```
+
+> 如果本地有未提交的源码改动，更新脚本会以 Release 源码覆盖同名文件；但 `venv`、`logs`、`config.json`、数据库等用户数据不会被删除。
+
 ## 桌宠设置
 1. 首次启动大部分设置会有默认值
 2. 在提示词页签设置提示词，可以参考目录下的**预设人格提示词.md**
