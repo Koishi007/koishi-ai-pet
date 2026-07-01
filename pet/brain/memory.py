@@ -341,7 +341,9 @@ class _MemoryRetriever(ABC):
         lines = []
         for m in results:
             tag = "（重要）" if self._effective_importance(m) >= 3.5 else ""
-            lines.append(f"- {m['content']}{tag}")
+            time_str = self._format_memory_time(m.get("created_at", ""))
+            time_suffix = f"（{time_str}）" if time_str else ""
+            lines.append(f"- {m['content']}{time_suffix}{tag}")
 
         # 附加最近被拦截的记忆，提示 LLM 不要重复输出
         blocked = self.get_recently_blocked()
@@ -352,6 +354,29 @@ class _MemoryRetriever(ABC):
                 lines.append(f"- {b}")
 
         return "\n".join(lines)
+
+    @staticmethod
+    def _format_memory_time(created_at: str) -> str:
+        """将 ISO 时间戳转为简短的中文时长描述，例如 '3小时前'、'昨天'、'5天前'。"""
+        if not created_at:
+            return ""
+        try:
+            ref = datetime.fromisoformat(created_at)
+            seconds = (datetime.now() - ref).total_seconds()
+            if seconds < 60:
+                return "刚刚"
+            elif seconds < 3600:
+                return f"{int(seconds // 60)}分钟前"
+            elif seconds < 86400:
+                return f"{int(seconds // 3600)}小时前"
+            elif seconds < 86400 * 2:
+                return "昨天"
+            elif seconds < 86400 * 30:
+                return f"{int(seconds // 86400)}天前"
+            else:
+                return ref.strftime("%m-%d")
+        except Exception:
+            return ""
 
     def _extract_keywords(self, text: str) -> list[str]:
         if JIEBA_AVAILABLE:
