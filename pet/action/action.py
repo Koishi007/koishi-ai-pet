@@ -406,29 +406,29 @@ class PetActions(QObject):
     def sleep(self, duration=None):
         self._anim.play("sleep", duration=duration)
 
-    def idle(self):
+    def idle(self, *_, **_kw):
         self._anim.play("idle")
 
-    def shake_arms(self, **_kw):
+    def shake_arms(self, *_, **_kw):
         self._anim.play("shake_arms")
 
-    def look_around(self, **_kw):
+    def look_around(self, *_, **_kw):
         self._anim.play("look_around")
 
-    def stretch(self, **_kw):
+    def stretch(self, *_, **_kw):
         self._anim.play("stretch")
 
     def thinking(self, duration=None):
         self._anim.play("thinking", duration=duration)
 
-    def grim(self, **_kw):
+    def grim(self, *_, **_kw):
         self._anim.play("grim")
 
-    def grabbed(self):
+    def grabbed(self, *_, **_kw):
         self._cleanup_stopped_anims()
         self._anim.play("grabbed")
 
-    def fishing(self, **_kw):
+    def fishing(self, *_, **_kw):
         self._anim.play("fishing")
 
     def calling(self, duration=None):
@@ -437,7 +437,7 @@ class PetActions(QObject):
     def finger_heart(self, duration=None):
         self._anim.play("finger_heart", duration=duration)
 
-    def rotate(self, **_kw):
+    def rotate(self, *_, **_kw):
         self._anim.play("rotate")
         
     def _fade_in_safety_check(self):

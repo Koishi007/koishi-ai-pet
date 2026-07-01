@@ -7,10 +7,7 @@ from typing import List
 from pet.config import config
 
 
-# ── 耗时类动作的动态时长计算 ──
-# 每次调用时读取 config.SCHEDULER_MID_MS，确保 settings.json 修改后立即生效
-
-# 动作时长参数定义：(名称, 最小秒数, 占调度间隔比例)
+# 动作时长参数定义：(名称, 最小秒数, 占 target_sequence_duration 的比例)
 _DURATION_ACTION_DEFS = {
     "sit":          (10, 0.4),
     "thinking":     ( 5, 0.2),
@@ -173,11 +170,7 @@ REGISTRY: dict[str, ActionDef] = _build_duration_registry()
 
 
 def generate_action_section(exclude: list[str] | None = None) -> str:
-    """动态生成动作表描述，每次调用时根据当前 config 计算时长范围。
-
-    紧凑格式：每个动作单行，保留动作名、参数名、取值范围与示例值，
-    仅删除冗余描述性文字以压缩 prompt 体积。
-    """
+    """动态生成动作表描述，每次调用时根据当前 config 计算时长范围"""
     # 重新构建 REGISTRY 以反映最新的 config
     registry = _build_duration_registry()
     _exclude = set(exclude or [])
