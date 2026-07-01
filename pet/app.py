@@ -8,6 +8,7 @@ from logging.handlers import TimedRotatingFileHandler
 
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 from PySide6.QtGui import QIcon
+from PySide6.QtCore import QTimer, Qt
 
 from pet.ui.log_window import _LogRelay, LogWindowHandler
 from pet.ui.styles import ICON_PATH
@@ -23,6 +24,7 @@ from pet.tools import load_tools
 from pet.tools.context import TOOL_CTX
 from pet.config import config
 from pet.auto_start import set_auto_start
+from pet.version_check import UpdateChecker
 
 logger = logging.getLogger(__name__)
 
@@ -187,6 +189,23 @@ def main():
     )
 
     tray.set_agent(agent)
+
+    # ── 启动时版本检查（异步，延迟 5s 避免与启动流程抢占）──
+    _updater = UpdateChecker()
+
+    def _on_update_available(latest_tag: str, local_ver: str):
+        logger.info(f"[VersionCheck] 发现新版本: {latest_tag}（当前 {local_ver}）")
+        if tray.tray_icon:
+            tray.tray_icon.showMessage(
+                "发现新版本",
+                f"Koishi AI Pet {latest_tag} 已发布（当前 v{local_ver}）。\n"
+                f"运行项目目录下的 update.bat / update.sh 即可更新。",
+                QSystemTrayIcon.MessageIcon.Information,
+                8000,
+            )
+
+    _updater.update_available.connect(_on_update_available, Qt.ConnectionType.QueuedConnection)
+    QTimer.singleShot(5000, _updater.check)
 
     def _shutdown():
         logger.info("shutting down...")
