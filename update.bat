@@ -26,20 +26,31 @@ if not exist "%~dp0venv\Scripts\python.exe" (
 set "REPO=Koishi007/koishi-ai-pet"
 set "API_URL=https://api.github.com/repos/%REPO%/releases/latest"
 
-:: ===== 2. 读取本地版本 =====
+:: ===== 2. 读取本地版本（用临时 ps1 解析，避免 cmd 引号/括号冲突）=====
+set "PS_LOCAL=%TEMP%\_koishi_local_%RANDOM%.ps1"
+> "%PS_LOCAL%" echo $c = Get-Content '%~dp0pyproject.toml' -Raw
+>> "%PS_LOCAL%" echo if ($c -match 'version\s*=\s*"([^"]+)"') { Write-Output $matches[1] }
+
 set "LOCAL_VER="
-for /f "tokens=2 delims==" %%a in ('findstr /b /c:"version" "%~dp0pyproject.toml"') do (
-    set "VER_LINE=%%a"
-    set "VER_LINE=!VER_LINE: =!"
-    set "VER_LINE=!VER_LINE:"=!"
-    if not defined LOCAL_VER set "LOCAL_VER=!VER_LINE!"
-)
+for /f "usebackq delims=" %%v in (`powershell -NoProfile -ExecutionPolicy Bypass -File "%PS_LOCAL%"`) do set "LOCAL_VER=%%v"
+del /q "%PS_LOCAL%" 2>nul
 echo 本地版本: !LOCAL_VER!
 
 :: ===== 3. 获取最新 Release 版本 =====
 echo.
 echo [1/4] 查询 GitHub 最新 Release...
-for /f "usebackq delims=" %%t in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "$ProgressPreference='SilentlyContinue'; try { $r=Invoke-RestMethod -Uri '%API_URL%' -Headers @{'User-Agent'='koishi-updater'} -TimeoutSec 30; Write-Output $r.tag_name } catch { Write-Output '' }"`) do set "REL_TAG=%%t"
+set "PS_TAG=%TEMP%\_koishi_tag_%RANDOM%.ps1"
+> "%PS_TAG%" echo $ProgressPreference = 'SilentlyContinue'
+>> "%PS_TAG%" echo try {
+>> "%PS_TAG%" echo   $r = Invoke-RestMethod -Uri '%API_URL%' -Headers @{ 'User-Agent' = 'koishi-updater' } -TimeoutSec 30
+>> "%PS_TAG%" echo   Write-Output $r.tag_name
+>> "%PS_TAG%" echo } catch {
+>> "%PS_TAG%" echo   Write-Output ''
+>> "%PS_TAG%" echo }
+
+set "REL_TAG="
+for /f "usebackq delims=" %%t in (`powershell -NoProfile -ExecutionPolicy Bypass -File "%PS_TAG%"`) do set "REL_TAG=%%t"
+del /q "%PS_TAG%" 2>nul
 
 if not defined REL_TAG (
     echo [错误] 无法获取最新 Release 信息，请检查网络连接
@@ -56,12 +67,13 @@ if "!REL_TAG!"=="" (
 :: 去掉 tag 开头的 v/V 用于比较
 set "REL_VER=!REL_TAG!"
 if /i "!REL_VER:~0,1!"=="v" set "REL_VER=!REL_VER:~1!"
+if /i "!REL_VER:~0,1!"=="V" set "REL_VER=!REL_VER:~1!"
 echo 最新版本: !REL_VER!
 
 :: 版本相同时提示
 if /i "!LOCAL_VER!"=="!REL_VER!" (
     echo.
-    echo [提示] 当前已是最新版本 (!REL_VER!)，无需更新
+    echo [提示] 当前已是最新版本: !REL_VER!，无需更新
     echo        如需强制重新下载安装，请删除 venv 后运行 setup.bat
     pause
     exit /b 0
@@ -75,8 +87,20 @@ set "ZIP_FILE=%TEMP%\koishi-ai-pet-!REL_TAG!.zip"
 set "EXTRACT_DIR=%TEMP%\koishi-ai-pet-extract-%RANDOM%"
 
 echo   下载: !ZIP_URL!
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ProgressPreference='SilentlyContinue'; try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '!ZIP_URL!' -OutFile '!ZIP_FILE!' -UseBasicParsing -TimeoutSec 120 } catch { Write-Error $_; exit 1 }"
-if errorlevel 1 (
+set "PS_DL=%TEMP%\_koishi_dl_%RANDOM%.ps1"
+> "%PS_DL%" echo $ProgressPreference = 'SilentlyContinue'
+>> "%PS_DL%" echo try {
+>> "%PS_DL%" echo   [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+>> "%PS_DL%" echo   Invoke-WebRequest -Uri '!ZIP_URL!' -OutFile '!ZIP_FILE!' -UseBasicParsing -TimeoutSec 120
+>> "%PS_DL%" echo } catch {
+>> "%PS_DL%" echo   Write-Error $_
+>> "%PS_DL%" echo   exit 1
+>> "%PS_DL%" echo }
+
+powershell -NoProfile -ExecutionPolicy Bypass -File "%PS_DL%"
+set "DL_RC=!errorlevel!"
+del /q "%PS_DL%" 2>nul
+if !DL_RC! neq 0 (
     echo [错误] 下载失败，请检查网络连接
     if exist "!ZIP_FILE!" del /q "!ZIP_FILE!" 2>nul
     pause
@@ -88,8 +112,12 @@ echo   下载完成
 echo.
 echo [3/4] 解压并同步源码...
 if exist "!EXTRACT_DIR!" rmdir /s /q "!EXTRACT_DIR!"
-powershell -NoProfile -ExecutionPolicy Bypass -Command "Expand-Archive -Path '!ZIP_FILE!' -DestinationPath '!EXTRACT_DIR!' -Force"
-if errorlevel 1 (
+set "PS_UNZIP=%TEMP%\_koishi_unzip_%RANDOM%.ps1"
+> "%PS_UNZIP%" echo Expand-Archive -Path '!ZIP_FILE!' -DestinationPath '!EXTRACT_DIR!' -Force
+powershell -NoProfile -ExecutionPolicy Bypass -File "%PS_UNZIP%"
+set "UZ_RC=!errorlevel!"
+del /q "%PS_UNZIP%" 2>nul
+if !UZ_RC! neq 0 (
     echo [错误] 解压失败
     if exist "!ZIP_FILE!" del /q "!ZIP_FILE!" 2>nul
     if exist "!EXTRACT_DIR!" rmdir /s /q "!EXTRACT_DIR!" 2>nul
