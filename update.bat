@@ -24,6 +24,8 @@ if not exist "%~dp0venv\Scripts\python.exe" (
 )
 
 set "REPO=Koishi007/koishi-ai-pet"
+set "PROJ_DIR=%~dp0"
+if "!PROJ_DIR:~-1!"=="\" set "PROJ_DIR=!PROJ_DIR:~0,-1!"
 set "API_URL=https://api.github.com/repos/%REPO%/releases/latest"
 
 :: ===== 2. 读取本地版本（用临时 ps1 解析，避免 cmd 引号/括号冲突）=====
@@ -142,7 +144,7 @@ if not defined SRC_DIR (
 :: 排除 update.bat/update.sh：正在运行的脚本无法被覆盖，否则 robocopy 报错退出码 8
 :: /R:0 /W:0：遇到锁定文件立即失败，不重试挂起
 echo   同步到项目目录（保留 venv、logs、config.json、数据库等）...
-robocopy "!SRC_DIR!" "%~dp0" /E /R:0 /W:0 /XD .git venv logs __pycache__ /XF *.log config.json *.db *.db-journal *.db-wal *.db-shm .deps_installed update.bat update.sh /NFL /NDL /NJH /NJS /NC /NS /NP >nul
+robocopy "!SRC_DIR!" "!PROJ_DIR!" /E /R:0 /W:0 /XD .git venv logs __pycache__ /XF *.log config.json *.db *.db-journal *.db-wal *.db-shm .deps_installed update.bat update.sh /NFL /NDL /NJH /NJS /NC /NS /NP >nul
 set "RC_RC=!errorlevel!"
 :: robocopy 退出码 <8 视为成功（1=已复制，2=有额外文件，4=有不匹配，均可接受）
 if !RC_RC! geq 8 (
