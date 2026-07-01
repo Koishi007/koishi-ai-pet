@@ -122,17 +122,20 @@ fi
 echo "   同步到项目目录（保留 venv、logs、config.json、数据库等）..."
 # 优先 rsync，不可用则用 cp 覆盖
 if command -v rsync >/dev/null 2>&1; then
+    # 排除 update 脚本自身：运行中的脚本不应被覆盖
     rsync -a \
         --exclude '.git' --exclude 'venv' --exclude 'logs' --exclude '__pycache__' \
         --exclude '*.log' --exclude 'config.json' \
         --exclude '*.db' --exclude '*.db-journal' --exclude '*.db-wal' --exclude '*.db-shm' \
         --exclude '.deps_installed' \
+        --exclude 'update.bat' --exclude 'update.sh' \
         "$SRC_DIR/" "$SCRIPT_DIR/"
 else
     # cp 不带 -n，会覆盖同名文件；保留 venv/logs 等通过跳过实现
     (cd "$SRC_DIR" && find . -mindepth 1 -maxdepth 1 \
         ! -name '.git' ! -name 'venv' ! -name 'logs' ! -name '__pycache__' \
         ! -name 'config.json' ! -name '.deps_installed' \
+        ! -name 'update.bat' ! -name 'update.sh' \
         -exec cp -r {} "$SCRIPT_DIR/" \;)
 fi
 echo -e "   ${GREEN}同步完成${NC}"

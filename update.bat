@@ -125,7 +125,7 @@ if !UZ_RC! neq 0 (
     exit /b 1
 )
 
-:: 解压后目录名形如 koishi-ai-pet-v1.2.1，查找唯一子目录
+:: 解压后目录名形如 koishi-ai-pet-1.2.2，查找唯一子目录
 set "SRC_DIR="
 for /d %%d in ("!EXTRACT_DIR!\*") do (
     if not defined SRC_DIR set "SRC_DIR=%%d"
@@ -139,16 +139,24 @@ if not defined SRC_DIR (
 )
 
 :: 同步源码：不删除目标额外文件，保留 venv/logs/config.json/*.db 等用户数据
+:: 排除 update.bat/update.sh：正在运行的脚本无法被覆盖，否则 robocopy 报错退出码 8
+:: /R:0 /W:0：遇到锁定文件立即失败，不重试挂起
 echo   同步到项目目录（保留 venv、logs、config.json、数据库等）...
-robocopy "!SRC_DIR!" "%~dp0" /E /XD .git venv logs __pycache__ /XF *.log config.json *.db *.db-journal *.db-wal *.db-shm .deps_installed /NFL /NDL /NJH /NJS /NC /NS /NP >nul
-:: robocopy 退出码 <8 视为成功
-if errorlevel 8 (
-    echo [错误] 同步文件失败
+robocopy "!SRC_DIR!" "%~dp0" /E /R:0 /W:0 /XD .git venv logs __pycache__ /XF *.log config.json *.db *.db-journal *.db-wal *.db-shm .deps_installed update.bat update.sh /NFL /NDL /NJH /NJS /NC /NS /NP >nul
+set "RC_RC=!errorlevel!"
+:: robocopy 退出码 <8 视为成功（1=已复制，2=有额外文件，4=有不匹配，均可接受）
+if !RC_RC! geq 8 (
+    echo [错误] 同步文件失败，robocopy 退出码: !RC_RC!
+    echo        可能有文件被占用，请先关闭正在运行的 Koishi AI Pet 桌宠，然后重试
     if exist "!ZIP_FILE!" del /q "!ZIP_FILE!" 2>nul
     if exist "!EXTRACT_DIR!" rmdir /s /q "!EXTRACT_DIR!" 2>nul
     pause
     exit /b 1
 )
+
+:: 单独把新版 update 脚本复制为 .new，供用户手动替换（运行中的脚本无法直接覆盖）
+if exist "!SRC_DIR!\update.bat" copy /y "!SRC_DIR!\update.bat" "%~dp0update.bat.new" >nul 2>nul
+if exist "!SRC_DIR!\update.sh" copy /y "!SRC_DIR!\update.sh" "%~dp0update.sh.new" >nul 2>nul
 
 :: 清理临时文件
 if exist "!ZIP_FILE!" del /q "!ZIP_FILE!" 2>nul
@@ -183,6 +191,11 @@ if not exist "%~dp0venv\Scripts\koishi.exe" (
 echo.
 echo ============================================
 echo   更新完成！已更新到 !REL_TAG!
+if exist "%~dp0update.bat.new" (
+    echo.
+    echo [提示] 检测到新版更新脚本: update.bat.new
+    echo        本次未自动覆盖运行中的脚本，可手动用其替换 update.bat
+)
 echo.
 echo   启动方式：
 echo     1. 双击桌面 "Koishi AI Pet" 快捷方式
