@@ -62,7 +62,7 @@ python -m pet
 ## 🔄 更新
 
 项目提供一键更新脚本，会自动从 GitHub 下载最新 Release 源码并更新依赖，**保留你的虚拟环境、配置和数据**。
-
+> 请保证你可以正常访问 GitHub，推荐使用Watt Toolkit加速
 ### Windows
 
 双击 `update.bat` 即可。脚本会：
