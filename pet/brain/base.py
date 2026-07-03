@@ -180,6 +180,23 @@ class BrainMixin:
 
     def add_context(self, role: str, content: str, is_summary: bool = False):
         with self._ctx_lock:
+            # summary 去重：新 summary 与上一条 summary 高度相似时，替换而非追加
+            if is_summary:
+                replaced = False
+                for i in range(len(self._context) - 1, -1, -1):
+                    e = self._context[i]
+                    if e.is_summary:
+                        if self._text_similarity(content, e.content) >= self._DEDUP_THRESHOLD:
+                            self._context[i] = ContextEntry(
+                                role=role, content=content, is_summary=True,
+                            )
+                            replaced = True
+                            logger.debug(f"[BrainMixin] summary replaced (similarity ≥ {self._DEDUP_THRESHOLD}): {content[:30]}...")
+                        break  # 只比较最近一条 summary
+                if replaced:
+                    if self._db_conn:
+                        self._save_context()
+                    return
             self._context.append(ContextEntry(
                 role=role, content=content, is_summary=is_summary,
             ))
@@ -302,14 +319,10 @@ class BrainMixin:
         """检查 entry 是否与已选条目内容过度相似（复读检测）。
 
         若与任一已选条目的 Jaccard 相似度 ≥ _DEDUP_THRESHOLD，视为重复跳过。
-        这打破了「高分内容→LLM 再次输出→分数更高→继续入选」的复读循环。
         """
         content = entry.content
-        # 摘要条目不参与去重（它们本就是历史压缩）
-        if entry.is_summary:
-            return False
         for s in selected:
-            if not s.is_summary and self._text_similarity(content, s.content) >= self._DEDUP_THRESHOLD:
+            if self._text_similarity(content, s.content) >= self._DEDUP_THRESHOLD:
                 return True
         return False
 
@@ -319,31 +332,36 @@ class BrainMixin:
         summaries = [e for e in self._context if e.is_summary]
         ordinary = [e for e in self._context if not e.is_summary]
 
-        if len(summaries) > self._MAX_SUMMARIES:
-            summaries.sort(key=self._score_entry, reverse=True)
-            # 被淘汰的摘要压缩为一条
-            evicted = summaries[self._MAX_SUMMARIES:]
+        # 区分真正的 LLM summary 和 _trim 生成的压缩摘要
+        llm_summaries = [e for e in summaries if not e.content.startswith("[历史摘要]")]
+        compressed_summaries = [e for e in summaries if e.content.startswith("[历史摘要]")]
+
+        if len(llm_summaries) > self._MAX_SUMMARIES:
+            llm_summaries.sort(key=self._score_entry, reverse=True)
+            evicted = llm_summaries[self._MAX_SUMMARIES:]
             if evicted:
-                compressed = " | ".join(e.content[:50] for e in evicted)
-                summaries = summaries[:self._MAX_SUMMARIES]
-                summaries.append(ContextEntry(
-                    role="assistant", content=f"[历史摘要] {compressed}",
-                    timestamp=evicted[-1].timestamp, is_summary=True,
-                ))
-            else:
-                summaries = summaries[:self._MAX_SUMMARIES]
+                # 被淘汰的 LLM summary 直接丢弃（它们已是压缩形式，再压缩只会嵌套）
+                llm_summaries = llm_summaries[:self._MAX_SUMMARIES]
+
+        # 压缩摘要只保留最近 2 条（防止 [历史摘要] 无限积累）
+        compressed_summaries.sort(key=lambda e: e.timestamp, reverse=True)
+        compressed_summaries = compressed_summaries[:2]
+
+        summaries = llm_summaries + compressed_summaries
 
         max_ordinary = self._MAX_ENTRIES - len(summaries)
         if len(ordinary) > max_ordinary:
             ordinary.sort(key=self._score_entry, reverse=True)
-            # 被淘汰的普通条目压缩为一条摘要
             evicted = ordinary[max_ordinary:]
             if evicted:
-                compressed = " | ".join(e.content[:50] for e in evicted)
+                # 只压缩信息量足够的普通条目（content > 30 字），丢弃低质动作日志
+                worth_compressing = [e for e in evicted if len(e.content) > 30]
+                if worth_compressing:
+                    compressed = " | ".join(e.content[:50] for e in worth_compressing[:5])
+                    summaries.append(ContextEntry(
+                        role="assistant", content=f"[历史摘要] {compressed}",
+                        timestamp=evicted[-1].timestamp, is_summary=True,
+                    ))
                 ordinary = ordinary[:max_ordinary]
-                summaries.append(ContextEntry(
-                    role="assistant", content=f"[历史摘要] {compressed}",
-                    timestamp=evicted[-1].timestamp, is_summary=True,
-                ))
 
         self._context = sorted(summaries + ordinary, key=lambda e: e.timestamp)

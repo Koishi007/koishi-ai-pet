@@ -388,10 +388,9 @@ class PetAgent(QObject):
             logger.info(f"[{ts}] [PetAgent] ← {result}")
             if not result.actions and not result.speech:
                 logger.warning(f"[{ts}] [PetAgent] empty response from LLM (no actions, no speech)")
-            action_names = [a.name for a in result.actions]
             self.behavior.add_context(
                 role="assistant",
-                content=f"did {', '.join(action_names)}, said: {result.speech or '(silent)'}")
+                content=f"{result.speech or '(silent)'}")
             if result.speech and not result.speech_streamed:
                 parts = result.speech_parts if result.speech_parts else [result.speech]
                 for part in parts:
