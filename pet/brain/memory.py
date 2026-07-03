@@ -684,37 +684,43 @@ class _MemoryRetriever(ABC):
             (cutoff,)
         )
 
-        # 阶段 2：分级淘汰，L1 完全豁免
-        # L3 永远优先淘汰；L3 不足时才动 L2，避免 L2 只增不减
-        # 淘汰目标为超额量的一次性扩大清理（30%），减少频繁触发
+        # 阶段 2：L2 淘汰（L1/L3 豁免）
+        # L3 已在阶段0+1 清理过两轮，此处不再扫 L3——剩下的 L3 是有价值的（新鲜/被访问过）
+        # L2 中 importance<5 的按 effective_importance 升序淘汰，打破 L2 只增不减
         total = self._conn.execute("SELECT COUNT(*) FROM memories").fetchall()[0][0]
         if total > self.MAX_MEMORIES:
             excess = total - self.MAX_MEMORIES
-            # 一次清理到 70% 容量，留出缓冲，避免每次只删 1 条
-            target_clear = max(excess, int(self.MAX_MEMORIES * 0.3))
+            # 淘汰量为超额量的 2 倍（留少量缓冲），但不超过 10 条（避免单次大规模削减 L2）
+            target_clear = min(excess * 2, 10)
             ids_to_delete: list[int] = []
 
-            # 2a: 先从 L3 淘汰（按 effective_importance 升序）
-            l3_rows = self._conn.execute(
-                "SELECT id, importance, access_count, level, created_at, last_accessed_at FROM memories WHERE level='L3'"
+            # 2a: importance < 5 的 L2（按 effective_importance 升序）
+            l2_rows = self._conn.execute(
+                "SELECT id, importance, access_count, level, created_at, last_accessed_at "
+                "FROM memories WHERE level='L2' AND importance < 5"
             ).fetchall()
-            l3_rows.sort(key=lambda r: self._effective_importance(dict(r)))
-            for r in l3_rows:
+            l2_rows.sort(key=lambda r: self._effective_importance(dict(r)))
+            for r in l2_rows:
                 if len(ids_to_delete) >= target_clear:
                     break
                 ids_to_delete.append(r["id"])
 
-            # 2b: L3 不足时，从 L2 淘汰（importance=5 的核心记忆豁免）
-            if len(ids_to_delete) < target_clear:
-                l2_rows = self._conn.execute(
+            # 2b: 兜底——若低权重 L2 不足，淘汰 importance=5 的 L2（按 effective 升序，最老先淘汰）
+            # L1 永不淘汰；L1 超限只能靠调大 MAX_MEMORIES 解决
+            if len(ids_to_delete) < excess:
+                remaining = excess - len(ids_to_delete)
+                l2_hi_rows = self._conn.execute(
                     "SELECT id, importance, access_count, level, created_at, last_accessed_at "
-                    "FROM memories WHERE level='L2' AND importance < 5"
+                    "FROM memories WHERE level='L2' AND importance = 5"
                 ).fetchall()
-                l2_rows.sort(key=lambda r: self._effective_importance(dict(r)))
-                for r in l2_rows:
-                    if len(ids_to_delete) >= target_clear:
-                        break
+                l2_hi_rows.sort(key=lambda r: self._effective_importance(dict(r)))
+                for r in l2_hi_rows[:remaining]:
                     ids_to_delete.append(r["id"])
+                if l2_hi_rows:
+                    logger.warning(
+                        f"[{self.__class__.__name__}] 低权重 L2 不足，兜底淘汰 "
+                        f"{min(remaining, len(l2_hi_rows))} 条 importance=5 的 L2"
+                    )
 
             if ids_to_delete:
                 placeholders = ",".join(["?"] * len(ids_to_delete))
