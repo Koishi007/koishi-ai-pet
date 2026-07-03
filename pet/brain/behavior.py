@@ -735,6 +735,43 @@ class Behavior(BrainMixin):
         logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] [Behavior]   raw: {content}")
         return content, tool_calls_map
 
+    # ── 待摘要队列处理 ──
+
+    def _flush_pending_summaries(self):
+        """将上下文淘汰产生的待摘要条目队列统一处理。
+        有 LLM 就用 LLM 总结，不可用时兜底拼接。
+        """
+        items = self.drain_pending_summaries()
+        if not items:
+            return
+
+        logger.info(f"[Behavior] flushing pending summaries: {len(items)} items")
+        summary = None
+        if self._llm:
+            try:
+                summary = self._llm_summarize(items)
+            except Exception:
+                logger.warning("[Behavior] LLM summarization failed, using fallback")
+
+        if not summary:
+            summary = self._build_fallback_summary(items)
+
+        if summary:
+            self.add_context(role="assistant", content=f"[历史摘要] {summary}", is_summary=True)
+            logger.info(f"[Behavior] flushed pending summaries: {len(items)} items → {summary[:50]}...")
+
+    def _llm_summarize(self, items: list[str]) -> str | None:
+        """用 LLM 将多条历史上下文压缩为一句简洁摘要（≤50字）。"""
+        messages = self.ctx.build_summary_messages(items)
+        resp = self._llm_call(messages, max_tokens=config.LLM_MAX_TOKENS_SUMMARY)
+        raw = resp.choices[0].message.content
+        result = (raw or "").strip()
+        if not result:
+            logger.warning(f"[Behavior] LLM summarize returned empty content, raw={raw!r}, finish_reason={resp.choices[0].finish_reason}")
+            return None
+        logger.info(f"[Behavior] LLM summarized {len(items)} items → {result}")
+        return result
+
     _LOCAL_ACTIONS = [
         ("sit", "歇一会儿～"),
         ("drive", "骑上我心爱的小摩托～"),

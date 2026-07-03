@@ -48,6 +48,7 @@ class BrainMixin:
         self._db_path = db_path
         self._db_conn: sqlite3.Connection | None = None
         self._save_debounce_timer: threading.Timer | None = None
+        self._pending_summary_queue: list[str] = []
 
         if db_path and config.CONTEXT_PERSIST_ENABLED:
             self._init_db()
@@ -200,7 +201,7 @@ class BrainMixin:
             self._context.append(ContextEntry(
                 role=role, content=content, is_summary=is_summary,
             ))
-            self._trim()
+            self._evict_context()
         if self._db_conn:
             self._save_context()
 
@@ -327,41 +328,56 @@ class BrainMixin:
         return False
 
 
-    def _trim(self):
-        """超过上限时裁剪：低分条目压缩为摘要后保留，不完全丢弃。"""
+    def _evict_context(self):
+        """超过上限时淘汰：摘要类按数量上限清理，普通条目低分淘汰后暂存入待摘要队列。"""
         summaries = [e for e in self._context if e.is_summary]
         ordinary = [e for e in self._context if not e.is_summary]
 
-        # 区分真正的 LLM summary 和 _trim 生成的压缩摘要
-        llm_summaries = [e for e in summaries if not e.content.startswith("[历史摘要]")]
-        compressed_summaries = [e for e in summaries if e.content.startswith("[历史摘要]")]
+        # 区分决策摘要（LLM 输出的 Summary: 行）和压缩历史摘要（[历史摘要] 前缀）
+        decision_summaries = [e for e in summaries if not e.content.startswith("[历史摘要]")]
+        history_summaries = [e for e in summaries if e.content.startswith("[历史摘要]")]
 
-        if len(llm_summaries) > self._MAX_SUMMARIES:
-            llm_summaries.sort(key=self._score_entry, reverse=True)
-            evicted = llm_summaries[self._MAX_SUMMARIES:]
+        if len(decision_summaries) > self._MAX_SUMMARIES:
+            decision_summaries.sort(key=self._score_entry, reverse=True)
+            evicted = decision_summaries[self._MAX_SUMMARIES:]
             if evicted:
-                # 被淘汰的 LLM summary 直接丢弃（它们已是压缩形式，再压缩只会嵌套）
-                llm_summaries = llm_summaries[:self._MAX_SUMMARIES]
+                decision_summaries = decision_summaries[:self._MAX_SUMMARIES]
 
-        # 压缩摘要只保留最近 2 条（防止 [历史摘要] 无限积累）
-        compressed_summaries.sort(key=lambda e: e.timestamp, reverse=True)
-        compressed_summaries = compressed_summaries[:2]
+        history_summaries.sort(key=lambda e: e.timestamp, reverse=True)
+        history_summaries = history_summaries[:2]
 
-        summaries = llm_summaries + compressed_summaries
+        summaries = decision_summaries + history_summaries
 
-        max_ordinary = self._MAX_ENTRIES - len(summaries)
-        if len(ordinary) > max_ordinary:
+        # 当普通条目数 > base_limit + 3 时才触发，确保每次批量淘汰 ≥3 条，
+        # 避免抖动：刚淘汰 1 条又触发新摘要再淘汰。
+        base_limit = self._MAX_ENTRIES - len(summaries)
+        soft_limit = base_limit + 3
+        if len(ordinary) > soft_limit:
             ordinary.sort(key=self._score_entry, reverse=True)
-            evicted = ordinary[max_ordinary:]
+            evicted = ordinary[base_limit:]
             if evicted:
-                # 只压缩信息量足够的普通条目（content > 30 字），丢弃低质动作日志
-                worth_compressing = [e for e in evicted if len(e.content) > 30]
-                if worth_compressing:
-                    compressed = " | ".join(e.content[:50] for e in worth_compressing[:5])
-                    summaries.append(ContextEntry(
-                        role="assistant", content=f"[历史摘要] {compressed}",
-                        timestamp=evicted[-1].timestamp, is_summary=True,
-                    ))
-                ordinary = ordinary[:max_ordinary]
+                # [工具调用] 条目时效性短，直接丢弃；其余条目按长度排序，取前 3 条入队
+                candidates = [e for e in evicted if not e.content.startswith("[工具调用]")]
+                candidates.sort(key=lambda e: len(e.content), reverse=True)
+                queued = candidates[:3]
+                if queued:
+                    self._pending_summary_queue.extend(f"[{e.role}] {e.content}" for e in queued)
+                    logger.info(f"[BrainMixin] evicted {len(evicted)}, queued {len(queued)} for summarization")
+                else:
+                    logger.debug(f"[BrainMixin] evicted {len(evicted)}, all tool calls — nothing to summarize")
+                ordinary = ordinary[:base_limit]
 
         self._context = sorted(summaries + ordinary, key=lambda e: e.timestamp)
+
+    def drain_pending_summaries(self) -> list[str]:
+        """取出并清空待摘要队列。线程安全。"""
+        with self._ctx_lock:
+            items = self._pending_summary_queue[:]
+            self._pending_summary_queue.clear()
+            return items
+
+
+    @staticmethod
+    def _build_fallback_summary(items: list[str]) -> str:
+        """LLM 不可用时的兜底摘要：简单截断拼接。"""
+        return " | ".join(item[:50] for item in items[:5])

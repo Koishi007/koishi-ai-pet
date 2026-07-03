@@ -51,6 +51,14 @@ class ContextBuilder:
             {"role": "user",   "content": event_hint},
         ]
 
+    @staticmethod
+    def build_summary_messages(items: list[str]) -> list[dict]:
+        """构建上下文压缩摘要的 messages。"""
+        return [
+            {"role": "system", "content": prompts.SUMMARY_SYSTEM_PROMPT},
+            {"role": "user", "content": prompts.build_summary_user_prompt(items)},
+        ]
+
     _MAX_WINDOWS = 10  # 窗口探测上下文最多输出的窗口数
 
     @staticmethod

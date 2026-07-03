@@ -313,3 +313,21 @@ def interact_fed_prompt(food: str) -> str:
         "同时根据投喂的食物决定Vitals和Mood变化"
     )
     return template.format(food=food)
+
+
+# ── 上下文压缩摘要 ──
+
+SUMMARY_SYSTEM_PROMPT = (
+    "你是一个桌面AI宠物（恋恋）的上下文摘要助手。"
+    "输入的对话片段来自宠物与用户的互动历史。"
+    "你的唯一任务是将输入压缩为不超过50字的一句中文摘要。"
+    "禁止复述原文，禁止输出完整句子，只提炼核心事件和话题。"
+)
+
+def build_summary_user_prompt(items: list[str]) -> str:
+    """构建摘要请求的 user prompt。"""
+    content = "\n".join(f"- {item}" for item in items)
+    return (
+        "将以下内容总结为一句≤30字的中文摘要（只输出摘要本身，不要任何前缀）：\n"
+        f"{content}"
+    )

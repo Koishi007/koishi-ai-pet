@@ -25,6 +25,7 @@ _KEY_META = {
     "LLM_MAX_TOKENS_INTERACT":    {"type": "int",      "default": 800,           "category": "connection", "needs_restart": False, "hidden": False, "description": "交互模式LLM输出Token上限"},
     "LLM_MAX_TOKENS_CHAT":        {"type": "int",      "default": 1500,          "category": "connection", "needs_restart": False, "hidden": False, "description": "聊天模式LLM输出Token上限"},
     "LLM_MAX_TOKENS_AUTONOMOUS":  {"type": "int",      "default": 2500,          "category": "connection", "needs_restart": False, "hidden": False, "description": "自主模式LLM输出Token上限"},
+    "LLM_MAX_TOKENS_SUMMARY":     {"type": "int",      "default": 1000,          "category": "connection", "needs_restart": False, "hidden": True,  "description": "上下文摘要LLM输出Token上限"},
     "LLM_TEMPERATURE":            {"type": "float",    "default": 0.7,           "category": "connection", "needs_restart": False, "hidden": False, "description": "LLM 采样温度"},
     "LLM_TOOL_PARALLEL":          {"type": "bool",     "default": True,          "category": "connection", "needs_restart": False, "hidden": True,  "description": "LLM 工具并行调用"},
     "LLM_TOOL_MAX_ROUNDS":        {"type": "int",      "default": 5,             "category": "connection", "needs_restart": False, "hidden": False, "description": "工具调用最大轮次"},

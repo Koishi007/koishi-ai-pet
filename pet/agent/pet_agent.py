@@ -1,6 +1,7 @@
 """PetAgent — 编排 Brain，通过 Signal 驱动 UI。"""
 
 import logging
+import threading
 from datetime import datetime
 from PySide6.QtCore import QObject, QThread, QThreadPool, QTimer, Signal
 
@@ -333,7 +334,6 @@ class PetAgent(QObject):
                     logger.warning(f"[{ts}] [PetAgent] old brain thread timeout, force terminate")
                     old_thread.terminate()
                     old_thread.wait(500)
-                    import threading
                     if hasattr(self, 'behavior') and hasattr(self.behavior, '_lock'):
                         self.behavior._lock = threading.RLock()  # terminate 后原锁可能随线程死锁，重建一把
                         logger.warning(f"[PetAgent] behavior._lock rebuilt after thread terminate")
@@ -437,6 +437,7 @@ class PetAgent(QObject):
             except Exception as e:
                 logger.warning(f"[PetAgent] vitals_deltas update failed: {e}")
         logger.info(f"[{ts}] [PetAgent] === call complete ===")
+        threading.Thread(target=self.behavior._flush_pending_summaries, daemon=True).start()
         
     def _on_brain_error(self, msg: str):
         self._stop_loading()
