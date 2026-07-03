@@ -109,6 +109,15 @@ class _MemoryRetriever(ABC):
     _BLOCKED_TTL = 120  # 被拦截的记忆内容保留时间（秒）
     _DUPLICATE_THRESHOLD = 0.85  # 近似重复阈值，高于此值才触发冷却拦截
 
+    # ── 动态生命体征：级别流动 ──
+    # L2 降级：effective_importance 低于此阈值的 L2 → L3（在 enforce_capacity 中执行）
+    _L2_DEMOTE_THRESHOLD = 0.5
+    # L3 升级：在 _L3_PROMOTE_WINDOW 内 access_count 达到 _L3_PROMOTE_HITS → 升 L2
+    _L3_PROMOTE_WINDOW = timedelta(hours=1)
+    _L3_PROMOTE_HITS = 3
+    # 加权冷却：冷却期内再次命中，importance 奖励上限（避免无限增长）
+    _COOLDOWN_BOOST_CAP = 5
+
     @property
     def MAX_MEMORIES(self) -> int:
         from pet.config import config
@@ -163,32 +172,49 @@ class _MemoryRetriever(ABC):
         importance = row.get("importance", 3)
         return self._HALF_LIFE.get(level, self._HALF_LIFE["L2"]).get(importance, 45)
 
+    # 回忆强化的时间常数（天）：最近被召回的记忆获得加成，随时间衰减回基线
+    # _RECALL_BONUS_TAU 为半衰期（0.5 天 = 12 小时），_RECALL_BONUS_MAX 为最高加成比例
+    _RECALL_BONUS_TAU = 0.5
+    _RECALL_BONUS_MAX = 0.5
+
+    def _recency_factor(self, row: dict) -> float:
+        """回忆强化因子：基于 last_accessed_at，刚被召回时 >1，随时间衰减回 1.0"""
+        last = row.get("last_accessed_at")
+        if not last:
+            return 1.0  # 从未被访问，中性（不加分不扣分）
+        try:
+            last_time = datetime.fromisoformat(last)
+        except Exception:
+            return 1.0
+        age_days = (datetime.now() - last_time).total_seconds() / 86400
+        # 指数衰减：刚访问时 bonus = _RECALL_BONUS_MAX，每 _RECALL_BONUS_TAU 天减半
+        bonus = self._RECALL_BONUS_MAX * (0.5 ** (age_days / self._RECALL_BONUS_TAU))
+        return 1.0 + bonus
+
     def _effective_importance(self, row: dict) -> float:
-        """计算有效重要性：base * decay(基于创建时间) + recency_bonus(基于访问频次)。"""
+        """计算有效重要性：base * decay(基于创建时间) * recency_factor(基于最近访问时间)"""
         base = row.get("importance", 3)
-        access_count = row.get("access_count", 0)
 
         half_life = self._half_life(row)
         if half_life == float("inf"):
-            # L1 不衰减，仅加 recency_bonus
-            recency_bonus = min(0.5, math.log2(1 + access_count) * 0.1)
-            return min(5.0, base + recency_bonus)
+            # L1 不衰减
+            decay = 1.0
+        else:
+            # 衰减基于 created_at（信息自然老化，不因访问而重置）
+            time_str = row.get("created_at")
+            if not time_str:
+                return base
+            try:
+                ref_time = datetime.fromisoformat(time_str)
+            except Exception:
+                return base
+            age_days = (datetime.now() - ref_time).total_seconds() / 86400
+            decay = 0.5 ** (age_days / half_life)
 
-        # 衰减基于 created_at（信息自然老化，不因访问而重置）
-        time_str = row.get("created_at")
-        if not time_str:
-            return base
-        try:
-            ref_time = datetime.fromisoformat(time_str)
-        except Exception:
-            return base
-        age_days = (datetime.now() - ref_time).total_seconds() / 86400
-        decay = 0.5 ** (age_days / half_life)
+        # 回忆强化：基于最近访问时间的衰减因子，不累积访问次数
+        recency_factor = self._recency_factor(row)
 
-        # 访问频次作为独立加成（回忆强化），上限 0.5
-        recency_bonus = min(0.5, math.log2(1 + access_count) * 0.1)
-
-        return base * decay + recency_bonus
+        return min(5.0, base * decay * recency_factor)
 
     @staticmethod
     def _merge_level(existing_level: str, new_level: str) -> str:
@@ -198,7 +224,11 @@ class _MemoryRetriever(ABC):
     # ── Shared concrete methods ──
 
     def _is_in_cooldown(self, memory_id: int, content: str = "") -> bool:
-        """检查记忆是否在召回冷却期内。content 用于记录被拦截的内容。"""
+        """检查记忆是否在召回冷却期内。content 用于记录被拦截的内容。
+
+        加权冷却：冷却期内再次命中（用户复读/强调），虽然不重复输出给 LLM，
+        但触发 importance 奖励——复读 = 情绪强调，应提升权重。
+        """
         last_recall = self._recall_times.get(memory_id)
         if last_recall:
             elapsed = (datetime.now() - last_recall).total_seconds()
@@ -208,8 +238,27 @@ class _MemoryRetriever(ABC):
                 )
                 if content:
                     self._record_blocked(content)
+                # 加权冷却：复读=强调，importance 奖励（有上限）
+                self._boost_importance(memory_id)
                 return True
         return False
+
+    def _boost_importance(self, memory_id: int):
+        """冷却期内再次命中，提升 importance（模拟"复读=重要"的情绪权重）。"""
+        row = self._conn.execute(
+            "SELECT importance FROM memories WHERE id=?", (memory_id,)
+        ).fetchone()
+        if not row:
+            return
+        cur = row["importance"]
+        if cur < self._COOLDOWN_BOOST_CAP:
+            self._conn.execute(
+                "UPDATE memories SET importance = importance + 1 WHERE id=?",
+                (memory_id,)
+            )
+            logger.info(
+                f"[{self.__class__.__name__}] 加权冷却: memory#{memory_id} importance {cur}→{cur + 1}"
+            )
 
     def _record_blocked(self, content: str):
         """记录被冷却拦截的记忆内容，供上下文反馈使用。"""
@@ -222,6 +271,15 @@ class _MemoryRetriever(ABC):
         """返回最近被拦截的记忆内容列表（未过期的）。"""
         cutoff = datetime.now() - timedelta(seconds=self._BLOCKED_TTL)
         return [c for c, t in self._recently_blocked if t > cutoff]
+
+    def _cleanup_recall_times(self):
+        """清理过期的召回冷却记录，防止 _recall_times 字典无限增长。"""
+        if not self._recall_times:
+            return
+        cutoff = datetime.now() - timedelta(seconds=self.RECALL_COOLDOWN_SECONDS * 2)
+        self._recall_times = {
+            k: v for k, v in self._recall_times.items() if v > cutoff
+        }
 
     @staticmethod
     def _do_merge(existing, content: str, keywords: list[str], importance: int, level: str = "L2"):
@@ -288,11 +346,13 @@ class _MemoryRetriever(ABC):
     def query_core(self, limit: int = 5) -> list[dict]:
         with self._lock:
             rows = self._conn.execute(
-                "SELECT * FROM memories WHERE level != 'L3' ORDER BY importance DESC, created_at DESC LIMIT ?",
+                "SELECT * FROM memories ORDER BY importance DESC, created_at DESC LIMIT ?",
                 (limit * 5,)
             ).fetchall()
         result_dicts = [dict(r) for r in rows]
         # 按 effective_importance 过滤和排序
+        # L3 不再被排除，靠 effective_importance 自然降权——
+        # 新鲜 L3（recency_factor 高）有机会进入，老 L3（衰减大）自然落选
         scored = [(r, self._effective_importance(r)) for r in result_dicts]
         filtered = [r for r, s in scored if s >= 3.5]
         filtered.sort(key=lambda r: self._effective_importance(r), reverse=True)
@@ -311,20 +371,41 @@ class _MemoryRetriever(ABC):
         return [dict(r) for r in rows]
 
     def retrieve_context(self, user_message: str) -> str:
+        """构建上下文：核心槽 + 新鲜槽 + MMR 多样性槽。
+
+        分层结构避免视角坍缩（同一话题占满上下文）：
+        - core_slot:    按 effective_importance 选核心记忆，固定保留（人格背景）
+        - recent_slot:  按时间选最新记忆，固定保留（对话连续性）
+        - mmr_slot:     从文本匹配候选中按 MMR 挑选，既相关又与已选不同
+        """
+        from pet.config import config
+        total = max(3, config.MEMORY_RECALL_COUNT)
+        # 按 3:2:5 比例分配，每槽至少 1 条
+        core_n = max(1, round(total * 0.3))
+        recent_n = max(1, round(total * 0.2))
+        mmr_n = max(1, total - core_n - recent_n)
+        mmr_candidates = max(mmr_n + 3, 8)  # 候选池留余量供 MMR 挑选
+
         seen_ids = set()
         results = []
 
-        for m in self.query_core(5):
+        # 1. 核心槽：effective_importance 最高的 N 条
+        for m in self.query_core(core_n):
             if m["id"] not in seen_ids:
                 seen_ids.add(m["id"])
                 results.append(m)
 
-        for m in self.query_recent(24, 3):
+        # 2. 新鲜槽：最近 24h 的 N 条
+        for m in self.query_recent(24, recent_n):
             if m["id"] not in seen_ids:
                 seen_ids.add(m["id"])
                 results.append(m)
 
-        for m in self.query_by_text(user_message, 3):
+        # 3. MMR 多样性槽：从文本匹配候选中选 N 条（λ=0.7 偏相关，0.3 给多样性）
+        candidates = self.query_by_text(user_message, mmr_candidates)
+        candidates = [c for c in candidates if c["id"] not in seen_ids]
+        mmr_picked = self._mmr_select(candidates, results, n=mmr_n, lam=0.7)
+        for m in mmr_picked:
             if m["id"] not in seen_ids:
                 seen_ids.add(m["id"])
                 results.append(m)
@@ -335,6 +416,7 @@ class _MemoryRetriever(ABC):
         # 记录被召回的记忆 ID 和时间，用于冷却期去重（加锁保护防止与 save() 竞争）
         now = datetime.now()
         with self._lock:
+            self._cleanup_recall_times()
             for m in results:
                 self._recall_times[m["id"]] = now
 
@@ -354,6 +436,50 @@ class _MemoryRetriever(ABC):
                 lines.append(f"- {b}")
 
         return "\n".join(lines)
+
+    def _mmr_select(self, candidates: list[dict], selected: list[dict],
+                    n: int, lam: float) -> list[dict]:
+        """Maximal Marginal Relevance 选择：在相关性和多样性间平衡。
+
+        对每个候选 d:
+            mmr(d) = λ * relevance(d) - (1-λ) * max_{s in selected} sim(d, s)
+        每轮选 mmr 最高的加入 selected，直到填满 n 个槽位。
+
+        - relevance: effective_importance 归一化到 [0,1]
+        - sim: 复用 LightweightDeduplicator.compute_similarity（文本重合度）
+        - λ=0.7 偏相关性，0.3 权重给多样性惩罚
+        """
+        if not candidates or n <= 0:
+            return []
+
+        pool = list(candidates)
+        picked: list[dict] = []
+        # 已选集合 = 传入的 selected + 本轮 picked（都参与相似度惩罚）
+        selected_contents = [m.get("content", "") for m in selected]
+
+        while pool and len(picked) < n:
+            best = None
+            best_score = -1.0
+            for m in pool:
+                rel = self._effective_importance(m) / 5.0
+                if selected_contents or picked:
+                    ref_contents = selected_contents + [p.get("content", "") for p in picked]
+                    max_sim = max(
+                        self._deduplicator.compute_similarity(m.get("content", ""), s)
+                        for s in ref_contents
+                    )
+                else:
+                    max_sim = 0.0
+                score = lam * rel - (1 - lam) * max_sim
+                if score > best_score:
+                    best_score = score
+                    best = m
+            if best is None:
+                break
+            pool.remove(best)
+            picked.append(best)
+
+        return picked
 
     @staticmethod
     def _format_memory_time(created_at: str) -> str:
@@ -434,7 +560,7 @@ class _MemoryRetriever(ABC):
 
         with self._lock:
             rows = self._conn.execute(
-                f"SELECT * FROM memories WHERE {conditions} AND level != 'L3' ORDER BY importance DESC, created_at DESC LIMIT ?",
+                f"SELECT * FROM memories WHERE {conditions} ORDER BY importance DESC, created_at DESC LIMIT ?",
                 params + [limit * 3]
             ).fetchall()
 
@@ -458,14 +584,67 @@ class _MemoryRetriever(ABC):
             ids = ids_or_rows
         else:
             ids = [r["id"] for r in ids_or_rows]
-        now = datetime.now().isoformat()
+        now = datetime.now()
+        now_iso = now.isoformat()
         with self._lock:
             placeholders = ",".join(["?"] * len(ids))
             self._conn.execute(
                 f"UPDATE memories SET access_count = access_count + 1, last_accessed_at = ? WHERE id IN ({placeholders})",
-                [now] + ids
+                [now_iso] + ids
             )
             self._conn.commit()
+            # L3 高频访问升级：短时间窗口内被多次召回 → 升 L2
+            self._maybe_promote_l3(ids, now)
+
+    def _maybe_promote_l3(self, ids: list[int], now: datetime):
+        """检测 L3 记忆是否在短时间内高频被访问，若是则升级为 L2。
+
+        升级条件：level='L3' 且 access_count >= _L3_PROMOTE_HITS
+                  且 created_at 在 _L3_PROMOTE_WINDOW 内。
+        """
+        if not ids:
+            return
+        placeholders = ",".join(["?"] * len(ids))
+        cutoff = (now - self._L3_PROMOTE_WINDOW).isoformat()
+        rows = self._conn.execute(
+            f"SELECT id, access_count FROM memories WHERE id IN ({placeholders}) "
+            f"AND level='L3' AND created_at >= ? AND access_count >= ?",
+            ids + [cutoff, self._L3_PROMOTE_HITS]
+        ).fetchall()
+        for r in rows:
+            self._conn.execute(
+                "UPDATE memories SET level='L2' WHERE id=?", (r["id"],)
+            )
+            logger.info(
+                f"[{self.__class__.__name__}] L3→L2 升级: memory#{r['id']} "
+                f"(access_count={r['access_count']}, 短时高频召回)"
+            )
+        if rows:
+            self._conn.commit()
+
+    def _demote_l2_to_l3(self):
+        """L2 动态降级：effective_importance 衰减到阈值以下的 L2 → L3"""
+        rows = self._conn.execute(
+            "SELECT id, importance, access_count, level, created_at, last_accessed_at "
+            "FROM memories WHERE level='L2' AND importance < 5"
+        ).fetchall()
+        demoted_ids = []
+        for r in rows:
+            r_dict = dict(r)
+            eff = self._effective_importance(r_dict)
+            if eff < self._L2_DEMOTE_THRESHOLD:
+                demoted_ids.append(r["id"])
+        if demoted_ids:
+            placeholders = ",".join(["?"] * len(demoted_ids))
+            self._conn.execute(
+                f"UPDATE memories SET level='L3' WHERE id IN ({placeholders})",
+                demoted_ids
+            )
+            self._conn.commit()
+            logger.info(
+                f"[{self.__class__.__name__}] L2→L3 降级: {len(demoted_ids)} 条 "
+                f"(effective < {self._L2_DEMOTE_THRESHOLD})"
+            )
 
     def enforce_capacity(self):
         """容量控制（需在已有 lock 内调用）"""
@@ -505,20 +684,47 @@ class _MemoryRetriever(ABC):
             (cutoff,)
         )
 
-        # 阶段 2：L1 完全豁免，仅在 L2/L3 中按 effective_importance 淘汰
+        # 阶段 2：分级淘汰，L1 完全豁免
+        # L3 永远优先淘汰；L3 不足时才动 L2，避免 L2 只增不减
+        # 淘汰目标为超额量的一次性扩大清理（30%），减少频繁触发
         total = self._conn.execute("SELECT COUNT(*) FROM memories").fetchall()[0][0]
         if total > self.MAX_MEMORIES:
-            rows = self._conn.execute(
-                "SELECT id, importance, access_count, level, created_at, last_accessed_at FROM memories WHERE level != 'L1'"
-            ).fetchall()
-            sorted_rows = sorted(rows, key=lambda r: self._effective_importance(dict(r)))
             excess = total - self.MAX_MEMORIES
-            ids_to_delete = [r["id"] for r in sorted_rows[:excess]]
+            # 一次清理到 70% 容量，留出缓冲，避免每次只删 1 条
+            target_clear = max(excess, int(self.MAX_MEMORIES * 0.3))
+            ids_to_delete: list[int] = []
+
+            # 2a: 先从 L3 淘汰（按 effective_importance 升序）
+            l3_rows = self._conn.execute(
+                "SELECT id, importance, access_count, level, created_at, last_accessed_at FROM memories WHERE level='L3'"
+            ).fetchall()
+            l3_rows.sort(key=lambda r: self._effective_importance(dict(r)))
+            for r in l3_rows:
+                if len(ids_to_delete) >= target_clear:
+                    break
+                ids_to_delete.append(r["id"])
+
+            # 2b: L3 不足时，从 L2 淘汰（importance=5 的核心记忆豁免）
+            if len(ids_to_delete) < target_clear:
+                l2_rows = self._conn.execute(
+                    "SELECT id, importance, access_count, level, created_at, last_accessed_at "
+                    "FROM memories WHERE level='L2' AND importance < 5"
+                ).fetchall()
+                l2_rows.sort(key=lambda r: self._effective_importance(dict(r)))
+                for r in l2_rows:
+                    if len(ids_to_delete) >= target_clear:
+                        break
+                    ids_to_delete.append(r["id"])
+
             if ids_to_delete:
                 placeholders = ",".join(["?"] * len(ids_to_delete))
                 self._conn.execute(
                     f"DELETE FROM memories WHERE id IN ({placeholders})",
                     ids_to_delete
+                )
+                logger.info(
+                    f"[{self.__class__.__name__}] 容量淘汰 {len(ids_to_delete)} 条 "
+                    f"(目标:{target_clear}, 总数:{total}→{total - len(ids_to_delete)})"
                 )
         self._conn.commit()  # 统一一次 commit
 
@@ -590,29 +796,42 @@ class VectorRetriever(_MemoryRetriever):
 
     def _create_vec_table(self):
         with self._lock:
-            # 检测已有表的维度是否匹配，不匹配则重建
-            try:
-                existing = self._conn.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table' AND name='memories_vec'"
-                ).fetchone()
-                if existing:
-                    import sqlite_vec
-                    test_vec = sqlite_vec.serialize_float32([0.0] * self._dim)
-                    self._conn.execute(
-                        "INSERT INTO memories_vec (memory_id, embedding) VALUES (-1, ?)",
-                        (test_vec,)
-                    )
-                    self._conn.execute("DELETE FROM memories_vec WHERE memory_id=-1")
-                    self._conn.commit()
-            except Exception:
-                logger.warning(f"[VectorRetriever] dimension mismatch or table error, recreating memories_vec with dim={self._dim}")
+            need_rebuild = False
+            # 检查已有表：1) 距离度量是否为 cosine  2) 维度是否匹配
+            existing = self._conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='memories_vec'"
+            ).fetchone()
+            if existing:
+                create_sql = existing[0] or ""
+                # sqlite-vec 默认 L2，必须显式指定 cosine 才能正确用于语义相似度
+                if "cosine" not in create_sql.lower():
+                    logger.warning("[VectorRetriever] existing vec table uses non-cosine metric, rebuilding")
+                    need_rebuild = True
+                # 维度匹配检测（试探性插入）
+                if not need_rebuild:
+                    try:
+                        import sqlite_vec
+                        test_vec = sqlite_vec.serialize_float32([0.0] * self._dim)
+                        self._conn.execute(
+                            "INSERT INTO memories_vec (memory_id, embedding) VALUES (-1, ?)",
+                            (test_vec,)
+                        )
+                        self._conn.execute("DELETE FROM memories_vec WHERE memory_id=-1")
+                        self._conn.commit()
+                    except Exception:
+                        logger.warning(f"[VectorRetriever] dimension mismatch or table error, rebuilding with dim={self._dim}")
+                        need_rebuild = True
+
+            if need_rebuild:
                 self._conn.execute("DROP TABLE IF EXISTS memories_vec")
+                # 重置 has_embedding 标志，避免「标记有向量但实际已删除」的数据不一致
+                self._conn.execute("UPDATE memories SET has_embedding = 0")
                 self._conn.commit()
 
             self._conn.execute(
                 f"CREATE VIRTUAL TABLE IF NOT EXISTS memories_vec USING vec0("
                 f"memory_id INTEGER PRIMARY KEY, "
-                f"embedding FLOAT[{self._dim}]"
+                f"embedding FLOAT[{self._dim}] distance_metric=cosine"
                 f")"
             )
             self._conn.commit()
@@ -663,6 +882,16 @@ class VectorRetriever(_MemoryRetriever):
                         # 已在 self._lock 内，无需再次获取
                         self._upsert_vector(existing["id"], vector)
                         self._conn.commit()
+                    else:
+                        # 向量生成失败：content 已更新但向量指向旧内容 → 重置标志，
+                        # 检索时该记忆降级为关键词匹配，避免语义不一致
+                        self._conn.execute(
+                            "UPDATE memories SET has_embedding=0 WHERE id=?", (existing["id"],)
+                        )
+                        logger.warning(
+                            f"[VectorRetriever] embedding 生成失败，memory#{existing['id']} "
+                            f"has_embedding 已重置，降级为关键词检索"
+                        )
                 return
 
         # Phase 2: 关键词未命中 → 生成 embedding 做向量语义去重
@@ -687,6 +916,15 @@ class VectorRetriever(_MemoryRetriever):
                     )
                     if content_changed and vector is not None:
                         self._upsert_vector(existing["id"], vector)
+                    elif content_changed and vector is None:
+                        # 向量生成失败：content 已更新但向量指向旧内容 → 重置标志
+                        self._conn.execute(
+                            "UPDATE memories SET has_embedding=0 WHERE id=?", (existing["id"],)
+                        )
+                        logger.warning(
+                            f"[VectorRetriever] embedding 生成失败，memory#{existing['id']} "
+                            f"has_embedding 已重置，降级为关键词检索"
+                        )
                     logger.info(f"[VectorRetriever] memory merged via vector (sim:{similarity:.2f}): {content[:20]}...")
                 else:
                     # 内容差异大 → 保存为新记忆
@@ -761,8 +999,8 @@ class VectorRetriever(_MemoryRetriever):
 
             id_to_row = {r["id"]: dict(r) for r in rows}
             ordered = [id_to_row[mid] for mid in memory_ids if mid in id_to_row]
-            # 严格隔离 L3：不参与向量检索
-            ordered = [r for r in ordered if r.get("level", "L2") != "L3"]
+            # L3 不再被排除：靠 rerank_score 中的 effective_importance 自然降权，
+            # 但若语义高度相似（sim 高），L3 仍可逆袭进入结果
 
             # 加权重排序：相似度为主（0.7），effective_importance 归一化加权（0.2），时效性加权（0.1）
             now = datetime.now()
@@ -831,8 +1069,8 @@ class MemoryStore:
                 self._conn.execute("ALTER TABLE memories ADD COLUMN last_accessed_at TEXT")
                 # 回填已有数据
                 self._conn.execute("UPDATE memories SET last_accessed_at = created_at WHERE last_accessed_at IS NULL")
-            # 复合索引：覆盖 query_core 的 WHERE level != 'L3' ORDER BY importance DESC
-            self._conn.execute("CREATE INDEX IF NOT EXISTS idx_level_importance ON memories(level, importance DESC)")
+            # 复合索引：覆盖 query_core 的 ORDER BY importance DESC
+            self._conn.execute("CREATE INDEX IF NOT EXISTS idx_level_importance ON memories(importance DESC)")
             # 部分索引：仅索引 L3 行，加速 enforce_capacity 的过期清理
             self._conn.execute("CREATE INDEX IF NOT EXISTS idx_l3_access ON memories(level, last_accessed_at) WHERE level='L3'")
             self._conn.commit()
@@ -887,9 +1125,14 @@ class MemoryStore:
         return self._retriever.retrieve_context(user_message)
 
     def maintenance(self):
-        """定期维护：L3 硬清理 + 容量控制。"""
+        """定期维护：L2 动态降级 + 超容量淘汰。"""
         with self._retriever._lock:
-            self._retriever.enforce_capacity()
+            # L2 动态降级：effective_importance 衰减到阈值以下的 L2 → L3
+            self._retriever._demote_l2_to_l3()
+            # 仅在超容量时淘汰，不主动清 L3 过期
+            count = self._retriever._conn.execute("SELECT COUNT(*) FROM memories").fetchall()[0][0]
+            if count > self._retriever.MAX_MEMORIES:
+                self._retriever.enforce_capacity()
 
     def close(self):
         self._retriever.close()

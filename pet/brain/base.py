@@ -1,6 +1,7 @@
 import json
 import logging
 import math
+import re
 import sqlite3
 import threading
 import time
@@ -36,6 +37,10 @@ class BrainMixin:
 
     # 角色权重：用户意图 > 系统通知 > 宠物行为
     _ROLE_WEIGHTS = {"user": 3, "system": 2, "assistant": 1}
+
+    # 上下文去重：选取时若候选与已选条目相似度超过此阈值则跳过，避免复读
+    _DEDUP_NGRAM_SIZE = 3      # 字符 n-gram 粒度
+    _DEDUP_THRESHOLD = 0.6     # Jaccard 相似度阈值
 
     def __init__(self, db_path: str | None = None):
         self._context: list[ContextEntry] = []
@@ -206,9 +211,14 @@ class BrainMixin:
             if not available:
                 return []
 
-            # 按分排序选取
+            # 按分排序选取，内容去重避免复读（A→A'→A'' 循环）
             scored = sorted(available, key=self._score_entry, reverse=True)
-            selected = scored[:max_entries]
+            selected: list[ContextEntry] = []
+            for entry in scored:
+                if len(selected) >= max_entries:
+                    break
+                if not self._is_duplicate(entry, selected):
+                    selected.append(entry)
             selected.sort(key=lambda e: e.timestamp)  # 按时间排序
 
             # token 预算截断
@@ -270,6 +280,38 @@ class BrainMixin:
         density_score = 1.0 if len(entry.content) > 30 else 0.0
 
         return role_score + time_score + density_score
+
+    @classmethod
+    def _char_ngrams(cls, text: str) -> set[str]:
+        """提取字符 n-gram 集合，用于轻量文本相似度比较。"""
+        text = re.sub(r'[^\w]', '', text.lower())
+        n = cls._DEDUP_NGRAM_SIZE
+        if len(text) < n:
+            return {text}
+        return {text[i:i + n] for i in range(len(text) - n + 1)}
+
+    @classmethod
+    def _text_similarity(cls, a: str, b: str) -> float:
+        """Jaccard 相似度：两段文本的 n-gram 交集/并集。"""
+        sa, sb = cls._char_ngrams(a), cls._char_ngrams(b)
+        if not sa or not sb:
+            return 0.0
+        return len(sa & sb) / len(sa | sb)
+
+    def _is_duplicate(self, entry: ContextEntry, selected: list[ContextEntry]) -> bool:
+        """检查 entry 是否与已选条目内容过度相似（复读检测）。
+
+        若与任一已选条目的 Jaccard 相似度 ≥ _DEDUP_THRESHOLD，视为重复跳过。
+        这打破了「高分内容→LLM 再次输出→分数更高→继续入选」的复读循环。
+        """
+        content = entry.content
+        # 摘要条目不参与去重（它们本就是历史压缩）
+        if entry.is_summary:
+            return False
+        for s in selected:
+            if not s.is_summary and self._text_similarity(content, s.content) >= self._DEDUP_THRESHOLD:
+                return True
+        return False
 
 
     def _trim(self):

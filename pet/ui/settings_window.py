@@ -611,6 +611,7 @@ class SettingsWindow(QWidget):
         memory_form.addRow("模型名:", mem_model_row)
         memory_form.addRow("向量维度:", self._line("EMBEDDING_DIM", "2048", QIntValidator(64, 8192)))
         memory_form.addRow("记忆最大容量:", self._line("MEMORY_MAX_CAPACITY", "200", QIntValidator(50, 1000)))
+        memory_form.addRow("记忆召回条数:", self._line("MEMORY_RECALL_COUNT", "10", QIntValidator(3, 30)))
         memory_form.addRow("临时记忆过期(天):", self._line("MEMORY_L3_EXPIRE_DAYS", "3", QIntValidator(1, 30)))
         memory_layout.addLayout(memory_form)
 

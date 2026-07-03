@@ -72,6 +72,7 @@ _KEY_META = {
     "EMBEDDING_DIM":             {"type": "int",      "default": 256,           "category": "memory",   "needs_restart": True,  "hidden": False, "description": "向量维度(需与模型匹配)", "minimum": 64, "maximum": 8192},
     "EMBEDDING_DEDUP_THRESHOLD": {"type": "float",    "default": 0.6,            "category": "memory",   "needs_restart": False, "hidden": True,  "description": "向量语义去重距离阈值(0~1)"},
     "MEMORY_MAX_CAPACITY":       {"type": "int",      "default": 200,            "category": "memory",   "needs_restart": False, "hidden": False, "description": "记忆最大容量"},
+    "MEMORY_RECALL_COUNT":       {"type": "int",      "default": 10,             "category": "memory",   "needs_restart": False, "hidden": False, "description": "每次对话召回的记忆条数"},
     "MEMORY_RECALL_COOLDOWN_S":  {"type": "int",      "default": 300,            "category": "memory",   "needs_restart": False, "hidden": True,  "description": "记忆召回冷却时间(秒)"},
     "MEMORY_L3_EXPIRE_DAYS":     {"type": "int",      "default": 3,              "category": "memory",   "needs_restart": False, "hidden": False, "description": "L3临时记忆过期天数"},
     "MEMORY_RERANK_WEIGHT_SIM":  {"type": "float",    "default": 0.7,            "category": "memory",   "needs_restart": False, "hidden": True,  "description": "重排序-语义相似度权重"},
