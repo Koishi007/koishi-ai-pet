@@ -32,7 +32,9 @@ class BrainMixin:
     def _MAX_SUMMARIES(self) -> int:
         return config.CONTEXT_MAX_SUMMARIES
 
-    _ROLE_WEIGHTS = {"user": 3, "system": 2, "assistant": 1}
+    @property
+    def _MAX_HISTORY_SUMMARIES(self) -> int:
+        return max(2, int(config.CONTEXT_HISTORY_ENTRIES * 0.2))
     _DEDUP_NGRAM_SIZE = 3
     _DEDUP_THRESHOLD = 0.35
     _MAX_PENDING_QUEUE = 50  # 防止摘要队列无限增长
@@ -202,6 +204,11 @@ class BrainMixin:
         with self._ctx_lock:
             self._context.clear()
             self._pending_summary_queue.clear()
+        
+        if self._save_debounce_timer:
+            self._save_debounce_timer.cancel()
+            self._save_debounce_timer = None
+
         if self._db_conn:
             self._do_save()
 
@@ -223,35 +230,48 @@ class BrainMixin:
             # 1. 保持时间正序
             selected = sorted(available, key=lambda e: e.timestamp)
 
-            # 2. 条数淘汰：摘要/system 按分淘汰，普通对话按时间从旧到新淘汰
+            # 2. 条数淘汰：优先淘汰最旧的普通对话
             if len(selected) > max_entries:
                 need_drop = len(selected) - max_entries
                 dropped = set()
 
-                # 摘要和系统消息按分数淘汰（低分优先）
-                score_candidates = [(i, e) for i, e in enumerate(selected) if e.is_summary or e.role == "system"]
-                score_candidates.sort(key=lambda x: self._score_entry(x[1]))
-                for i, _ in score_candidates[:need_drop]:
+                # 优先按时间从旧到新淘汰普通对话
+                normal = [(i, e) for i, e in enumerate(selected) if not e.is_summary and e.role != "system"]
+                normal.sort(key=lambda x: x[1].timestamp)
+                for i, _ in normal[:need_drop]:
                     dropped.add(i)
                     need_drop -= 1
 
-                # 还不够则淘汰最旧的普通对话，保证 user/assistant 交替不被破坏
+                # 如果普通对话都淘汰完了还是超限，再按分数淘汰摘要和系统消息（低分优先）
                 if need_drop > 0:
-                    normal = [(i, e) for i, e in enumerate(selected) if i not in dropped and not e.is_summary and e.role not in ("system",)]
-                    normal.sort(key=lambda x: x[1].timestamp)
-                    for i, _ in normal[:need_drop]:
+                    score_candidates = [(i, e) for i, e in enumerate(selected) if i not in dropped and (e.is_summary or e.role == "system")]
+                    score_candidates.sort(key=lambda x: self._score_entry(x[1]))
+                    for i, _ in score_candidates[:need_drop]:
                         dropped.add(i)
 
                 selected = [e for i, e in enumerate(selected) if i not in dropped]
                 logger.debug(f"[BrainMixin] count eviction: dropped {len(available) - len(selected)}, kept {len(selected)}")
 
-            # 3. Token 预算淘汰：从最旧开始丢弃，不破坏时间连贯性
+            # 3. Token 预算淘汰：优先丢弃最旧的普通对话，不够再丢摘要/system
             before_count = len(selected)
             if token_budget > 0 and selected:
                 total_tokens = sum(self._estimate_tokens(e.content) for e in selected)
+                
+                # 先遍历弹出最旧的普通对话
+                idx = 0
+                while total_tokens > token_budget and len(selected) > 1 and idx < len(selected):
+                    e = selected[idx]
+                    if not e.is_summary and e.role != "system":
+                        total_tokens -= self._estimate_tokens(e.content)
+                        selected.pop(idx)
+                    else:
+                        idx += 1
+                
+                # 如果还是超，再按时间从旧到新强制弹出（包含摘要和 system）
                 while total_tokens > token_budget and len(selected) > 1:
                     removed = selected.pop(0)
                     total_tokens -= self._estimate_tokens(removed.content)
+
                 if len(selected) < before_count:
                     logger.debug(f"[BrainMixin] token budget ({token_budget}) truncated {before_count}→{len(selected)} entries")
 
@@ -263,10 +283,7 @@ class BrainMixin:
                 content_with_time = prefix + e.content
 
                 if e.is_summary:
-                    if e.content.startswith("[历史摘要]"):
-                        messages.append({"role": "system", "content": content_with_time})
-                    else:
-                        messages.append({"role": "system", "content": f"[摘要] {content_with_time}"})
+                    messages.append({"role": "system", "content": content_with_time})
                 elif e.role == "system":
                     messages.append({"role": "system", "content": content_with_time})
                 else:
@@ -275,16 +292,18 @@ class BrainMixin:
             return messages
 
 
+
     @staticmethod
     def _format_context_time(timestamp: float) -> str:
         """将 float 时间戳转为绝对时间：同天→HH:MM，昨天→昨天 HH:MM，前天→前天 HH:MM，更早→MM-DD HH:MM"""
         ref = datetime.fromtimestamp(timestamp)
         now = datetime.now()
-        if ref.date() == now.date():
+        day_diff = (now.date() - ref.date()).days
+        if day_diff == 0:
             return ref.strftime("%H:%M")
-        elif (now - ref).days == 1:
+        elif day_diff == 1:
             return ref.strftime("昨天 %H:%M")
-        elif (now - ref).days == 2:
+        elif day_diff == 2:
             return ref.strftime("前天 %H:%M")
         else:
             return ref.strftime("%m-%d %H:%M")
@@ -337,7 +356,7 @@ class BrainMixin:
             decision_summaries = decision_summaries[:self._MAX_SUMMARIES]
 
         history_summaries.sort(key=lambda e: e.timestamp, reverse=True)
-        history_summaries = history_summaries[:5]
+        history_summaries = history_summaries[:self._MAX_HISTORY_SUMMARIES]
 
         summaries = decision_summaries + history_summaries
 
@@ -354,8 +373,8 @@ class BrainMixin:
             normal_chats.sort(key=self._score_entry, reverse=True)
             evicted = normal_chats[base_limit:]
             if evicted:
-                candidates = [e for e in evicted]  # 不再需要过滤工具调用
-                candidates.sort(key=self._score_entry)
+                candidates = [e for e in evicted]
+                candidates.sort(key=self._score_entry, reverse=True)
 
                 queue_size = min(10, max(3, len(evicted) // 2))
                 queued = candidates[:queue_size]

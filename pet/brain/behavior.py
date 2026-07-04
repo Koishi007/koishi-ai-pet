@@ -757,11 +757,11 @@ class Behavior(BrainMixin):
             summary = self._build_fallback_summary(items)
 
         if summary:
-            self.add_context(role="assistant", content=f"[历史摘要] {summary}", is_summary=True)
+            self.add_context(role="system", content=f"[历史摘要] {summary}", is_summary=True)
             logger.info(f"[Behavior] flushed pending summaries: {len(items)} items → {summary[:50]}...")
 
     def _llm_summarize(self, items: list[str]) -> str | None:
-        """用 LLM 将多条历史上下文压缩为一句简洁摘要（≤50字）。"""
+        """用 LLM 将多条历史上下文压缩为一句简洁摘要。"""
         messages = self.ctx.build_summary_messages(items)
         resp = self._llm_call(messages, max_tokens=config.LLM_MAX_TOKENS_SUMMARY)
         raw = resp.choices[0].message.content

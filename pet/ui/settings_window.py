@@ -438,11 +438,11 @@ class SettingsWindow(QWidget):
         model_row.addWidget(self._btn_fetch_models)
         form.addRow("模型名称:", model_row)
 
-        self._timeout_edit = self._line("LLM_TIMEOUT", "30", QDoubleValidator(1, 300, 1))
+        self._timeout_edit = self._line("LLM_TIMEOUT", "20", QDoubleValidator(1, 300, 1))
         self._timeout_edit.setMaxLength(5)
         form.addRow("请求超时(秒):", self._timeout_edit)
 
-        self._retries_edit = self._line("LLM_MAX_RETRIES", "3", QIntValidator(0, 10))
+        self._retries_edit = self._line("LLM_MAX_RETRIES", "2", QIntValidator(0, 10))
         self._retries_edit.setMaxLength(2)
         form.addRow("最大重试次数:", self._retries_edit)
 
@@ -450,7 +450,7 @@ class SettingsWindow(QWidget):
         self._retry_delay_edit.setMaxLength(4)
         form.addRow("重试延迟(秒):", self._retry_delay_edit)
 
-        self._retry_max_delay_edit = self._line("LLM_RETRY_MAX_DELAY", "8", QDoubleValidator(0, 300, 1))
+        self._retry_max_delay_edit = self._line("LLM_RETRY_MAX_DELAY", "4", QDoubleValidator(0, 300, 1))
         self._retry_max_delay_edit.setMaxLength(5)
         form.addRow("最大重试延迟(秒):", self._retry_max_delay_edit)
 
@@ -458,11 +458,11 @@ class SettingsWindow(QWidget):
         self._temperature_edit.setMaxLength(4)
         form.addRow("采样温度:", self._temperature_edit)
 
-        self._tokens_interact_edit = self._line("LLM_MAX_TOKENS_INTERACT", "600", QIntValidator(100, 8000))
+        self._tokens_interact_edit = self._line("LLM_MAX_TOKENS_INTERACT", "1024", QIntValidator(100, 8000))
         form.addRow("交互模式输出Token上限:", self._tokens_interact_edit)
-        self._tokens_chat_edit = self._line("LLM_MAX_TOKENS_CHAT", "1500", QIntValidator(100, 8000))
+        self._tokens_chat_edit = self._line("LLM_MAX_TOKENS_CHAT", "4096", QIntValidator(100, 8000))
         form.addRow("聊天模式输出Token上限:", self._tokens_chat_edit)
-        self._tokens_auto_edit = self._line("LLM_MAX_TOKENS_AUTONOMOUS", "2500", QIntValidator(100, 8000))
+        self._tokens_auto_edit = self._line("LLM_MAX_TOKENS_AUTONOMOUS", "4096", QIntValidator(100, 8000))
         form.addRow("自主模式输出Token上限:", self._tokens_auto_edit)
 
         self._tool_rounds_edit = self._line("LLM_TOOL_MAX_ROUNDS", "5", QIntValidator(1, 20))
@@ -559,8 +559,8 @@ class SettingsWindow(QWidget):
         sched_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         sched_form.addRow("自主行动间隔(ms):", self._line("SCHEDULER_MID_MS", "300000", QIntValidator(60000, 3600000)))
         sched_form.addRow("", self._check("SCHEDULER_AUTO_START_MID", "默认开启自动行动"))
-        sched_form.addRow("上下文最大条目数:", self._line("CONTEXT_MAX_ENTRIES", "30", QIntValidator(10, 100)))
-        sched_form.addRow("LLM历史消息条数:", self._line("CONTEXT_HISTORY_ENTRIES", "8", QIntValidator(1, 50)))
+        sched_form.addRow("备选上下文数量上限:", self._line("CONTEXT_MAX_ENTRIES", "30", QIntValidator(10, 100)))
+        sched_form.addRow("每轮注入上下文数量上限:", self._line("CONTEXT_HISTORY_ENTRIES", "15", QIntValidator(1, 50)))
         inner.addWidget(sched_group)
 
         # 视觉
@@ -569,7 +569,7 @@ class SettingsWindow(QWidget):
         vision_form.setSpacing(8)
         vision_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         vision_form.addRow("", self._check("VISION_ENABLED", "开启视觉理解（需要模型支持多模态）"))
-        vision_form.addRow("截图缩放比例(0.1~1.0):", self._line("VISION_SCALE", "1", QDoubleValidator(0.1, 1.0, 1)))
+        vision_form.addRow("截图缩放比例(0.1~1.0):", self._line("VISION_SCALE", "0.7", QDoubleValidator(0.1, 1.0, 1)))
         inner.addWidget(vision_group)
 
         # 理智
@@ -609,7 +609,7 @@ class SettingsWindow(QWidget):
         self._btn_fetch_mem_models.clicked.connect(self._fetch_embedding_models)
         mem_model_row.addWidget(self._btn_fetch_mem_models)
         memory_form.addRow("模型名:", mem_model_row)
-        memory_form.addRow("向量维度:", self._line("EMBEDDING_DIM", "2048", QIntValidator(64, 8192)))
+        memory_form.addRow("向量维度:", self._line("EMBEDDING_DIM", "256", QIntValidator(64, 8192)))
         memory_form.addRow("记忆最大容量:", self._line("MEMORY_MAX_CAPACITY", "200", QIntValidator(50, 1000)))
         memory_form.addRow("记忆召回条数:", self._line("MEMORY_RECALL_COUNT", "10", QIntValidator(3, 30)))
         memory_form.addRow("临时记忆过期(天):", self._line("MEMORY_L3_EXPIRE_DAYS", "3", QIntValidator(1, 30)))

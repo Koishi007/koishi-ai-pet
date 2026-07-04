@@ -401,7 +401,7 @@ class PetAgent(QObject):
                 except Exception:
                     pass
             if result.summary:
-                self.behavior.add_context(role="assistant", content=result.summary, is_summary=True)
+                self.behavior.add_context(role="assistant", content=result.summary)
             for step in result.actions:
                 self._emit_action(step.name, step.args, step.kwargs)
             if result.emotion:
