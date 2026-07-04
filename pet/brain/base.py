@@ -327,7 +327,7 @@ class BrainMixin:
         age = time.time() - entry.timestamp
         half_life = config.CONTEXT_HALF_LIFE_S
         time_score = 2.0 * (0.5 ** (age / half_life))
-        density_score = 1.0 if len(entry.content) > 30 else 0.0
+        density_score = min(2.0, 0.4 * ((max(0, len(entry.content) - 10) + 9) // 10))
         return role_score + time_score + density_score
 
     @classmethod
@@ -350,17 +350,8 @@ class BrainMixin:
         summaries = [e for e in self._context if e.is_summary]
         ordinary = [e for e in self._context if not e.is_summary]
 
-        decision_summaries = [e for e in summaries if not e.content.startswith("[历史摘要]")]
-        history_summaries = [e for e in summaries if e.content.startswith("[历史摘要]")]
-
-        if len(decision_summaries) > self._MAX_SUMMARIES:
-            decision_summaries.sort(key=self._score_entry, reverse=True)
-            decision_summaries = decision_summaries[:self._MAX_SUMMARIES]
-
-        history_summaries.sort(key=lambda e: e.timestamp, reverse=True)
-        history_summaries = history_summaries[:self._MAX_HISTORY_SUMMARIES]
-
-        summaries = decision_summaries + history_summaries
+        summaries.sort(key=self._score_entry, reverse=True)
+        summaries = summaries[:self._MAX_HISTORY_SUMMARIES]
 
         # 工具调用单独管理：只保留最近 3 条，老的直接丢弃
         tool_calls = [e for e in ordinary if e.content.startswith("[工具调用]")]
@@ -372,7 +363,7 @@ class BrainMixin:
         base_limit = self._MAX_ENTRIES - len(summaries) - len(tool_calls)
         soft_limit = base_limit + 3
         if len(normal_chats) > soft_limit:
-            normal_chats.sort(key=self._score_entry, reverse=True)
+            normal_chats.sort(key=lambda e: e.timestamp, reverse=True)
             evicted = normal_chats[base_limit:]
             if evicted:
                 candidates = [e for e in evicted]
