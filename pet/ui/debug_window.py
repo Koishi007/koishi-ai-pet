@@ -32,6 +32,7 @@ class DebugWindow(QWidget):
         super().__init__(parent)
         self.pet = pet_window
         self.agent = agent
+        self._force_close = False
         self.bubble = SpeechBubble(self.pet)
         self.emotion_bubble = EmotionBubble(self.pet)
         if agent is not None:
@@ -635,8 +636,11 @@ class DebugWindow(QWidget):
 
     def closeEvent(self, event):
         self._pos_timer.stop()
-        self.hide()
-        event.ignore()  # 阻止真正关闭，仅隐藏
+        if self._force_close:
+            event.accept()
+        else:
+            self.hide()
+            event.ignore()  # 阻止真正关闭，仅隐藏
 
     def _refresh_llm_stats(self):
         if hasattr(self.brain, 'llm_stats') and self.brain.llm_stats:

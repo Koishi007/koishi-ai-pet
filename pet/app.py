@@ -207,8 +207,59 @@ def main():
     _updater.update_available.connect(_on_update_available, Qt.ConnectionType.QueuedConnection)
     QTimer.singleShot(5000, _updater.check)
 
-    def _shutdown():
+    def _close_all_windows():
+        """关闭所有顶层窗口（PetWindow 除外，它最后关）。"""
+        # 先收集引用：模块级面板 + PetWindow 属性
+        _extra = []
+        for _mod_name in ("pet.tools.todo", "pet.tools.knowledge"):
+            _mod = sys.modules.get(_mod_name)
+            if _mod is not None and _mod._panel is not None:
+                _extra.append(_mod._panel)
+        try:
+            from pet.ui.settings_window import SettingsWindow
+            if SettingsWindow._instance:
+                _extra.append(SettingsWindow._instance)
+        except Exception:
+            pass
+        for _attr in ("_debug_window", "_log_window", "_chat_history_window"):
+            _w = getattr(window, _attr, None)
+            if _w is not None:
+                _extra.append(_w)
+
+        # 使用 topLevelWidgets() 遍历所有顶层窗口（最全面）
+        for _w in app.topLevelWidgets():
+            if _w is window or not _w.isVisible():
+                continue
+            try:
+                if hasattr(_w, "_force_close"):
+                    _w._force_close = True
+                _w.close()
+            except RuntimeError:
+                pass
+            except Exception as e:
+                logger.warning(f"shutdown: close {_w.objectName() or type(_w).__name__} failed: {e}")
+
+        # 关闭可能隐藏但未销毁的窗口（topLevelWidgets 可能漏掉隐藏窗口）
+        for _w in _extra:
+            try:
+                if _w.isVisible():
+                    continue  # 上面已经处理过
+                alive = True
+                try:
+                    _ = _w.winId()
+                except RuntimeError:
+                    alive = False
+                if alive:
+                    _w.deleteLater()
+            except RuntimeError:
+                pass
+            except Exception as e:
+                logger.warning(f"shutdown: deleteLater failed: {e}")
+
+    def _do_quit():
+        """退出应用：关闭所有窗口 → 停止 agent → quit。"""
         logger.info("shutting down...")
+        # ── 阶段 1：停止外部服务 ──
         if _hotkey_mgr:
             try:
                 _hotkey_mgr.stop()
@@ -228,22 +279,37 @@ def main():
             agent.behavior._save_context(record_shutdown=True)
         except Exception as e:
             logger.warning(f"shutdown: context save failed: {e}")
-        logging.getLogger().removeHandler(_log_handler)
-        try:
-            from pet.ui.settings_window import SettingsWindow
-            if SettingsWindow._instance:
-                SettingsWindow._instance.close()
-        except Exception:
-            pass
+
+        # ── 阶段 2：关闭所有子窗口（在 PetWindow 之前）──
+        _close_all_windows()
+
+        # ── 阶段 3：停止 agent、关闭主窗口、隐藏托盘 ──
         try:
             agent.stop()
+        except Exception as e:
+            logger.warning(f"shutdown: agent stop failed: {e}")
+        try:
             window.shutdown()
             window.close()
+        except Exception as e:
+            logger.warning(f"shutdown: window close failed: {e}")
+        try:
             tray.hide()
-        except RuntimeError:
-            pass
+        except Exception as e:
+            logger.warning(f"shutdown: tray hide failed: {e}")
+
+        # ── 阶段 4：触发 Qt 退出 ──
+        app.quit()
+
+    def _shutdown():
+        """aboutToQuit 回调：轻量善后。"""
+        logging.getLogger().removeHandler(_log_handler)
 
     app.aboutToQuit.connect(_shutdown)
+
+    # 将退出函数注入到需要的地方
+    window._quit_fn = _do_quit
+    tray._quit_fn = _do_quit
 
     logger.info("Entering event loop")
     sys.exit(app.exec())

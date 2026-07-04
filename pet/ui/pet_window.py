@@ -306,9 +306,9 @@ class PetWindow(TransparentWindow):
         hide_action.triggered.connect(self.hide)
         menu.addAction(hide_action)
 
-        if self._app:
+        if hasattr(self, "_quit_fn"):
             quit_action = QAction("退出")
-            quit_action.triggered.connect(self._app.quit)
+            quit_action.triggered.connect(self._quit_fn)
             menu.addAction(quit_action)
 
         menu.exec(pos)
