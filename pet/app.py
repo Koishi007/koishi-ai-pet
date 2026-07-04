@@ -109,7 +109,8 @@ def main():
     agent.set_pet_window(window)
     speech_bubble = SpeechBubble(window)
     emotion_bubble = EmotionBubble(window)
-
+    window.set_speech_bubble(speech_bubble)
+    window.set_emotion_bubble(emotion_bubble)
     chat_bubble = ChatBubble(window)
     window.set_chat_bubble(chat_bubble)
     chat_bubble.chat_submitted.connect(

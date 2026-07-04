@@ -71,6 +71,8 @@ class PetWindow(TransparentWindow):
         self._grab_local: QPoint | None = None
         self._chat_bubble = None
         self._feed_bubble = None
+        self._speech_bubble = None
+        self._emotion_bubble = None
         self._agent = None
         self._debug_window = None
         self._log_window = None
@@ -95,6 +97,14 @@ class PetWindow(TransparentWindow):
     def set_feed_bubble(self, feed_bubble):
         """注入 FeedBubble 引用。"""
         self._feed_bubble = feed_bubble
+
+    def set_speech_bubble(self, speech_bubble):
+        """注入 SpeechBubble 引用。"""
+        self._speech_bubble = speech_bubble
+
+    def set_emotion_bubble(self, emotion_bubble):
+        """注入 EmotionBubble 引用。"""
+        self._emotion_bubble = emotion_bubble
 
     def set_agent(self, agent):
         """注入 PetAgent 引用，供右键菜单使用。"""
@@ -399,3 +409,18 @@ class PetWindow(TransparentWindow):
         self.pet_anim.stop()
         self.action_queue.clear()
         self.pet_actions.gravity.enable(False)
+
+    def hide(self):
+        self.particles.hide()
+        if self._chat_bubble:
+            self._chat_bubble.hide()
+        if self._feed_bubble:
+            self._feed_bubble.hide()
+        if self._speech_bubble:
+            self._speech_bubble.hide()
+        if self._emotion_bubble:
+            self._emotion_bubble.hide()
+        super().hide()
+
+    def show(self):
+        super().show()
