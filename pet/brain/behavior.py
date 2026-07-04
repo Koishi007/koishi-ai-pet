@@ -298,6 +298,10 @@ class Behavior(BrainMixin):
                     delta_speech = ""
                     for char in delta.content:
                         if char in ("\n", "\r"):
+                            if delta_speech and on_chunk:
+                                on_chunk(delta_speech)
+                                speech_streamed = True
+                            delta_speech = ""
                             self._finish_line(buffer, actions, speech_parts, summary_holder, memory_holder, emotion_holder, mood_holder, vitals_holder)
                             buffer = ""
                             line_type = None
@@ -684,6 +688,9 @@ class Behavior(BrainMixin):
                 delta_speech = ""
                 for char in delta.content:
                     if char in ("\n", "\r"):
+                        if delta_speech and on_chunk:
+                            on_chunk(delta_speech)
+                        delta_speech = ""
                         line_buffer = ""
                         in_speech = False
                         prefix_consumed = False
