@@ -134,7 +134,10 @@ class SystemTrayManager(QObject):
         menu.addSeparator()
 
         quit_action = QAction("退出", menu)
-        quit_action.triggered.connect(self.app.quit)
+        if hasattr(self, "_quit_fn"):
+            quit_action.triggered.connect(self._quit_fn)
+        else:
+            quit_action.triggered.connect(self.app.quit)
         menu.addAction(quit_action)
 
         menu.exec(QCursor.pos())
