@@ -107,7 +107,7 @@ def main():
     window.set_app(app)
     window.set_log_relay(_log_relay)
     agent.set_pet_window(window)
-    bubble = SpeechBubble(window)
+    speech_bubble = SpeechBubble(window)
     emotion_bubble = EmotionBubble(window)
 
     chat_bubble = ChatBubble(window)
@@ -124,19 +124,29 @@ def main():
     )
 
     agent.action_requested.connect(window.queue_enqueue_action)
-    agent.emotion_requested.connect(emotion_bubble.show_emotion)
     agent.emotion_requested.connect(
-        lambda e, d: window.particles.spawn("hearts") if e == "love" else None
+        lambda e, d: emotion_bubble.show_emotion(e, d) if window.isVisible() else None
+    )
+    agent.emotion_requested.connect(
+        lambda e, d: window.particles.spawn("hearts") if window.isVisible() and e == "love" else None
     )
     agent.mood.affection_increased.connect(
-        lambda: window.particles.spawn("hearts")
+        lambda: window.particles.spawn("hearts") if window.isVisible() else None
     )
-    agent.speak_requested.connect(bubble.show_text)
-    agent.speak_stream_start.connect(bubble.start_stream)
-    agent.speak_stream_chunk.connect(bubble.append_stream)
-    agent.speak_stream_end.connect(bubble.end_stream)
+    agent.speak_requested.connect(
+        lambda text: speech_bubble.show_text(text) if window.isVisible() else None
+    )
+    agent.speak_stream_start.connect(
+        lambda: speech_bubble.start_stream() if window.isVisible() else None
+    )
+    agent.speak_stream_chunk.connect(
+        lambda chunk: speech_bubble.append_stream(chunk) if window.isVisible() else None
+    )
+    agent.speak_stream_end.connect(
+        lambda duration: speech_bubble.end_stream(duration) if window.isVisible() else None
+    )
     agent.llm_loading.connect(
-        lambda loading: window.particles.start_loading() if loading else window.particles.stop_loading()
+        lambda loading: window.particles.start_loading() if window.isVisible() and loading else window.particles.stop_loading() if not loading else None
     )
     agent.state_changed.connect(
         lambda s: chat_bubble.set_busy(s in ("autonomous", "interacting"))
@@ -267,7 +277,7 @@ def main():
                 logger.warning(f"shutdown: hotkey stop failed: {e}")
         if _voice_session:
             try:
-                _voice_session.disconnect()
+                _voice_session.deleteLater()
             except Exception as e:
                 logger.warning(f"shutdown: voice disconnect failed: {e}")
         try:

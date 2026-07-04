@@ -76,8 +76,8 @@ class ContextBuilder:
 
         # 跳跃阈值按屏幕可见高度比例计算（适配不同分辨率）
         screen_h = QApplication.primaryScreen().availableGeometry().height() if QApplication.primaryScreen() else 1080
-        _jump_ok = int(screen_h * 0.40)       # ≤40% 屏高 → 可跳
-        _jump_hard = int(screen_h * 0.75)    # ≤75% 屏高 → 勉强可跳
+        _jump_ok = int(screen_h * 0.60)       # ≤60% 屏高 → 可跳
+        _jump_hard = int(screen_h * 0.80)    # ≤80% 屏高 → 勉强可跳
 
         # 收集有效窗口并打分
         scored = []
