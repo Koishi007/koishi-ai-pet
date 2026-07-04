@@ -210,37 +210,52 @@ class BrainMixin:
             return len(self._context)
 
     def get_multi_turn_messages(self, max_entries: int = 10, skip_last: int = 0, token_budget: int = 0) -> List[dict]:
-        """构建多轮消息列表。"""
+        """构建多轮消息列表。时间顺序优先，打分仅用于淘汰决策。"""
         with self._ctx_lock:
             if not self._context:
                 return []
-            
+
             end = -skip_last if skip_last > 0 else len(self._context)
             available = self._context[:end]
             if not available:
                 return []
 
-            scored = sorted(available, key=self._score_entry, reverse=True)
-            selected: List[ContextEntry] = []
-            for entry in scored:
-                if len(selected) >= max_entries:
-                    break
-                if not self._is_duplicate(entry, selected):
-                    selected.append(entry)
-            
-            selected.sort(key=lambda e: e.timestamp)
+            # 1. 保持时间正序
+            selected = sorted(available, key=lambda e: e.timestamp)
 
-            if token_budget > 0:
-                total_tokens = 0
-                truncated = []
-                for e in selected:
-                    est = self._estimate_tokens(e.content)
-                    if total_tokens + est > token_budget:
-                        break
-                    total_tokens += est
-                    truncated.append(e)
-                selected = truncated
+            # 2. 条数淘汰：摘要/system 按分淘汰，普通对话按时间从旧到新淘汰
+            if len(selected) > max_entries:
+                need_drop = len(selected) - max_entries
+                dropped = set()
 
+                # 摘要和系统消息按分数淘汰（低分优先）
+                score_candidates = [(i, e) for i, e in enumerate(selected) if e.is_summary or e.role == "system"]
+                score_candidates.sort(key=lambda x: self._score_entry(x[1]))
+                for i, _ in score_candidates[:need_drop]:
+                    dropped.add(i)
+                    need_drop -= 1
+
+                # 还不够则淘汰最旧的普通对话，保证 user/assistant 交替不被破坏
+                if need_drop > 0:
+                    normal = [(i, e) for i, e in enumerate(selected) if i not in dropped and not e.is_summary and e.role not in ("system",)]
+                    normal.sort(key=lambda x: x[1].timestamp)
+                    for i, _ in normal[:need_drop]:
+                        dropped.add(i)
+
+                selected = [e for i, e in enumerate(selected) if i not in dropped]
+                logger.debug(f"[BrainMixin] count eviction: dropped {len(available) - len(selected)}, kept {len(selected)}")
+
+            # 3. Token 预算淘汰：从最旧开始丢弃，不破坏时间连贯性
+            before_count = len(selected)
+            if token_budget > 0 and selected:
+                total_tokens = sum(self._estimate_tokens(e.content) for e in selected)
+                while total_tokens > token_budget and len(selected) > 1:
+                    removed = selected.pop(0)
+                    total_tokens -= self._estimate_tokens(removed.content)
+                if len(selected) < before_count:
+                    logger.debug(f"[BrainMixin] token budget ({token_budget}) truncated {before_count}→{len(selected)} entries")
+
+            # 4. 构建消息：保持时间顺序，system/摘要/对话各归其位
             messages = []
             for e in selected:
                 time_str = self._format_context_time(e.timestamp)
@@ -248,26 +263,17 @@ class BrainMixin:
                 content_with_time = prefix + e.content
 
                 if e.is_summary:
-                    if messages and messages[-1]["role"] == "assistant":
-                        messages[-1]["content"] += f"\n[摘要] {content_with_time}"
+                    if e.content.startswith("[历史摘要]"):
+                        messages.append({"role": "system", "content": content_with_time})
                     else:
-                        messages.append({"role": "assistant", "content": f"[摘要] {content_with_time}"})
+                        messages.append({"role": "system", "content": f"[摘要] {content_with_time}"})
                 elif e.role == "system":
-                    if messages and messages[-1]["role"] == "user":
-                        messages[-1]["content"] += f"\n[系统] {content_with_time}"
-                    else:
-                        messages.append({"role": "user", "content": f"[系统] {content_with_time}"})
+                    messages.append({"role": "system", "content": content_with_time})
                 else:
                     messages.append({"role": e.role, "content": content_with_time})
 
-            merged = []
-            for msg in messages:
-                if merged and merged[-1]["role"] == msg["role"]:
-                    merged[-1]["content"] += "\n" + msg["content"]
-                else:
-                    merged.append(dict(msg))
+            return messages
 
-            return merged
 
     @staticmethod
     def _format_context_time(timestamp: float) -> str:
@@ -317,13 +323,6 @@ class BrainMixin:
         if not sa or not sb:
             return 0.0
         return len(sa & sb) / len(sa | sb)
-
-    def _is_duplicate(self, entry: ContextEntry, selected: List[ContextEntry]) -> bool:
-        content = entry.content
-        for s in selected:
-            if self._text_similarity(content, s.content) >= self._DEDUP_THRESHOLD:
-                return True
-        return False
 
     def _evict_context(self):
         """超过上限时淘汰。工具调用独立配额，避免挤占正常对话空间。"""

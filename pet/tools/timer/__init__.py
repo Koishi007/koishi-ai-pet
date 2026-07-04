@@ -1,9 +1,10 @@
-"""timer 工具 — 倒计时定时器，到时间宠物主动提醒。"""
+"""timer 工具 — 倒计时定时器，到时间宠物主动提醒。支持持久化重启后恢复。"""
 
 import logging
 import atexit
 
 from pet.tools.timer.core import TimerTool
+from pet.tools.timer.storage import TimerStorage
 from pet.tools.context import TOOL_CTX
 
 logger = logging.getLogger(__name__)
@@ -18,7 +19,9 @@ def _ensure() -> TimerTool | None:
     global _instance
     if _instance is None:
         try:
-            _instance = TimerTool()
+            storage = TimerStorage()
+            _instance = TimerTool(storage=storage)
+            _instance.restore_from_storage()
             atexit.register(_instance.close)
         except Exception as e:
             logger.error(f"[timer] Failed to initialize: {e}")

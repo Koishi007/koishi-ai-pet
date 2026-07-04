@@ -1,4 +1,4 @@
-"""定时器核心 — 基于 Scheduler 的倒计时提醒。"""
+"""定时器核心 — 基于 Scheduler 的倒计时提醒，重启后可恢复。"""
 
 import logging
 import threading
@@ -11,11 +11,76 @@ logger = logging.getLogger(__name__)
 
 
 class TimerTool:
-    """倒计时定时器，到时间后主动说话 + 弹通知。"""
+    """倒计时定时器，到时间后主动说话 + 弹通知。支持持久化，重启后自动恢复。"""
 
-    def __init__(self):
+    def __init__(self, storage=None):
         self._timers: dict[str, dict] = {}  # timer_id → {key, label, duration_s, fire_at}
         self._lock = threading.Lock()
+        self._storage = storage
+
+    # ── 恢复定时器 ──
+
+    def restore_from_storage(self):
+        """启动时从数据库恢复未完成的定时器，重新注册闹钟。"""
+        if not self._storage:
+            return
+
+        rows = self._storage.load_all()
+        now_s = time.time()
+
+        # 读取上次关机时间，计算离线时长
+        shutdown_time = self._storage.load_shutdown_time()
+        offline_seconds = 0.0
+        if shutdown_time:
+            from datetime import datetime
+            try:
+                offline_seconds = (datetime.now() - datetime.fromisoformat(shutdown_time)).total_seconds()
+            except Exception:
+                pass
+
+        with self._lock:
+            for row in rows:
+                fire_at = row["fire_at"]
+                # 已经过期 — 直接丢弃
+                if fire_at <= now_s:
+                    logger.info(f"[Timer] expired while offline: {row['id']} '{row['label']}'")
+                    self._storage.remove(row["id"])
+                    continue
+
+                remain = int(fire_at - now_s)
+                timer_id = row["id"]
+
+                def _on_fire(tid=timer_id):
+                    with self._lock:
+                        timer = self._timers.pop(tid, None)
+                    if timer:
+                        if self._storage:
+                            self._storage.remove(tid)
+                        label = timer["label"]
+                        msg = f"叮叮！「{label}」"
+                        TOOL_CTX.speech(msg, duration=4000)
+                        TOOL_CTX.notify("⏰ 定时器", label)
+                        logger.info(f"[Timer] fired (restored): {tid} '{label}'")
+
+                self._timers[timer_id] = {
+                    "key": row["key"], "label": row["label"],
+                    "duration_s": row["duration_s"], "fire_at": fire_at,
+                }
+
+                if offline_seconds > 0 and remain > 1:
+                    _on_fire(tid=timer_id)
+                    continue
+
+                try:
+                    TOOL_CTX.register_alarm(round(fire_at * 1000), _on_fire, key=row["key"])
+                except Exception:
+                    logger.warning(f"[Timer] restore register failed: {row['id']}")
+                    self._timers.pop(timer_id, None)
+                    self._storage.remove(row["id"])
+
+        count = sum(1 for t in self._timers.values())
+        if count > 0:
+            logger.info(f"[Timer] restored {count} timer(s) from storage")
 
     # ── 公开方法 ──
 
@@ -33,22 +98,29 @@ class TimerTool:
 
         def _on_fire():
             with self._lock:
-                self._timers.pop(timer_id, None)
-            msg = f"叮叮！「{label}」"
-            TOOL_CTX.speech(msg, duration=4000)
-            TOOL_CTX.notify("⏰ 定时器", label)
-            logger.info(f"[Timer] fired: {timer_id} '{label}'")
+                timer = self._timers.pop(timer_id, None)
+            if timer:
+                if self._storage:
+                    self._storage.remove(timer_id)
+                label_val = timer["label"]
+                msg = f"叮叮！「{label_val}」"
+                TOOL_CTX.speech(msg, duration=4000)
+                TOOL_CTX.notify("⏰ 定时器", label_val)
+                logger.info(f"[Timer] fired: {timer_id} '{label_val}'")
 
-        # 先写字典再注册 alarm：防止极短定时器在 _timers 写入前就触发回调
         with self._lock:
             self._timers[timer_id] = {
                 "key": key, "label": label, "duration_s": duration, "fire_at": fire_at,
             }
+        if self._storage:
+            self._storage.save(timer_id, key, label, duration, fire_at)
         try:
             TOOL_CTX.register_alarm(round(fire_at * 1000), _on_fire, key=key)
         except Exception:
             with self._lock:
                 self._timers.pop(timer_id, None)
+            if self._storage:
+                self._storage.remove(timer_id)
             return {"error": "定时器注册失败"}
         logger.info(f"[Timer] set: {timer_id} '{label}' {duration}s")
         return {
@@ -90,6 +162,9 @@ class TimerTool:
         if timer is None:
             return {"error": f"未找到定时器 {timer_id}"}
 
+        if self._storage:
+            self._storage.remove(timer_id)
+
         cleaned = True
         try:
             TOOL_CTX.unregister_alarm(timer["key"])
@@ -119,13 +194,18 @@ class TimerTool:
                 "summary": f"已取消 {cancelled}/{len(ids)} 个定时器"}
 
     def close(self):
+        """关闭时保存关机时间，清除所有闹钟，关闭存储连接。"""
+        if self._storage:
+            self._storage.save_shutdown_time()
         with self._lock:
             ids = list(self._timers.keys())
         for tid in ids:
             try:
-                self.cancel_timer(tid)
+                TOOL_CTX.unregister_alarm(self._timers[tid]["key"])
             except Exception as e:
-                logger.error(f"[Timer] close failed for {tid}: {e}")
+                logger.error(f"[Timer] close unregister failed for {tid}: {e}")
+        if self._storage:
+            self._storage.close()
 
     # ── 辅助 ──
 
