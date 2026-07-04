@@ -35,6 +35,8 @@ class BrainMixin:
     @property
     def _MAX_HISTORY_SUMMARIES(self) -> int:
         return max(2, int(config.CONTEXT_HISTORY_ENTRIES * 0.2))
+
+    _ROLE_WEIGHTS = {"user": 3, "system": 2, "assistant": 1}
     _DEDUP_NGRAM_SIZE = 3
     _DEDUP_THRESHOLD = 0.35
     _MAX_PENDING_QUEUE = 50  # 防止摘要队列无限增长
