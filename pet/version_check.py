@@ -39,28 +39,30 @@ def _project_root() -> str:
 
 def get_local_version() -> str:
     """获取本地版本号。"""
-    # 1) 安装元数据
-    try:
-        v = _pkg_version(_PKG_NAME)
-        if v:
-            return v
-    except PackageNotFoundError:
-        pass
-    # 2) 回退到 pyproject.toml
+    # 1) pyproject.toml（开发模式/源码运行的权威来源）
     path = os.path.join(_project_root(), "pyproject.toml")
     try:
         if tomllib:
             with open(path, "rb") as f:
                 data = tomllib.load(f)
-            return data.get("project", {}).get("version", "")
+            v = data.get("project", {}).get("version", "")
+            if v:
+                return v
         # py<3.11 无 tomllib 时简单文本解析
         with open(path, encoding="utf-8") as f:
             for line in f:
                 s = line.strip()
                 if s.startswith("version") and "=" in s and '"' in s:
                     return s.split("=", 1)[1].strip().strip('"').strip("'")
-    except Exception as e:
-        logger.warning(f"[VersionCheck] 读取本地版本失败: {e}")
+    except Exception:
+        pass
+    # 2) 安装元数据（打包分发场景）
+    try:
+        v = _pkg_version(_PKG_NAME)
+        if v:
+            return v
+    except PackageNotFoundError:
+        pass
     return ""
 
 
