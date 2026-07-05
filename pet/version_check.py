@@ -39,7 +39,6 @@ def _project_root() -> str:
 
 def get_local_version() -> str:
     """获取本地版本号。"""
-    # 1) pyproject.toml（开发模式/源码运行的权威来源）
     path = os.path.join(_project_root(), "pyproject.toml")
     try:
         if tomllib:
@@ -56,7 +55,6 @@ def get_local_version() -> str:
                     return s.split("=", 1)[1].strip().strip('"').strip("'")
     except Exception:
         pass
-    # 2) 安装元数据（打包分发场景）
     try:
         v = _pkg_version(_PKG_NAME)
         if v:
@@ -104,7 +102,7 @@ def _build_headers() -> dict:
 class UpdateChecker(QObject):
     """异步版本检查器"""
 
-    #: 发现新版本时发出 (latest_tag, local_version)
+    # 发现新版本时发出 (latest_tag, local_version)
     update_available = Signal(str, str)
 
     def check(self) -> None:
