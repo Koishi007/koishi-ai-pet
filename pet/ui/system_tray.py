@@ -12,6 +12,7 @@ from pet.ui.styles import ICON_PATH, MENU_QSS
 from pet.ui.settings_window import SettingsWindow
 
 from pet.config import config
+from pet.version_check import get_local_version
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +78,8 @@ class SystemTrayManager(QObject):
 
     def _update_tooltip(self):
         """定时更新托盘 tooltip，显示 pulse 参数 + 进程资源。"""
-        lines = ["Koishi"]
+        local_ver = get_local_version() or "?"
+        lines = [f"Koishi v{local_ver}"]
         # pulse 参数
         agent = self.pet._agent if self.pet else None
         if agent:
