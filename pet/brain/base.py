@@ -353,11 +353,14 @@ class BrainMixin:
         summaries.sort(key=self._score_entry, reverse=True)
         summaries = summaries[:self._MAX_HISTORY_SUMMARIES]
 
-        # 工具调用单独管理：只保留最近 3 条，老的直接丢弃
-        tool_calls = [e for e in ordinary if e.content.startswith("[工具调用]")]
+        # 工具调用按时间抛弃：超过半衰期（默认 30min）直接丢弃
+        _now = time.time()
+        _max_age = config.CONTEXT_HALF_LIFE_S
+        tool_calls = [
+            e for e in ordinary
+            if e.content.startswith("[工具调用]") and _now - e.timestamp < _max_age
+        ]
         normal_chats = [e for e in ordinary if not e.content.startswith("[工具调用]")]
-        tool_calls.sort(key=lambda e: e.timestamp, reverse=True)
-        tool_calls = tool_calls[:3]
 
         # 正常聊天的空间 = 总空间 - 摘要空间 - 工具调用空间
         base_limit = self._MAX_ENTRIES - len(summaries) - len(tool_calls)
