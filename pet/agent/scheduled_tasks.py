@@ -144,9 +144,9 @@ class ScheduledTasks:
     def _memory_maintenance(self):
         """定期维护记忆：L3 硬清理 + 容量控制。"""
         try:
-            self._agent.behavior._memory_store.maintenance()
+            self._agent.memory_store.maintenance()
         except Exception as e:
-            logger.debug(f"[ScheduledTasks] memory maintenance skipped: {e}")
+            logger.warning(f"[ScheduledTasks] memory maintenance failed: {e}")
 
     def _conversation_cleanup(self):
         """定期清理过期对话历史记录（保持至多 7 天）。"""
