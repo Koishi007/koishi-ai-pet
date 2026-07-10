@@ -18,7 +18,6 @@ class TimerTool:
         self._lock = threading.Lock()
         self._storage = storage
 
-    # ── 恢复定时器 ──
 
     def restore_from_storage(self):
         """启动时从数据库恢复未完成的定时器，重新注册闹钟。"""
@@ -82,7 +81,6 @@ class TimerTool:
         if count > 0:
             logger.info(f"[Timer] restored {count} timer(s) from storage")
 
-    # ── 公开方法 ──
 
     def set_timer(self, duration: int, label: str = "时间到") -> dict:
         """设定一个倒计时定时器。"""
@@ -207,7 +205,6 @@ class TimerTool:
         if self._storage:
             self._storage.close()
 
-    # ── 辅助 ──
 
     @staticmethod
     def _format_duration(seconds: int) -> str:

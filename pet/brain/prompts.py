@@ -326,7 +326,6 @@ def interact_fed_prompt(food: str) -> str:
     return template.format(food=food)
 
 
-# ── 上下文压缩摘要 ──
 
 SUMMARY_SYSTEM_PROMPT = (
     "你是一个桌面AI宠物（恋恋）的上下文摘要助手。"

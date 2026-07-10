@@ -54,7 +54,6 @@ class BrainMixin:
             self._init_db()
             self._load_context()
 
-    # ── 持久化 ──
 
     def _init_db(self):
         """初始化上下文持久化表。"""
@@ -171,7 +170,6 @@ class BrainMixin:
         remaining_hours = hours % 24
         return f"{days} 天 {remaining_hours} 小时" if remaining_hours else f"{days} 天"
 
-    # ── 上下文管理 ──
 
     def add_context(self, role: str, content: str, is_summary: bool = False):
         with self._ctx_lock:

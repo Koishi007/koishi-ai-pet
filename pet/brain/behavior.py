@@ -742,7 +742,6 @@ class Behavior(BrainMixin):
         logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] [Behavior]   raw: {content}")
         return content, tool_calls_map
 
-    # ── 待摘要队列处理 ──
 
     def _flush_pending_summaries(self):
         """将上下文淘汰产生的待摘要条目队列统一处理。

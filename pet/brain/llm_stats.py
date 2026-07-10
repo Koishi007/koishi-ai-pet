@@ -24,7 +24,6 @@ class LlmStats:
         self._total = self._load("total_calls")
         logger.info(f"[LlmStats] loaded: total_calls={self._total}")
 
-    # ── 读写 ──
 
     def increment(self):
         self._total += 1
@@ -33,7 +32,6 @@ class LlmStats:
     def total(self) -> int:
         return self._total
 
-    # ── 持久化 ──
 
     def save(self):
         with self._lock:
@@ -51,7 +49,6 @@ class LlmStats:
         self._conn.close()
         logger.info(f"[LlmStats] saved: total_calls={self._total}")
 
-    # ── 内部 ──
 
     def _load(self, key: str) -> int:
         row = self._conn.execute(

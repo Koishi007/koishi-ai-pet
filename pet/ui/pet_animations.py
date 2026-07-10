@@ -59,7 +59,6 @@ class PetAnimator(QObject):
 
         self._cache: dict[str, dict] = {}      # action → {frames, tick_plan, loop, desc, note}
 
-    # ── public API ──
 
     def play(self, action: str, duration: float | None = None) -> bool:
         """播放动作。
@@ -122,7 +121,6 @@ class PetAnimator(QObject):
     def is_playing(self) -> bool:
         return self._frame_timer.isActive()
 
-    # ── internal ──
 
     def _calc_tick_interval(self) -> int:
         return max(1, round(1000 / config.PET_FPS))

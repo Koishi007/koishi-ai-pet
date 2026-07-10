@@ -14,7 +14,7 @@ def _get_special_folder(name: str) -> str:
             buf = ctypes.create_unicode_buffer(1024)
             if ctypes.windll.shell32.SHGetFolderPathW(0, csidl, 0, 0, buf) == 0:
                 return buf.value
-    # fallback / macOS / Linux
+    # 回退 / macOS / Linux
     return os.path.expanduser(f"~/{name.capitalize()}")
 
 

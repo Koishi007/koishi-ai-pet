@@ -17,7 +17,6 @@ from pet.ui.styles import (
 )
 
 
-# ── 跨线程日志桥接 ──
 
 class _LogRelay(QObject):
     """跨线程日志桥接器"""
@@ -66,7 +65,6 @@ class _LogRelay(QObject):
             self._buffer.append(formatted)
 
 
-# ── 自定义 Handler ──
 
 class LogWindowHandler(logging.Handler):
     """自定义 logging.Handler — 仅 INFO 及以上，格式化后经由 _LogRelay 进入 GUI。"""
@@ -86,7 +84,6 @@ class LogWindowHandler(logging.Handler):
             self.handleError(record)
 
 
-# ── QSS ──
 
 _WINDOW_QSS = """
 QWidget#LogWindowRoot {
@@ -103,7 +100,6 @@ QWidget#LogHeader {
 _MAX_BLOCK_COUNT = 5000
 
 
-# ── LogWindow ──
 
 class LogWindow(QWidget):
     """INFO 日志查看窗口"""
@@ -130,7 +126,6 @@ class LogWindow(QWidget):
         except Exception:
             pass
 
-        # ── 自定义标题栏 ──
         header = QWidget()
         header.setObjectName("LogHeader")
         header.setFixedHeight(38)
@@ -160,7 +155,6 @@ class LogWindow(QWidget):
         # 关闭按钮（日志窗口关闭即隐藏）
         header_layout.addWidget(make_close_button(self, on_close=self.hide))
 
-        # ── 工具栏 ──
         toolbar = QHBoxLayout()
         toolbar.setContentsMargins(0, 0, 0, 0)
 
@@ -179,7 +173,6 @@ class LogWindow(QWidget):
         clear_btn.clicked.connect(self._clear)
         toolbar.addWidget(clear_btn)
 
-        # ── 日志正文 ──
         self._log_view = QTextEdit()
         self._log_view.setReadOnly(True)
         self._log_view.setUndoRedoEnabled(False)  # 防止 undo stack 随 trim 无限增长
@@ -190,7 +183,6 @@ class LogWindow(QWidget):
             }}
         """)
 
-        # ── 组装 ──
         root = QVBoxLayout(self)
         root.setContentsMargins(8, 4, 8, 8)
         root.setSpacing(6)
@@ -198,7 +190,6 @@ class LogWindow(QWidget):
         root.addLayout(toolbar)
         root.addWidget(self._log_view)
 
-        # ── 拖拽支持 ──
         header.mousePressEvent = self._header_press
         header.mouseMoveEvent = self._header_move
         self._drag_pos: QPoint | None = None
@@ -210,7 +201,6 @@ class LogWindow(QWidget):
         super().showEvent(event)
         ensure_taskbar_icon(self)
 
-    # ── 窗口圆角绘制 ──
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -224,7 +214,6 @@ class LogWindow(QWidget):
         painter.setPen(QPen(QColor("#000000"), 1))
         painter.drawPath(path)
 
-    # ── 标题栏拖拽 ──
 
     def _header_press(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -236,7 +225,6 @@ class LogWindow(QWidget):
             self.move(self.pos() + delta)
             self._drag_pos = event.globalPosition().toPoint()
 
-    # ── 公开 ──
 
     def _append_log(self, formatted: str):
         """由 _LogRelay 调用（主线程安全）。"""
@@ -246,7 +234,6 @@ class LogWindow(QWidget):
     def _clear(self):
         self._log_view.clear()
 
-    # ── 内部 ──
 
     def _trim_if_needed(self):
         doc = self._log_view.document()

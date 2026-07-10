@@ -96,7 +96,6 @@ def register(registry):
 
     tool = registry.register(TOOL_NAME, TOOL_DESCRIPTION)
 
-    # ── LLM 方法 ──
 
     registry.add_method(
         TOOL_NAME, "search",
@@ -122,11 +121,9 @@ def register(registry):
         },
     )
 
-    # ── 右键菜单 ──
 
     registry.add_menu_action(TOOL_NAME, "知识库管理", _show_panel)
 
-    # ── 面板注册 ──
 
     TOOL_CTX.register_panel(TOOL_NAME, _show_panel)
 

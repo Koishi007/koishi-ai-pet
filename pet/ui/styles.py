@@ -6,7 +6,6 @@ import sys
 
 from PySide6.QtWidgets import QPushButton
 
-# ── 资源路径 ──
 
 _PROJECT_ROOT = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..",
@@ -17,7 +16,6 @@ SHOW_ICON_PATH = os.path.join(_PROJECT_ROOT, "assets", "icon", "show.png")
 HIDE_ICON_PATH = os.path.join(_PROJECT_ROOT, "assets", "icon", "hide.png")
 CHECKMARK_SVG = os.path.join(_PROJECT_ROOT, "assets", "icon", "checkmark.svg").replace("\\", "/")
 
-# ── 色彩 ──
 
 _COLOR_BG         = "#f5f2ed"
 _COLOR_SURFACE     = "#ffffff"
@@ -33,18 +31,15 @@ _COLOR_DANGER      = "#e81123"
 _COLOR_WARNING     = "#e67e22"
 _COLOR_HOVER_BG   = "#e0e0e0"
 
-# ── 聊天气泡色 ──
 
 _COLOR_BUBBLE_USER        = "#d4edda"
 _COLOR_BUBBLE_USER_BORDER = "#b8d4be"
 _COLOR_BUBBLE_PET         = "#d6eaf8"
 _COLOR_BUBBLE_PET_BORDER  = "#b8cfe0"
 
-# ── 通用圆角半径 ──
 
 WINDOW_RADIUS = 10
 
-# ── 窗口 / 根 ──
 
 WINDOW_QSS = """
 QWidget#FlatWindow {
@@ -52,7 +47,6 @@ QWidget#FlatWindow {
 }
 """
 
-# ── 面板 ──
 
 PANEL_QSS = """
 QGroupBox {
@@ -73,7 +67,6 @@ QGroupBox::title {
 }
 """
 
-# ── 按钮通用 ──
 
 _BTN_BASE = """
     background: """ + _COLOR_SURFACE + """;
@@ -127,7 +120,6 @@ QPushButton:disabled {
 }
 """
 
-# ── 按钮 - 危险/关闭 ──
 
 BUTTON_DANGER_QSS = """
 QPushButton {
@@ -144,7 +136,6 @@ QPushButton:hover {
 }
 """
 
-# ── 输入框 ──
 
 INPUT_QSS = """
 QLineEdit, QSpinBox {
@@ -166,7 +157,6 @@ QLineEdit:disabled, QSpinBox:disabled {
 }
 """
 
-# ── 高亮输入框（重要字段用）──
 
 INPUT_HIGHLIGHT_QSS = """
 QLineEdit {
@@ -188,7 +178,6 @@ QLineEdit:disabled {
 }
 """
 
-# ── 下拉框 ──
 
 COMBOBOX_QSS = """
 QComboBox {
@@ -230,7 +219,6 @@ QComboBox QAbstractItemView {
 }
 """
 
-# ── 多行文本框 ──
 
 TEXTEDIT_QSS = """
 QTextEdit, QPlainTextEdit {
@@ -253,7 +241,6 @@ QTextEdit:disabled, QPlainTextEdit:disabled {
 }
 """
 
-# ── 滚动条 ──
 
 SCROLLBAR_QSS = """
 QScrollBar:vertical {
@@ -302,7 +289,6 @@ QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
 }
 """
 
-# ── 列表 ──
 
 LIST_QSS = """
 QListWidget {
@@ -323,7 +309,6 @@ QListWidget::item:selected {
 }
 """
 
-# ── 菜单 ──
 
 MENU_QSS = """
 QMenu {
@@ -352,7 +337,6 @@ QMenu::separator {
 }
 """
 
-# ── 复选框 ──
 
 CHECKBOX_QSS = """
 QCheckBox {
@@ -386,7 +370,6 @@ QCheckBox::indicator:hover {
 }
 """
 
-# ── 标签 ──
 
 LABEL_SECONDARY_QSS = """
     font-size: 12px;
@@ -399,11 +382,9 @@ LABEL_MONO_QSS = """
     color: """ + _COLOR_TEXT + """;
 """
 
-# ── 窗口标题栏标签 ──
 
 TITLE_LABEL_QSS = f"font-size:13px; color:{_COLOR_TEXT_TITLE}; font-weight:bold; background:transparent;"
 
-# ── 水平分隔线 ──
 
 SEPARATOR_QSS = """
 QFrame[frameShape="4"] {
@@ -411,7 +392,7 @@ QFrame[frameShape="4"] {
 }
 """
 
-# ── Tab Bar（设置界面用）
+# 标签栏（设置界面用）
 
 TAB_BAR_QSS = """
 QTabWidget::pane {
@@ -440,7 +421,6 @@ QTabBar::tab:hover:!selected {
 }
 """
 
-# ── 标题栏按钮 ──
 
 def make_title_button(text: str, hover_color: str,
                       base_color: str = _COLOR_TEXT_MUTED,

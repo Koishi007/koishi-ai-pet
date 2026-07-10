@@ -178,7 +178,7 @@ class PetActions(QObject):
         return "drive"
 
     def _stop_drive(self, switch_idle: bool = True):
-        """停止移动，恢复 gravity timer，emit walk_finished。"""
+        """停止移动，恢复 gravity timer，发送 walk_finished 信号。"""
         if not self._walking:
             return
         self._walking = False

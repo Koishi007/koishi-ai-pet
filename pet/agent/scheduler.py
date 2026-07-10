@@ -302,7 +302,7 @@ class Scheduler(QObject):
         self._cleanup_alarm_timer(key)
 
     def _cleanup_alarm_timer(self, key: str):
-        """Stop and delete a single alarm timer by key (idempotent)."""
+        """按 key 停止并删除单个闹钟定时器（幂等）。"""
         t = self._alarm_timers.pop(key, None)
         if t is not None:
             t.stop()

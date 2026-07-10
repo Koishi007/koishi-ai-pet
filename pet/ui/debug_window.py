@@ -102,7 +102,6 @@ class DebugWindow(QWidget):
         root.setContentsMargins(6, 2, 6, 4)
         root.setSpacing(2)
 
-        # ── 自定义标题栏 ──
         header = QWidget()
         header.setObjectName("LogHeader")
         header.setFixedHeight(38)
@@ -127,12 +126,10 @@ class DebugWindow(QWidget):
 
         root.addWidget(header)
 
-        # ── 拖拽 ──
         header.mousePressEvent = self._header_press
         header.mouseMoveEvent = self._header_move
         self._drag_pos: QPoint | None = None
 
-        # ── 正文区域 ──
         body = QHBoxLayout()
         left = QVBoxLayout()
         right = QVBoxLayout()
@@ -140,7 +137,6 @@ class DebugWindow(QWidget):
         body.addLayout(right, 1)
         root.addLayout(body, 1)
 
-        # ── 左栏 ──
 
         anim_group = QGroupBox("动画测试")
         anim_layout = QVBoxLayout(anim_group)
@@ -274,7 +270,6 @@ class DebugWindow(QWidget):
 
         left.addWidget(anim_group)
 
-        # ── 队列调试 ──
 
         queue_group = QGroupBox("行为队列")
         qlayout = QVBoxLayout(queue_group)
@@ -298,7 +293,6 @@ class DebugWindow(QWidget):
 
         left.addWidget(queue_group)
 
-        # ── 右栏 ──
 
         bubble_group = QGroupBox("气泡测试")
         bubble_layout = QVBoxLayout(bubble_group)
@@ -315,7 +309,6 @@ class DebugWindow(QWidget):
 
         right.addWidget(bubble_group)
 
-        # ── 表情调试 ──
 
         emotion_group = QGroupBox("表情测试")
         emotion_layout = QVBoxLayout(emotion_group)
@@ -342,7 +335,6 @@ class DebugWindow(QWidget):
 
         right.addWidget(emotion_group)
 
-        # ── 生理/心理参数 ──
 
         param_group = QGroupBox("生理/心理参数")
         param_layout = QHBoxLayout(param_group)
@@ -366,7 +358,6 @@ class DebugWindow(QWidget):
 
         right.addWidget(param_group)
 
-        # ── 粒子调试 ──
 
         particle_group = QGroupBox("粒子特效测试")
         particle_layout = QVBoxLayout(particle_group)
@@ -380,7 +371,6 @@ class DebugWindow(QWidget):
 
         right.addWidget(particle_group)
 
-        # ── 上下文存储 ──
 
         ctx_group = QGroupBox("上下文存储 (BrainMixin)")
         ctx_layout = QVBoxLayout(ctx_group)
@@ -406,7 +396,6 @@ class DebugWindow(QWidget):
 
         right.addWidget(ctx_group)
 
-        # ── LLM 调用统计 ──
         stats_layout = QHBoxLayout()
         self.label_llm_calls = QLabel("累计调用: —")
         self.label_llm_calls.setFont(QFont("Consolas", 9))
@@ -507,7 +496,6 @@ class DebugWindow(QWidget):
         mode = "循环" if loop else "单次"
         self.label_pet_status.setText(f"播放中 · {fps} FPS · {mode}")
 
-    # ── 队列调试 ──
 
     def _queue_start(self):
         self.pet.queue_start()
@@ -556,7 +544,6 @@ class DebugWindow(QWidget):
         emotion = self.emotion_input.text().strip() or "happy"
         self._test_emotion(emotion)
 
-    # ── 生理/心理参数 ──
 
     def _set_all_params(self):
         vitals = self.agent.vitals if self.agent else None
@@ -610,7 +597,6 @@ class DebugWindow(QWidget):
             self.agent.behavior.clear_context()
             self._refresh_context()
 
-    # ── 圆角背景 ──
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -622,7 +608,6 @@ class DebugWindow(QWidget):
         painter.setPen(QPen(QColor("#000000"), 1))
         painter.drawPath(path)
 
-    # ── 标题栏拖拽 ──
 
     def _header_press(self, event):
         if event.button() == Qt.MouseButton.LeftButton:

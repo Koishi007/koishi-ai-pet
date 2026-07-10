@@ -42,7 +42,6 @@ class TodoPanel(QWidget):
         self._setup_ui()
         self._refresh()
 
-    # ── UI ──
 
     def _setup_ui(self):
         root = QVBoxLayout(self)
@@ -64,7 +63,6 @@ class TodoPanel(QWidget):
         layout.setSpacing(8)
         root.addWidget(bg)
 
-        # ── 标题栏（可拖动区域） ──
         title_bar = QWidget()
         title_bar.setFixedHeight(40)
         title_row = QHBoxLayout(title_bar)
@@ -97,14 +95,12 @@ class TodoPanel(QWidget):
 
         layout.addWidget(title_bar)
 
-        # ── 任务列表 ──
         self._list = QListWidget()
         self._list.setStyleSheet(LIST_QSS)
         self._list.setFrameShape(QListWidget.Shape.NoFrame)
         self._list.setAlternatingRowColors(True)
         layout.addWidget(self._list, stretch=1)
 
-        # ── 操作按钮 ──
         btn_row = QHBoxLayout()
         btn_row.setSpacing(6)
 
@@ -139,12 +135,10 @@ class TodoPanel(QWidget):
         btn_row.addStretch()
         layout.addLayout(btn_row)
 
-        # ── 底部统计 ──
         self._stats = QLabel("")
         self._stats.setStyleSheet("font-size: 11px; color: #666;")
         layout.addWidget(self._stats)
 
-    # ── 窗口拖动 ──
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -162,7 +156,6 @@ class TodoPanel(QWidget):
         self._drag_pos = None
         event.accept()
 
-    # ── 数据 ──
 
     def _refresh(self):
         items = self._storage.list()

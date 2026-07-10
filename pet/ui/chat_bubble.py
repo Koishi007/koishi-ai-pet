@@ -225,7 +225,6 @@ class ChatBubble(QWidget):
         if self._voice_auto_collapse.isActive():
             self._voice_auto_collapse.start(5000)
 
-    # ── 显示/隐藏 ──
 
     def show_bubble(self):
         self.cancel_hide()
@@ -298,7 +297,6 @@ class ChatBubble(QWidget):
         if not self.underMouse() and not self._expanded:
             self.hide_bubble()
 
-    # ── 跟随桌宠 ──
 
     def _follow_pet(self):
         if self._pet_window and self.isVisible():
@@ -323,7 +321,6 @@ class ChatBubble(QWidget):
             self._layout.setDirection(QBoxLayout.Direction.LeftToRight)
         self.move(x, y)
 
-    # ── 鼠标事件 ──
 
     def enterEvent(self, event):
         self.cancel_hide()

@@ -6,12 +6,11 @@ from pet.settings import load_user_settings, save_user_setting, delete_user_sett
 logger = logging.getLogger(__name__)
 
 
-# key: dict with keys: type, default, category, needs_restart, hidden, description[, enum, placeholder, minimum, maximum]
+# key: 包含 type, default, category, needs_restart, hidden, description[, enum, placeholder, minimum, maximum] 键的字典
 # type: "str", "int", "float", "bool", "str_list"
 # category: "connection", "behavior", "appearance", "personality"
-# hidden: False = shown in UI, True = advanced (settings.json only)
+# hidden: False = 在 UI 中显示, True = 高级设置（仅 settings.json）
 _KEY_META = {
-    # ── Connection ──
     "BRAIN":                     {"type": "str",      "default": "local",       "category": "connection", "needs_restart": False, "hidden": False, "description": "LLM 调用模式",                           "enum": ["local", "api", "ollama"]},
     "LLM_MODEL":                 {"type": "str",      "default": "",            "category": "connection", "needs_restart": False, "hidden": False, "description": "LLM 模型名称",                           "placeholder": "mimo-v2.5"},
     "LLM_KEY":                   {"type": "str",      "default": "",            "category": "connection", "needs_restart": False, "hidden": False, "description": "API Key"},
@@ -30,7 +29,6 @@ _KEY_META = {
     "LLM_TOOL_PARALLEL":          {"type": "bool",     "default": True,          "category": "connection", "needs_restart": False, "hidden": True,  "description": "LLM 工具并行调用"},
     "LLM_TOOL_MAX_ROUNDS":        {"type": "int",      "default": 5,             "category": "connection", "needs_restart": False, "hidden": False, "description": "工具调用最大轮次"},
     "LLM_ACTION_MIN_DIVISOR":     {"type": "int",      "default": 25,            "category": "connection", "needs_restart": False, "hidden": True,  "description": "动作权重最小除数"},
-    # ── Behavior ──
     "SCHEDULER_FAST_MS":         {"type": "int",      "default": 1000,          "category": "behavior",   "needs_restart": False, "hidden": True,  "description": "fast_tick 间隔(毫秒)"},
     "SCHEDULER_MID_MS":          {"type": "int",      "default": 300000,        "category": "behavior",   "needs_restart": False, "hidden": False, "description": "自主决策间隔(毫秒)"},
     "SCHEDULER_SLOW_MS":         {"type": "int",      "default": 300000,        "category": "behavior",   "needs_restart": False, "hidden": True,  "description": "slow_tick 间隔(毫秒)"},
@@ -44,7 +42,6 @@ _KEY_META = {
     "INTERACT_RELEASED_PROMPT":     {"type": "str",   "default": "",            "category": "behavior",   "needs_restart": False, "hidden": False, "description": "被放下时的自定义回复 prompt"},
     "INTERACT_WINDOW_DISAPPEARED_PROMPT": {"type": "str", "default": "",        "category": "behavior",   "needs_restart": False, "hidden": False, "description": "窗口消失时的自定义回复 prompt"},
     "INTERACT_FED_PROMPT":          {"type": "str",   "default": "",            "category": "behavior",   "needs_restart": False, "hidden": True,  "description": "喂食交互的自定义 prompt 模板"},
-    # ── Appearance ──
     "VISION_ENABLED":            {"type": "bool",     "default": False,         "category": "appearance", "needs_restart": False, "hidden": False, "description": "启用视觉理解(需多模态模型支持)"},
     "VISION_SCALE":              {"type": "float",    "default": 0.7,          "category": "appearance", "needs_restart": False, "hidden": False, "description": "截图缩放比例(0.1~1.0)"},
     "TOOLS_ENABLED":            {"type": "str_list", "default": ["*"],         "category": "appearance", "needs_restart": True,  "hidden": False, "description": "启用的工具插件(逗号分隔, *=全部)"},
@@ -57,15 +54,12 @@ _KEY_META = {
     "AUTO_START_ON_BOOT":        {"type": "bool",     "default": False,         "category": "appearance", "needs_restart": False, "hidden": False, "description": "开机自动启动"},
     "HIDE_CONSOLE":              {"type": "bool",     "default": True,          "category": "appearance", "needs_restart": True,  "hidden": True,  "description": "启动时隐藏控制台窗口"},
     "LOG_LEVEL":                 {"type": "str",      "default": "DEBUG",       "category": "appearance", "needs_restart": False, "hidden": True,  "description": "日志级别(DEBUG/INFO/WARNING/ERROR)"},
-    # ── Personality ──
     "PET_PERSONALITY":           {"type": "str",      "default": "",            "category": "personality", "needs_restart": False, "hidden": False, "description": "宠物人格描述(注入 system prompt)"},
-    # ── Voice Input ──
     "XF_APPID":                  {"type": "str",      "default": "",            "category": "connection", "needs_restart": False, "hidden": False, "description": "讯飞语音听写 APPID"},
     "XF_API_KEY":                {"type": "str",      "default": "",            "category": "connection", "needs_restart": False, "hidden": False, "description": "讯飞语音听写 API Key"},
     "XF_API_SECRET":             {"type": "str",      "default": "",            "category": "connection", "needs_restart": False, "hidden": False, "description": "讯飞语音听写 API Secret"},
     "VOICE_INPUT_ENABLED":       {"type": "bool",     "default": False,         "category": "behavior",   "needs_restart": False, "hidden": False, "description": "启用语音输入"},
     "VOICE_HOTKEY":              {"type": "str",      "default": "F8",          "category": "behavior",   "needs_restart": False, "hidden": False, "description": "语音输入全局热键"},
-    # ── Memory ──
     "EMBEDDING_ENABLED":         {"type": "bool",     "default": False,          "category": "memory",   "needs_restart": True,  "hidden": False, "description": "启用向量记忆(需配置下方 API)"},
     "EMBEDDING_URL":             {"type": "str",      "default": "",             "category": "memory",   "needs_restart": True,  "hidden": False, "description": "Embedding API 地址(需兼容 OpenAI 格式)", "placeholder": "https://open.bigmodel.cn/api/paas/v4"},
     "EMBEDDING_KEY":             {"type": "str",      "default": "",             "category": "memory",   "needs_restart": True,  "hidden": False, "description": "Embedding API Key"},
@@ -90,7 +84,7 @@ _KEY_META = {
 
 
 def _convert(raw, type_name):
-    """Convert string/raw value by type."""
+    """按类型转换字符串/原始值。"""
     if type_name == "bool":
         if isinstance(raw, bool):
             return raw
@@ -114,7 +108,7 @@ class Config:
         self._generate_schema()
 
     def _load_defaults(self):
-        """Load all default values from _KEY_META into instance attributes."""
+        """从 _KEY_META 加载所有默认值到实例属性。"""
         for key, meta in _KEY_META.items():
             default = meta["default"]
             if meta["type"] == "str_list" and isinstance(default, list):
@@ -124,7 +118,7 @@ class Config:
     _TYPE_MAP = {"str": "string", "int": "integer", "float": "number", "bool": "boolean", "str_list": "array"}
 
     def _generate_schema(self):
-        """Write settings-schema.json to the same directory as settings.json."""
+        """将 settings-schema.json 写入与 settings.json 相同的目录。"""
         schema = {
             "$schema": "https://json-schema.org/draft-07/schema#",
             "title": "KoishiAI Settings",
@@ -156,7 +150,7 @@ class Config:
             logger.warning(f"[Config] Failed to write schema: {e}")
 
     def _load_user_settings(self):
-        """Read overrides from settings.json and update instance attributes."""
+        """从 settings.json 读取覆盖值并更新实例属性。"""
         data = load_user_settings()
         self._user_settings = data
         for key, value in data.items():
@@ -166,14 +160,14 @@ class Config:
             try:
                 setattr(self, key, _convert(value, type_name))
             except (ValueError, TypeError):
-                pass  # skip entries that fail type conversion
+                pass  # 跳过类型转换失败的条目
 
     def save(self, key: str, value) -> tuple[bool, list[str]]:
-        """Save a single setting to settings.json and update the instance attribute.
+        """将单个设置保存到 settings.json 并更新实例属性。
 
-        Returns (applied, needs_restart):
-          applied: whether the current instance was updated
-          needs_restart: list of keys that require restart (may include this key)
+        返回 (applied, needs_restart):
+          applied: 当前实例是否已更新
+          needs_restart: 需要重启才能生效的键列表（可能包含当前键）
         """
         type_name = _KEY_META[key]["type"]
         converted = _convert(value, type_name)
@@ -183,7 +177,7 @@ class Config:
         return (True, needs_restart)
 
     def reset(self, keys: list[str]):
-        """Remove specified keys from settings.json and fall back to _KEY_META defaults."""
+        """从 settings.json 移除指定键并回退到 _KEY_META 的默认值。"""
         delete_user_settings(keys)
         self._load_defaults()
         self._load_user_settings()

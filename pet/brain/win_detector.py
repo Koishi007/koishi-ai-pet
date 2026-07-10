@@ -100,7 +100,6 @@ def is_window_occluded(hwnd: int, threshold: float = OCCLUSION_THRESHOLD, skip_h
     if target_area <= 0:
         return True
 
-    # ── Phase 1: 快速上界估算 + 收集上方窗口矩形 ──
     covered_upper_bound = 0
     above_rects: list[tuple[int, int, int, int]] = []
     current = user32.GetWindow(hwnd, GW_HWNDPREV)
@@ -126,7 +125,6 @@ def is_window_occluded(hwnd: int, threshold: float = OCCLUSION_THRESHOLD, skip_h
     if covered_upper_bound <= target_area * threshold:
         return False
 
-    # ── Phase 2: 精确计算并集面积 ──
     exact_covered = _compute_occluded_area(rect, above_rects)
     return exact_covered / target_area > threshold
 

@@ -80,7 +80,7 @@ class PetWindow(TransparentWindow):
         self._log_relay = None
         self._app = None
         self._event_reaction = False
-        self._drag_history: list = []  # [(QPoint, timestamp_ms), ...]
+        self._drag_history: list = []  # [(坐标点, 时间戳毫秒), ...]
         self._press_pos: QPoint | None = None  # 按下时的全局坐标
         self._click_timer = QTimer(self)       # 单击检测定时器
         self._click_timer.setSingleShot(True)
@@ -286,14 +286,14 @@ class PetWindow(TransparentWindow):
                 if not tool:
                     continue
 
-                # 工具开关（checkable）
+                # 工具开关（可勾选）
                 tool_action = tool_menu.addAction(name)
                 tool_action.setCheckable(True)
                 tool_action.setChecked(TOOL_REGISTRY.is_enabled(name))
                 tool_action.toggled.connect(
                     lambda checked, n=name: TOOL_REGISTRY.set_enabled(n, checked))
 
-                # 如果有子菜单项，挂到 action 上
+                # 如果有子菜单项，附加到动作上
                 if tool.menu_items:
                     sub_menu = _FlatMenuBase(name)
                     for item in tool.menu_items:
@@ -388,7 +388,6 @@ class PetWindow(TransparentWindow):
         if self._agent and self._event_reaction:
             self._agent.trigger("interact", hint=hint)
 
-    # ── 队列控制接口 ──
 
     def queue_enqueue(self, method: str, *args, **kwargs):
         self.action_queue.enqueue(method, *args, **kwargs)

@@ -1,4 +1,4 @@
-"""OpenAI-compatible embedding client."""
+"""OpenAI 兼容的嵌入向量客户端。"""
 
 import logging
 import numpy as np
@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 
 class EmbeddingError(Exception):
-    """Raised when embedding API call fails."""
+    """嵌入 API 调用失败时抛出。"""
 
 
 class EmbeddingClient:
@@ -19,7 +19,7 @@ class EmbeddingClient:
         self._dim = dim
 
     def embed(self, texts: str | list[str]) -> list[list[float]]:
-        """Return L2-normalized embeddings for the given text(s)."""
+        """返回给定文本的 L2 归一化嵌入向量。"""
         if isinstance(texts, str):
             texts = [texts]
 
@@ -37,11 +37,11 @@ class EmbeddingClient:
                 f"Expected {len(texts)} embeddings, got {len(resp.data)}"
             )
 
-        # Sort by index to match input order
+        # 按索引排序以匹配输入顺序
         sorted_data = sorted(resp.data, key=lambda d: d.index)
         vectors = [np.array(d.embedding, dtype=np.float32) for d in sorted_data]
 
-        # L2 normalize for stable cosine distance in sqlite-vec
+        # L2 归一化，为 sqlite-vec 提供稳定的余弦距离
         norms = [np.linalg.norm(v) for v in vectors]
         vectors = [
             (v / norm).tolist() if norm > 0 else v.tolist()

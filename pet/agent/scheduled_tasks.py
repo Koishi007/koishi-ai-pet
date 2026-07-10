@@ -20,7 +20,6 @@ class ScheduledTasks:
         self._heart_tick: int = 0
         self._note_tick: int = 0
 
-    # ── 注册 ──
 
     def register_all(self, scheduler):
         scheduler.register("mid", self._autonomous)
@@ -36,7 +35,6 @@ class ScheduledTasks:
         scheduler.register("slow", self._memory_maintenance)
         scheduler.register("slow", self._conversation_cleanup)
 
-    # ── mid ──
 
     def _autonomous(self):
         ts = datetime.now().strftime("%H:%M:%S")
@@ -51,7 +49,6 @@ class ScheduledTasks:
             pet_y = win.y()
         self._agent._async_brain(self._agent._autonomous_pipeline, pet_x, pet_y)
 
-    # ── fast ──
 
     def _recover(self):
         """sit/sleep 期间每秒 +0.1 精力，sleep 每 3s 触发 zzz 粒子。"""
@@ -129,7 +126,6 @@ class ScheduledTasks:
         else:
             self._note_tick = 0
 
-    # ── slow ──
 
     def _wakeup(self):
         """定期唤醒：sleeping → idle，并 stretch。"""

@@ -32,7 +32,7 @@ _H = 720
 
 class _LLMTestWorker(QObject):
     """子线程执行 LLM 连通性测试。"""
-    finished = Signal(bool, str, float)  # success, content_or_error, elapsed
+    finished = Signal(bool, str, float)  # 成功, 内容或错误, 耗时
 
     def __init__(self, url: str, key: str, model: str, timeout: float = 30.0):
         super().__init__()
@@ -69,7 +69,7 @@ class _LLMTestWorker(QObject):
 
 class _EmbeddingTestWorker(QObject):
     """子线程执行 Embedding 连通性测试。"""
-    finished = Signal(bool, str, float)  # success, content_or_error, elapsed
+    finished = Signal(bool, str, float)  # 成功, 内容或错误, 耗时
 
     def __init__(self, url, key, model, dim):
         super().__init__()
@@ -96,7 +96,7 @@ class _EmbeddingTestWorker(QObject):
 
 class _ModelsFetchWorker(QObject):
     """子线程获取模型列表。"""
-    finished = Signal(bool, list, str)  # success, model_ids, error_msg
+    finished = Signal(bool, list, str)  # 成功, 模型ID列表, 错误信息
 
     def __init__(self, client):
         super().__init__()
@@ -114,7 +114,7 @@ class _ModelsFetchWorker(QObject):
 
 class _VoiceTestWorker(QObject):
     """子线程执行讯飞语音连接测试。"""
-    finished = Signal(bool)  # success
+    finished = Signal(bool)  # 成功
 
     def __init__(self, app_id, api_key, api_secret):
         super().__init__()
@@ -261,7 +261,6 @@ class SettingsWindow(QWidget):
         super().showEvent(event)
         ensure_taskbar_icon(self)
 
-    # ── UI 构建 ──
 
     def _setup_ui(self):
         root = QVBoxLayout(self)
@@ -295,7 +294,7 @@ class SettingsWindow(QWidget):
         title_bar.mousePressEvent = self._header_press
         title_bar.mouseMoveEvent = self._header_move
 
-        # Tab Widget
+        # 标签页控件
         self._tabs = QTabWidget()
         self._tabs.setDocumentMode(True)
         self._tabs.tabBar().setExpanding(True)
@@ -318,7 +317,6 @@ class SettingsWindow(QWidget):
         bottom.addWidget(btn_save)
         root.addLayout(bottom)
 
-    # ── 无图标消息框 ──
 
     def _msg(self, title: str, text: str, *,
              icon: QMessageBox.Icon = QMessageBox.Icon.NoIcon,
@@ -331,7 +329,6 @@ class SettingsWindow(QWidget):
         box.addButton("确定", QMessageBox.ButtonRole.AcceptRole)
         box.exec()
 
-    # ── 值控件映射 ──
     # _fields: dict[str, QWidget] — key 是 Config 属性名
 
     def _line(self, key: str, placeholder: str = "",
@@ -366,7 +363,7 @@ class SettingsWindow(QWidget):
                 edit.setEchoMode(
                     QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password
                 )
-            )[:0]  # suppress True from lambda
+            )[:0]  # 抑制 lambda 返回 True
         )
         row.addWidget(toggle)
         return row
@@ -383,7 +380,6 @@ class SettingsWindow(QWidget):
         self._fields[key] = te
         return te
 
-    # ── Tab 1: 连接 ──
 
     def _build_connection_tab(self) -> QWidget:
         w = QWidget()
@@ -418,7 +414,7 @@ class SettingsWindow(QWidget):
         self._ollama_url_edit = self._line("OLLAMA_BASE_URL", "http://localhost:11434/v1")
         form.addRow("Ollama 地址:", self._ollama_url_edit)
 
-        # API Key + toggle
+        # API 密钥 + 切换按钮
         key_row = self._secret_row("LLM_KEY", "sk-...")
         self._llm_key_edit = self._fields["LLM_KEY"]
         self._key_toggle = key_row.itemAt(1).widget()  # 暴露给页面跳转用
@@ -527,14 +523,13 @@ class SettingsWindow(QWidget):
                 w.setEnabled(False)
             for w in ollama_fields + common_fields:
                 w.setEnabled(True)
-        else:  # api
+        else:  # api模式
             for w in ollama_fields:
                 w.setEnabled(False)
             for w in llm_fields + common_fields:
                 w.setEnabled(True)
         return w
 
-    # ── Tab 2: 行为 ──
 
     def _build_behavior_tab(self) -> QWidget:
         w = QWidget()
@@ -583,7 +578,6 @@ class SettingsWindow(QWidget):
         sanity_form.addRow("", hint)
         inner.addWidget(sanity_group)
 
-        # ── 记忆设置 ──
         memory_group = QGroupBox("记忆")
         memory_layout = QVBoxLayout(memory_group)
         memory_layout.setSpacing(8)
@@ -597,7 +591,7 @@ class SettingsWindow(QWidget):
 
         memory_form.addRow("API 地址:", self._line("EMBEDDING_URL", "https://open.bigmodel.cn/api/paas/v4"))
 
-        # API Key + toggle
+        # API 密钥 + 切换按钮
         mem_key_row = self._secret_row("EMBEDDING_KEY")
         memory_form.addRow("API Key:", mem_key_row)
         mem_model_row = QHBoxLayout()
@@ -653,7 +647,6 @@ class SettingsWindow(QWidget):
         layout.addWidget(scroll)
         return w
 
-    # ── Tab 3: 外观 ──
 
     def _build_appearance_tab(self) -> QWidget:
         w = QWidget()
@@ -690,7 +683,6 @@ class SettingsWindow(QWidget):
 
         inner.addLayout(form)
 
-        # ── 语音输入 ──
         voice_group = QGroupBox("语音输入")
         voice_layout = QVBoxLayout(voice_group)
         voice_layout.setSpacing(8)
@@ -754,7 +746,6 @@ class SettingsWindow(QWidget):
         layout.addWidget(scroll)
         return w
 
-    # ── Tab 4: 提示词 ──
 
     def _build_personality_tab(self) -> QWidget:
         w = QWidget()
@@ -795,7 +786,6 @@ class SettingsWindow(QWidget):
 
         return w
 
-    # ── 加载 / 保存 ──
 
     def _load_values(self):
         """从 config 读取当前值填充各控件。"""
@@ -943,7 +933,6 @@ class SettingsWindow(QWidget):
             self._msg("设置已保存", "所有设置已即时生效。")
         self._take_snapshot()
 
-    # ── LLM 连通性测试 ──
 
     def _test_llm(self):
         """在子线程测试 LLM 连通性，使用界面当前填入的值。"""
@@ -1002,7 +991,6 @@ class SettingsWindow(QWidget):
             self._label_test.setText("❌ 失败")
         self._btn_test.setEnabled(True)
 
-    # ── Embedding 连通性测试 ──
 
     def _test_embedding(self):
         """在子线程测试 Embedding 连通性。"""
@@ -1051,7 +1039,6 @@ class SettingsWindow(QWidget):
             self._label_mem_test.setText("❌ 失败")
         self._btn_mem_test.setEnabled(True)
 
-    # ── 热键录制 ──
 
     def _on_capture_hotkey(self):
         """点击"录制"按钮后，捕捉用户按下的下一个按键。再次点击取消录制。"""
@@ -1094,7 +1081,6 @@ class SettingsWindow(QWidget):
         self._hotkey_display.setText(key_name)
         self._capture_btn.setText("录制")
 
-    # ── 语音连接测试 ──
 
     def _on_test_voice_connection(self):
         """从表单读取讯飞凭证并测试连接。"""
@@ -1134,7 +1120,6 @@ class SettingsWindow(QWidget):
             self._voice_label_test.setText("❌ 失败")
         self._voice_btn_test.setEnabled(True)
 
-    # ── 获取模型列表 ──
 
     def _fetch_models(self):
         if self._models_thread and self._models_thread.isRunning():
@@ -1198,7 +1183,6 @@ class SettingsWindow(QWidget):
         )
         menu.exec(pos)
 
-    # ── 向量模型获取 ──
 
     def _fetch_embedding_models(self):
         if self._mem_models_thread and self._mem_models_thread.isRunning():
@@ -1249,7 +1233,6 @@ class SettingsWindow(QWidget):
         )
         menu.exec(pos)
 
-    # ── 窗口事件 ──
 
     def closeEvent(self, event):
         """关闭前检查未保存修改，清理后台线程。"""
@@ -1289,7 +1272,6 @@ class SettingsWindow(QWidget):
             self._embedding_thread.wait(2000)
         super().closeEvent(event)
 
-    # ── 窗口拖拽 ──
 
     def _header_press(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -1301,7 +1283,6 @@ class SettingsWindow(QWidget):
             self.move(self.pos() + delta)
             self._drag_pos = event.globalPosition().toPoint()
 
-    # ── 圆角背景 ──
 
     def paintEvent(self, event):
         painter = QPainter(self)

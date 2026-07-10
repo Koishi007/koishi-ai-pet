@@ -12,7 +12,6 @@ from pet.config import config
 
 logger = logging.getLogger(__name__)
 
-# ── 粒子数据 ──
 
 class Particle:
     __slots__ = (
@@ -40,7 +39,7 @@ class Particle:
         self.age = 0
         self.size = size
         self.color = color
-        self.shape = shape  # circle / star / text
+        self.shape = shape  # 圆形 / 星形 / 文字
         self.text = text    # shape=="text" 时使用
 
     @property
@@ -62,7 +61,6 @@ class Particle:
         self.y += self.vy * dt_ms / 30
 
 
-# ── 特效预设 ──
 
 def _spawn_dust(cx: float, cy: float) -> list[Particle]:
     """落地灰尘：从脚底向上喷射后受重力下落。"""
@@ -181,7 +179,6 @@ def _spawn_dark_hearts(cx: float, cy: float) -> list[Particle]:
         ))
     return particles
 
-# ── 粒子绘制 ──
 
 def _draw_star(painter: QPainter, x: float, y: float, size: float, color: QColor, alpha: float):
     """绘制五角星。"""
@@ -241,7 +238,6 @@ def _draw_particle(painter: QPainter, p: Particle):
         painter.drawText(int(p.x), int(p.y), p.text)
 
 
-# ── ParticleWidget ──
 
 # 粒子窗口比宠物大一圈，留出特效扩散空间
 _MARGIN = 100
@@ -287,7 +283,6 @@ class ParticleWidget(QWidget):
             self._reposition()
         return super().eventFilter(obj, event)
 
-    # ── 默认播放位置（相对于宠物区域的偏移像素，0=宠物顶部） ──
 
     _DEFAULT_Y = {
         "dust":   -1,         # 特殊: 脚底
@@ -300,7 +295,6 @@ class ParticleWidget(QWidget):
 
     def spawn(self, effect: str, cx: float | None = None, cy: float | None = None):
         """触发粒子特效"""
-        # ── effect 校验 ──
         spawner = {
             "dust": _spawn_dust,
             "stars": _spawn_stars,
@@ -313,7 +307,6 @@ class ParticleWidget(QWidget):
             logger.warning(f"Unknown particle effect: {effect!r}, expected one of dust/stars/zzz/notes/hearts")
             return
 
-        # ── cx/cy 校验 ──
         if cx is not None:
             if not isinstance(cx, (int, float)):
                 logger.warning(f"spawn({effect!r}): cx must be number, got {type(cx).__name__}")
@@ -334,7 +327,6 @@ class ParticleWidget(QWidget):
             logger.warning(f"spawn({effect!r}): cx/cy is NaN")
             return
 
-        # ── 位置默认值 ──
         if cx is None:
             cx = self.width() // 2
 
@@ -353,7 +345,6 @@ class ParticleWidget(QWidget):
         self.effect_triggered.emit(effect)
         logger.debug(f"particle: {effect} ({len(new)} particles)")
 
-    # ── 加载中粒子（LLM 等待） ──
 
     _LOADING_OFFSET_Y = 15  # 头顶上方 15px
     _LOADING_DOT_COUNT = 4
@@ -410,7 +401,6 @@ class ParticleWidget(QWidget):
                 self._LOADING_DOT_RADIUS,
             )
 
-    # ── 内部 ──
 
     def _ensure_visible(self):
         if not self.isVisible():

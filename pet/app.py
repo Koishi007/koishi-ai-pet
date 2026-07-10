@@ -156,7 +156,6 @@ def main():
         lambda s: feed_bubble.set_busy(s in ("autonomous", "interacting"))
     )
 
-    # ── 语音输入 ──
     _voice_session = None
     _hotkey_mgr = None
 
@@ -201,7 +200,6 @@ def main():
 
     tray.set_agent(agent)
 
-    # ── 启动时版本检查（异步，延迟 5s 避免与启动流程抢占）──
     _updater = UpdateChecker()
 
     def _on_update_available(latest_tag: str, local_ver: str):
@@ -270,7 +268,6 @@ def main():
     def _do_quit():
         """退出应用：关闭所有窗口 → 停止 agent → quit。"""
         logger.info("shutting down...")
-        # ── 阶段 1：停止外部服务 ──
         if _hotkey_mgr:
             try:
                 _hotkey_mgr.stop()
@@ -291,10 +288,8 @@ def main():
         except Exception as e:
             logger.warning(f"shutdown: context save failed: {e}")
 
-        # ── 阶段 2：关闭所有子窗口（在 PetWindow 之前）──
         _close_all_windows()
 
-        # ── 阶段 3：停止 agent、关闭主窗口、隐藏托盘 ──
         try:
             agent.stop()
         except Exception as e:
@@ -309,7 +304,6 @@ def main():
         except Exception as e:
             logger.warning(f"shutdown: tray hide failed: {e}")
 
-        # ── 阶段 4：触发 Qt 退出 ──
         app.quit()
 
     def _shutdown():

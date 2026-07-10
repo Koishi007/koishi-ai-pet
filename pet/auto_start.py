@@ -19,7 +19,6 @@ _MAC_LABEL = "ai.koishi.deskpet"
 _LINUX_FILE = "deskpet.desktop"
 
 
-# ── 命令构建 ──
 
 def _python_exe() -> str:
     """当前 Python 解释器路径（frozen 模式下为打包后的可执行文件）。"""
@@ -30,7 +29,6 @@ def _is_frozen() -> bool:
     return getattr(sys, "frozen", False)
 
 
-# ── Windows ──
 
 _REG_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
@@ -71,7 +69,6 @@ def _set_auto_start_windows(enabled: bool):
         logger.exception(f"[AutoStart] Windows failed: {e}")
 
 
-# ── macOS ──
 
 def _mac_plist_path() -> str:
     return os.path.expanduser(f"~/Library/LaunchAgents/{_MAC_LABEL}.plist")
@@ -123,7 +120,6 @@ def _set_auto_start_macos(enabled: bool):
         logger.exception(f"[AutoStart] macOS failed: {e}")
 
 
-# ── Linux ──
 
 def _linux_desktop_path() -> str:
     return os.path.expanduser(f"~/.config/autostart/{_LINUX_FILE}")
@@ -164,7 +160,6 @@ def _set_auto_start_linux(enabled: bool):
         logger.exception(f"[AutoStart] Linux failed: {e}")
 
 
-# ── 统一入口 ──
 
 def set_auto_start(enabled: bool):
     """启用或禁用开机自启（自动适配 Windows / macOS / Linux）。"""

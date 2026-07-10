@@ -41,7 +41,6 @@ class TimerStorage:
             """)
             self._conn.commit()
 
-    # ── 写操作 ──
 
     def save(self, timer_id: str, key: str, label: str, duration_s: int, fire_at: float):
         now = datetime.now().isoformat()
@@ -71,7 +70,6 @@ class TimerStorage:
             )
             self._conn.commit()
 
-    # ── 读操作 ──
 
     def load_all(self) -> list[dict]:
         with self._lock:

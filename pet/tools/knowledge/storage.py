@@ -163,7 +163,6 @@ class KnowledgeStorage:
         logger.info("[Knowledge] vector mode enabled")
         return True
 
-    # ── 写入 ──
 
     def add_document(self, title: str, content: str, tags: str = "",
                      source: str = "manual") -> dict:
@@ -180,7 +179,7 @@ class KnowledgeStorage:
         if not chunks:
             chunks = [content[:cfg["chunk_size"]]]
 
-        # Phase 1: 写入文档和分块（锁内，纯 DB 操作）
+        # 阶段 1：写入文档和分块（锁内，纯 DB 操作）
         with self._lock:
             cur = self._conn.execute(
                 "INSERT INTO knowledge_docs (title, content, tags, source, created_at, updated_at) "
@@ -199,7 +198,7 @@ class KnowledgeStorage:
                 chunk_ids.append(cur2.lastrowid)
             self._conn.commit()
 
-        # Phase 2: 生成向量并写入（锁外执行网络 I/O，再锁内写入）
+        # 阶段 2：生成向量并写入（锁外执行网络 I/O，再锁内写入）
         if self._vec_available and self._embedder and chunk_ids:
             try:
                 vectors = self._embedder.embed(chunks)
@@ -244,7 +243,6 @@ class KnowledgeStorage:
             logger.info(f"[Knowledge] document deleted: id={doc_id}")
         return deleted
 
-    # ── 检索 ──
 
     def search(self, query: str, limit: int = 3) -> list[dict]:
         """语义检索：query -> embedding -> 向量匹配 -> 返回相关 chunk + 文档元信息。
@@ -318,7 +316,6 @@ class KnowledgeStorage:
             ).fetchall()
         return [dict(r) for r in rows]
 
-    # ── 列表 ──
 
     def list_documents(self, page: int = 1, page_size: int = 20) -> dict:
         """分页列出知识文档（含分块数）。"""

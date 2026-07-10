@@ -25,28 +25,21 @@ except ImportError:
     logger.info("jieba 未安装，关键词提取将使用正则降级方案")
 
 STOP_WORDS = {
-    # ── 助词 ──
     "的", "地", "得", "了", "着", "过", "吗", "呢", "吧", "啊", "呀", "哦", "哇", "嘛", "呗", "么",
-    # ── 代词 ──
     "我", "你", "他", "她", "它", "我们", "你们", "他们", "她们", "它们",
     "这", "那", "这个", "那个", "这些", "那些", "这里", "那里", "这样", "那样",
     "自己", "别人", "大家", "俺", "咱", "谁", "什么", "怎么", "怎样", "为什么", "哪", "哪里",
-    # ── 介词 / 连词 ──
     "在", "和", "与", "及", "或", "把", "被", "让", "给", "对", "从", "向", "往", "于",
     "以", "为", "由", "跟", "同", "至于", "关于", "除了",
     "因为", "所以", "如果", "虽然", "但是", "而且", "并且", "还是", "或者", "然后", "接着", "由于", "即使", "只要", "只有",
-    # ── 副词 ──
     "很", "非常", "太", "更", "最", "也", "还", "就", "都", "已经", "正在", "将要", "马上", "立刻",
     "不", "没", "没有", "不是", "不要", "不能", "别", "勿", "未", "莫",
     "会", "能", "可以", "应该", "可能", "必须", "需要", "或许", "也许",
     "又", "再", "只", "只是", "只有", "仅仅", "甚至", "其实", "确实", "真的", "当然",
     "一定", "肯定", "大概", "也许", "经常", "偶尔", "一直", "总是", "从不", "永远",
     "比如", "例如", "其实", "不过", "此外", "另外",
-    # ── 高频无意义动词 ──
     "是", "有", "说", "做", "看", "想", "觉得", "知道", "感觉", "认为", "需要", "要", "去", "来", "到", "上", "下", "进", "出",
-    # ── 量词 / 数量词 ──
     "个", "些", "种", "类", "一", "二", "三", "几", "多", "少",
-    # ── 时间泛指 ──
     "现在", "以前", "以后", "之前", "之后", "今天", "明天", "昨天", "刚才", "马上", "未来",
 }
 
@@ -98,10 +91,9 @@ def _escape_like(s: str) -> str:
     return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
-# ── Abstract base with shared logic ──
 
 class _MemoryRetriever(ABC):
-    """Abstract base for memory retrieval strategies with shared logic."""
+    """记忆检索策略的抽象基类，包含共享逻辑。"""
 
     # 记忆被召回后多长时间内禁止被 LLM 再次保存
     # 以下值从 config 动态读取，通过 property 暴露
@@ -109,7 +101,6 @@ class _MemoryRetriever(ABC):
     _BLOCKED_TTL = 120  # 被拦截的记忆内容保留时间（秒）
     _DUPLICATE_THRESHOLD = 0.85  # 近似重复阈值，高于此值才触发冷却拦截
 
-    # ── 动态生命体征：级别流动 ──
     # L2 降级：effective_importance 低于此阈值的 L2 → L3
     _L2_DEMOTE_THRESHOLD = 2.2
     # L3 升级：在 _L3_PROMOTE_WINDOW 内 access_count 达到 _L3_PROMOTE_HITS → 升 L2
@@ -144,7 +135,6 @@ class _MemoryRetriever(ABC):
         self._deduplicator = LightweightDeduplicator(sim_threshold=dedup_threshold)
         logger.info(f"[{self.__class__.__name__}] 初始化完成，轻量去重阈值: {dedup_threshold}")
 
-    # ── Abstract methods (subclass-specific) ──
 
     @abstractmethod
     def save(self, category: str, content: str, keywords: list[str], importance: int, level: str = "L2"): ...
@@ -155,7 +145,6 @@ class _MemoryRetriever(ABC):
     @abstractmethod
     def query_by_text(self, text: str, limit: int = 3) -> list[dict]: ...
 
-    # ── 记忆分级与衰减 ──
 
     _LEVEL_ORDER = {"L1": 0, "L2": 1, "L3": 2}
     _HALF_LIFE = {
@@ -221,7 +210,6 @@ class _MemoryRetriever(ABC):
         """合并时取较高 level（L1 > L2 > L3）。"""
         return min(existing_level, new_level, key=lambda l: _MemoryRetriever._LEVEL_ORDER.get(l, 1))
 
-    # ── Shared concrete methods ──
 
     def _is_in_cooldown(self, memory_id: int, content: str = "") -> bool:
         """检查记忆是否在召回冷却期内。content 用于记录被拦截的内容。
@@ -294,7 +282,7 @@ class _MemoryRetriever(ABC):
         return merged_content, merged_keywords, merged_importance, merged_level, content_changed
 
     def save_from_line(self, line: str):
-        """Parse and save a memory from LLM output line."""
+        """解析 LLM 输出行并保存记忆。"""
         line = line.strip()
         cat_match = re.match(r"\[(\w+)\][:：]?\s*(.+)", line)
         if not cat_match:
@@ -752,7 +740,6 @@ class _MemoryRetriever(ABC):
             self._conn.close()
 
 
-# ── Keyword retriever (original logic) ──
 
 class KeywordRetriever(_MemoryRetriever):
 
@@ -793,7 +780,6 @@ class KeywordRetriever(_MemoryRetriever):
         return self._keyword_query(text, limit)
 
 
-# ── Vector retriever (sqlite-vec) ──
 
 class VectorRetriever(_MemoryRetriever):
 
@@ -876,7 +862,7 @@ class VectorRetriever(_MemoryRetriever):
         self._conn.execute("UPDATE memories SET has_embedding=1 WHERE id=?", (memory_id,))
 
     def save(self, category: str, content: str, keywords: list[str], importance: int = 3, level: str = "L2"):
-        # Phase 1: 关键词优先去重
+        # 阶段 1：关键词优先去重
         with self._lock:
             existing, similarity = self._keyword_find_similar(content, keywords)
             if existing:
@@ -913,7 +899,7 @@ class VectorRetriever(_MemoryRetriever):
                         )
                 return
 
-        # Phase 2: 关键词未命中 → 生成 embedding 做向量语义去重
+        # 阶段 2：关键词未命中 → 生成 embedding 做向量语义去重
         vector = self._generate_embedding(content)
 
         with self._lock:
@@ -1006,7 +992,7 @@ class VectorRetriever(_MemoryRetriever):
             if not vec_rows:
                 return []
 
-            # distance → similarity (0~1)
+            # distance → similarity（0~1）
             id_to_sim = {r[0]: 1.0 - min(r[1], 1.0) for r in vec_rows}
             memory_ids = list(id_to_sim.keys())
 
@@ -1043,7 +1029,6 @@ class VectorRetriever(_MemoryRetriever):
             return self._keyword_query(text, limit)
 
 
-# ── MemoryStore wrapper ──
 
 class MemoryStore:
 
@@ -1098,7 +1083,7 @@ class MemoryStore:
             self._conn.commit()
 
     def _try_load_vec_extension(self) -> bool:
-        """Try to load sqlite-vec extension. Return True if available."""
+        """尝试加载 sqlite-vec 扩展。可用时返回 True。"""
         try:
             import sqlite_vec
             self._conn.enable_load_extension(True)

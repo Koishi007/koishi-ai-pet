@@ -184,7 +184,6 @@ class ChatHistoryWindow(QWidget):
         except Exception:
             pass
 
-        # ── 自定义标题栏 ──
         header = QWidget()
         header.setObjectName("ChatHistoryHeader")
         header.setFixedHeight(38)
@@ -214,7 +213,6 @@ class ChatHistoryWindow(QWidget):
         # 关闭按钮
         header_layout.addWidget(make_close_button(self, on_close=self.hide))
 
-        # ── 主体：左侧日期列表 + 右侧对话内容 ──
         body = QHBoxLayout()
         body.setContentsMargins(0, 0, 0, 0)
         body.setSpacing(8)
@@ -247,7 +245,6 @@ class ChatHistoryWindow(QWidget):
         self._content_view.setItemDelegate(self._bubble_delegate)
         body.addWidget(self._content_view)
 
-        # ── 底部工具栏 ──
         toolbar = QHBoxLayout()
         toolbar.setContentsMargins(0, 0, 0, 0)
 
@@ -257,7 +254,6 @@ class ChatHistoryWindow(QWidget):
         refresh_btn.clicked.connect(self._refresh)
         toolbar.addWidget(refresh_btn)
 
-        # ── 组装 ──
         root = QVBoxLayout(self)
         root.setContentsMargins(8, 4, 8, 8)
         root.setSpacing(6)
@@ -265,12 +261,10 @@ class ChatHistoryWindow(QWidget):
         root.addLayout(body)
         root.addLayout(toolbar)
 
-        # ── 拖拽支持 ──
         header.mousePressEvent = self._header_press
         header.mouseMoveEvent = self._header_move
         self._drag_pos: QPoint | None = None
 
-        # ── 自动刷新定时器（3s） ──
         self._auto_refresh = QTimer(self)
         self._auto_refresh.setInterval(3000)
         self._auto_refresh.timeout.connect(self._auto_refresh_tick)
@@ -291,7 +285,6 @@ class ChatHistoryWindow(QWidget):
         self._content_view.doItemsLayout()
         self._content_view.viewport().update()
 
-    # ── 窗口圆角绘制 ──
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -303,7 +296,6 @@ class ChatHistoryWindow(QWidget):
         painter.setPen(QPen(QColor("#000000"), 1))
         painter.drawPath(path)
 
-    # ── 标题栏拖拽 ──
 
     def _header_press(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -315,7 +307,6 @@ class ChatHistoryWindow(QWidget):
             self.move(self.pos() + delta)
             self._drag_pos = event.globalPosition().toPoint()
 
-    # ── 日期列表逻辑 ──
 
     def _refresh_dates(self):
         """刷新左侧日期列表。"""
@@ -344,7 +335,6 @@ class ChatHistoryWindow(QWidget):
             # 切换日期时，直接滚到底部
             self._refresh_content(date_str, preserve_scroll=False)
 
-    # ── 对话内容渲染 ──
 
     def _refresh_content(self, date_str: str, preserve_scroll: bool = False):
         """构建气泡项并添加到 QListWidget。"""
@@ -386,7 +376,6 @@ class ChatHistoryWindow(QWidget):
             # 否则（在底部、新切换日期或初次打开），滚动到底部
             self._content_view.scrollToBottom()
 
-    # ── 刷新 ──
 
     def _refresh(self):
         """刷新按钮：重新加载日期列表和当前日期内容（保持滚动位置）。"""
@@ -398,7 +387,6 @@ class ChatHistoryWindow(QWidget):
         if item:
             self._refresh_content(item.data(Qt.ItemDataRole.UserRole), preserve_scroll=True)
 
-    # ── 关闭即隐藏 ──
 
     def closeEvent(self, event):
         if event.spontaneous():

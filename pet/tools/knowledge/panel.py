@@ -39,7 +39,6 @@ class KnowledgePanel(QWidget):
         self._setup_ui()
         self._refresh()
 
-    # ── UI 构建 ──
 
     def _setup_ui(self):
         root = QVBoxLayout(self)
@@ -60,7 +59,6 @@ class KnowledgePanel(QWidget):
         layout.setSpacing(8)
         root.addWidget(bg)
 
-        # ── 标题栏 ──
         title_bar = QWidget()
         title_bar.setFixedHeight(40)
         title_row = QHBoxLayout(title_bar)
@@ -84,7 +82,6 @@ class KnowledgePanel(QWidget):
         title_row.addWidget(btn_close)
         layout.addWidget(title_bar)
 
-        # ── 搜索栏 ──
         search_row = QHBoxLayout()
         self._search_input = QLineEdit()
         self._search_input.setPlaceholderText("输入关键词搜索知识库...")
@@ -111,7 +108,6 @@ class KnowledgePanel(QWidget):
         search_row.addWidget(btn_search)
         layout.addLayout(search_row)
 
-        # ── 文档列表 ──
         self._list = QListWidget()
         self._list.setStyleSheet("""
             QListWidget {
@@ -123,13 +119,11 @@ class KnowledgePanel(QWidget):
         """)
         layout.addWidget(self._list, stretch=1)
 
-        # ── 搜索结果标签（默认隐藏）──
         self._result_label = QLabel("")
         self._result_label.setStyleSheet("font-size: 11px; color: #666;")
         self._result_label.setVisible(False)
         layout.addWidget(self._result_label)
 
-        # ── 返回列表按钮（搜索结果模式下可见）──
         self._btn_back = QPushButton("📋 返回列表")
         self._btn_back.setStyleSheet("""
             QPushButton {
@@ -144,7 +138,6 @@ class KnowledgePanel(QWidget):
         self._btn_back.setVisible(False)
         layout.addWidget(self._btn_back)
 
-        # ── 操作按钮 ──
         btn_row = QHBoxLayout()
         btn_row.setSpacing(6)
 
@@ -171,7 +164,6 @@ class KnowledgePanel(QWidget):
 
         btn_row.addStretch()
 
-        # ── 分页 ──
         self._btn_prev = QPushButton("◀ 上一页")
         self._btn_prev.setStyleSheet("""
             QPushButton { background: #fff; border: 1px solid #ddd;
@@ -189,12 +181,10 @@ class KnowledgePanel(QWidget):
 
         layout.addLayout(btn_row)
 
-        # ── 底部统计 ──
         self._stats = QLabel("")
         self._stats.setStyleSheet("font-size: 11px; color: #666;")
         layout.addWidget(self._stats)
 
-    # ── 窗口拖动 ──
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -212,7 +202,6 @@ class KnowledgePanel(QWidget):
         self._drag_pos = None
         event.accept()
 
-    # ── 数据刷新 ──
 
     def _refresh(self):
         data = self._storage.list_documents(page=self._page, page_size=20)
@@ -234,7 +223,6 @@ class KnowledgePanel(QWidget):
         self._result_label.setVisible(False)
         self._btn_back.setVisible(False)
 
-    # ── 操作 ──
 
     def _on_add(self):
         """弹出添加对话框 — 标题 + 正文 + 标签。"""

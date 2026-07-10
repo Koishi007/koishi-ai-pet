@@ -144,7 +144,6 @@ class ContextBuilder:
 
         return "\n".join(lines)
 
-    # ── 多轮消息构建 ──
 
     def _build_multi_turn_autonomous(self, system: str, window_context: str,
                                      vision: bool, base64_img: str | None) -> list[dict]:

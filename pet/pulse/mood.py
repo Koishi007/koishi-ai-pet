@@ -1,4 +1,4 @@
-"""Mood — 心理数值引擎：好感度、愉悦度、理智值"""
+"""情绪 — 心理数值引擎：好感度、愉悦度、理智值"""
 
 import logging
 import sqlite3
@@ -25,7 +25,6 @@ class MoodThresholds:
     sanity_mad: float = 10.0
 
 
-# ── Mood ──────────────────────────────────────────────
 
 class Mood(QObject):
     """心理数值系统"""

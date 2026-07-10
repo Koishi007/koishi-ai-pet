@@ -1,4 +1,4 @@
-"""Vitals — 生理数值引擎：饱食度、精力"""
+"""体征 — 生理数值引擎：饱食度、精力"""
 
 import logging
 import random
@@ -46,7 +46,6 @@ def _sample_decay() -> float:
     return random.choices(_DECAY_VALUES, weights=_DECAY_WEIGHTS, k=1)[0]
 
 
-# ── Vitals ────────────────────────────────────────────────
 
 class Vitals(QObject):
     """生理数值系统，由 Scheduler.slow_tick 驱动衰减，外部通过 modify 方法增减参数"""

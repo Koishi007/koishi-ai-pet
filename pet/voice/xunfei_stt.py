@@ -51,7 +51,6 @@ class XunfeiSTT(QObject):
         self._first_frame_sent = False
         self._send_lock = threading.Lock()
 
-    # ── 连接管理 ──
 
     def connect_ws(self):
         """建立 WebSocket 连接。"""
@@ -143,7 +142,6 @@ class XunfeiSTT(QObject):
     def _on_error(self, ws, error):
         logger.error(f"[XunfeiSTT] error: {error}")
 
-    # ── 识别会话 ──
 
     def start_recording(self):
         """开始一轮识别：连接（按需）+ 发送第一帧。"""
@@ -237,7 +235,6 @@ class XunfeiSTT(QObject):
         except Exception as e:
             logger.error(f"[XunfeiSTT] parse error: {e}")
 
-    # ── 辅助 ──
 
     def _build_url(self) -> str:
         base = "wss://ws-api.xfyun.cn/v2/iat"

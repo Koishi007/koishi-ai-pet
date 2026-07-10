@@ -170,7 +170,6 @@ class FeedBubble(QWidget):
             self._collapse()
             self.hide_bubble()
 
-    # ── 显示/隐藏 ──
 
     def show_bubble(self):
         self.cancel_hide()
@@ -243,7 +242,6 @@ class FeedBubble(QWidget):
         if not self.underMouse() and not self._expanded:
             self.hide_bubble()
 
-    # ── 跟随桌宠 ──
 
     def _follow_pet(self):
         if self._pet_window and self.isVisible():
@@ -268,7 +266,6 @@ class FeedBubble(QWidget):
             self._layout.setDirection(QBoxLayout.Direction.LeftToRight)
         self.move(x, y)
 
-    # ── 鼠标事件 ──
 
     def enterEvent(self, event):
         self.cancel_hide()
