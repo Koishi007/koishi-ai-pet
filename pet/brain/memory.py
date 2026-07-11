@@ -844,7 +844,15 @@ class VectorRetriever(_MemoryRetriever):
     def _generate_embedding(self, content: str):
         """在锁外生成 embedding（网络 I/O），返回 vector 或 None。"""
         try:
+            import time
+            t0 = time.monotonic()
             vectors = self._embedder.embed(content)
+            elapsed = time.monotonic() - t0
+            logger.debug(
+                f"[VectorRetriever] embedding API 调用成功: "
+                f"内容长度={len(content)} 维数={len(vectors[0])} "
+                f"耗时={elapsed:.2f}s"
+            )
             return vectors[0]
         except Exception as e:
             logger.warning(f"[VectorRetriever] embedding 生成失败: {e}")
@@ -1158,7 +1166,6 @@ class MemoryStore:
                 if count > self._retriever.MAX_MEMORIES:
                     self._retriever.enforce_capacity()
 
-    # ── 管理接口（供 UI 层调用）──
 
     def list_memories(
         self, level: str = "", importance: int = 0, search: str = "",
@@ -1252,11 +1259,16 @@ class MemoryStore:
                     self._retriever._conn.execute(
                         "UPDATE memories SET has_embedding=0 WHERE id=?", (memory_id,)
                     )
+            self._retriever._conn.commit()
+            # commit 成功后才记日志，确保没有虚报
+            if content_changed and isinstance(self._retriever, VectorRetriever):
+                if vector is not None:
+                    logger.info(f"[MemoryStore] 向量索引已重建: memory#{memory_id}")
+                else:
                     logger.warning(
                         f"[MemoryStore] embedding 生成失败，memory#{memory_id} "
                         f"has_embedding 已重置，降级为关键词检索"
                     )
-            self._retriever._conn.commit()
 
     def delete_memories(self, ids: list[int]):
         """批量删除记忆，同步清理向量索引。"""

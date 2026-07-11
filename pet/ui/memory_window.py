@@ -247,7 +247,7 @@ class MemoryWindow(QWidget):
         self._table.setMinimumHeight(200)
         self._table.setColumnCount(6)
         self._table.setHorizontalHeaderLabels([
-            "", "内容", "级别", "重要性", "创建时间", "次数"
+            "", "内容", "级别", "重要性", "创建时间", "访问次数"
         ])
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
