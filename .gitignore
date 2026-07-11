@@ -198,6 +198,7 @@ config.json
 *.db-shm
 
 CLAUDE.md
+AGENTS.md
 /.claude
 
 /.vscode
