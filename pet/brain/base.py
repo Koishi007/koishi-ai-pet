@@ -41,6 +41,7 @@ class BrainMixin:
     _DEDUP_THRESHOLD = 0.35
     _MAX_PENDING_QUEUE = 50  # 防止摘要队列无限增长
     _MAX_DEDUP_COMPARE = 3   # 摘要去重时比较最近的条目数
+    _EVICT_BATCH_SIZE = 6    # 每次淘汰时触发摘要的软上限
 
     def __init__(self, db_path: Optional[str] = None):
         self._context: List[ContextEntry] = []
@@ -362,24 +363,17 @@ class BrainMixin:
 
         # 正常聊天的空间 = 总空间 - 摘要空间 - 工具调用空间
         base_limit = self._MAX_ENTRIES - len(summaries) - len(tool_calls)
-        soft_limit = base_limit + 3
+        soft_limit = base_limit + self._EVICT_BATCH_SIZE
         if len(normal_chats) > soft_limit:
             normal_chats.sort(key=lambda e: e.timestamp, reverse=True)
             evicted = normal_chats[base_limit:]
             if evicted:
-                candidates = [e for e in evicted]
-                candidates.sort(key=self._score_entry, reverse=True)
+                self._pending_summary_queue.extend(f"[{e.role}] {e.content}" for e in evicted)
+                if len(self._pending_summary_queue) > self._MAX_PENDING_QUEUE:
+                    self._pending_summary_queue = self._pending_summary_queue[-self._MAX_PENDING_QUEUE:]
+                logger.info(f"[BrainMixin] evicted {len(evicted)}, queued for summarization")
 
-                queue_size = min(10, max(3, len(evicted) // 2))
-                queued = candidates[:queue_size]
-
-                if queued:
-                    self._pending_summary_queue.extend(f"[{e.role}] {e.content}" for e in queued)
-                    if len(self._pending_summary_queue) > self._MAX_PENDING_QUEUE:
-                        self._pending_summary_queue = self._pending_summary_queue[-self._MAX_PENDING_QUEUE:]
-                    logger.info(f"[BrainMixin] evicted {len(evicted)}, queued {len(queued)} for summarization")
-
-                normal_chats = normal_chats[:base_limit]
+            normal_chats = normal_chats[:base_limit]
 
         self._context = sorted(summaries + tool_calls + normal_chats, key=lambda e: e.timestamp)
 
