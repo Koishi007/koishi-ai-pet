@@ -230,7 +230,7 @@ def main():
                 _extra.append(SettingsWindow._instance)
         except Exception:
             pass
-        for _attr in ("_debug_window", "_log_window", "_chat_history_window"):
+        for _attr in ("_debug_window", "_log_window", "_chat_history_window", "_memory_window"):
             _w = getattr(window, _attr, None)
             if _w is not None:
                 _extra.append(_w)

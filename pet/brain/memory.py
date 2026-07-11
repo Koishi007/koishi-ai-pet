@@ -1158,5 +1158,124 @@ class MemoryStore:
                 if count > self._retriever.MAX_MEMORIES:
                     self._retriever.enforce_capacity()
 
+    # ── 管理接口（供 UI 层调用）──
+
+    def list_memories(
+        self, level: str = "", importance: int = 0, search: str = "",
+        page: int = 0, page_size: int = 50,
+    ) -> tuple[list[dict], int]:
+        """分页查询记忆，返回 (rows, total)。"""
+        with self._retriever._lock:
+            conn = self._retriever._conn
+            where = "WHERE 1=1"
+            params = []
+
+            if level:
+                where += " AND level = ?"
+                params.append(level)
+            if importance > 0:
+                where += " AND importance = ?"
+                params.append(importance)
+            if search:
+                where += " AND (content LIKE ? OR keywords LIKE ?)"
+                like_val = f"%{search}%"
+                params.extend([like_val, like_val])
+
+            total = conn.execute(
+                f"SELECT COUNT(*) FROM memories {where}", params
+            ).fetchall()[0][0]
+
+            offset = page * page_size
+            rows = conn.execute(
+                "SELECT id, category, content, keywords, importance, level, "
+                "created_at, last_accessed_at, access_count "
+                f"FROM memories {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                params + [page_size, offset],
+            ).fetchall()
+
+            return [dict(r) for r in rows], total
+
+    def update_memory(
+        self, memory_id: int, *, level: str | None = None, importance: int | None = None,
+        keywords: str | None = None, content: str | None = None,
+    ):
+        """更新记忆的级别/重要性/关键词/内容。
+
+        None 表示不更新该字段；空字符串表示清空该字段。
+        """
+        parts = []
+        params = []
+        if level is not None:
+            parts.append("level = ?")
+            params.append(level)
+        if importance is not None:
+            parts.append("importance = ?")
+            params.append(importance)
+        if keywords is not None:
+            parts.append("keywords = ?")
+            params.append(keywords)
+        if content is not None:
+            parts.append("content = ?")
+            params.append(content)
+        if not parts:
+            return
+        parts.append("last_accessed_at = ?")
+        params.append(datetime.now().isoformat())
+        params.append(memory_id)
+
+        # 先判断正文是否真的变了，避免 metadata-only 编辑触发 embedding
+        content_changed = False
+        vector = None
+        if content is not None and isinstance(self._retriever, VectorRetriever):
+            with self._retriever._lock:
+                old_row = self._retriever._conn.execute(
+                    "SELECT content FROM memories WHERE id=?", (memory_id,)
+                ).fetchone()
+            if old_row and old_row["content"] != content:
+                content_changed = True
+                # embedding 网络 I/O 在锁外执行，不阻塞后台检索
+                vector = self._retriever._generate_embedding(content)
+
+        with self._retriever._lock:
+            self._retriever._conn.execute(
+                f"UPDATE memories SET {', '.join(parts)} WHERE id = ?",
+                params,
+            )
+            if content_changed and isinstance(self._retriever, VectorRetriever):
+                if vector is not None:
+                    self._retriever._upsert_vector(memory_id, vector)
+                else:
+                    # embedding 生成失败，降级为关键词检索
+                    self._retriever._conn.execute(
+                        "DELETE FROM memories_vec WHERE memory_id=?", (memory_id,)
+                    )
+                    self._retriever._conn.execute(
+                        "UPDATE memories SET has_embedding=0 WHERE id=?", (memory_id,)
+                    )
+                    logger.warning(
+                        f"[MemoryStore] embedding 生成失败，memory#{memory_id} "
+                        f"has_embedding 已重置，降级为关键词检索"
+                    )
+            self._retriever._conn.commit()
+
+    def delete_memories(self, ids: list[int]):
+        """批量删除记忆，同步清理向量索引。"""
+        if not ids:
+            return
+        placeholders = ",".join(["?"] * len(ids))
+        with self._retriever._lock:
+            self._retriever._conn.execute(
+                f"DELETE FROM memories WHERE id IN ({placeholders})", ids
+            )
+            if isinstance(self._retriever, VectorRetriever):
+                self._retriever._conn.execute(
+                    f"DELETE FROM memories_vec WHERE memory_id IN ({placeholders})", ids
+                )
+            self._retriever._conn.commit()
+
+    def get_effective_importance(self, row: dict) -> float:
+        """查询一条记忆的有效重要性。"""
+        return self._retriever._effective_importance(row)
+
     def close(self):
         self._retriever.close()

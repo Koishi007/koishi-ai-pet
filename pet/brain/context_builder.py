@@ -1,5 +1,6 @@
 """LLM 请求上下文的构建"""
 
+import re
 from datetime import datetime
 from typing import Optional
 
@@ -31,7 +32,9 @@ class ContextBuilder:
         base64_img = self._prepare_image() if screenshot else None
         vision = base64_img is not None
         mode = "autonomous_vision" if vision else "autonomous_non_vision"
-        system = self._build_system(mode, "autonomous", user_message=window_context)
+        # 记忆检索只使用窗口标题，排除坐标/距离等数值噪声
+        memory_search_text = self._extract_window_titles(window_context)
+        system = self._build_system(mode, "autonomous", user_message=memory_search_text)
         return self._build_multi_turn_autonomous(system, window_context, vision, base64_img)
 
     def build_chat_decide(self, user_message: str, window_context: str,
@@ -144,6 +147,13 @@ class ContextBuilder:
 
         return "\n".join(lines)
 
+    @staticmethod
+    def _extract_window_titles(window_context: str) -> str:
+        """从窗口探测文本中提取所有窗口标题，去掉坐标/距离等噪声。"""
+        if not window_context:
+            return ""
+        titles = re.findall(r'"([^"]+)"', window_context)
+        return "，".join(titles) if titles else window_context
 
     def _build_multi_turn_autonomous(self, system: str, window_context: str,
                                      vision: bool, base64_img: str | None) -> list[dict]:
