@@ -245,7 +245,7 @@ class Behavior(BrainMixin):
                     messages, tool_calls_map, content,
                     tag=tag, tools_param=tools_param, max_tokens=max_tokens,
                     max_rounds=config.LLM_TOOL_MAX_ROUNDS,
-                    speech_streamed=speech_streamed,
+                    speech_streamed=False,
                 )
 
             result = self._parse_behavior(content)
