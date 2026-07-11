@@ -8,30 +8,35 @@ from pet.config import config
 
 logger = logging.getLogger(__name__)
 
+# 动作名称 → (粒子名, 触发间隔 tick)
+_ACTION_PARTICLES: dict[str, tuple[str, int]] = {
+    "shake_arms":   ("stars", 2),
+    "rotate":       ("stars", 2),
+    "finger_heart": ("hearts", 2),
+    "calling":      ("notes", 2),
+    "sleep":        ("zzz", 3),
+}
+
 
 class ScheduledTasks:
     """管理 Scheduler 上的定时任务注册与回调实现。"""
 
     def __init__(self, agent):
         self._agent = agent
-        self._sleep_tick: int = 0
         self._dark_heart_tick: int = 0
-        self._star_tick: int = 0
-        self._heart_tick: int = 0
-        self._note_tick: int = 0
+        self._particle_ticks: dict[str, int] = {}  # 粒子名 → 累计 tick
 
 
     def register_all(self, scheduler):
         scheduler.register("mid", self._autonomous)
-        scheduler.register("fast", self._recover)
+        scheduler.register("fast", self._vitals_tick)
         scheduler.register("fast", self._update_idle_anim)
         scheduler.register("fast", self._spawn_particles)
         scheduler.register("slow", self._wakeup)
-        scheduler.register("slow", self._agent.vitals.reduce)
-        scheduler.register("slow", self._agent.vitals.save)
-        scheduler.register("slow", self._agent.vitals.check_thresholds)
-        scheduler.register("slow", self._agent.mood.save)
-        scheduler.register("slow", self._agent.mood.check_thresholds)
+        scheduler.register("slow", self._vitals_save)
+        scheduler.register("slow", self._vitals_check)
+        scheduler.register("slow", self._mood_save)
+        scheduler.register("slow", self._mood_check)
         scheduler.register("slow", self._memory_maintenance)
         scheduler.register("slow", self._conversation_cleanup)
 
@@ -50,20 +55,14 @@ class ScheduledTasks:
         self._agent._async_brain(self._agent._autonomous_pipeline, pet_x, pet_y)
 
 
-    def _recover(self):
-        """sit/sleep 期间每秒 +0.1 精力，sleep 每 3s 触发 zzz 粒子。"""
+    def _vitals_tick(self):
+        """每秒将当前动作名传给 vitals 做数值调整。"""
         win = self._agent._pet_window
         if not win:
             return
         cur = win.action_queue.current_action_name()
-        if cur == "sleep":
-            self._agent.vitals.modify_energy(0.1)
-            self._sleep_tick += 1
-            if self._sleep_tick % 3 == 0:
-                win.particles.spawn("zzz")
-        elif cur == "sit":
-            self._agent.vitals.modify_energy(0.1)
-            self._sleep_tick = 0
+        if cur is not None:
+            self._agent.vitals.apply_action_delta(cur)
 
     def _update_idle_anim(self):
         """理智 < 20 → grim，否则 → idle，仅在无队列动作且不处于下落时切换。"""
@@ -83,17 +82,13 @@ class ScheduledTasks:
             win.pet_anim.play("idle")
 
     def _spawn_particles(self):
-        """fast_tick 定期粒子特效：
-        - 低理智 → dark_hearts（每 2 tick）
-        - shake_arms 播放中 → stars（每 2 tick）
-        """
+        """fast_tick 定期粒子特效："""
         win = self._agent._pet_window
         if not win:
             return
-        ms = self._agent.mood.numeric_summary()
-        sanity = ms.get("sanity", 100)
 
         # dark_hearts: 低理智时散发
+        sanity = self._agent.mood.numeric_summary().get("sanity", 100)
         if sanity < config.SANITY_CRITICAL_THRESHOLD:
             self._dark_heart_tick += 1
             if self._dark_heart_tick % 2 == 0:
@@ -101,31 +96,28 @@ class ScheduledTasks:
         else:
             self._dark_heart_tick = 0
 
-        # stars: shake_arms和rotate 播放中散发
+        # 动作查表触发粒子
         cur = win.action_queue.current_action_name()
-        if cur == "shake_arms" or cur == "rotate":
-            self._star_tick += 1
-            if self._star_tick % 2 == 0:
-                win.particles.spawn("stars")
-        else:
-            self._star_tick = 0
+        for action, (particle, interval) in _ACTION_PARTICLES.items():
+            if cur == action:
+                self._particle_ticks[particle] = self._particle_ticks.get(particle, 0) + 1
+                if self._particle_ticks[particle] % interval == 0:
+                    win.particles.spawn(particle)
+            else:
+                self._particle_ticks[particle] = 0
 
-        # hearts: finger_heart 播放中散发
-        if cur == "finger_heart":
-            self._heart_tick += 1
-            if self._heart_tick % 2 == 0:
-                win.particles.spawn("hearts")
-        else:
-            self._heart_tick = 0
 
-        # notes: calling 播放中散发
-        if cur == "calling":
-            self._note_tick += 1
-            if self._note_tick % 2 == 0:
-                win.particles.spawn("notes")
-        else:
-            self._note_tick = 0
+    def _vitals_save(self):
+        self._agent.vitals.save()
 
+    def _vitals_check(self):
+        self._agent.vitals.check_thresholds()
+
+    def _mood_save(self):
+        self._agent.mood.save()
+
+    def _mood_check(self):
+        self._agent.mood.check_thresholds()
 
     def _wakeup(self):
         """定期唤醒：sleeping → idle，并 stretch。"""

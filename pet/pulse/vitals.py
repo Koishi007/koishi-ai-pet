@@ -1,7 +1,6 @@
 """体征 — 生理数值引擎：饱食度、精力"""
 
 import logging
-import random
 import sqlite3
 import threading
 from dataclasses import dataclass
@@ -16,7 +15,6 @@ logger = logging.getLogger(__name__)
 _DB_PATH = get_db_path()
 
 
-
 @dataclass(frozen=True)
 class Thresholds:
     """各状态的触发阈值，方便集中调整。"""
@@ -26,29 +24,25 @@ class Thresholds:
     energy_exhausted: float = 10.0  
 
 
-# 模拟 μ=1.5 σ≈0.8 的截断正态分布，值域 [0, 3]
-_DECAY_TABLE = [
-    (0.0,  5),   # P ≈ 5%
-    (0.5, 12),   # P ≈ 12%
-    (1.0, 25),   # P ≈ 25%  ← 峰值
-    (1.5, 28),   # P ≈ 28%  ← 峰值
-    (2.0, 18),   # P ≈ 18%
-    (2.5,  8),   # P ≈ 8%
-    (3.0,  2),   # P ≈ 2%
-]
-
-_DECAY_VALUES = [v for v, _ in _DECAY_TABLE]
-_DECAY_WEIGHTS = [w for _, w in _DECAY_TABLE]
-
-
-def _sample_decay() -> float:
-    """从查表中随机抽取一次衰减量，近似正态分布。"""
-    return random.choices(_DECAY_VALUES, weights=_DECAY_WEIGHTS, k=1)[0]
-
-
 
 class Vitals(QObject):
-    """生理数值系统，由 Scheduler.slow_tick 驱动衰减，外部通过 modify 方法增减参数"""
+    """生理数值系统，外部通过 modify 方法控制，_vitals_tick 按动作调整。"""
+
+    ACTION_VITALS_DELTA: dict[str, tuple[float, float]] = {
+        "sleep":        (-0.003, +0.1),
+        "sit":          (-0.003, +0.1),
+        "thinking":     (-0.003, -0.01),
+        "look_around":  (-0.003, -0.01),
+        "walk":         (-0.008, -0.1),
+        "drive":        (-0.008, -0.1),
+        "bounce":       (-0.02,  -1),
+        "shake_arms":   (-0.003, -0.03),
+        "stretch":      (-0.003, -0.02),
+        "rotate":       (-0.005, -0.03),
+        "calling":      (-0.003, -0.03),
+        "finger_heart": (-0.003, -0.01),
+        "fishing":      (-0.008, -0.01)
+    }
 
     hungry     = Signal()
     starving   = Signal()
@@ -100,11 +94,10 @@ class Vitals(QObject):
             self._energy: float  = row[1]
 
     def save(self):
-        """持久化当前数值到数据库。"""
         with self._lock:
             self._conn.execute(
                 "UPDATE vitals SET satiety=?, energy=? WHERE id = 1",
-                (self._satiety, self._energy)
+                (round(self._satiety, 3), round(self._energy, 3))
             )
             self._conn.commit()
 
@@ -163,12 +156,12 @@ class Vitals(QObject):
 
     def modify_satiety(self, delta: float):
         old = self._satiety
-        self._satiety = max(0.0, min(100.0, self._satiety + delta))
+        self._satiety = round(max(0.0, min(100.0, self._satiety + delta)), 3)
         logger.debug(f"[Vitals] 饱食度 {delta:+.1f} ({old:.1f}→{self._satiety:.1f})")
 
     def modify_energy(self, delta: float):
         old = self._energy
-        self._energy = max(0.0, min(100.0, self._energy + delta))
+        self._energy = round(max(0.0, min(100.0, self._energy + delta)), 3)
         logger.debug(f"[Vitals] 精力 {delta:+.1f} ({old:.1f}→{self._energy:.1f})")
 
     def set_satiety(self, value: float):
@@ -179,19 +172,15 @@ class Vitals(QObject):
         self._energy = max(0.0, min(100.0, value))
         logger.info(f"[Vitals] 精力 直接设置 → {self._energy:.1f}")
 
-
-    def reduce(self):
-        """每次 slow tick 衰减饱食度和精力各 0~3（近似正态分布）。"""
-        satiety_decay = _sample_decay()
-        energy_decay  = _sample_decay()
-
-        old_s = self._satiety
-        old_e = self._energy
-        self._satiety = max(0.0, self._satiety - satiety_decay)
-        self._energy  = max(0.0, self._energy  - energy_decay)
-
-        logger.debug(f"[Vitals] reduce 饱食度 -{satiety_decay:.1f}({old_s:.1f}→{self._satiety:.1f}) "
-                     f"精力 -{energy_decay:.1f}({old_e:.1f}→{self._energy:.1f})")
+    def apply_action_delta(self, action_name: str):
+        """根据当前动作名查表调整数值。"""
+        delta = self.ACTION_VITALS_DELTA.get(action_name)
+        if delta:
+            satiety_delta, energy_delta = delta
+            if satiety_delta:
+                self.modify_satiety(satiety_delta)
+            if energy_delta:
+                self.modify_energy(energy_delta)
 
     def _init_threshold_flags(self):
         """启动时根据当前数值设置防抖标记，避免重复触发。"""

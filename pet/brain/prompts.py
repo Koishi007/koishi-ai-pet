@@ -104,12 +104,12 @@ def _autonomous_task() -> list[str]:
         "12. 必须查看[记忆存储指导]判断是否输出Memory行，如果值得，必须输出",
         "13. 你的言行必须反映「你现在的状态」中的感受——饿的时候引导投喂，累的时候多休息，不开心的时候引导摸摸头，疯的时候说不着边际的话",
         "14. 状态低时通过 Speech 引导互动——饿了暗示投喂、累了多坐多睡、不开心暗示抚摸、理智低暗示抚摸。正常状态时不必刻意引导",
-        "15. 本回合心理/生理状态无变化时，省略 Mood 和 Vitals 行",
+        "15. 本回合心理状态无变化时，省略 Mood 行",
     ]
 
     format_guide = (
         f"=== 输出格式 ===\n"
-        f"必须按顺序输出：Summary → Emotion(可选) → Speech → Action(≥{min_actions}个) → Memory(可选) → Mood(可选) → Vitals(可选)：\n"
+        f"必须按顺序输出：Summary → Emotion(可选) → Speech → Action(≥{min_actions}个) → Memory(可选) → Mood(可选)：\n"
         f"  Summary: <观察到的屏幕内容和行为决策，≤50字>\n"
         f"  Emotion: happy\n"
         f"  Speech: 又有新窗口了，我过去看看\n"
@@ -124,7 +124,6 @@ def _autonomous_task() -> list[str]:
         f"  Action: sit duration={sit_dur}\n"
         f"  Memory: user_fact 用户名为xxx，住在xx | keywords:[具体姓名],[居住地点] | importance:5 | level:L1\n"
         f"  Mood: joy+1 affection-1\n"
-        f"  Vitals: satiety-2 energy-3\n"
         f"\n"
     )
 
@@ -134,7 +133,7 @@ def _autonomous_task() -> list[str]:
 def _chat_task() -> list[str]:
     parts = [
         "=== 输出格式 ===\n"
-        "按顺序输出：Summary → Emotion(可选) → Speech → Action(≥3个) → Memory(可选) → Mood(可选) → Vitals(可选)：\n"
+        "按顺序输出：Summary → Emotion(可选) → Speech → Action(≥3个) → Memory(可选) → Mood(可选)：\n"
         "  Summary: <对话内容和行为决策，≤50字>\n"
         "  Emotion: happy\n"
         "  Speech: 好嘞，我跳过去看看！\n"
@@ -142,8 +141,7 @@ def _chat_task() -> list[str]:
         "  Action: walk left 600\n"
         "  Action: thinking duration=15\n"
         "  Memory: user_fact 用户名为xxx，住在xx | keywords:[具体姓名],[居住地点] | importance:5 | level:L1\n"
-        "  Mood: affection+1 joy+1\n"
-        "  Vitals: satiety-2 energy-3",
+        "  Mood: affection+1 joy+1",
         "=== 硬性约束 ===\n"
         "1. Summary 必须在最前面，≤50字\n"
         "2. 至少 3 个 Action，每行一个动作，格式严格为 Action: 动作名 [参数...]\n"
@@ -254,7 +252,7 @@ def autonomous_vision_user_prompt(context: str) -> str:
         f"   • 无窗口 → 巡视桌面或找地方坐下\n"
         f"4. 理智不正常时主动调用可用工具做疯狂的事；正常时如有需要也可使用工具\n"
         f"5. 尽量从屏幕中寻找新细节进行评论，保持言行的新鲜感\n"
-        f"6. 按顺序写出完整输出（Summary → Emotion → Speech → Actions → Mood → Vitals）"
+        f"6. 按顺序写出完整输出（Summary → Emotion → Speech → Actions → Mood）"
     )
 
 
@@ -274,7 +272,7 @@ def autonomous_non_vision_user_prompt(context: str) -> str:
         f"   • drive 方向可随机\n"
         f"3. 理智不正常时主动调用可用工具做疯狂的事；正常时也可使用工具\n"
         f"4. 尝试发散思维，不要局限于近期已充分讨论的内容\n"
-        f"5. 按顺序写出完整输出（Summary → Emotion → Speech → Actions → Mood → Vitals）"
+        f"5. 按顺序写出完整输出（Summary → Emotion → Speech → Actions → Mood）"
     )
 
 
@@ -288,7 +286,7 @@ def chat_vision_user_prompt(user_message: str, context: str) -> str:
         "2. 分析截图，识别窗口内容——结合画面理解语境\n"
         "3. 结合「你现在的状态」和截图内容，说一句符合人格和当下心境的话\n"
         "4. 规划配合对话的动作序列，按输出格式要求凑满时长\n"
-        "5. 按顺序写出完整输出（Summary → Emotion → Speech → Actions → Mood → Vitals）"
+        "5. 按顺序写出完整输出（Summary → Emotion → Speech → Actions → Mood）"
     )
 
 
@@ -300,7 +298,7 @@ def chat_non_vision_user_prompt(user_message: str, context: str) -> str:
         "1. 理解用户说了什么，判断意图\n"
         "2. 结合「你现在的状态」和用户消息内容，说一句符合人格和当下心境的话\n"
         "3. 规划配合对话的动作序列，按输出格式要求凑满时长\n"
-        "4. 按顺序写出完整输出（Summary → Emotion → Speech → Actions → Mood → Vitals）"
+        "4. 按顺序写出完整输出（Summary → Emotion → Speech → Actions → Mood）"
     )
 
 
