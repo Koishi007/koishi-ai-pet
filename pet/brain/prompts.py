@@ -75,6 +75,12 @@ _MOOD_GUIDE = """## 心理状态变化
 自主场景: 有趣发现/可玩窗口 joy+0~+1; 无聊/无窗口/受限 joy-0~-1 sanity-0~-1; 反复受挫 sanity-1~-2; 被忽视 affection-0~-1
 仅输出受影响项"""
 
+_VITALS_GUIDE = """## 生理状态变化
+末尾输出(可选,不对用户可见): Vitals: satiety±值 energy±值
+satiety(饱食度,0~100): 被投喂增加; 移动/跳跃消耗
+energy(精力,0~100): 睡眠/坐恢复; 移动/跳跃/活跃动作消耗
+仅输出受影响项"""
+
 
 def _autonomous_task() -> list[str]:
     target_s = target_sequence_duration()
@@ -123,7 +129,7 @@ def _autonomous_task() -> list[str]:
         f"  Action: shake_arms\n"
         f"  Action: sit duration={sit_dur}\n"
         f"  Memory: user_fact 用户名为xxx，住在xx | keywords:[具体姓名],[居住地点] | importance:5 | level:L1\n"
-        f"  Mood: joy+1 affection-1\n"
+        f"  Mood: joy+1 affection-1 sanity-1\n"
         f"\n"
     )
 
@@ -141,7 +147,7 @@ def _chat_task() -> list[str]:
         "  Action: walk left 600\n"
         "  Action: thinking duration=15\n"
         "  Memory: user_fact 用户名为xxx，住在xx | keywords:[具体姓名],[居住地点] | importance:5 | level:L1\n"
-        "  Mood: affection+1 joy+1",
+        "  Mood: affection+1 joy+1 sanity-1",
         "=== 硬性约束 ===\n"
         "1. Summary 必须在最前面，≤50字\n"
         "2. 至少 3 个 Action，每行一个动作，格式严格为 Action: 动作名 [参数...]\n"
@@ -171,7 +177,7 @@ def _interact_task() -> list[str]:
         "  Speech: 你怎么抓我呀\n"
         "  Action: walk left 600\n"
         "  Action: shake_arms\n"
-        "  Mood: affection+1 joy-1\n"
+        "  Mood: affection+1 joy-1 sanity-5\n"
         "  Vitals: satiety-2 energy+3",
         "=== 硬性约束 ===\n"
         "1. Summary 必须在最前面，≤15字\n"
@@ -183,6 +189,8 @@ def _interact_task() -> list[str]:
         "6. 禁止输出 Memory 行\n"
         "7. 你的反应必须反映「你现在的状态」中的感受\n"
         "8. Emotion 可选: happy, excited, sad, angry, surprised, thinking, sleepy, love, cool, shy, scared, hungry, curious, proud, bored, crazy",
+        _MOOD_GUIDE,
+        _VITALS_GUIDE,
     ]
 
 
