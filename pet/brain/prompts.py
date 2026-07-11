@@ -319,7 +319,15 @@ INTERACT_WINDOW_DISAPPEARED = config.INTERACT_WINDOW_DISAPPEARED_PROMPT or (
 def interact_fed_prompt(food: str) -> str:
     template = config.INTERACT_FED_PROMPT or (
         "用户给你投喂了{food}，根据你的人格用一句话（≤15字）表达反应。"
-        "同时根据投喂的食物决定Vitals和Mood变化"
+        "同时根据投喂的食物决定Vitals和Mood变化：\n"
+        "  — 正餐/主食(satiety+40~80, energy+5~10, affection/joy+0~1)\n"
+        "  — 零食/甜点(satiety+20~50, energy+5~15, joy+2~3, affection+1~2)\n"
+        "  — 水果(satiety+5~15, energy+5~10, joy+1~2)\n"
+        "  — 饮料(satiety+1~5, energy+10~20, joy+0~1)\n"
+        "  — 怪异食物(satiety+0~5, energy+0~5, sanity-10~20)\n"
+        "  — 非食物(satiety+0, energy+0, sanity-10~20，joy-10~20, affection-5~10)\n"
+        "  — 酒类(satiety+0~5, energy+5~15, joy+2~5, sanity-5~15)\n"
+        "  仅输出受影响项，未列出的食物类型根据特征自行推断。"
     )
     return template.format(food=food)
 
