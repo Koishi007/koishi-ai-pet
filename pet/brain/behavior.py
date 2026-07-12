@@ -1,5 +1,6 @@
 ﻿"""与 AI 通信，解析响应为动作序列。"""
 
+import queue
 import random
 import re
 import time
@@ -96,7 +97,7 @@ class Behavior(BrainMixin):
             messages = self.ctx.build_autonomous_decide(context, screenshot=screenshot)
             is_vision = isinstance(messages[1]["content"], list)
             tag = "autonomous_decide_vision_stream" if is_vision else "autonomous_decide_stream"
-            return self._retry_if_empty(self._stream_and_parse, messages, tag=tag, on_chunk=on_chunk, on_stream_end=on_stream_end, max_tokens=config.LLM_MAX_TOKENS_AUTONOMOUS)
+            return self._retry_if_empty(self._stream_and_build_output, messages, tag=tag, on_chunk=on_chunk, on_stream_end=on_stream_end, max_tokens=config.LLM_MAX_TOKENS_AUTONOMOUS)
         finally:
             self._lock.release()
 
@@ -115,7 +116,7 @@ class Behavior(BrainMixin):
             return self._interact_decide_local(event_hint)
         try:
             messages = self.ctx.build_interact(event_hint)
-            return self._retry_if_empty(self._stream_and_parse, messages, tag="interact", on_chunk=on_chunk, on_stream_end=on_stream_end, max_tokens=config.LLM_MAX_TOKENS_INTERACT)
+            return self._retry_if_empty(self._stream_and_build_output, messages, tag="interact", on_chunk=on_chunk, on_stream_end=on_stream_end, max_tokens=config.LLM_MAX_TOKENS_INTERACT)
         finally:
             self._lock.release()
 
@@ -151,7 +152,7 @@ class Behavior(BrainMixin):
             messages = self.ctx.build_chat_decide(user_message, context, screenshot=screenshot)
             is_vision = isinstance(messages[1]["content"], list)
             tag = "chat_decide_vision_stream" if is_vision else "chat_decide_stream"
-            return self._retry_if_empty(self._stream_and_parse, messages, tag=tag, on_chunk=on_chunk, on_stream_end=on_stream_end, max_tokens=config.LLM_MAX_TOKENS_CHAT)
+            return self._retry_if_empty(self._stream_and_build_output, messages, tag=tag, on_chunk=on_chunk, on_stream_end=on_stream_end, max_tokens=config.LLM_MAX_TOKENS_CHAT)
         finally:
             self._lock.release()
 
@@ -256,7 +257,51 @@ class Behavior(BrainMixin):
             logger.warning(f"[{t}] [Behavior]   falling back to local")
             return self._decide_local()
 
-    def _stream_and_parse(self, messages: list, on_chunk=None, on_stream_end=None, tag: str = "", max_tokens: int = 4000) -> BehaviorOutput:
+    def _iterate_stream_with_timeout(self, stream, total_timeout: float):
+        chunk_queue: queue.Queue = queue.Queue()
+        stop_event = threading.Event()
+        exception_holder: list = [None]
+
+        def _iter_thread():
+            try:
+                for chunk in stream:
+                    if stop_event.is_set():
+                        return
+                    chunk_queue.put(('chunk', chunk))
+                chunk_queue.put(('done', None))
+            except Exception as e:
+                exception_holder[0] = e
+                try:
+                    chunk_queue.put(('error', None))
+                except Exception:
+                    pass
+
+        t = threading.Thread(target=_iter_thread, daemon=True, name="stream-iter")
+        t.start()
+
+        deadline = time.monotonic() + total_timeout
+        try:
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    stop_event.set()
+                    raise TimeoutError(f"流式调用总超时 ({total_timeout}s)，已放弃等待")
+                try:
+                    kind, value = chunk_queue.get(timeout=min(remaining, 1.0))
+                except queue.Empty:
+                    continue
+                if kind == 'done':
+                    break
+                if kind == 'error':
+                    if exception_holder[0]:
+                        raise exception_holder[0]
+                    break
+                yield value
+        finally:
+            stop_event.set()
+            t.join(timeout=3)
+
+    def _stream_and_build_output(self, messages: list, on_chunk=None, on_stream_end=None, tag: str = "", max_tokens: int = 4000) -> BehaviorOutput:
         self._apply_cache_control(messages)
         self._dump_context(tag, messages)
         self._log_prompt_size(messages, tag)
@@ -282,7 +327,7 @@ class Behavior(BrainMixin):
             finish_reason = None
             stream_usage = None
 
-            for chunk in stream:
+            for chunk in self._iterate_stream_with_timeout(stream, config.LLM_STREAM_TIMEOUT):
                 # usage-only chunk（choices 为空，仅含 usage）
                 if not chunk.choices:
                     if hasattr(chunk, "usage") and chunk.usage:
@@ -380,7 +425,7 @@ class Behavior(BrainMixin):
                 logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] [Behavior]   tool_calls: {len(accumulated_tool_calls)}")
                 # 不在此处调用 on_stream_end：保持气泡流不中断，
                 # on_stream_end 仅用于 speech 中断（多行 Speech 分开显示），
-                # 不在轮次间调用（_consume_stream 末尾不再调 on_stream_end）。
+                # 不在轮次间调用（_collect_stream_raw 末尾不再调 on_stream_end）。
                 return self._handle_tool_calls(
                     messages, accumulated_tool_calls, first_content,
                     on_chunk=on_chunk, on_stream_end=on_stream_end, tag=tag,
@@ -552,7 +597,7 @@ class Behavior(BrainMixin):
         tool_log = []  # 记录工具调用摘要，用于写入上下文
         final_instruction_added = False  # 最终轮精简指令是否已追加
 
-        # 追踪 on_chunk 是否在 _consume_stream 中被真正调用（即检测到 Speech 内容）
+        # 追踪 on_chunk 是否在 _collect_stream_raw 中被真正调用（即检测到 Speech 内容）
         # 仅当 Speech 被实际流式发送时才标记 speech_streamed=True，
         # 避免非 Speech 文本（如 Summary/Action）导致误判
         _chunk_invoked = [False]
@@ -639,7 +684,7 @@ class Behavior(BrainMixin):
             t0 = time.perf_counter()
             stream = self._llm_call_stream(current_messages, max_tokens=max_tokens, tools=tools_param)
             _chunk_invoked[0] = False
-            content, new_tool_calls = self._consume_stream(stream, on_chunk=_wrapped_chunk, on_stream_end=on_stream_end, tag=f"{tag}_round_{round_idx+1}", t0=t0)
+            content, new_tool_calls = self._collect_stream_raw(stream, on_chunk=_wrapped_chunk, on_stream_end=on_stream_end, tag=f"{tag}_round_{round_idx+1}", t0=t0)
             if _chunk_invoked[0]:
                 speech_streamed = True
 
@@ -662,7 +707,7 @@ class Behavior(BrainMixin):
             self.add_context(role="assistant", content=f"[工具调用] {' | '.join(tool_log)}")
         return result
 
-    def _consume_stream(self, stream, on_chunk=None, on_stream_end=None, tag="", t0=None):
+    def _collect_stream_raw(self, stream, on_chunk=None, on_stream_end=None, tag="", t0=None):
         """消费流，返回 (content_text, tool_calls_map)。"""
         content = ""
         tool_calls_map = {}
@@ -673,7 +718,7 @@ class Behavior(BrainMixin):
         finish_reason = None
         stream_usage = None
 
-        for chunk in stream:
+        for chunk in self._iterate_stream_with_timeout(stream, config.LLM_STREAM_TIMEOUT):
             if not chunk.choices:
                 if hasattr(chunk, "usage") and chunk.usage:
                     stream_usage = chunk.usage

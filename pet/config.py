@@ -17,6 +17,7 @@ _KEY_META = {
     "LLM_URL":                   {"type": "str",      "default": "",            "category": "connection", "needs_restart": False, "hidden": False, "description": "API 地址(需兼容 OpenAI 格式)"},
     "OLLAMA_BASE_URL":           {"type": "str",      "default": "http://localhost:11434/v1", "category": "connection", "needs_restart": False, "hidden": False, "description": "Ollama 服务地址"},
     "LLM_TIMEOUT":               {"type": "float",    "default": 20,            "category": "connection", "needs_restart": False, "hidden": False, "description": "LLM 请求超时(秒)"},
+    "LLM_STREAM_TIMEOUT":        {"type": "float",    "default": 120,           "category": "connection", "needs_restart": False, "hidden": False, "description": "流式调用总超时(秒)，超过后降级到本地决策"},
     "LLM_MAX_RETRIES":           {"type": "int",      "default": 2,             "category": "connection", "needs_restart": False, "hidden": False, "description": "LLM 最大重试次数"},
     "LLM_RETRY_DELAY":           {"type": "float",    "default": 1,             "category": "connection", "needs_restart": False, "hidden": True,  "description": "重试延迟(秒)"},
     "LLM_RETRY_MAX_DELAY":       {"type": "float",    "default": 4,             "category": "connection", "needs_restart": False, "hidden": True,  "description": "最大重试延迟(秒)"},

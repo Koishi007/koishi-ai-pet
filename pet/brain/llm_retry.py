@@ -10,6 +10,8 @@ from openai import (
     APIConnectionError, APITimeoutError, RateLimitError,
     InternalServerError, AuthenticationError, BadRequestError, NotFoundError,
 )
+import httpx
+
 from pet.config import config
 
 logger = logging.getLogger(__name__)
@@ -17,6 +19,8 @@ logger = logging.getLogger(__name__)
 RETRYABLE_EXCEPTIONS = (
     APIConnectionError, APITimeoutError, RateLimitError,
     InternalServerError, ConnectionError, TimeoutError, OSError,
+    httpx.RemoteProtocolError,  # 服务端非正常断开连接，重试通常有效
+    httpx.ReadTimeout,          # 流式读取超时
 )
 NON_RETRYABLE_EXCEPTIONS = (
     AuthenticationError, BadRequestError, NotFoundError,

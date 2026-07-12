@@ -3,6 +3,7 @@
 import logging
 import threading
 
+import httpx
 from openai import OpenAI
 from pet.config import config
 
@@ -17,6 +18,14 @@ class LLMClient:
         self._lock = threading.RLock()
         self._build()
 
+    @staticmethod
+    def _make_timeout() -> httpx.Timeout:
+        return httpx.Timeout(
+            connect=10.0,
+            read=config.LLM_TIMEOUT,
+            write=10.0,
+            pool=5.0,
+        )
 
     def _build(self):
         brain = config.BRAIN or "local"
@@ -33,14 +42,14 @@ class LLMClient:
             self._client = OpenAI(
                 api_key="ollama",
                 base_url=config.OLLAMA_BASE_URL,
-                timeout=config.LLM_TIMEOUT,
+                timeout=self._make_timeout(),
             )
             self._model = model or "llama3.2"
         elif brain == "api" and key:
             self._client = OpenAI(
                 api_key=key,
                 base_url=url or "",
-                timeout=config.LLM_TIMEOUT,
+                timeout=self._make_timeout(),
             )
             self._model = model
         else:
