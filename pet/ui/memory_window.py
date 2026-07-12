@@ -286,7 +286,16 @@ class MemoryWindow(QWidget):
         self._btn_delete.setEnabled(False)
         layout.addWidget(self._btn_delete)
 
+        self._btn_refresh = QPushButton("刷新")
+        self._btn_refresh.setStyleSheet(BUTTON_PRIMARY_QSS)
+        self._btn_refresh.clicked.connect(self._refresh_data)
+        layout.addWidget(self._btn_refresh)
+
         layout.addStretch()
+
+        self._memory_count_label = QLabel()
+        self._memory_count_label.setStyleSheet("font-size: 12px; color: #888; padding-right: 4px;")
+        layout.addWidget(self._memory_count_label)
         parent_layout.addWidget(wrapper)
 
     def _build_detail_panel(self, parent_layout):
@@ -373,6 +382,10 @@ class MemoryWindow(QWidget):
         self._btn_next.clicked.connect(self._on_next_page)
         layout.addWidget(self._btn_next)
 
+        self._page_info_label = QLabel()
+        self._page_info_label.setStyleSheet("font-size: 12px; color: #888; padding: 0 6px;")
+        layout.addWidget(self._page_info_label)
+
         layout.addStretch()
         parent_layout.addWidget(wrapper)
 
@@ -389,6 +402,7 @@ class MemoryWindow(QWidget):
             page_size=self._page_size,
         )
         self._populate_table()
+        self._memory_count_label.setText(f"记忆条数: {self._total}")
 
     def _populate_table(self):
         self._table.setRowCount(0)
@@ -444,6 +458,7 @@ class MemoryWindow(QWidget):
         total_pages = max(1, (self._total + self._page_size - 1) // self._page_size)
         self._btn_prev.setEnabled(self._page > 0)
         self._btn_next.setEnabled(self._page < total_pages - 1)
+        self._page_info_label.setText(f"第 {self._page + 1}/{total_pages} 页")
 
         for i, btn in enumerate(self._page_btns):
             start = max(0, self._page - 3)
