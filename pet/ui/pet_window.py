@@ -71,6 +71,7 @@ class PetWindow(TransparentWindow):
         self._grab_local: QPoint | None = None
         self._chat_bubble = None
         self._feed_bubble = None
+        self._music_bubble = None
         self._speech_bubble = None
         self._emotion_bubble = None
         self._agent = None
@@ -99,6 +100,10 @@ class PetWindow(TransparentWindow):
         """注入 FeedBubble 引用。"""
         self._feed_bubble = feed_bubble
 
+    def set_music_bubble(self, music_bubble):
+        """注入 MusicBubble 引用。"""
+        self._music_bubble = music_bubble
+
     def set_speech_bubble(self, speech_bubble):
         """注入 SpeechBubble 引用。"""
         self._speech_bubble = speech_bubble
@@ -116,12 +121,14 @@ class PetWindow(TransparentWindow):
         self._app = app
 
     def enterEvent(self, event):
-        """鼠标进入桌宠区域时显示聊天和喂食按钮。"""
+        """鼠标进入桌宠区域时显示聊天、喂食和音乐按钮。"""
         if self._grab_local is None:
             if self._chat_bubble:
                 self._chat_bubble.show_bubble()
             if self._feed_bubble:
                 self._feed_bubble.show_bubble()
+            if self._music_bubble:
+                self._music_bubble.show_bubble()
         super().enterEvent(event)
 
     def leaveEvent(self, event):
@@ -130,6 +137,8 @@ class PetWindow(TransparentWindow):
             self._chat_bubble.schedule_hide()
         if self._feed_bubble:
             self._feed_bubble.schedule_hide()
+        if self._music_bubble:
+            self._music_bubble.schedule_hide()
         super().leaveEvent(event)
 
     def _setup_ui(self):
@@ -178,6 +187,8 @@ class PetWindow(TransparentWindow):
                 self._chat_bubble.hide_bubble()
             if self._feed_bubble:
                 self._feed_bubble.hide_bubble()
+            if self._music_bubble:
+                self._music_bubble.hide_bubble()
             # 先启动单击检测定时器，等待判断是单击还是拖拽
             self._click_timer.start()
         elif event.button() == Qt.MouseButton.RightButton:
@@ -429,6 +440,8 @@ class PetWindow(TransparentWindow):
             self._chat_bubble.hide()
         if self._feed_bubble:
             self._feed_bubble.hide()
+        if self._music_bubble:
+            self._music_bubble.hide()
         if self._speech_bubble:
             self._speech_bubble.hide()
         if self._emotion_bubble:

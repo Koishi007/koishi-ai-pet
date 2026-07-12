@@ -18,6 +18,7 @@ from pet.ui.speech_bubble import SpeechBubble
 from pet.ui.emotion import EmotionBubble
 from pet.ui.chat_bubble import ChatBubble
 from pet.ui.feed_bubble import FeedBubble
+from pet.ui.music_bubble import MusicBubble
 from pet.agent import PetAgent
 from pet.brain.prompts import interact_fed_prompt
 from pet.tools import load_tools
@@ -123,6 +124,9 @@ def main():
         lambda text: agent.trigger("interact", hint=interact_fed_prompt(text),
                                     record_context=True, context_hint=f"用户投喂了{text}")
     )
+
+    music_bubble = MusicBubble(window)
+    window.set_music_bubble(music_bubble)
 
     agent.action_requested.connect(window.queue_enqueue_action)
     agent.emotion_requested.connect(

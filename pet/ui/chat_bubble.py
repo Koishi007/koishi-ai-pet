@@ -311,7 +311,7 @@ class ChatBubble(QWidget):
             screen_right = 9999
 
         bw = self.width()
-        y = pet_geo.top() + 10
+        y = pet_geo.top() + 5
 
         if pet_geo.right() + bw + 10 > screen_right:
             x = pet_geo.left() - bw + 20  # 左侧
