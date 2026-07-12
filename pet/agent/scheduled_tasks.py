@@ -100,11 +100,11 @@ class ScheduledTasks:
         cur = win.action_queue.current_action_name()
         for action, (particle, interval) in _ACTION_PARTICLES.items():
             if cur == action:
-                self._particle_ticks[particle] = self._particle_ticks.get(particle, 0) + 1
-                if self._particle_ticks[particle] % interval == 0:
+                self._particle_ticks[action] = self._particle_ticks.get(action, 0) + 1
+                if self._particle_ticks[action] % interval == 0:
                     win.particles.spawn(particle)
             else:
-                self._particle_ticks[particle] = 0
+                self._particle_ticks[action] = 0
 
 
     def _vitals_save(self):
