@@ -1,4 +1,4 @@
-﻿"""系统提示词分层组装"""
+"""系统提示词分层组装"""
 
 from pet.action.registry import generate_action_section, target_sequence_duration, min_action_count, default_duration
 from pet.config import config
