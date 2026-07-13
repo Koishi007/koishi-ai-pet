@@ -329,3 +329,10 @@ class ContextBuilder:
         if not config.VISION_ENABLED or not self._screen_reader:
             return None
         return self._screen_reader.prepare_image(vision_scale=config.VISION_SCALE)
+
+    def _image_mime(self) -> str:
+        """根据截图编码格式返回对应的 MIME 类型。"""
+        fmt = getattr(config, "SCREENSHOT_FORMAT", "jpeg") or "jpeg"
+        if fmt == "png":
+            return "image/png"
+        return "image/jpeg"
