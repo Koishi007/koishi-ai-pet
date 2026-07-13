@@ -7,15 +7,12 @@ from pet.config import config
 FEELING_MARKER = "<<FEELING>>"
 
 
-
-_MEMORY_GUIDE = """=== 记忆存储指导 ===
-格式: Memory: [类别] 内容 | keywords:词1,词2 | importance:1-5 | level:L1/L2/L3
-示例: Memory: user_fact 用户XXX，住在XX | keywords:XXX,XX | importance:5 | level:L1
-类别: user_fact(个人信息) user_preference(偏好习惯) conversation(对话要点) event(重要事件)
-importance: 5核心身份 4重要偏好/事件 3中长期 2临时 1闲聊
-level: L1核心事实(姓名/职业/偏好,永不衰减) L2情景记忆(事件/约定/对话,缓慢衰减) L3临时(闲聊/指令,快速衰减)
-何时输出: 发现用户姓名/住址/偏好/重要事件时输出
-"""
+_MEMORY_GUIDE = """[记忆]
+Memory: 类别 内容 | keywords:词1,词2 | importance:1-5 | level:L1/L2/L3
+类别: user_fact(个人信息) user_preference(偏好) conversation(对话) event(事件)
+importance: 5=核心身份 4=重要偏好/事件 3=中长期 2=临时 1=闲聊
+level: L1=核心事实(永不衰减) L2=情景记忆(缓慢衰减) L3=临时信息(快速衰减)
+发现用户新信息（姓名/住址/偏好/事件）时输出Memory行。"""
 
 
 def _base_sections() -> list[str]:
@@ -27,28 +24,41 @@ def _base_sections() -> list[str]:
     ]
 
 
-_WINDOW_GUIDE = """=== 窗口互动指南 ===
-参考「窗口探测」数据（系统 API 精确坐标）。
-- 对每个窗口探测项都要尝试互动——走到附近或者跳上去，距离和方向必须基于窗口探测中的「相对桌宠」数据，跳跃高度直接用探测数据的「上跳_N_px」值，
+_WINDOW_GUIDE = """[感知] 窗口探测
+参考「窗口探测」数据（系统API精确坐标）：
+- 对每个窗口探测项都要尝试互动——走到附近或者跳上去，距离和方向必须基于探测数据的「相对桌宠」，跳跃高度直接用「上跳_N_px」值
+- 禁止跳到标记"禁止跳跃"的窗口
 - 若无窗口，巡视桌面或找地方坐下或者睡觉
-- 大窗口/全屏 → 走到边缘坐下
-"""
+- 大窗口/全屏 → 走到边缘坐下"""
 
-_VISION_INTRO = """=== 视觉模式 ===
+_VISION_INTRO = """[感知] 视觉模式
 仔细观察截图内容，把所见写进 Speech 和 Summary：
 - 识别应用类型（IDE/浏览器/聊天/视频/文档/游戏），阅读可见文字，推断用户活动
 - 禁止空洞台词：只说"有新窗口""过去看看"视为违规；Summary 必须描述实际画面内容"""
 
-_NON_VISION_INTRO = """=== 非视觉模式 ===
+_NON_VISION_INTRO = """[感知] 非视觉模式
 依据窗口探测数据感知环境。"""
 
-_CHAT_INTRO = """=== 对话模式 ===
+_CHAT_INTRO = """[感知] 对话模式
 - 用户给指令 → 生成对应动作
 - 用户闲聊 → 语言回应 + 配合表情动作
 - 用户要求使用工具 → 调用对应的 function
 - 用户让你评论屏幕 → 分析屏幕内容给出回应
 - 无具体动作指令时，可自由选择 1-2 个配合语境的动作
 - 涉及方向/距离的指令，参考窗口探测数据精确执行"""
+
+_MOOD_GUIDE = """[状态] 心理变化 (仅变化时输出)
+Mood: affection±值 joy±值 sanity±值
+对话/交互: 闲聊不输出; 积极(被夸/关心/玩耍)+0~+1; 消极(被批/忽视/粗暴)-1~-3
+自主: 有趣发现/可玩窗口joy+0~+1; 无聊/受限joy-0~-1 sanity-0~-1; 反复受挫sanity-1~-2; 被忽视affection-0~-1"""
+
+_VITALS_GUIDE = """[状态] 生理变化 (仅变化时输出)
+Vitals: satiety±值 energy±值
+satiety(饱食度,0~100): 被投喂增加; 移动/跳跃消耗
+energy(精力,0~100): 睡眠/坐恢复; 移动/跳跃/活跃动作消耗"""
+
+_EMOTION_LIST = "happy, excited, sad, angry, surprised, thinking, sleepy, love, cool, shy, scared, hungry, curious, proud, bored, crazy"
+
 
 class _Lazy:
     """延迟求值包装器，避免 lambda 闭包陷阱，首次求值后缓存。"""
@@ -60,26 +70,14 @@ class _Lazy:
             self._cached = self.fn()
         return self._cached
 
+
 _PERCEPTION_SECTIONS = {
     "autonomous_vision":     [_VISION_INTRO, _WINDOW_GUIDE, _Lazy(generate_action_section)],
     "autonomous_non_vision": [_NON_VISION_INTRO, _WINDOW_GUIDE, _Lazy(generate_action_section)],
     "chat_vision":           [_CHAT_INTRO, _VISION_INTRO, _WINDOW_GUIDE, _Lazy(generate_action_section)],
     "chat_non_vision":       [_CHAT_INTRO, _WINDOW_GUIDE, _Lazy(generate_action_section)],
-    "interact":   [_Lazy(generate_action_section)],
+    "interact":              [_Lazy(generate_action_section)],
 }
-
-
-_MOOD_GUIDE = """## 心理状态变化
-末尾输出(可选,不对用户可见): Mood: affection±值 joy±值 sanity±值
-对话/交互场景: 闲聊不输出; 积极(被夸/关心/玩耍)+0~+1; 消极(被批/忽视/粗暴)-1~-3
-自主场景: 有趣发现/可玩窗口 joy+0~+1; 无聊/无窗口/受限 joy-0~-1 sanity-0~-1; 反复受挫 sanity-1~-2; 被忽视 affection-0~-1
-仅输出受影响项"""
-
-_VITALS_GUIDE = """## 生理状态变化
-末尾输出(可选,不对用户可见): Vitals: satiety±值 energy±值
-satiety(饱食度,0~100): 被投喂增加; 移动/跳跃消耗
-energy(精力,0~100): 睡眠/坐恢复; 移动/跳跃/活跃动作消耗
-仅输出受影响项"""
 
 
 def _autonomous_task() -> list[str]:
@@ -88,20 +86,9 @@ def _autonomous_task() -> list[str]:
     sit_dur = default_duration("sit")
     think_dur = default_duration("thinking")
 
-    constraints = [
-        "=== 核心规则 ===",
-        f"1. Summary 必须在最前面，≤50字",
-        f"2. 最少 {min_actions} 个 Action，总时长约 {target_s}s，用耗时动作穿插移动动作撞满时长",
-        "3. 必须说话 Speech ≤50字，可输出多行 Speech，将一段话分成几句输出，语气由人格决定",
-        "4. 禁止重复近期言行，动作选择多样化，根据情境和情绪变换组合",
-        "5. 言行必须反映当前状态：饿了就说想吃东西，累了就多坐多睡，不开心就撒娇求安慰，理智低了就说胡话；状态正常时不必刻意引导",
-        "6. 按[记忆存储指导]判断是否输出 Memory 行；心理无变化时省略 Mood 行",
-        f"\n可用 Emotion: happy, excited, sad, angry, surprised, thinking, sleepy, love, cool, shy, scared, hungry, curious, proud, bored, crazy",
-    ]
-
     format_guide = (
-        f"=== 输出格式 ===\n"
-        f"必须按顺序输出：Summary → Emotion(可选) → Speech → Action(≥{min_actions}个) → Memory(可选) → Mood(可选)：\n"
+        f"[输出格式]\n"
+        f"严格按此顺序输出：Summary → Emotion(可选) → Speech → Action(≥{min_actions}个) → Memory(可选) → Mood(可选)：\n"
         f"  Summary: <观察到的屏幕内容和行为决策，≤50字>\n"
         f"  Emotion: happy\n"
         f"  Speech: 又有新窗口了，我过去看看\n"
@@ -117,57 +104,76 @@ def _autonomous_task() -> list[str]:
         f"  Memory: user_fact 用户名为xxx，住在xx | keywords:[具体姓名],[居住地点] | importance:5 | level:L1\n"
         f"  Mood: joy+1 affection-1 sanity-1\n"
         f"\n"
+        f"可用 Emotion: {_EMOTION_LIST}\n"
     )
+
+    constraints = [
+        "[核心规则]",
+        f"1. Summary 必须在最前面，≤50字",
+        f"2. 最少 {min_actions} 个 Action，总时长约 {target_s}s，用耗时动作穿插移动动作撞满时长；禁止跳到标记'禁止跳跃'的窗口",
+        "3. 必须说话 Speech ≤50字，可输出多行分段表达，先说一句感想再补一句评论，让对话更自然",
+        "4. 严格禁止重复近期言行，即使意思相近也不行；动作组合多样化，根据情境和情绪变换",
+        "5. 言行必须反映当前状态：饿了就说想吃东西，累了就多坐多睡，不开心就撒娇求安慰，理智低了就说胡话；正常时不必刻意",
+        "6. 按[记忆]判断是否输出 Memory 行；心理无变化时省略 Mood 行",
+    ]
 
     return [format_guide] + constraints + [_MOOD_GUIDE]
 
 
 def _chat_task() -> list[str]:
-    parts = [
-        "=== 输出格式 ===\n"
-        "按顺序输出：Summary → Emotion(可选) → Speech → Action(≥3个) → Memory(可选) → Mood(可选)：\n"
-        "  Summary: <对话内容和行为决策，≤50字>\n"
-        "  Emotion: happy\n"
-        "  Speech: 好嘞，我跳过去看看！\n"
-        "  Speech: 嘿嘿～\n"
-        "  Action: walk left 600\n"
-        "  Action: thinking duration=15\n"
-        "  Memory: user_fact 用户名为xxx，住在xx | keywords:[具体姓名],[居住地点] | importance:5 | level:L1\n"
-        "  Mood: affection+1 joy+1 sanity-1",
-        "=== 核心规则 ===\n"
-        "1. Summary 必须在最前面，≤50字\n"
-        "2. 至少 3 个 Action，每行一个，格式 Action: 动作名 [参数...]，动作名从动作表选取\n"
-        "3. 必须说话 Speech ≤50字，可输出多行 Speech，将一段话分成几句输出，语气由人格决定\n"
-        "4. 不重复近期言行，动作选择多样化，根据对话和情绪变换组合\n"
-        "5. 言行必须反映当前状态：饿了就说想吃东西，累了就多坐多睡，不开心就撒娇求安慰，理智低了就说胡话；状态正常时不必刻意引导\n"
-        "6. 用户要求使用工具时调用对应 function\n"
-        "7. 按[记忆存储指导]判断是否输出 Memory 行；心理无变化时省略 Mood 行\n"
-        f"\n可用 Emotion: happy, excited, sad, angry, surprised, thinking, sleepy, love, cool, shy, scared, hungry, curious, proud, bored, crazy",
-        _MOOD_GUIDE,
+    format_guide = (
+        f"[输出格式]\n"
+        f"严格按此顺序输出：Summary → Emotion(可选) → Speech → Action(≥3个) → Memory(可选) → Mood(可选)：\n"
+        f"  Summary: <对话内容和行为决策，≤50字>\n"
+        f"  Emotion: happy\n"
+        f"  Speech: 好嘞，我跳过去看看！\n"
+        f"  Speech: 嘿嘿～\n"
+        f"  Action: walk left 600\n"
+        f"  Action: thinking duration=15\n"
+        f"  Memory: user_fact 用户名为xxx，住在xx | keywords:[具体姓名],[居住地点] | importance:5 | level:L1\n"
+        f"  Mood: affection+1 joy+1 sanity-1\n"
+        f"\n"
+        f"可用 Emotion: {_EMOTION_LIST}\n"
+    )
+
+    constraints = [
+        "[核心规则]",
+        "1. Summary 必须在最前面，≤50字",
+        "2. 至少 3 个 Action，每行一个，格式 Action: 动作名 [参数...]，动作名从动作表选取",
+        "3. 必须用 Speech 回应用户，≤50字，可多行分段表达，先说一句再补一句，语气由人格决定",
+        "4. 不重复近期言行，动作选择多样化，根据对话内容和情绪变换组合",
+        "5. 言行必须反映当前状态：饿了就说想吃东西，累了就多坐多睡，不开心就撒娇求安慰，理智低了就说胡话；正常时不必刻意",
+        "6. 用户要求使用工具时调用对应 function",
+        "7. 按[记忆]判断是否输出 Memory 行；心理无变化时省略 Mood 行",
     ]
-    return parts
+
+    return [format_guide] + constraints + [_MOOD_GUIDE]
 
 
 def _interact_task() -> list[str]:
-    return [
-        "=== 输出格式 ===\n"
-        "按顺序输出：Summary → Emotion(可选) → Speech → Action(1-2个) → Mood(可选) → Vitals(可选)：\n"
-        "  Summary: <互动内容和反应，≤15字>\n"
-        "  Emotion: happy\n"
-        "  Speech: 你怎么抓我呀\n"
-        "  Action: walk left 600\n"
-        "  Action: shake_arms\n"
-        "  Mood: affection+1 joy-1 sanity-5\n"
-        "  Vitals: satiety-2 energy+3",
-        "=== 核心规则 ===\n"
-        "1. Summary 必须在最前面，≤15字\n"
-        "2. 只输出 1-2 个 Action，格式 Action: 动作名 [参数...]，动作名从动作表选取\n"
-        "3. Speech 是本能反应，≤20字，性格语气，根据互动类型选择不同动作\n"
-        "4. 反应必须反映当前状态；禁止输出 Memory 行\n"
-        f"\n可用 Emotion: happy, excited, sad, angry, surprised, thinking, sleepy, love, cool, shy, scared, hungry, curious, proud, bored, crazy",
-        _MOOD_GUIDE,
-        _VITALS_GUIDE,
+    format_guide = (
+        f"[输出格式]\n"
+        f"严格按此顺序输出：Summary → Emotion(可选) → Speech → Action(1-2个) → Mood(可选) → Vitals(可选)：\n"
+        f"  Summary: <互动内容和反应，≤15字>\n"
+        f"  Emotion: happy\n"
+        f"  Speech: 你怎么抓我呀\n"
+        f"  Action: walk left 600\n"
+        f"  Action: shake_arms\n"
+        f"  Mood: affection+1 joy-1 sanity-5\n"
+        f"  Vitals: satiety-2 energy+3\n"
+        f"\n"
+        f"可用 Emotion: {_EMOTION_LIST}\n"
+    )
+
+    constraints = [
+        "[核心规则]",
+        "1. Summary 必须在最前面，≤15字",
+        "2. 只输出 1-2 个 Action，每行一个，格式 Action: 动作名 [参数...]，动作名从动作表选取",
+        "3. Speech 是本能反应，≤20字，可多行分段，语气由性格决定；根据互动类型选择不同动作",
+        "4. 反应必须反映当前状态；禁止输出 Memory 行",
     ]
+
+    return [format_guide] + constraints + [_MOOD_GUIDE, _VITALS_GUIDE]
 
 
 _TASK_SECTIONS = {
@@ -175,6 +181,7 @@ _TASK_SECTIONS = {
     "chat":        _chat_task,
     "interact":    _interact_task,
 }
+
 
 def build_system_prompt(mode: str, task: str, include_feeling_marker: bool = True) -> str:
     """分层组装 system prompt。
@@ -201,11 +208,10 @@ def build_system_prompt(mode: str, task: str, include_feeling_marker: bool = Tru
 
     sections: list[str] = []
 
-    # personality 统一在顶层注入
     if include_feeling_marker:
         sections.append(FEELING_MARKER)
     if config.PET_PERSONALITY:
-        sections.append(f"=== 你的性格 ===\n{config.PET_PERSONALITY}")
+        sections.append(f"[性格]\n{config.PET_PERSONALITY}")
 
     if task in ("autonomous", "chat"):
         sections.extend(_base_sections())
@@ -215,10 +221,8 @@ def build_system_prompt(mode: str, task: str, include_feeling_marker: bool = Tru
 
     sections.extend(_TASK_SECTIONS[task]())
 
-    if task in ("autonomous", "chat"):
-        pass  # 工具详细 schema 通过 API tools 参数传递；简短概览由 context_builder 动态注入
-
     return "\n\n".join(sections)
+
 
 def autonomous_vision_user_prompt(context: str) -> str:
     return (
