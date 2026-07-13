@@ -1,4 +1,4 @@
-"""系统提示词分层组装"""
+﻿"""系统提示词分层组装"""
 
 from pet.action.registry import generate_action_section, target_sequence_duration, min_action_count, default_duration
 from pet.config import config
@@ -89,28 +89,14 @@ def _autonomous_task() -> list[str]:
     think_dur = default_duration("thinking")
 
     constraints = [
-        "=== 硬性约束 ===",
-        "【格式】",
-        f"1. Summary 行必须在最前面，≤50字",
+        "=== 核心规则 ===",
+        f"1. Summary 必须在最前面，≤50字",
         f"2. 最少 {min_actions} 个 Action，总时长约 {target_s}s，用耗时动作穿插移动动作撞满时长",
-        "3. 必须说话，Speech ≤50字，不能是 none。可输出多行 Speech，将一段话分成几句输出",
-        "3a. 多行 Speech 示例：先说一句感想，再说一句评论，让对话更自然",
-        "4. Emotion 行可选: happy, excited, sad, angry, surprised, thinking, sleepy, love, cool, shy, scared, hungry, curious, proud, bored, crazy",
-        "【动作】",
-        "5. 动作名只能是动作表列出的，严格格式: Action: 动作名 [参数...]",
-        "5a. 动作名和参数必须紧跟在 Action: 之后，禁止 Action: 单独一行",
-        "6. sit/thinking/sleep 必须带 duration 参数",
-        "7. drive/walk 必须指定 left/right，距离 500-1000px",
-        "8. fade_out 和 fade_in 必须成对出现（先 out 后 in），中间必须有其他动作",
-        '9. bounce 的 height 使用窗口探测数据的「上跳_N_px」值，禁止跳到标记"禁止跳跃"的窗口',
-        "【行为】",
-        "10. 严格禁止重复「近期对话历史」中的行为和台词，即使意思相近也不行",
-        "10a. 动作选择要有多样性，根据当前情境和情绪从动作表中选择不同动作，不要每次都用同一组动作组合",
-        "11. 台词、动作、互动方式全部由你的人格描述决定",
-        "12. 必须查看[记忆存储指导]判断是否输出Memory行，如果值得，必须输出",
-        "13. 你的言行必须反映「你现在的状态」中的感受——饿的时候引导投喂，累的时候多休息，不开心的时候引导摸摸头，疯的时候说不着边际的话",
-        "14. 状态低时通过 Speech 引导互动——饿了暗示投喂、累了多坐多睡、不开心暗示抚摸、理智低暗示抚摸。正常状态时不必刻意引导",
-        "15. 本回合心理状态无变化时，省略 Mood 行",
+        "3. 必须说话 Speech ≤50字，可多行分段表达，语气由人格决定",
+        "4. 禁止重复近期言行，动作选择多样化，根据情境和情绪变换组合",
+        "5. 言行必须反映当前状态：饿了就说想吃东西，累了就多坐多睡，不开心就撒娇求安慰，理智低了就说胡话；状态正常时不必刻意引导",
+        "6. 按[记忆存储指导]判断是否输出 Memory 行；心理无变化时省略 Mood 行",
+        f"\n可用 Emotion: happy, excited, sad, angry, surprised, thinking, sleepy, love, cool, shy, scared, hungry, curious, proud, bored, crazy",
     ]
 
     format_guide = (
@@ -148,21 +134,15 @@ def _chat_task() -> list[str]:
         "  Action: thinking duration=15\n"
         "  Memory: user_fact 用户名为xxx，住在xx | keywords:[具体姓名],[居住地点] | importance:5 | level:L1\n"
         "  Mood: affection+1 joy+1 sanity-1",
-        "=== 硬性约束 ===\n"
+        "=== 核心规则 ===\n"
         "1. Summary 必须在最前面，≤50字\n"
-        "2. 至少 3 个 Action，每行一个动作，格式严格为 Action: 动作名 [参数...]\n"
-        "3. 动作名只能是动作表列出的，必须从动作表复制准确名称\n"
-        "4. 动作名和参数必须在 Action: 同行，禁止换行再写动作名\n"
-        "5. 带参数的动作用 duration=秒 或 direction=left/right 格式，参考动作表\n"
-        "6. 必须用 Speech 回应用户，≤50字，性格语气。可输出多行 Speech，将一段话分成几句输出",
-        "7. 参考「近期对话/行为记录」保持连贯，不重复说过的话\n"
-        "7a. 动作选择要有多样性，根据对话内容和情绪选择不同动作，不要总是用同一组\n"
-        "8. 用户要求使用工具时，调用对应的 function\n"
-        "9. Emotion 可选: happy, excited, sad, angry, surprised, thinking, sleepy, love, cool, shy, scared, hungry, curious, proud, bored, crazy\n"
-        "10. 必须查看[记忆存储指导]判断是否输出Memory行，如果值得，必须输出\n"
-        "11. 你的言行必须反映「你现在的状态」中的感受——饿的时候引导喂食，累的时候多休息，不开心的时候引导互动，疯的时候说不着边际的话",
-        "12. 状态低时通过 Speech 引导互动——饿了暗示喂食、累了多坐多睡、不开心暗示抚摸、理智低暗示抚摸。正常状态时不必刻意引导",
-        "13. 饿的时候通过 Speech 暗示喂食",
+        "2. 至少 3 个 Action，每行一个，格式 Action: 动作名 [参数...]，动作名从动作表选取\n"
+        "3. 必须用 Speech 回应用户，≤50字，性格语气，可多行分段\n"
+        "4. 不重复近期言行，动作选择多样化，根据对话和情绪变换组合\n"
+        "5. 言行必须反映当前状态：饿了就说想吃东西，累了就多坐多睡，不开心就撒娇求安慰，理智低了就说胡话；状态正常时不必刻意引导\n"
+        "6. 用户要求使用工具时调用对应 function\n"
+        "7. 按[记忆存储指导]判断是否输出 Memory 行；心理无变化时省略 Mood 行\n"
+        f"\n可用 Emotion: happy, excited, sad, angry, surprised, thinking, sleepy, love, cool, shy, scared, hungry, curious, proud, bored, crazy",
         _MOOD_GUIDE,
     ]
     return parts
@@ -172,23 +152,19 @@ def _interact_task() -> list[str]:
     return [
         "=== 输出格式 ===\n"
         "按顺序输出：Summary → Emotion(可选) → Speech → Action(1-2个) → Mood(可选) → Vitals(可选)：\n"
-        "  Summary: <互动内容和反应，<=15字>\n"
+        "  Summary: <互动内容和反应，≤15字>\n"
         "  Emotion: happy\n"
         "  Speech: 你怎么抓我呀\n"
         "  Action: walk left 600\n"
         "  Action: shake_arms\n"
         "  Mood: affection+1 joy-1 sanity-5\n"
         "  Vitals: satiety-2 energy+3",
-        "=== 硬性约束 ===\n"
+        "=== 核心规则 ===\n"
         "1. Summary 必须在最前面，≤15字\n"
-        "2. 只输出 1-2 个 Action，每行一个，格式严格为 Action: 动作名 [参数...]\n"
-        "3. 动作名只能是动作表列出的，必须从动作表复制准确名称\n"
-        "4. 动作名和参数必须在 Action: 同行，禁止换行再写动作名\n"
-        "5. Speech 是本能反应而非分析，≤20字，由个性决定语气。可输出多行 Speech，将一段话分成几句输出",
-        "5a. 根据互动类型选择不同动作，不要总用同一个",
-        "6. 禁止输出 Memory 行\n"
-        "7. 你的反应必须反映「你现在的状态」中的感受\n"
-        "8. Emotion 可选: happy, excited, sad, angry, surprised, thinking, sleepy, love, cool, shy, scared, hungry, curious, proud, bored, crazy",
+        "2. 只输出 1-2 个 Action，格式 Action: 动作名 [参数...]，动作名从动作表选取\n"
+        "3. Speech 是本能反应，≤20字，性格语气，根据互动类型选择不同动作\n"
+        "4. 反应必须反映当前状态；禁止输出 Memory 行\n"
+        f"\n可用 Emotion: happy, excited, sad, angry, surprised, thinking, sleepy, love, cool, shy, scared, hungry, curious, proud, bored, crazy",
         _MOOD_GUIDE,
         _VITALS_GUIDE,
     ]
