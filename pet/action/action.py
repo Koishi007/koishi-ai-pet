@@ -251,7 +251,7 @@ class PetActions(QObject):
                         g._play_once("falling")
                     return
                 else:
-                    l_rect = to_logical(rect)
+                    l_rect = tuple(int(round(v)) for v in to_logical(rect))
                     new_top = l_rect[1]
                     pet_w = self._window.width()
                     feet_l = int(new_x) + pet_w // 3
@@ -307,7 +307,7 @@ class PetActions(QObject):
                 found_hwnd = 0
                 found_title = ""
                 for win in get_visible_windows():
-                    left, top, right, bottom = to_logical(win["rect"])
+                    left, top, right, bottom = (int(round(v)) for v in to_logical(win["rect"]))
                     if (left == pet_self[0] and top == pet_self[1]
                             and right == pet_self[2] and bottom == pet_self[3]):
                         continue
@@ -318,10 +318,10 @@ class PetActions(QObject):
                         if landing < effective_bottom:
                             if is_window_occluded(win["hwnd"], skip_hwnd=pet_hwnd):
                                 continue
-                            effective_bottom = landing
+                            effective_bottom = int(round(landing))
                             found_hwnd = win["hwnd"]
                             found_title = win["title"][:30]
-                g._cached_effective_bottom = effective_bottom
+                g._cached_effective_bottom = int(round(effective_bottom))
                 if found_hwnd:
                     g._standing_hwnd = found_hwnd
                     g._standing_title = found_title

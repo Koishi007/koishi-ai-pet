@@ -172,7 +172,7 @@ class GravitySystem(QObject):
                         self.standing_lost.emit(lost_title)
                     else:
                         l_rect = self._to_logical_rect(rect)
-                        new_top = l_rect[1]
+                        new_top = int(round(l_rect[1]))
                         pet_x = self._window.x()
                         pet_w = self._window.width()
                         feet_l = pet_x + pet_w // 3
@@ -206,7 +206,7 @@ class GravitySystem(QObject):
             feet_l = pet_x + w // 3
             feet_r = pet_x + (2 * w) // 3
             for win in get_visible_windows():
-                left, top, right, bottom = self._to_logical_rect(win["rect"])
+                left, top, right, bottom = (int(round(v)) for v in self._to_logical_rect(win["rect"]))
                 if (left == pet_self[0] and top == pet_self[1]
                         and right == pet_self[2] and bottom == pet_self[3]):
                     continue
@@ -217,11 +217,11 @@ class GravitySystem(QObject):
                     if landing < effective_bottom:
                         if is_window_occluded(win["hwnd"], skip_hwnd=pet_hwnd):
                             continue
-                        effective_bottom = landing
+                        effective_bottom = int(round(landing))
                         found_hwnd = win["hwnd"]
                         found_title = win["title"][:30]
                         logger.debug(f"[Gravity] land on: \"{found_title}\" top={top}")
-            self._cached_effective_bottom = effective_bottom
+            self._cached_effective_bottom = int(round(effective_bottom))
             if found_hwnd:
                 self._standing_hwnd = found_hwnd
                 self._standing_title = found_title
@@ -312,14 +312,14 @@ class GravitySystem(QObject):
             feet_l = pet_x_int + w // 3
             feet_r = pet_x_int + (2 * w) // 3
             for win in get_visible_windows():
-                left, top, right, bottom = self._to_logical_rect(win["rect"])
+                left, top, right, bottom = (int(round(v)) for v in self._to_logical_rect(win["rect"]))
                 if feet_l >= right or feet_r <= left:
                     continue
                 if old_pet_bottom <= top <= new_pet_bottom:
                     if not is_window_occluded(win["hwnd"], skip_hwnd=pet_hwnd):
                         landing = top - h
                         if landing < effective_bottom:
-                            effective_bottom = landing
+                            effective_bottom = int(round(landing))
                             found_hwnd = win["hwnd"]
                             found_title = win["title"][:30]
                             found_rect = self._to_logical_rect(win["rect"])
