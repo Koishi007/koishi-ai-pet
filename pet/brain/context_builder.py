@@ -99,8 +99,8 @@ class ContextBuilder:
 
             dx_walk = (left + w // 2) - (pet_x + pet_w // 2)  # 目标: 窗口中部
             dy_top = top - (pet_y + pet_h)
-            dist = abs(dx_walk)
-            jump_px = abs(dy_top)
+            dist = int(round(abs(dx_walk)))
+            jump_px = int(round(abs(dy_top)))
 
             # 打分：距离近 + 尺寸大 + 可跳跃 = 高优先级
             dist_score = 1000.0 / (dist + 1.0)
