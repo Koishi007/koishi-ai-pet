@@ -5,7 +5,8 @@ from __future__ import annotations
 import json
 import logging
 import os
-import threading
+import re
+import ssl
 import urllib.error
 import urllib.request
 from importlib.metadata import PackageNotFoundError, version as _pkg_version
@@ -15,21 +16,20 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - py>=3.11 自带
     tomllib = None
 
-from PySide6.QtCore import QObject, Signal
+from packaging.version import InvalidVersion, parse as _parse_ver
+
+from PySide6.QtCore import QObject, QThread, Qt, Signal, Slot
 
 logger = logging.getLogger(__name__)
 
 REPO = "Koishi007/koishi-ai-pet"
 API_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
 _PKG_NAME = "koishi-ai-pet"
-_TIMEOUT = 15  # 网络请求超时（秒）
+_TIMEOUT = 8  # 网络请求超时（秒）
+_ssl_ctx = ssl.create_default_context()
 
-# packaging 可选，用于 PEP 440 规范的版本比较；不可用时回退到手写比较
-try:
-    from packaging.version import InvalidVersion, parse as _parse_ver
-    _HAS_PACKAGING = True
-except ModuleNotFoundError:
-    _HAS_PACKAGING = False
+# 文本解析 pyproject.toml 中的 version 字段（match 不适用，文件不以 version 开头）
+_RE_VERSION = re.compile(r'^\s*version\s*=\s*["\']([^"\']+)', re.IGNORECASE | re.MULTILINE)
 
 
 def _project_root() -> str:
@@ -46,18 +46,21 @@ def get_local_version() -> str:
                 data = tomllib.load(f)
             v = data.get("project", {}).get("version", "")
             if v:
+                logger.debug(f"[VersionCheck] source=pyproject.toml version={v}")
                 return v
-        # py<3.11 无 tomllib 时简单文本解析
+        # py<3.11 无 tomllib 时用正则解析
         with open(path, encoding="utf-8") as f:
-            for line in f:
-                s = line.strip()
-                if s.startswith("version") and "=" in s and '"' in s:
-                    return s.split("=", 1)[1].strip().strip('"').strip("'")
+            m = _RE_VERSION.search(f.read())
+            if m:
+                v = m.group(1)
+                logger.debug(f"[VersionCheck] source=pyproject.txt version={v}")
+                return v
     except Exception:
         pass
     try:
         v = _pkg_version(_PKG_NAME)
         if v:
+            logger.debug(f"[VersionCheck] source=metadata version={v}")
             return v
     except PackageNotFoundError:
         pass
@@ -70,21 +73,12 @@ def _strip_v(tag: str) -> str:
 
 
 def _ver_newer(remote: str, local: str) -> bool:
-    """判断 remote 是否比 local 新"""
-    if _HAS_PACKAGING:
-        try:
-            return _parse_ver(remote) > _parse_ver(local)
-        except InvalidVersion:
-            return remote != local
+    """判断 remote 是否比 local 新（PEP 440 规范比较）。"""
     try:
-        ra = [int(x) for x in remote.split(".")]
-        la = [int(x) for x in local.split(".")]
-        for r, l in zip(ra, la):
-            if r != l:
-                return r > l
-        return len(ra) > len(la)
-    except (ValueError, AttributeError):
-        return remote != local
+        return _parse_ver(remote) > _parse_ver(local)
+    except InvalidVersion:
+        logger.debug(f"[VersionCheck] 版本号无法解析，跳过比较: remote={remote} local={local}")
+        return False
 
 
 def _build_headers() -> dict:
@@ -99,48 +93,88 @@ def _build_headers() -> dict:
     return headers
 
 
-class UpdateChecker(QObject):
-    """异步版本检查器"""
+class _CheckWorker(QObject):
+    """后台执行 GitHub API 请求的工作对象，由 QThread 驱动。
 
-    # 发现新版本时发出 (latest_tag, local_version)
+    finished 信号在 run() 末尾（含异常路径）必定 emit，用于通知线程退出。
+    """
+
+    update_available = Signal(str, str)
+    finished = Signal()
+
+    @Slot()
+    def run(self) -> None:
+        """在线程中执行版本检查（同步阻塞，由 QThread.started 触发）。"""
+        try:
+            local = get_local_version()
+            if not local:
+                logger.debug("[VersionCheck] 本地版本未知，跳过检查")
+                return
+            try:
+                req = urllib.request.Request(API_URL, headers=_build_headers())
+                with urllib.request.urlopen(req, timeout=_TIMEOUT, context=_ssl_ctx) as resp:
+                    # urlopen 对 4xx/5xx 直接抛 HTTPError，此处仅防御 3xx 等极端场景
+                    if resp.status != 200:
+                        logger.debug(f"[VersionCheck] HTTP {resp.status}")
+                        return
+                    data = json.load(resp)
+
+                tag_name = data.get("tag_name", "")
+                # releases/latest 仅返回非草稿、非预发布版本（防御 API 策略变更）
+                if not tag_name or data.get("prerelease"):
+                    return
+                latest = _strip_v(tag_name)
+                logger.debug(f"[VersionCheck] local={local} latest={latest}")
+                if _ver_newer(latest, local):
+                    self.update_available.emit(latest, local)
+            except urllib.error.HTTPError as e:
+                logger.debug(f"[VersionCheck] HTTPError {e.code}: {e.reason}")
+            except urllib.error.URLError as e:
+                logger.debug(f"[VersionCheck] URLError: {e.reason}")
+            except Exception as e:
+                logger.debug(f"[VersionCheck] 检查失败: {e}")
+        finally:
+            self.finished.emit()
+
+
+class UpdateChecker(QObject):
+    """异步版本检查器 — QThread + moveToThread 模式，信号安全跨线程。
+
+    用法:
+        checker = UpdateChecker()
+        checker.update_available.connect(on_update, Qt.ConnectionType.QueuedConnection)
+        checker.check()
+    """
+
     update_available = Signal(str, str)
 
-    def check(self) -> None:
-        """启动后台线程检查更新（非阻塞）。"""
-        t = threading.Thread(target=self._check_worker, daemon=True)
-        t.start()
+    def __init__(self, parent: QObject | None = None):
+        super().__init__(parent)
+        self._thread: QThread | None = None
+        self._worker: _CheckWorker | None = None
 
-    def _check_worker(self) -> None:
-        local = get_local_version()
-        if not local:
-            logger.debug("[VersionCheck] 本地版本未知，跳过检查")
+    def check(self) -> None:
+        """启动后台检查（非阻塞）。前次未清理完前不接受新请求。"""
+        if self._thread is not None:
             return
-        try:
-            req = urllib.request.Request(API_URL, headers=_build_headers())
-            with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
-                # 限流检查：匿名 60 次/小时，NAT 环境易触发
-                remaining = resp.headers.get("X-RateLimit-Remaining")
-                if remaining is not None:
-                    try:
-                        if int(remaining) <= 0:
-                            logger.debug("[VersionCheck] 触发限流，跳过本次")
-                            return
-                    except ValueError:
-                        pass
-                if resp.status != 200:
-                    logger.debug(f"[VersionCheck] HTTP {resp.status}")
-                    return
-                data = json.loads(resp.read().decode("utf-8"))
-            tag_name = data.get("tag_name", "")
-            # releases/latest 只返回非草稿/非预发布，显式判断以防策略变更
-            if not tag_name or data.get("prerelease"):
-                return
-            latest = _strip_v(tag_name)
-            logger.debug(f"[VersionCheck] local={local} latest={latest}")
-            if _ver_newer(latest, local):
-                self.update_available.emit(tag_name, local)
-        except urllib.error.HTTPError as e:
-            # 404 = 仓库尚无 release，静默跳过
-            logger.debug(f"[VersionCheck] HTTPError {e.code}: {e.reason}")
-        except Exception as e:
-            logger.debug(f"[VersionCheck] 检查失败: {e}")
+        self._thread = QThread()
+        self._worker = _CheckWorker()
+        self._worker.moveToThread(self._thread)
+        self._worker.update_available.connect(
+            self.update_available, type=Qt.ConnectionType.QueuedConnection
+        )
+        # worker 在自身线程内析构，必须在 quit 连接之前
+        self._worker.finished.connect(self._worker.deleteLater)
+        self._worker.finished.connect(self._thread.quit, type=Qt.ConnectionType.DirectConnection)
+        self._thread.finished.connect(self._cleanup)
+        self._thread.started.connect(self._worker.run)
+        self._thread.start()
+
+    @Slot()
+    def _cleanup(self) -> None:
+        """线程结束后清理资源（在主线程执行）。"""
+        if self._thread:
+            self._thread.deleteLater()
+            self._thread = None
+        # worker 已由 deleteLater 在自身线程析构，仅需解除引用
+        self._worker = None

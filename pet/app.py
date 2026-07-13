@@ -207,11 +207,11 @@ def main():
     _updater = UpdateChecker()
 
     def _on_update_available(latest_tag: str, local_ver: str):
-        logger.info(f"[VersionCheck] 发现新版本: {latest_tag}（当前 {local_ver}）")
+        logger.info(f"[VersionCheck] 发现新版本: v{latest_tag}（当前 v{local_ver}）")
         if tray.tray_icon:
             tray.tray_icon.showMessage(
                 "发现新版本",
-                f"Koishi AI Pet {latest_tag} 已发布（当前 v{local_ver}）。\n"
+                f"Koishi AI Pet v{latest_tag} 已发布（当前 v{local_ver}）。\n"
                 f"运行项目目录下的 update.bat / update.sh 即可更新。",
                 QSystemTrayIcon.MessageIcon.Information,
                 8000,
