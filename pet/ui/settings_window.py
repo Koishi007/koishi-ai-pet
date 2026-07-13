@@ -374,6 +374,14 @@ class SettingsWindow(QWidget):
         self._fields[key] = cb
         return cb
 
+    def _combo(self, key: str, items: list[str]) -> QComboBox:
+        """创建 QComboBox 并注册到 _fields。"""
+        cb = QComboBox()
+        cb.addItems(items)
+        cb.setStyleSheet(COMBOBOX_QSS)
+        self._fields[key] = cb
+        return cb
+
     def _text_area(self, key: str) -> MarkdownEdit:
         """创建 MarkdownEdit 并注册到 _fields。"""
         te = MarkdownEdit()
@@ -565,6 +573,10 @@ class SettingsWindow(QWidget):
         vision_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         vision_form.addRow("", self._check("VISION_ENABLED", "开启视觉理解（需要模型支持多模态）"))
         vision_form.addRow("截图缩放比例(0.1~1.0):", self._line("VISION_SCALE", "0.7", QDoubleValidator(0.1, 1.0, 1)))
+        vision_form.addRow("截图编码格式:", self._combo("SCREENSHOT_FORMAT", ["jpeg", "png"]))
+        fmt_hint = QLabel("JPEG 体积更小，PNG 无损")
+        fmt_hint.setStyleSheet(f"color:{_COLOR_TEXT_MUTED}; font-size:11px;")
+        vision_form.addRow("", fmt_hint)
         inner.addWidget(vision_group)
 
         # 理智

@@ -76,5 +76,12 @@ class ScreenReader:
             logger.info(f"[ScreenReader] resize {w}x{h} (scale={vision_scale}) → {new_w}x{new_h}")
             image = image.resize((new_w, new_h), Image.LANCZOS)
         buf = io.BytesIO()
-        image.save(buf, format="PNG")
+        fmt = config.SCREENSHOT_FORMAT or "jpeg"
+        if fmt == "png":
+            image.save(buf, format="PNG")
+        else:
+            # JPEG 压缩，保存为 RGB 避免 RGBA → JPEG 异常
+            if image.mode == "RGBA":
+                image = image.convert("RGB")
+            image.save(buf, format="JPEG", quality=95)
         return base64.b64encode(buf.getvalue()).decode("utf-8")
