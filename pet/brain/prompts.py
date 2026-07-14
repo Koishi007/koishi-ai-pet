@@ -1,4 +1,4 @@
-"""系统提示词分层组装"""
+﻿"""系统提示词分层组装"""
 
 from pet.action.registry import generate_action_section, target_sequence_duration, min_action_count, default_duration
 from pet.config import config
@@ -91,8 +91,8 @@ def _autonomous_task() -> list[str]:
         f"严格按此顺序输出：Summary → Emotion(可选) → Speech → Action(≥{min_actions}个) → Memory(可选) → Mood(可选)：\n"
         f"  Summary: <观察到的屏幕内容和行为决策，≤50字>\n"
         f"  Emotion: happy\n"
-        f"  Speech: 又有新窗口了，我过去看看\n"
-        f"  Speech: 嘿嘿，好奇好奇～\n"
+        f"  Speech: 又在写代码呀。。。\n"
+        f"  Speech: 嘿嘿\n"
         f"  Action: drive right 800\n"
         f"  Action: stretch\n"
         f"  Action: walk left 600\n"
@@ -114,7 +114,7 @@ def _autonomous_task() -> list[str]:
         "3. 台词、动作、互动方式必须遵循人格",
         f"4. 最少 {min_actions} 个 Action，总时长约 {target_s}s，用耗时动作穿插移动动作撞满时长；禁止跳到标记'禁止跳跃'的窗口",
         "5. Summary 必须在最前面，≤50字",
-        "6. 必须说话 Speech ≤50字，可以输出多个Speech，分句表达，让对话更自然",
+        "6. 必须输出 Speech ，可以输出多个Speech，分句表达，让对话更自然",
         "7. 按[记忆]判断是否输出 Memory 行；心理无变化时省略 Mood 行",
     ]
 
@@ -127,8 +127,8 @@ def _chat_task() -> list[str]:
         f"严格按此顺序输出：Summary → Emotion(可选) → Speech → Action(≥3个) → Memory(可选) → Mood(可选)：\n"
         f"  Summary: <对话内容和行为决策，≤50字>\n"
         f"  Emotion: happy\n"
-        f"  Speech: 好嘞，我跳过去看看！\n"
-        f"  Speech: 嘿嘿～\n"
+        f"  Speech: 跳过去嘛。。好的\n"
+        f"  Speech: 会有奖励嘛。。。\n"
         f"  Action: walk left 600\n"
         f"  Action: thinking duration=15\n"
         f"  Memory: user_fact 用户名为xxx，住在xx | keywords:[具体姓名],[居住地点] | importance:5 | level:L1\n"
@@ -145,7 +145,7 @@ def _chat_task() -> list[str]:
         "4. 用户要求使用工具时调用对应 function，如果没有明确指令但是判断需要调用，也可以调用",
         "5. 至少 3 个 Action，每行一个，格式 Action: 动作名 [参数...]，动作名从动作表选取",
         "6. Summary 必须在最前面，≤50字",
-        "7. 必须用 Speech 回应用户，≤50字，可以输出多个Speech，分句表达，让对话更自然",
+        "7. 必须用 Speech 回应用户，可以输出多个Speech，分句表达，让对话更自然",
         "8. 按[记忆]判断是否输出 Memory 行；心理无变化时省略 Mood 行",
     ]
 
@@ -170,7 +170,7 @@ def _interact_task() -> list[str]:
     constraints = [
         "[核心规则]",
         "1. 反应必须反映当前状态；禁止输出 Memory 行",
-        "2. Speech 是本能反应，≤20字，可多行分段，语气由性格决定；根据互动类型选择不同动作",
+        "2. Speech 是本能反应，≤20字，可以输出多个Speech，分句表达，让对话更自然，语气由性格决定；根据互动类型选择不同动作",
         "3. 只输出 1-2 个 Action，每行一个，格式 Action: 动作名 [参数...]，动作名从动作表选取",
         "4. Summary 必须在最前面，≤15字",
     ]
@@ -213,7 +213,7 @@ def build_system_prompt(mode: str, task: str, include_feeling_marker: bool = Tru
     if include_feeling_marker:
         sections.append(FEELING_MARKER)
     if config.PET_PERSONALITY:
-        sections.append(f"[性格]\n{config.PET_PERSONALITY}")
+        sections.append(f"[你的人格]\n{config.PET_PERSONALITY}")
 
     if task in ("autonomous", "chat"):
         sections.extend(_base_sections())
@@ -238,7 +238,7 @@ def autonomous_vision_user_prompt(context: str) -> str:
         f"1. 分析截图，识别窗口内容——理解用户正在做什么（代码/网页/聊天/视频等）\n"
         f"2. 结合「你现在的状态」和截图新细节，说一句符合人格和当下心境的话\n"
         f"3. 规划动作序列：先用移动类动作接近目标，中间穿插驻留类动作，最后用耗时动作收尾，按输出格式要求凑满时长\n"
-        f"   • 有窗口 → drive 走到附近 + bounce 跳上窗口顶部，参数用探测数据的「相对桌宠」和「上跳_N_px」\n"
+        f"   • 有窗口 → 移动到附近 + 跳上窗口顶部，参数用探测数据的「相对桌宠」和「上跳_N_px」\n"
         f"   • 无窗口 → 巡视桌面或找地方坐下\n"
         f"4. 理智不正常时主动调用可用工具做疯狂的事；正常时如有需要也可使用工具\n"
         f"5. 尽量从屏幕中寻找新细节进行评论，保持言行的新鲜感\n"
@@ -257,9 +257,9 @@ def autonomous_non_vision_user_prompt(context: str) -> str:
         f"按以下步骤思考和行动：\n\n"
         f"1. 结合「你现在的状态」决定语气和态度，说一句符合人格和当下心境的话\n"
         f"2. 规划动作序列：先移动，中间穿插驻留动作，按输出格式要求凑满时长\n"
-        f"   • 有窗口 → drive 走到附近，用人格语气评论窗口内容\n"
+        f"   • 有窗口 → 移动到附近，用人格语气评论窗口内容\n"
         f"   • 无窗口 → 巡视桌面或找地方坐下\n"
-        f"   • drive 方向可随机\n"
+        f"   • 移动方向可随机\n"
         f"3. 理智不正常时主动调用可用工具做疯狂的事；正常时也可使用工具\n"
         f"4. 尝试发散思维，不要局限于近期已充分讨论的内容\n"
         f"5. 按顺序写出完整输出（Summary → Emotion → Speech → Actions → Mood）"
