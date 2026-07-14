@@ -175,7 +175,7 @@ def generate_action_section(exclude: list[str] | None = None) -> str:
     registry = _build_duration_registry()
     _exclude = set(exclude or [])
     included = len(registry) - len(_exclude)
-    lines = [f"=== 可用动作（共 {included} 个）==="]
+    lines = [f"[可用动作] 共 {included} 个"]
     for name, a in registry.items():
         if name in _exclude:
             continue

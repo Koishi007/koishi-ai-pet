@@ -128,7 +128,7 @@ class ContextBuilder:
         scored.sort(key=lambda x: x[0], reverse=True)
         top = scored[:ContextBuilder._MAX_WINDOWS]
 
-        lines = ["=== 窗口探测（系统 API，坐标精确） ==="]
+        lines = ["[窗口探测（系统 API，坐标精确）]"]
         lines.append(f"桌宠位置: 左{pet_x} 上{pet_y} (宽{pet_w} 高{pet_h})")
 
         if not top:
@@ -220,7 +220,7 @@ class ContextBuilder:
         # 人格驱动：始终注入当前感受到 FEELING_MARKER 锚点
         feeling = self._build_feeling()
         if feeling:
-            feeling_block = f"=== 你现在的状态 ===\n{feeling}"
+            feeling_block = f"[你现在的状态]\n{feeling}"
             content = content.replace(
                 prompts.FEELING_MARKER,
                 feeling_block,

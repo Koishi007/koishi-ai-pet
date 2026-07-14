@@ -149,7 +149,7 @@ class ToolRegistry:
             return ""
         lines = [f"- {t.description}" for t in tools]
         return (
-            "=== 可用工具 ===\n"
+            "[可用工具]\n"
             "你拥有以下工具能力，自主决策时可主动使用：\n"
             + "\n".join(lines)
             + "\n需要时直接发起 function call。"
