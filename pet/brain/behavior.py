@@ -832,6 +832,7 @@ class Behavior(BrainMixin):
         ("stretch", "唔…伸个懒腰舒服多了～"),
         ("sleep", "呼…呼… zzz…"),
         ("thinking", "让我想想…"),
+        ("bathing", "洗个澡清爽一下～"),
     ]
 
     def _decide_local(self) -> BehaviorOutput:

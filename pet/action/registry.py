@@ -14,6 +14,7 @@ _DURATION_ACTION_DEFS = {
     "sleep":        (10, 0.4),
     "calling":      ( 5, 0.2),
     "finger_heart": ( 1, 0.01),
+    "bathing":      ( 20, 0.5),
 }
 
 # 动作序列总时长占调度间隔的比例
@@ -137,6 +138,7 @@ def _build_duration_registry() -> dict[str, ActionDef]:
             "thinking": "沉思",
             "calling": "打电话消磨时间",
             "finger_heart": "表达喜欢的比心",
+            "bathing": "放松地泡澡",
         }
         result[name] = ActionDef(
             name=name,

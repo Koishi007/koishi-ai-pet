@@ -198,16 +198,11 @@ class ActionQueue(QObject):
     @staticmethod
     def _format(name: str, args: tuple, kwargs: dict) -> str:
         parts = [name]
-        if name == "drive" or name == "walk":
-            parts.append(f"{args[0]} {args[1]}px" if len(args) >= 2 else "")
-        elif name == "move_to":
-            parts.append(f"({args[0].x()},{args[0].y()})→({args[1].x()},{args[1].y()})" if len(args) >= 2 else "")
-        elif name == "bounce":
-            d = kwargs.get("direction", "right")
-            dist = kwargs.get("distance", 0)
-            parts.append(f"{d} {dist}px h={kwargs.get('height', 150)}")
-        elif name in ("sit", "sleep", "thinking"):
-            dur = kwargs.get("duration")
-            if dur:
-                parts.append(f"{dur}s")
+        if args:
+            parts.extend(str(a) for a in args)
+        for k, v in kwargs.items():
+            if k == "duration":
+                parts.append(f"{v}s")
+            else:
+                parts.append(f"{k}={v}")
         return " ".join(parts)

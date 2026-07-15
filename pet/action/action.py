@@ -440,6 +440,9 @@ class PetActions(QObject):
     def rotate(self, *_, **_kw):
         self._anim.play("rotate")
         
+    def bathing(self, duration=None):
+        self._anim.play("bathing", duration=duration)
+        
     def _fade_in_safety_check(self):
         try:
             if self._window.windowOpacity() < 0.1:
