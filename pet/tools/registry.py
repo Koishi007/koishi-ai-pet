@@ -137,23 +137,4 @@ class ToolRegistry:
                 })
         return tools
 
-    def to_prompt_summary(self) -> str:
-        """生成简短的工具能力概览，供注入 system prompt。
-
-        与 to_openai_tools() 互补：
-        - to_openai_tools() 提供完整 function schema 给 API 参数
-        - to_prompt_summary() 提供简短文字概览给 prompt，增强 LLM 主动调用意识
-        """
-        tools = self.enabled_tools
-        if not tools:
-            return ""
-        lines = [f"- {t.description}" for t in tools]
-        return (
-            "[可用工具]\n"
-            "你拥有以下工具能力，自主决策时可主动使用：\n"
-            + "\n".join(lines)
-            + "\n需要时直接发起 function call。"
-        )
-
-
 TOOL_REGISTRY = ToolRegistry()

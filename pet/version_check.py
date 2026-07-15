@@ -37,8 +37,15 @@ def _project_root() -> str:
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+_local_version_cache: str | None = None
+
+
 def get_local_version() -> str:
-    """获取本地版本号。"""
+    """获取本地版本号"""
+    global _local_version_cache
+    if _local_version_cache is not None:
+        return _local_version_cache
+
     path = os.path.join(_project_root(), "pyproject.toml")
     try:
         if tomllib:
@@ -47,6 +54,7 @@ def get_local_version() -> str:
             v = data.get("project", {}).get("version", "")
             if v:
                 logger.debug(f"[VersionCheck] source=pyproject.toml version={v}")
+                _local_version_cache = v
                 return v
         # py<3.11 无 tomllib 时用正则解析
         with open(path, encoding="utf-8") as f:
@@ -54,6 +62,7 @@ def get_local_version() -> str:
             if m:
                 v = m.group(1)
                 logger.debug(f"[VersionCheck] source=pyproject.txt version={v}")
+                _local_version_cache = v
                 return v
     except Exception:
         pass
@@ -61,9 +70,11 @@ def get_local_version() -> str:
         v = _pkg_version(_PKG_NAME)
         if v:
             logger.debug(f"[VersionCheck] source=metadata version={v}")
+            _local_version_cache = v
             return v
     except PackageNotFoundError:
         pass
+    _local_version_cache = ""
     return ""
 
 
@@ -94,10 +105,7 @@ def _build_headers() -> dict:
 
 
 class _CheckWorker(QObject):
-    """后台执行 GitHub API 请求的工作对象，由 QThread 驱动。
-
-    finished 信号在 run() 末尾（含异常路径）必定 emit，用于通知线程退出。
-    """
+    """后台执行 GitHub API 请求的工作对象"""
 
     update_available = Signal(str, str)
     finished = Signal()
@@ -138,13 +146,7 @@ class _CheckWorker(QObject):
 
 
 class UpdateChecker(QObject):
-    """异步版本检查器 — QThread + moveToThread 模式，信号安全跨线程。
-
-    用法:
-        checker = UpdateChecker()
-        checker.update_available.connect(on_update, Qt.ConnectionType.QueuedConnection)
-        checker.check()
-    """
+    """异步版本检查器 — QThread + moveToThread 模式，信号安全跨线程"""
 
     update_available = Signal(str, str)
 

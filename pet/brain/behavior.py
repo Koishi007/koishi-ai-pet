@@ -225,8 +225,8 @@ class Behavior(BrainMixin):
         self._log_prompt_size(messages, tag)
         try:
             from pet.tools.registry import TOOL_REGISTRY
-            tools_param = TOOL_REGISTRY.to_openai_tools()
-            resp = self._llm_call(messages, max_tokens=max_tokens, tools=tools_param if tools_param else None)
+            tools_param = TOOL_REGISTRY.to_openai_tools() if config.LLM_TOOLS_ENABLED else None
+            resp = self._llm_call(messages, max_tokens=max_tokens, tools=tools_param)
             msg = resp.choices[0].message
             content = msg.content or ""
             logger.info(f"[{t}] [Behavior] === LLM RESPONSE ({tag}) ===")
@@ -308,8 +308,8 @@ class Behavior(BrainMixin):
         t0 = time.perf_counter()
         try:
             from pet.tools.registry import TOOL_REGISTRY
-            tools_param = TOOL_REGISTRY.to_openai_tools()
-            stream = self._llm_call_stream(messages, max_tokens=max_tokens, tools=tools_param if tools_param else None)
+            tools_param = TOOL_REGISTRY.to_openai_tools() if config.LLM_TOOLS_ENABLED else None
+            stream = self._llm_call_stream(messages, max_tokens=max_tokens, tools=tools_param)
 
             buffer = ""
             actions = []

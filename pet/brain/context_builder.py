@@ -231,13 +231,6 @@ class ContextBuilder:
             if memory_text:
                 content += f"\n\n[你对用户的记忆]\n{memory_text}"
 
-        # 工具能力概览：从注册表动态生成，增强 LLM 主动调用意识
-        if task in ("autonomous", "chat"):
-            from pet.tools.registry import TOOL_REGISTRY
-            tool_summary = TOOL_REGISTRY.to_prompt_summary()
-            if tool_summary:
-                content += f"\n\n{tool_summary}"
-
         return content
 
     def _time_prefix(self) -> str:

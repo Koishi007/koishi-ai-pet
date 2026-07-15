@@ -469,6 +469,11 @@ class SettingsWindow(QWidget):
         self._tokens_auto_edit = self._line("LLM_MAX_TOKENS_AUTONOMOUS", "4096", QIntValidator(100, 8000))
         form.addRow("自主模式输出Token上限:", self._tokens_auto_edit)
 
+        form.addRow("", self._check("LLM_TOOLS_ENABLED", "启用工具调用"))
+        hint = QLabel("模型不支持 tools 参数时请关闭此选项")
+        hint.setStyleSheet(f"color:{_COLOR_TEXT_MUTED}; font-size:11px;")
+        form.addRow("", hint)
+
         self._tool_rounds_edit = self._line("LLM_TOOL_MAX_ROUNDS", "5", QIntValidator(1, 20))
         form.addRow("工具调用最大轮次:", self._tool_rounds_edit)
 
