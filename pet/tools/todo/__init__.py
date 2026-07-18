@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 TOOL_NAME = "todo"
 TOOL_DESCRIPTION = "待办事项管理。支持添加、查看、完成、删除任务。"
+TOOL_GROUP = "productivity"
 
 try:
     _instance = TodoListTool()

@@ -17,6 +17,7 @@ from pet.brain.llm_stats import LlmStats
 from pet.action.registry import ACTION_NAMES
 from pet.config import config
 from pet.brain.llm_retry import llm_retry
+from pet.tools.registry import TOOL_REGISTRY
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,9 @@ class Behavior(BrainMixin):
         )
         self.llm_stats = LlmStats()
 
+        # 工具动态激活
+        self._active_tool_groups: set[str] = {"default"}
+
         t = datetime.now().strftime("%H:%M:%S")
         client_type = "None (local)" if not self._llm else f"{type(self._llm.client).__name__}(model={self._llm.model})"
         logger.info(f"[{t}] [Behavior] init: {len(self._actions)} actions, client={client_type}")
@@ -70,6 +74,37 @@ class Behavior(BrainMixin):
     @property
     def has_vision(self) -> bool:
         return self._llm.has_vision
+
+    def _build_tools_param(self):
+        """根据当前已激活的分组构建 tools 参数，仅包含激活组中的工具。"""
+        if not config.LLM_TOOLS_ENABLED:
+            return None
+        return TOOL_REGISTRY.to_openai_tools(groups=self._active_tool_groups)
+
+    def _activate_tool_groups_from_search(self, matches: list[dict]):
+        """根据搜索返回的匹配结果激活分组。"""
+        for item in matches:
+            grp = item.get("group")
+            if grp and grp != "default" and grp not in self._active_tool_groups:
+                self._active_tool_groups.add(grp)
+                logger.info(f"[Behavior] activated tool group: {grp} (from search result)")
+
+    def _activate_groups_from_keyword(self, keyword: str):
+        """搜索关键词匹配分组名，自动激活命中的分组。"""
+        kw = keyword.strip().lower() if keyword else ""
+        if not kw:
+            return
+        for grp in TOOL_REGISTRY.get_groups():
+            if grp == "default":
+                continue
+            if kw in grp.lower() and grp not in self._active_tool_groups:
+                self._active_tool_groups.add(grp)
+                logger.info(f"[Behavior] activated tool group: {grp} (keyword: {kw})")
+
+    def reset_active_tool_groups(self):
+        """互动结束时重置激活状态，仅保留 default 组。"""
+        self._active_tool_groups = {"default"}
+        logger.debug("[Behavior] reset active tool groups")
     
     def autonomous_decide(self, context: str = "", screenshot: bool = True) -> BehaviorOutput:
         t = datetime.now().strftime("%H:%M:%S")
@@ -224,8 +259,7 @@ class Behavior(BrainMixin):
         self._dump_context(tag, messages)
         self._log_prompt_size(messages, tag)
         try:
-            from pet.tools.registry import TOOL_REGISTRY
-            tools_param = TOOL_REGISTRY.to_openai_tools() if config.LLM_TOOLS_ENABLED else None
+            tools_param = self._build_tools_param()
             resp = self._llm_call(messages, max_tokens=max_tokens, tools=tools_param)
             msg = resp.choices[0].message
             content = msg.content or ""
@@ -244,7 +278,7 @@ class Behavior(BrainMixin):
                     }
                 return self._handle_tool_calls(
                     messages, tool_calls_map, content,
-                    tag=tag, tools_param=tools_param, max_tokens=max_tokens,
+                    tag=tag, max_tokens=max_tokens,
                     max_rounds=config.LLM_TOOL_MAX_ROUNDS,
                     speech_streamed=False,
                 )
@@ -307,8 +341,7 @@ class Behavior(BrainMixin):
         self._log_prompt_size(messages, tag)
         t0 = time.perf_counter()
         try:
-            from pet.tools.registry import TOOL_REGISTRY
-            tools_param = TOOL_REGISTRY.to_openai_tools() if config.LLM_TOOLS_ENABLED else None
+            tools_param = self._build_tools_param()
             stream = self._llm_call_stream(messages, max_tokens=max_tokens, tools=tools_param)
 
             buffer = ""
@@ -429,8 +462,7 @@ class Behavior(BrainMixin):
                 return self._handle_tool_calls(
                     messages, accumulated_tool_calls, first_content,
                     on_chunk=on_chunk, on_stream_end=on_stream_end, tag=tag,
-                    tools_param=tools_param, max_tokens=max_tokens,
-                    max_rounds=config.LLM_TOOL_MAX_ROUNDS,
+                    max_tokens=max_tokens, max_rounds=config.LLM_TOOL_MAX_ROUNDS,
                     speech_streamed=speech_streamed,
                 )
 
@@ -585,7 +617,7 @@ class Behavior(BrainMixin):
         return ActionStep(name, tuple(args), kwargs)
 
     def _handle_tool_calls(self, messages, tool_calls_map, first_content,
-                            on_chunk=None, on_stream_end=None, tag="", tools_param=None,
+                            on_chunk=None, on_stream_end=None, tag="",
                             max_rounds=5, max_tokens: int = 4000,
                             speech_streamed: bool = False) -> BehaviorOutput:
         """执行 tool_calls 并循环直到 LLM 不再请求工具。"""
@@ -672,6 +704,18 @@ class Behavior(BrainMixin):
                 logger.info(f"[Behavior] tool_round_{round_idx+1} {tc['name']} -> {'OK' if result.success else 'FAIL'}")
                 tool_log.append(f"{tc['name']} → {result.context_brief or tool_brief or result_text[:200]}")
 
+                # 搜索工具执行后自动激活匹配的分组
+                if tc["name"] == "tool_search__search":
+                    try:
+                        args = _json.loads(tc["arguments"] or "{}")
+                        keyword = args.get("keyword", "")
+                        if result.success and isinstance(result.data, dict):
+                            self._activate_tool_groups_from_search(result.data.get("matches", []))
+                        # 兜底：keyword 直接匹配组名
+                        self._activate_groups_from_keyword(keyword)
+                    except Exception:
+                        pass
+
             # 最终轮精简指令（仅追加一次，引导模型直接输出最终行为）
             if not final_instruction_added:
                 current_messages.append({
@@ -680,8 +724,9 @@ class Behavior(BrainMixin):
                 })
                 final_instruction_added = True
 
-            # 再次调用 LLM
+            # 再次调用 LLM（每轮重建 tools_param，包含新激活的分组）
             t0 = time.perf_counter()
+            tools_param = self._build_tools_param()
             stream = self._llm_call_stream(current_messages, max_tokens=max_tokens, tools=tools_param)
             _chunk_invoked[0] = False
             content, new_tool_calls = self._collect_stream_raw(stream, on_chunk=_wrapped_chunk, on_stream_end=on_stream_end, tag=f"{tag}_round_{round_idx+1}", t0=t0)

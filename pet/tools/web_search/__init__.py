@@ -5,6 +5,7 @@ from pet.tools.context import TOOL_CTX
 
 TOOL_NAME = "web_search"
 TOOL_DESCRIPTION = "网络搜索，获取实时信息、新闻、百科知识"
+TOOL_GROUP = "web"
 
 
 def _search(**kw):

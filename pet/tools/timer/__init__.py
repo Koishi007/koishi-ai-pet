@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 TOOL_NAME = "timer"
 TOOL_DESCRIPTION = "倒计时定时器，设定后宠物会在指定时间后主动提醒。"
+TOOL_GROUP = "productivity"
 
 _instance: TimerTool | None = None
 

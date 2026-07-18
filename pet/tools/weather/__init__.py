@@ -3,6 +3,7 @@ from pet.tools.context import TOOL_CTX
 
 TOOL_NAME = "weather"
 TOOL_DESCRIPTION = "天气查询（当前天气、未来预报）"
+TOOL_GROUP = "info"
 
 
 def _get_current(**kw):

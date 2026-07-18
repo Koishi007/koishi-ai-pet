@@ -437,6 +437,8 @@ class PetAgent(QObject):
             except Exception as e:
                 logger.warning(f"[PetAgent] vitals_deltas update failed: {e}")
         logger.info(f"[{ts}] [PetAgent] === call complete ===")
+        # 工具动态激活：每次互动结束重置
+        self.behavior.reset_active_tool_groups()
         threading.Thread(target=self.behavior._flush_pending_summaries, daemon=True).start()
         
     def _on_brain_error(self, msg: str):
@@ -445,5 +447,7 @@ class PetAgent(QObject):
         if self.state_machine.state in (PetState.INTERACTING, PetState.AUTONOMOUS):
             self.state_machine.transition(PetState.IDLE)
         logger.error(f"[PetAgent] ERROR: {msg}")
+        # 工具动态激活：互动异常也重置
+        self.behavior.reset_active_tool_groups()
 
 

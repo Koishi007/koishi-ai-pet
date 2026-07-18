@@ -22,6 +22,7 @@ class ToolDef:
     description: str
     methods: dict[str, ToolMethod] = field(default_factory=dict)
     menu_items: list[dict] = field(default_factory=list)
+    group: str = "default"
 
 
 class ToolRegistry:
@@ -29,9 +30,12 @@ class ToolRegistry:
     def __init__(self):
         self._tools: dict[str, ToolDef] = {}
         self._disabled: set[str] = set()
+        self._register_default_tools()
 
-    def register(self, tool_name: str, description: str) -> "ToolDef":
+    def register(self, tool_name: str, description: str, group: str = None) -> "ToolDef":
         tool = ToolDef(name=tool_name, description=description)
+        if group:
+            tool.group = group
         self._tools[tool_name] = tool
         return tool
 
@@ -54,7 +58,7 @@ class ToolRegistry:
 
     def get_method(self, full_name: str) -> ToolMethod | None:
         """通过 'tool_name.method_name' 获取方法对象。"""
-        parts = full_name.split(".", 1)
+        parts = full_name.split("__", 1)
         if len(parts) != 2:
             return None
         tool_name, method_name = parts
@@ -92,6 +96,76 @@ class ToolRegistry:
     def disabled_set(self) -> set[str]:
         return set(self._disabled)
 
+    def get_groups(self) -> list[str]:
+        """返回所有已注册的分组名，去重排序。"""
+        return sorted(set(t.group for t in self._tools.values()))
+
+    def get_tools_by_group(self, group: str) -> list["ToolDef"]:
+        """返回指定分组下的所有工具。"""
+        return [t for t in self._tools.values() if t.group == group]
+
+    def get_tool_group(self, tool_name: str) -> str:
+        """返回工具所属分组名。"""
+        t = self._tools.get(tool_name)
+        return t.group if t else "default"
+
+    def _register_default_tools(self):
+        """注册内置元工具 tool_search（不可插拔，始终可用）。"""
+        self.register("tool_search", "工具发现：浏览和搜索可用的工具", group="default")
+        self.add_method(
+            tool_name="tool_search",
+            method_name="list_groups",
+            description=(
+                "列出所有可用的工具分组及每组的工具数量。"
+                "当你需要某类功能但不确定有哪些工具时，先调用此方法浏览。"
+            ),
+            handler=self._tool_search_list_groups,
+        )
+        self.add_method(
+            tool_name="tool_search",
+            method_name="search",
+            description=(
+                "搜索工具。keyword 在工具名和描述中匹配，"
+                "返回匹配到的工具列表（含所属分组和每个工具的方法摘要）。"
+                "搜索返回的分组会在后续请求中自动变为可用。"
+            ),
+            handler=self._tool_search_search,
+            args={
+                "keyword": {
+                    "type": "str",
+                    "description": "搜索关键词，如 '文件'、'浏览器'、'提醒'、'天气'",
+                }
+            },
+        )
+
+    def _tool_search_list_groups(self) -> dict:
+        groups = []
+        for grp in self.get_groups():
+            tools = self.get_tools_by_group(grp)
+            groups.append({"group": grp, "tool_count": len(tools)})
+        return {"groups": groups}
+
+    def _tool_search_search(self, keyword: str = "") -> dict:
+        kw = keyword.strip().lower() if keyword else ""
+        results = []
+        for tool in self.enabled_tools:
+            if tool.group == "default":
+                continue
+            name_low = tool.name.lower()
+            desc_low = tool.description.lower()
+            if not kw or kw in name_low or kw in desc_low or kw in tool.group.lower():
+                methods_list = [
+                    {"name": f"{tool.name}__{m.name}", "description": m.description}
+                    for m in tool.methods.values()
+                ]
+                results.append({
+                    "name": tool.name,
+                    "group": tool.group,
+                    "description": tool.description,
+                    "methods": methods_list,
+                })
+        return {"keyword": keyword, "matches": results}
+
     _TYPE_TO_JSON_SCHEMA = {
         "str": "string",
         "int": "integer",
@@ -102,10 +176,16 @@ class ToolRegistry:
         "any": "string",
     }
 
-    def to_openai_tools(self) -> list[dict]:
-        """将已注册工具转换为 OpenAI function calling 格式。"""
+    def to_openai_tools(self, groups: set[str] | None = None) -> list[dict]:
+        """将已注册工具转换为 OpenAI function calling 格式。
+        
+        Args:
+            groups: 指定分组集合，None 表示返回全部已启用工具。
+        """
         tools = []
         for tool in self.enabled_tools:
+            if groups is not None and tool.group not in groups:
+                continue
             for method_name, method in tool.methods.items():
                 properties = {}
                 required = []
@@ -126,7 +206,7 @@ class ToolRegistry:
                 tools.append({
                     "type": "function",
                     "function": {
-                        "name": f"{tool.name}.{method_name}",
+                        "name": f"{tool.name}__{method_name}",
                         "description": method.description,
                         "parameters": {
                             "type": "object",

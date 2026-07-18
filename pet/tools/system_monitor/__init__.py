@@ -3,6 +3,7 @@ from pet.tools.context import TOOL_CTX
 
 TOOL_NAME = "system_monitor"
 TOOL_DESCRIPTION = "系统资源监控（CPU、内存、磁盘、电池、进程）"
+TOOL_GROUP = "info"
 
 
 def _get_overview(**kw):

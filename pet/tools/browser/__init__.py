@@ -8,6 +8,7 @@ logger = logging.getLogger(__name__)
 
 TOOL_NAME = "browser"
 TOOL_DESCRIPTION = "浏览器操作（打开网页、搜索、读取网页文本、截图）"
+TOOL_GROUP = "web"
 
 _instance = BrowserTool()
 

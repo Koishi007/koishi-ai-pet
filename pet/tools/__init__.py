@@ -133,6 +133,12 @@ def _load_tools_sync(enabled: list[str]):
 
         try:
             register_fn(TOOL_REGISTRY)
+            tool_group = getattr(module, "TOOL_GROUP", None)
+            if tool_group:
+                tdef = TOOL_REGISTRY._tools.get(tool_name)
+                if tdef:
+                    tdef.group = tool_group
+                    logger.debug(f"[ToolLoader] {tool_name} → group: {tool_group}")
             loaded.append(tool_name)
             logger.info(f"[ToolLoader] Loaded tool: {tool_name}")
         except Exception as e:

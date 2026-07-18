@@ -161,13 +161,13 @@ class PetWindow(TransparentWindow):
         self.pet_actions.gravity.landed.connect(self._on_landed)
         self.pet_actions.gravity.standing_lost.connect(self._on_standing_lost)
 
-        # 初始位置：屏幕底部居中
+        # 初始位置：屏幕中央
         from PySide6.QtWidgets import QApplication
         screen = QApplication.primaryScreen()
         if screen:
             geo = screen.availableGeometry()
             x = (geo.width() - config.PET_WIDTH) // 2
-            y = geo.bottom() - config.PET_HEIGHT
+            y = (geo.height() - config.PET_HEIGHT) // 2
             self.move(x, y)
 
         if not self.pet_anim.play("idle"):

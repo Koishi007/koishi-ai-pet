@@ -97,7 +97,7 @@ chmod +x update.sh && ./update.sh
 
 
 
-## 🧩 内置工具
+## 内置工具
 
 | 工具 | 功能 |
 |------|------|
@@ -109,7 +109,7 @@ chmod +x update.sh && ./update.sh
 | `system_monitor` | CPU、内存、磁盘、电池、Top 进程 |
 | `knowledge` | RAG 知识库：语义检索、添加知识、导入 txt/md 文件 |
 
-## 🔨 工具开发指南
+## 工具开发指南
 
 ### 工具骨架
 
@@ -124,9 +124,9 @@ pet/tools/my_tool/
 ```
 
 核心文件说明：
-- `__init__.py` — 只需定义 `TOOL_NAME`、`TOOL_DESCRIPTION`、`register()`
-- `core.py` — 业务逻辑可以放在任意文件中，加载器不关心文件名
-- `config.example.json` — 工具私有配置模板，框架首次加载时自动复制为 `config.json`（已 gitignore）
+- `__init__.py` -- 需定义 `TOOL_NAME`、`TOOL_DESCRIPTION`、`TOOL_GROUP`、`register()`
+- `core.py` -- 业务逻辑可放在任意文件中，加载器不关心文件名
+- `config.example.json` -- 工具私有配置模板，框架首次加载时自动复制为 `config.json`（已 gitignore）
 
 `__init__.py` 模板：
 
@@ -135,7 +135,7 @@ from pet.tools.my_tool.core import do_something
 
 TOOL_NAME = "my_tool"
 TOOL_DESCRIPTION = "一句话描述工具用途"
-
+TOOL_GROUP = "productivity"  # 工具分组，LLM 通过 tool_search 按需发现
 
 def register(registry):
     registry.register(TOOL_NAME, TOOL_DESCRIPTION)
@@ -152,6 +152,21 @@ def register(registry):
         timeout=15.0,  # 可选：超时秒数，默认 30s
     )
 ```
+
+### 工具分组
+
+`TOOL_GROUP` 决定工具所属分组，用于动态激活。当前分组：
+
+| 分组 | 包含工具 | 说明 |
+|------|----------|------|
+| `default` | `tool_search` | 始终激活，无需搜索 |
+| `web` | `browser`, `web_search` | 浏览器与网络搜索 |
+| `file` | `file_ops` | 本地文件操作 |
+| `info` | `weather`, `system_monitor` | 信息查询 |
+| `productivity` | `todo`, `timer` | 效率工具 |
+| `memory` | `knowledge` | 知识库 |
+
+初始状态下 LLM 仅能调用 `default` 组的 `tool_search`。当 LLM 需要某个功能时，先调用 `tool_search.list_groups` 或 `tool_search.search(keyword)` 探索工具，匹配到的分组自动激活，后续请求即可调用该组的全部工具。
 
 ### 参数定义
 
@@ -229,6 +244,6 @@ def alert() -> dict:
 - **异常隔离**：handler 异常会被捕获，译为错误信息传给 LLM，不影响主流程
 - **序列化友好**：返回的 dict 必须能被 `json.dumps(ensure_ascii=False)` 序列化
 
-## 📜 许可
+## 许可
 
 GPL-3.0
