@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "koishi-ai-pet"
-version = "1.3.4"
+version = "1.4.1"
 description = "古明地恋AI桌宠"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
