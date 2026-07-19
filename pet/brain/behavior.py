@@ -234,6 +234,7 @@ class Behavior(BrainMixin):
         text_chars = 0
         image_count = 0
         image_bytes = 0
+        image_fmt = ""
         for m in messages:
             content = m["content"]
             if isinstance(content, str):
@@ -247,10 +248,16 @@ class Behavior(BrainMixin):
                         url = part.get("image_url", {}).get("url", "")
                         if "," in url:
                             image_bytes += len(url.split(",", 1)[1])
+                            # 从 data:image/jpeg;base64,... 中提取格式
+                            if not image_fmt and "data:image/" in url:
+                                fmt_start = url.find("data:image/") + len("data:image/")
+                                fmt_end = url.find(";", fmt_start)
+                                if fmt_end > fmt_start:
+                                    image_fmt = url[fmt_start:fmt_end]
         t = datetime.now().strftime("%H:%M:%S")
         parts = [f"prompt_chars: {text_chars}"]
         if image_count:
-            parts.append(f"images: {image_count} ({image_bytes // 1024}KB base64)")
+            parts.append(f"images: {image_count}{' (' + image_fmt + ')' if image_fmt else ''} ({image_bytes // 1024}KB base64)")
         logger.info(f"[{t}] [Behavior]   {', '.join(parts)} ({tag})")
 
     def _call_llm_and_parse(self, messages: list, system_content: str, tag: str, max_tokens: int = 4000) -> BehaviorOutput:
@@ -616,11 +623,19 @@ class Behavior(BrainMixin):
                 args.append(token)
         return ActionStep(name, tuple(args), kwargs)
 
+    # 元工具（工具发现类）不消耗实际工具调用轮次
+    _META_TOOL_NAMES = frozenset({"tool_search__search", "tool_search__list_groups"})
+    _META_TOOL_MAX_ROUNDS = 10  # 元工具调用安全上限，防止死循环
+
     def _handle_tool_calls(self, messages, tool_calls_map, first_content,
                             on_chunk=None, on_stream_end=None, tag="",
                             max_rounds=5, max_tokens: int = 4000,
                             speech_streamed: bool = False) -> BehaviorOutput:
-        """执行 tool_calls 并循环直到 LLM 不再请求工具。"""
+        """执行 tool_calls 并循环直到 LLM 不再请求工具。
+
+        tool_search / list_groups 等元工具不消耗 max_rounds 配额，
+        仅当至少执行了一个非元工具时，才计入一轮。
+        """
         import json as _json
         from pet.tools.executor import ToolExecutor, ToolCall
 
@@ -639,7 +654,17 @@ class Behavior(BrainMixin):
                 _chunk_invoked[0] = True
                 on_chunk(delta)
 
-        for round_idx in range(max_rounds):
+        real_round = 0  # 实际（非元工具）调用轮次计数
+        meta_round = 0  # 元工具调用总轮次（安全防护）
+        display_round = 0  # 仅用于日志展示
+
+        while real_round < max_rounds:
+            meta_round += 1
+            display_round += 1
+            if meta_round > self._META_TOOL_MAX_ROUNDS:
+                logger.warning(f"[Behavior] reached META_MAX_ROUNDS={self._META_TOOL_MAX_ROUNDS}, force terminate")
+                break
+
             # 构建 assistant 消息（含 tool_calls）
             openai_tool_calls = []
             for idx in sorted(tool_calls_map.keys()):
@@ -693,6 +718,12 @@ class Behavior(BrainMixin):
                     res = _exec_tool(idx)
                     tool_results[res[0]] = res
 
+            # 判断本轮是否全为元工具调用（不消耗实际轮次配额）
+            all_meta = all(
+                tool_calls_map[idx]["name"] in self._META_TOOL_NAMES
+                for idx in sorted_indices
+            )
+
             # 按 index 排序后依次 append（保持顺序一致性）
             for idx in sorted_indices:
                 _, tc, result, tool_brief, result_text = tool_results[idx]
@@ -701,7 +732,7 @@ class Behavior(BrainMixin):
                     "tool_call_id": tc["id"],
                     "content": result_text,
                 })
-                logger.info(f"[Behavior] tool_round_{round_idx+1} {tc['name']} -> {'OK' if result.success else 'FAIL'}")
+                logger.info(f"[Behavior] tool_round_{display_round} {tc['name']} -> {'OK' if result.success else 'FAIL'}")
                 tool_log.append(f"{tc['name']} → {result.context_brief or tool_brief or result_text[:200]}")
 
                 # 搜索工具执行后自动激活匹配的分组
@@ -716,11 +747,18 @@ class Behavior(BrainMixin):
                     except Exception:
                         pass
 
-            # 最终轮精简指令（仅追加一次，引导模型直接输出最终行为）
-            if not final_instruction_added:
+            # 非元工具轮次才计数
+            if not all_meta:
+                real_round += 1
+
+            # 最终轮精简指令：仅在至少执行过一个非元工具后追加
+            if not all_meta and not final_instruction_added:
+                remaining = max_rounds - real_round
+                low_threshold = -(-max_rounds // 10)  # 10% 向上取整
+                low = "，轮次不多了请尽快输出" if remaining <= low_threshold else ""
                 current_messages.append({
                     "role": "user",
-                    "content": "工具已执行完毕，直接输出最终行为（Summary+Speech+Action），无需重复分析；有值得记忆的信息才输出 Memory"
+                    "content": f"工具已执行，可直接输出最终行为（Summary+Speech+Action），无需重复分析；有值得记忆的信息才输出 Memory（剩余工具轮次：{remaining}/{max_rounds}{low}）"
                 })
                 final_instruction_added = True
 
@@ -729,7 +767,7 @@ class Behavior(BrainMixin):
             tools_param = self._build_tools_param()
             stream = self._llm_call_stream(current_messages, max_tokens=max_tokens, tools=tools_param)
             _chunk_invoked[0] = False
-            content, new_tool_calls = self._collect_stream_raw(stream, on_chunk=_wrapped_chunk, on_stream_end=on_stream_end, tag=f"{tag}_round_{round_idx+1}", t0=t0)
+            content, new_tool_calls = self._collect_stream_raw(stream, on_chunk=_wrapped_chunk, on_stream_end=on_stream_end, tag=f"{tag}_round_{display_round}", t0=t0)
             if _chunk_invoked[0]:
                 speech_streamed = True
 
@@ -745,7 +783,7 @@ class Behavior(BrainMixin):
             first_content = content
             tool_calls_map = new_tool_calls
 
-        logger.warning(f"[Behavior] reached MAX_ROUNDS={max_rounds}, force terminate tool loop")
+        logger.warning(f"[Behavior] reached MAX_ROUNDS={max_rounds} (real_rounds={real_round}, meta_rounds={meta_round}), force terminate tool loop")
         result = self._parse_behavior(first_content)
         result.speech_streamed = speech_streamed
         if tool_log:
