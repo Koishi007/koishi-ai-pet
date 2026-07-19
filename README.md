@@ -63,7 +63,7 @@ python -m pet
 
 桌宠的"智商"来自大模型（LLM）。模型通过 **API**（理解为"网络接口"）接收你的消息和屏幕截图，思考后返回对话和动作指令。
 
-你需要做的就是：在模型供应商注册账号 → 获取 **API Key**（一串密钥）→ 填到桌宠设置中。API 按使用量计费，1 万次对话大约几块钱。
+你需要做的就是：在模型供应商注册账号 → 获取 **API Key**（一串密钥）→ 填到桌宠设置中。API 按使用量计费，单次互动大概几厘。
 
 ### 三种调用模式
 
@@ -275,7 +275,7 @@ pet/tools/my_tool/
 核心文件说明：
 - `__init__.py` -- 需定义 `TOOL_NAME`、`TOOL_DESCRIPTION`、`TOOL_GROUP`、`register()`
 - `core.py` -- 业务逻辑可放在任意文件中，加载器不关心文件名
-- `config.example.json` -- 工具私有配置模板，框架首次加载时自动复制为 `config.json`（已 gitignore）
+- `config.example.json` -- 工具私有配置模板，框架首次加载时自动复制为 `config.json`
 
 `__init__.py` 模板：
 
