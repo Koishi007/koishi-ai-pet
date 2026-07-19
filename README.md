@@ -1,11 +1,11 @@
-# Koishi AI Pet 🐾
+# Koishi AI Pet 
 
 ![image1](image1forReadMe.png)
 ![image2](image2forReadMe.png)
 
 > 基于 PySide6 + LLM 的桌面 AI 虚拟宠物，形象来自东方Project的古明地恋，能感知屏幕、与窗口互动、与你对话。
 
-## ✨ 项目功能
+## 项目功能
 
 - **自主行动**：通过模型调用控制桌宠行动
 - **视觉感知**：截图分析 + 窗口探测，理解屏幕上正在发生什么
@@ -15,7 +15,7 @@
 - **宠物状态**：有生理和心理参数，会影响桌宠行为
 - **工具系统**：内置浏览器、天气、待办、文件操作、系统监控等工具，参照指南可以自行拓展
 
-## 📦 项目结构
+## 项目结构
 
 ```
 KoishiAI/
@@ -33,7 +33,7 @@ KoishiAI/
     └── voice/                  # 语音输入：麦克风采集、讯飞 STT
 ```
 
-## 🚀 快速开始
+## 快速开始
 
 ### Windows
 
@@ -59,7 +59,42 @@ pip install -e .
 python -m pet
 ```
 
-## 🔄 更新
+### API 是什么？
+
+桌宠的"智商"来自大模型（LLM）。模型通过 **API**（理解为"网络接口"）接收你的消息和屏幕截图，思考后返回对话和动作指令。
+
+你需要做的就是：在模型供应商注册账号 → 获取 **API Key**（一串密钥）→ 填到桌宠设置中。API 按使用量计费，1 万次对话大约几块钱。
+
+### 三种调用模式
+
+在设置的「LLM 调用模式」中可选：
+
+| 模式 | 说明 | 适合 |
+|------|------|------|
+| `local` | 离线模式，不调用 LLM，随机执行预设动作 + 固定台词 | 无需 API 配置，快速体验桌宠的交互和动作 |
+| `api` | 调用 LLM，连接 OpenAI 兼容接口（填 `LLM_URL` + `LLM_KEY`） | 正常使用，选购第三方 API（Mimo、硅基流动、DeepSeek 等） |
+| `ollama` | 调用 LLM，连接本机 Ollama 服务（填 `OLLAMA_BASE_URL`，默认 `http://localhost:11434/v1`） | 已有 Ollama 本地部署的用户 |
+
+> 想有完整的对话和智能交互，选 `api` 或 `ollama`。只想看桌宠跑起来的样子，选 `local` 无需任何配置。
+
+### 配置步骤
+
+1. 启动桌宠，打开托盘菜单 → **设置**
+2. **「连接」页签**：填入 **Base URL**（API 地址）和 **API Key**（密钥），模型名设为供应商对应的模型名，如 `mimo-v2.5`
+3. 点「测试连接」验证，成功后右下角保存
+
+> 推荐方案：**Mimo v2.5** — 原生多模态、价格便宜（查看 [Mimo 官网](https://mimo.xn--6kr4l1a.xyz/) 获取 API 信息）
+>
+> 记忆系统推荐 **智谱 embedding-3** — 便宜且快速；不配置也能用基础的关键词匹配记忆
+
+### 桌宠基本设置
+
+- **「提示词」页签**：设置角色人格，参考项目目录下的 `预设人格提示词.md`（抓起、释放、窗口消失等提示词有默认值，可选填）
+- **「语音」页签**：如需语音输入对话，配置讯飞 API
+
+> 模型兼容 OpenAI 格式接口，硅基流动、DeepSeek 等均可直接填入。Ollama 本地部署理论上也支持。
+
+## 更新
 
 项目提供一键更新脚本，会自动从 GitHub 下载最新 Release 源码并更新依赖，**保留你的虚拟环境、配置和数据**。
 > 请保证你可以正常访问 GitHub，推荐使用Watt Toolkit加速
@@ -79,35 +114,149 @@ chmod +x update.sh && ./update.sh
 
 > 如果本地有未提交的源码改动，更新脚本会以 Release 源码覆盖同名文件；但 `venv`、`logs`、`config.json`、数据库等用户数据不会被删除。
 
-## 桌宠设置
-1. 首次启动大部分设置会有默认值
-2. 在提示词页签设置提示词，可以参考目录下的**预设人格提示词.md**
-3. 抓起、释放、窗口消失提示词可有可无，有默认值
-4. 如果需要语音输入，则需要配置讯飞API
-
-
-## 推荐模型供应商
-**Mimo v2.5**：价格便宜，原生多模态，作为主要调度模型。
-
-> ollama路径未经测试，如有问题可提issue
-
-**智谱embedding-3**：价格便宜，快速上手，作为记忆设置的向量模型
-
-> 若不配置向量模型，也有基于关键词匹配的基础记忆功能
-
-
-
 ## 内置工具
 
-| 工具 | 功能 |
-|------|------|
-| `browser` | 打开 URL、截图网页 |
-| `web_search` | 关键词搜索、深度搜索 |
-| `weather` | 查询当前天气和预报 |
-| `todo` | 待办事项管理（pending / done） |
-| `file_ops` | 列目录、读写文件（限桌面/文档目录） |
-| `system_monitor` | CPU、内存、磁盘、电池、Top 进程 |
-| `knowledge` | RAG 知识库：语义检索、添加知识、导入 txt/md 文件 |
+| 分组 | 工具 | 方法 | 说明 |
+|------|------|------|------|
+| `web` | `browser` | `search` / `read_url` / `screenshot_url` | 多引擎网页搜索（Bing/百度/搜狗/DuckDuckGo）、读取网页正文（分页）、截图 |
+| `web` | `web_search` | `search` / `deep_search` | SearXNG / Bing API 搜索，深度搜索自动抓取全文 |
+| `info` | `weather` | `get_current` / `get_forecast` | 基于 Open-Meteo 的免费天气查询 |
+| `info` | `system_monitor` | `get_overview` / `get_top_processes` / `get_memory_detail` / `get_network` | CPU、内存、磁盘、电池、进程 |
+| `file` | `file_ops` | `list_dir` / `read_file` / `write_note` / `write_file` | 列目录、读写文件（限桌面/文档） |
+| `productivity` | `timer` | `set` / `list` / `cancel` / `cancel_all` | 倒计时定时器，到时宠物主动提醒 |
+| `productivity` | `todo` | `add` / `list` / `toggle` / `delete` / `update` | 待办事项管理 |
+| `memory` | `knowledge` | `search` / `list` | RAG 知识库：语义检索、导入 txt/md |
+
+### browser
+
+内嵌 Playwright + playwright-stealth 无头浏览器，每次调用独立实例，用完自动回收。
+
+**前置依赖**：
+
+```bash
+pip install playwright playwright-stealth
+playwright install chromium
+```
+
+Playwright 及浏览器二进制缺失时，工具加载直接报错。`playwright-stealth` 缺失仅告警（反爬能力受限），不会阻塞加载。
+
+**反爬措施**：
+- `playwright-stealth` 全覆盖：`navigator.webdriver`、`plugins`、`languages`、`permissions`、`WebGL`、`media codecs`、`chrome.runtime` 等
+- 自定义桌面 Chrome UA + `--disable-blink-features=AutomationControlled` 启动参数
+- Bing/百度/搜狗使用「模拟真人」搜索（进首页 → 填搜索框 → 敲回车），避免直接 URL 跳转触发反爬
+
+**安全限制**：`read_url` / `screenshot_url` 仅接受 `http://` 或 `https://` 开头的 URL，拒绝 `file://` 等协议。
+
+**配置**（`pet/tools/browser/config.json`）：
+
+| 字段 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| `headless` | bool | `true` | 无头模式；`false` 可见窗口便于调试 |
+| `search_engine` | str | `"bing"` | 搜索引擎：`"bing"` / `"baidu"` / `"sogou"` / `"duckduckgo"` |
+| `user_agent` | str | Chrome 桌面 UA | 自定义 UA，用于反爬 |
+
+### web_search
+
+通过 SearXNG 或 Bing API 搜索网页，`deep_search` 自动抓取结果页面全文。
+
+**配置**（`pet/tools/web_search/config.json`）：
+
+| 字段 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| `backend` | str | `"auto"` | 搜索后端：`"auto"` 自动选 / `"searxng"` / `"bing"` |
+| `searxng_url` | str | `""` | SearXNG 实例地址 |
+| `searxng_key` | str | `""` | SearXNG API Key（如需要） |
+| `bing_search_key` | str | `""` | Bing Web Search API Key |
+
+`backend: "auto"` 模式下优先 SearXNG，不可用时自动回退 Bing。至少配置一个后端，否则工具加载失败。
+
+### knowledge
+
+RAG 知识库，支持语义检索。可配置向量嵌入以启用语义搜索；未配置时使用关键词匹配。
+
+**配置**（`pet/tools/knowledge/config.json`）：
+
+| 字段 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| `chunk_size` | int | `500` | 文本分块大小 |
+| `chunk_overlap` | int | `50` | 分块重叠字符数 |
+| `embedding_enabled` | bool | `false` | 启用向量嵌入 |
+| `embedding_url` | str | `""` | Embedding API 地址 |
+| `embedding_key` | str | `""` | Embedding API Key |
+| `embedding_model` | str | `""` | Embedding 模型名 |
+| `embedding_dim` | int | `256` | 向量维度（需与模型匹配） |
+
+### weather
+
+基于 [Open-Meteo](https://open-meteo.com/) 免费 API，无需 API Key。支持中英文城市名。
+
+无需额外配置。
+
+### system_monitor
+
+依赖 `psutil`，首次加载时自动安装。
+
+无需额外配置。
+
+### file_ops
+
+所有文件操作限定在桌面和文档目录内，保证安全。
+
+无需额外配置。
+
+### timer
+
+倒计时定时器，支持持久化（重启后仍有效）。到时宠物主动说话提醒。
+
+无需额外配置。
+
+### todo
+
+待办事项管理，右键菜单可打开管理面板。
+
+无需额外配置。
+
+## 右键菜单
+
+桌宠有两个右键入口：**桌宠身体**和**系统托盘**。
+
+### 桌宠身体右键
+
+右键点击桌宠本体，弹出完整功能菜单：
+
+| 菜单项 | 功能 | 用法 |
+|--------|------|------|
+| **开启/关闭自主行动** | 控制 AI 是否自动思考、说话、走动。开启后桌宠会定时观察屏幕并自主产生行为 | 想让它自由活动时开启；专心工作时关闭让它安静挂机 |
+| **调试面板** | 打开实时状态窗口，显示饥饿、精力、心情等内部数值 | 开发调试用；普通用户一般不需要 |
+| **日志** | 打开运行日志窗口，实时查看 LLM 调用、工具执行、错误等信息 | 排查问题或了解幕后发生了什么 |
+| **对话历史** | 查看与 LLM 的完整对话记录 | 回顾之前的互动；了解模型如何理解你的上下文 |
+| **记忆管理** | 打开记忆管理面板，查看、搜索、删除已存储的记忆条目 | 清理不准确的记忆；搜索"恋恋记住了什么" |
+| **设置** | 打开设置窗口，配置模型连接、提示词、语音等 | 同托盘"设置"入口 |
+
+**工具子菜单**：展开后列出所有已注册的工具，每个工具旁边有**勾选框**，可随时启用或禁用某个工具。
+
+部分工具有专属面板入口：
+
+| 工具 | 子菜单项 | 作用 |
+|------|----------|------|
+| `knowledge` | **知识库管理** | 手动添加/删除/搜索知识条目，管理 RAG 知识库 |
+| `todo` | **查看待办** | 打开待办面板，查看、添加、勾选、删除待办事项 |
+
+底部控制项：
+
+| 菜单项 | 功能 |
+|--------|------|
+| **关闭/开启互动反应** | 关闭后拖拽、释放桌宠不再触发 LLM 对话，默认关闭|
+| **隐藏桌宠** | 隐藏桌面窗口（可通过托盘重新显示） |
+| **退出** | 退出应用程序 |
+
+### 系统托盘右键
+
+| 菜单项 | 功能 |
+|--------|------|
+| **隐藏/显示** | 切换桌宠窗口的可见状态 |
+| **设置** | 打开设置窗口 |
+| **退出** | 退出应用程序 |
 
 ## 工具开发指南
 
