@@ -1,3 +1,4 @@
 {
-    "browser": "浏览器exe路径"
+    "headless": true,
+    "search_engine": "bing"
 }

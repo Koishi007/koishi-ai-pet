@@ -55,7 +55,15 @@ def _ensure_tool_deps(tool_dir: Path):
         req_mtime = req_file.stat().st_mtime
         stamp_mtime = stamp_file.stat().st_mtime
         if req_mtime <= stamp_mtime:
+            logger.debug(
+                f"[ToolLoader] {tool_dir.name} deps up-to-date "
+                f"(req_mtime={req_mtime:.0f} <= stamp_mtime={stamp_mtime:.0f})"
+            )
             return
+        logger.info(
+            f"[ToolLoader] {tool_dir.name} requirements.txt changed "
+            f"(req_mtime={req_mtime:.0f} > stamp_mtime={stamp_mtime:.0f}), reinstalling..."
+        )
 
     pip_cmd = _get_pip_cmd()
     in_venv = sys.prefix != sys.base_prefix
