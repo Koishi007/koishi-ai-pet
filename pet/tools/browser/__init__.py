@@ -27,6 +27,10 @@ def _screenshot_url(**kw):
     return _instance.screenshot_url(**kw)
 
 
+def _close():
+    return _instance.close()
+
+
 def _check_playwright() -> None:
     """检查 Playwright 及浏览器二进制是否安装，不满足则抛出异常导致工具加载失败。"""
     try:
@@ -34,13 +38,6 @@ def _check_playwright() -> None:
     except ImportError:
         raise RuntimeError(
             "playwright 未安装，请运行: pip install playwright && playwright install chromium"
-        )
-
-    try:
-        import playwright_stealth
-    except ImportError:
-        logger.warning(
-            "[BrowserTool] playwright-stealth 未安装，反爬能力受限，请运行: pip install playwright-stealth"
         )
 
     try:
@@ -99,4 +96,9 @@ def register(registry):
             "wait_seconds": {"type": "float", "required": False, "desc": "页面加载等待时间(秒)", "default": 3.0},
             "full_page": {"type": "bool", "required": False, "desc": "是否截取整页（默认仅可视区域）", "default": False},
         },
+    )
+    registry.add_method(
+        TOOL_NAME, "close",
+        "关闭浏览器，释放内存（所有网页操作完成后调用）",
+        handler=_close,
     )

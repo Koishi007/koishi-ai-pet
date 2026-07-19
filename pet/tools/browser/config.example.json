@@ -1,4 +1,6 @@
 {
     "headless": true,
-    "search_engine": "bing"
+    "search_engine": "bing",
+    "ignore_https_errors": false,
+    "no_sandbox": false
 }

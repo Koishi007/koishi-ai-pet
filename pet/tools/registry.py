@@ -116,8 +116,9 @@ class ToolRegistry:
             tool_name="tool_search",
             method_name="list_groups",
             description=(
-                "列出所有可用的工具分组及每组的工具数量。"
-                "当你需要某类功能但不确定有哪些工具时，先调用此方法浏览。"
+                "【优先使用】列出所有可用的工具分组，含每组下的工具名称和功能描述。"
+                "先调用此方法了解全局有哪些工具可用，再决定用哪个。"
+                "仅需1次调用，无需参数，始终返回完整列表。"
             ),
             handler=self._tool_search_list_groups,
         )
@@ -125,9 +126,10 @@ class ToolRegistry:
             tool_name="tool_search",
             method_name="search",
             description=(
-                "搜索工具。keyword 在工具名和描述中匹配，"
-                "返回匹配到的工具列表（含所属分组和每个工具的方法摘要）。"
+                "按关键词精确搜索工具。匹配工具名、描述或分组名。"
                 "搜索返回的分组会在后续请求中自动变为可用。"
+                "如无匹配结果会自动返回全部工具列表。"
+                "提示：不确定关键词时优先用 list_groups 浏览全部。"
             ),
             handler=self._tool_search_search,
             args={
@@ -142,7 +144,12 @@ class ToolRegistry:
         groups = []
         for grp in self.get_groups():
             tools = self.get_tools_by_group(grp)
-            groups.append({"group": grp, "tool_count": len(tools)})
+            enabled = [t for t in tools if self.is_enabled(t.name)]
+            groups.append({
+                "group": grp,
+                "tool_count": len(enabled),
+                "tools": [{"name": t.name, "description": t.description} for t in enabled],
+            })
         return {"groups": groups}
 
     def _tool_search_search(self, keyword: str = "") -> dict:
@@ -164,7 +171,26 @@ class ToolRegistry:
                     "description": tool.description,
                     "methods": methods_list,
                 })
-        return {"keyword": keyword, "matches": results}
+
+        hint = None
+        if kw and not results:
+            # 无匹配：fallback 返回全部工具，引导用 list_groups
+            for tool in self.enabled_tools:
+                if tool.group == "default":
+                    continue
+                methods_list = [
+                    {"name": f"{tool.name}__{m.name}", "description": m.description}
+                    for m in tool.methods.values()
+                ]
+                results.append({
+                    "name": tool.name,
+                    "group": tool.group,
+                    "description": tool.description,
+                    "methods": methods_list,
+                })
+            hint = (f"未找到与「{keyword}」匹配的工具，已返回全部可用工具。")
+
+        return {"keyword": keyword, "matches": results, "hint": hint}
 
     _TYPE_TO_JSON_SCHEMA = {
         "str": "string",

@@ -118,7 +118,7 @@ chmod +x update.sh && ./update.sh
 
 | 分组 | 工具 | 方法 | 说明 |
 |------|------|------|------|
-| `web` | `browser` | `search` / `read_url` / `screenshot_url` | 多引擎网页搜索（Bing/百度/搜狗/DuckDuckGo）、读取网页正文（分页）、截图 |
+| `web` | `browser` | `search` / `read_url` / `screenshot_url` / `close` | 多引擎网页搜索、读取网页正文（分页）、截图 |
 | `web` | `web_search` | `search` / `deep_search` | SearXNG / Bing API 搜索，深度搜索自动抓取全文 |
 | `info` | `weather` | `get_current` / `get_forecast` | 基于 Open-Meteo 的免费天气查询 |
 | `info` | `system_monitor` | `get_overview` / `get_top_processes` / `get_memory_detail` / `get_network` | CPU、内存、磁盘、电池、进程 |
@@ -129,19 +129,19 @@ chmod +x update.sh && ./update.sh
 
 ### browser
 
-内嵌 Playwright + playwright-stealth 无头浏览器，每次调用独立实例，用完自动回收。
+内嵌 Playwright 无头浏览器，每次调用独立实例，用完自动回收。
 
 **前置依赖**：
 
 ```bash
-pip install playwright playwright-stealth
+pip install playwright
 playwright install chromium
 ```
 
-Playwright 及浏览器二进制缺失时，工具加载直接报错。`playwright-stealth` 缺失仅告警（反爬能力受限），不会阻塞加载。
+Playwright 及浏览器二进制缺失时，工具加载直接报错。
 
 **反爬措施**：
-- `playwright-stealth` 全覆盖：`navigator.webdriver`、`plugins`、`languages`、`permissions`、`WebGL`、`media codecs`、`chrome.runtime` 等
+- 原生 `add_init_script`：隐藏 `navigator.webdriver`、伪造 `window.chrome`、`navigator.plugins`、`navigator.languages`
 - 自定义桌面 Chrome UA + `--disable-blink-features=AutomationControlled` 启动参数
 - Bing/百度/搜狗使用「模拟真人」搜索（进首页 → 填搜索框 → 敲回车），避免直接 URL 跳转触发反爬
 
@@ -154,6 +154,8 @@ Playwright 及浏览器二进制缺失时，工具加载直接报错。`playwrig
 | `headless` | bool | `true` | 无头模式；`false` 可见窗口便于调试 |
 | `search_engine` | str | `"bing"` | 搜索引擎：`"bing"` / `"baidu"` / `"sogou"` / `"duckduckgo"` |
 | `user_agent` | str | Chrome 桌面 UA | 自定义 UA，用于反爬 |
+| `ignore_https_errors` | bool | `false` | 忽略 HTTPS 证书错误 |
+| `no_sandbox` | bool | `false` | 禁用 Chrome 沙箱（仅容器等特殊环境需开启） |
 
 ### web_search
 
