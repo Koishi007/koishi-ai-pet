@@ -442,7 +442,16 @@ class PetActions(QObject):
         
     def bathing(self, duration=None):
         self._anim.play("bathing", duration=duration)
-        
+
+    def confuse(self, *_, **_kw):
+        self._anim.play("confuse")
+
+    def embarrassed(self, *_, **_kw):
+        self._anim.play("embarrassed")
+
+    def shy(self, *_, **_kw):
+        self._anim.play("shy")
+
     def _fade_in_safety_check(self):
         try:
             if self._window.windowOpacity() < 0.1:

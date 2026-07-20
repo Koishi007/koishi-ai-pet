@@ -196,7 +196,6 @@ class Mood(QObject):
         logger.info(f"[Mood] 愉悦度 {delta:+.1f} ({old:.1f}→{self._joy:.1f})")
 
     def modify_sanity(self, delta: float):
-        delta = max(-self._DELTA_MAX, min(self._DELTA_MAX, delta))
         old = self._sanity
         self._sanity = max(0.0, min(100.0, self._sanity + delta))
         logger.info(f"[Mood] 理智值 {delta:+.1f} ({old:.1f}→{self._sanity:.1f})")
