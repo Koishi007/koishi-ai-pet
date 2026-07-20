@@ -13,6 +13,7 @@ _ACTION_PARTICLES: dict[str, tuple[str, int]] = {
     "shake_arms":   ("stars", 2),
     "rotate":       ("stars", 2),
     "finger_heart": ("hearts", 2),
+    "shy":          ("hearts", 2),
     "calling":      ("notes", 2),
     "sleep":        ("zzz", 3),
     "bathing":      ("bubbles", 3),

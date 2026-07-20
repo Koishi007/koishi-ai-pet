@@ -1,3 +1,4 @@
+import atexit
 import logging
 
 from pet.tools.browser.core import BrowserTool
@@ -10,6 +11,7 @@ TOOL_DESCRIPTION = "浏览器操作（搜索网页、读取网页正文、截图
 TOOL_GROUP = "web"
 
 _instance = BrowserTool()
+atexit.register(_instance.close)
 
 
 def _search(**kw):
@@ -65,7 +67,7 @@ def register(registry):
         TOOL_NAME, "search",
         "搜索关键词，返回结构化搜索结果（标题、URL、摘要），最多10条",
         handler=_search,
-        timeout=30.0,
+        timeout=45.0,
         args={
             "query": {"type": "str", "required": True, "desc": "搜索关键词"},
             "count": {"type": "int", "required": False, "desc": "返回结果数量(1-10)", "default": 10},

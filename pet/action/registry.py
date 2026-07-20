@@ -126,6 +126,27 @@ def _build_duration_registry() -> dict[str, ActionDef]:
             params=[],
             usage_example="Action: rotate",
         ),
+        "confuse": ActionDef(
+            name="confuse",
+            category="驻留",
+            description="看到或听到奇怪事情的疑惑",
+            params=[],
+            usage_example="Action: confuse",
+        ),
+        "embarrassed": ActionDef(
+            name="embarrassed",
+            category="驻留",
+            description="做错事后的尴尬",
+            params=[],
+            usage_example="Action: embarrassed",
+        ),
+        "shy": ActionDef(
+            name="shy",
+            category="驻留",
+            description="双手捧脸表达害羞",
+            params=[],
+            usage_example="Action: shy",
+        ),
     }
 
     # 动态生成带 duration 参数的动作
