@@ -2,6 +2,7 @@ import base64
 import json
 import logging
 import threading
+from contextlib import contextmanager
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlparse
 
@@ -193,10 +194,13 @@ _SEARCH_ENGINES = {
 
 
 class BrowserTool:
-    """浏览器工具：复用 Browser 实例，每次调用隔离 Context，非线程安全。"""
+    """浏览器工具：每次调用冷启动 Chromium，用完即关。
+    串行化（_lock）保证 Playwright 不被并发访问。"""
 
     def __init__(self):
-        self._tls = threading.local()
+        self._lock = threading.Lock()
+        self._pw = None        # 实例级，供 close() / atexit 兜底
+        self._browser = None
 
     def __enter__(self):
         return self
@@ -204,6 +208,8 @@ class BrowserTool:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
         return False
+
+    # ─── 配置属性 ───
 
     @staticmethod
     def _get_playwright_sync():
@@ -241,29 +247,65 @@ class BrowserTool:
             return f"{label}只允许 http/https 协议: {url}"
         return None
 
-    def _ensure_browser(self):
-        """获取当前线程的浏览器实例，Playwright/Browser 均线程隔离。"""
-        tls = self._tls
-        if hasattr(tls, "browser") and tls.browser.is_connected():
-            return tls.browser
+    # ─── 生命周期 ───
 
-        if not hasattr(tls, "pw"):
-            sync_pw = self._get_playwright_sync()
-            if not sync_pw:
-                raise RuntimeError("playwright 未安装，请运行: pip install playwright && playwright install chromium")
-            tls.pw = sync_pw().start()
+    def _acquire(self):
+        """启动 Playwright + Chromium，存入实例属性。
+        调用方须持有 _lock。"""
+        sync_pw = self._get_playwright_sync()
+        if not sync_pw:
+            raise RuntimeError(
+                "playwright 未安装，请运行: pip install playwright && playwright install chromium"
+            )
+        self._pw = sync_pw().start()
 
         launch_args = ["--disable-blink-features=AutomationControlled"]
         if self._no_sandbox:
             launch_args.extend(["--no-sandbox", "--disable-dev-shm-usage"])
 
-        tls.browser = tls.pw.chromium.launch(headless=self._headless, args=launch_args)
-
+        self._browser = self._pw.chromium.launch(
+            headless=self._headless, args=launch_args
+        )
         logger.info(f"[BrowserTool] browser launched (headless={self._headless})")
-        return tls.browser
 
-    def _new_context(self, viewport: dict | None = None):
-        browser = self._ensure_browser()
+    def _release(self):
+        """关闭 Playwright + Chromium，清理实例属性。
+        调用方须持有 _lock。"""
+        if self._browser:
+            try:
+                self._browser.close()
+            except Exception:
+                pass
+            self._browser = None
+        if self._pw:
+            try:
+                self._pw.stop()
+            except Exception:
+                pass
+            self._pw = None
+
+    @contextmanager
+    def _session(self):
+        """冷启动 → 执行 → 关闭。锁串行化，finally 保证清理。"""
+        with self._lock:
+            try:
+                self._acquire()
+                yield self._browser
+            finally:
+                self._release()
+
+    def close(self):
+        """强制关闭（atexit / 应用退出兜底）。
+        非阻塞：若浏览器正忙（通常是一次调用未结束），跳过以免 atexit 卡死。"""
+        if not self._lock.acquire(timeout=2):
+            logger.warning("[BrowserTool] close skipped: browser busy")
+            return
+        try:
+            self._release()
+        finally:
+            self._lock.release()
+
+    def _new_context(self, browser, viewport: dict | None = None):
         ctx = browser.new_context(
             user_agent=self._user_agent,
             locale="zh-CN",
@@ -273,21 +315,7 @@ class BrowserTool:
         ctx.add_init_script(_STEALTH_INIT_JS)
         return ctx
 
-    def close(self):
-        """释放当前线程的浏览器资源（桌面退出时调用）。"""
-        tls = self._tls
-        if hasattr(tls, "browser") and tls.browser:
-            try:
-                tls.browser.close()
-            except Exception:
-                pass
-            tls.browser = None
-        if hasattr(tls, "pw") and tls.pw:
-            try:
-                tls.pw.stop()
-            except Exception:
-                pass
-            tls.pw = None
+    # ─── 搜索 ───
 
     def _wait_results(self, page, engine, timeout_ms=10000):
         wait_items = engine.get("wait_items_selector")
@@ -309,12 +337,13 @@ class BrowserTool:
         except Exception:
             pass
 
-    def _search_once(self, engine, query, count):
+    def _search_once(self, engine, query, count, browser):
+        """单次搜索，browser 由 _session 注入。"""
         url = engine["url"].format(query=quote(query))
         goto_timeout = engine["timeout"]
         extract_js = engine["extract_js"]
 
-        ctx = self._new_context()
+        ctx = self._new_context(browser)
         page = None
         try:
             page = ctx.new_page()
@@ -363,7 +392,8 @@ class BrowserTool:
         last_err = None
         for attempt in range(max_retries):
             try:
-                results = self._search_once(engine, query, count)
+                with self._session() as browser:
+                    results = self._search_once(engine, query, count, browser)
             except Exception as e:
                 last_err = e
                 if attempt < max_retries - 1:
@@ -387,6 +417,8 @@ class BrowserTool:
 
         raise RuntimeError("unreachable")
 
+    # ─── 读取网页 ───
+
     def read_url(self, url: str, max_chars: int = 10000,
                  wait_seconds: float = 3.0, page: int = 1,
                  page_size: int = 3000) -> dict:
@@ -394,41 +426,50 @@ class BrowserTool:
         if err:
             return {"error": err}
 
-        ctx = self._new_context()
         try:
-            pg = ctx.new_page()
-            pg.goto(url, timeout=15000, wait_until="domcontentloaded")
+            with self._session() as browser:
+                ctx = self._new_context(browser)
+                pg = None
+                title = ""
+                raw_text = ""
+                try:
+                    pg = ctx.new_page()
+                    pg.goto(url, timeout=15000, wait_until="domcontentloaded")
 
-            # 触发懒加载
-            try:
-                pg.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
-                pg.wait_for_load_state("networkidle", timeout=5000)
-            except Exception:
-                pass
-            pg.wait_for_timeout(int(wait_seconds * 1000))
+                    # 触发懒加载
+                    try:
+                        pg.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
+                        pg.wait_for_load_state("networkidle", timeout=5000)
+                    except Exception:
+                        pass
+                    pg.wait_for_timeout(int(wait_seconds * 1000))
 
-            title = pg.title()
-            raw_text = pg.evaluate("""() => {
-                const sel = document.querySelector(
-                    'article, main, [role="main"], .article, .content, #article, #content'
-                );
-                const root = sel || document.body;
-                const clone = root.cloneNode(true);
-                clone.querySelectorAll(
-                    'script,style,nav,footer,header,aside,form,iframe,' +
-                    '[class*="sidebar"],[class*="comment"],[class*="ad-"],[role="complementary"]'
-                ).forEach(e => e.remove());
-                return clone.innerText;
-            }""")
-            pg.close()
+                    title = pg.title()
+                    raw_text = pg.evaluate("""() => {
+                        const sel = document.querySelector(
+                            'article, main, [role="main"], .article, .content, #article, #content'
+                        );
+                        const root = sel || document.body;
+                        const clone = root.cloneNode(true);
+                        clone.querySelectorAll(
+                            'script,style,nav,footer,header,aside,form,iframe,' +
+                            '[class*="sidebar"],[class*="comment"],[class*="ad-"],[role="complementary"]'
+                        ).forEach(e => e.remove());
+                        return clone.innerText;
+                    }""")
+                finally:
+                    if pg:
+                        try:
+                            pg.close()
+                        except Exception:
+                            pass
+                    try:
+                        ctx.close()
+                    except Exception:
+                        pass
         except Exception as e:
             logger.exception(f"[BrowserTool] read_url failed: {e}")
             return {"error": f"读取失败: {e}", "url": url}
-        finally:
-            try:
-                ctx.close()
-            except Exception:
-                pass
 
         raw_text = (raw_text or "").strip()
         truncated = len(raw_text) > max_chars
@@ -458,35 +499,45 @@ class BrowserTool:
             "__context__": f"读取网页 {url}「{title}」第{page}/{total_pages}页（{len(text)}字符）",
         }
 
+    # ─── 截图 ───
+
     def screenshot_url(self, url: str, width: int = 1280, height: int = 800,
                        wait_seconds: float = 3.0, full_page: bool = False) -> dict:
         err = self._validate_url(url)
         if err:
             return {"error": err}
 
-        ctx = self._new_context(viewport={"width": width, "height": height})
+        screenshot_bytes = None
         try:
-            pg = ctx.new_page()
-            pg.goto(url, timeout=15000, wait_until="domcontentloaded")
-
-            if full_page:
+            with self._session() as browser:
+                ctx = self._new_context(browser, viewport={"width": width, "height": height})
+                pg = None
                 try:
-                    pg.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
-                    pg.wait_for_load_state("networkidle", timeout=5000)
-                except Exception:
-                    pass
-            pg.wait_for_timeout(int(wait_seconds * 1000))
+                    pg = ctx.new_page()
+                    pg.goto(url, timeout=15000, wait_until="domcontentloaded")
 
-            screenshot_bytes = pg.screenshot(full_page=full_page, type="jpeg", quality=80)
-            pg.close()
+                    if full_page:
+                        try:
+                            pg.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
+                            pg.wait_for_load_state("networkidle", timeout=5000)
+                        except Exception:
+                            pass
+                    pg.wait_for_timeout(int(wait_seconds * 1000))
+
+                    screenshot_bytes = pg.screenshot(full_page=full_page, type="jpeg", quality=80)
+                finally:
+                    if pg:
+                        try:
+                            pg.close()
+                        except Exception:
+                            pass
+                    try:
+                        ctx.close()
+                    except Exception:
+                        pass
         except Exception as e:
             logger.exception(f"[BrowserTool] screenshot_url failed: {e}")
             return {"error": f"截图失败: {e}", "url": url}
-        finally:
-            try:
-                ctx.close()
-            except Exception:
-                pass
 
         img_b64 = base64.b64encode(screenshot_bytes).decode("ascii")
         logger.info(f"[BrowserTool] screenshot_url: {url} → {len(screenshot_bytes)} bytes JPEG")
