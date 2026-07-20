@@ -83,7 +83,7 @@ python -m pet
 2. **「连接」页签**：填入 **Base URL**（API 地址）和 **API Key**（密钥），模型名设为供应商对应的模型名，如 `mimo-v2.5`
 3. 点「测试连接」验证，成功后右下角保存
 
-> 推荐方案：**Mimo v2.5** — 原生多模态、价格便宜（查看 [Mimo 官网](https://mimo.xn--6kr4l1a.xyz/) 获取 API 信息）
+> 推荐方案：**Mimo v2.5** — 原生多模态、价格便宜（查看 [Mimo 官网](https://mimo.mi.com/docs/zh-CN/quick-start/summary/first-api-call/) 获取 API 信息）
 >
 > 记忆系统推荐 **智谱 embedding-3** — 便宜且快速；不配置也能用基础的关键词匹配记忆
 
