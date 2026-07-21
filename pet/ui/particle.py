@@ -180,6 +180,25 @@ def _spawn_dark_hearts(cx: float, cy: float) -> list[Particle]:
     return particles
 
 
+def _spawn_question_marks(cx: float, cy: float) -> list[Particle]:
+    """疑惑问号：从头顶缓慢上飘。"""
+    particles = []
+    for _ in range(3):
+        particles.append(Particle(
+            x=cx + random.uniform(-10, 10),
+            y=cy + random.uniform(-5, 5),
+            vx=random.uniform(-0.4, 0.4),
+            vy=-random.uniform(0.6, 1.2),
+            gravity=-0.02,
+            lifetime=random.randint(800, 1200),
+            size=random.randint(10, 14),
+            color=QColor(180, 140, 255, 200),
+            shape="text",
+            text="?",
+        ))
+    return particles
+
+
 def _spawn_bubbles(cx: float, cy: float) -> list[Particle]:
     """彩色肥皂泡：缓慢上飘，半透明柔和色调。"""
     particles = []
@@ -318,8 +337,9 @@ class ParticleWidget(QWidget):
         "notes":       1 / 4,  # 头部附近
         "hearts":      1 / 4,  # 头部附近
         "dark_hearts": 1 / 4,  # 头部附近
-        "bubbles":     1 / 4,  # 头部附近
-        "zzz":         1 / 2,  # 窗口中部
+        "bubbles":         1 / 4,  # 头部附近
+        "question_marks":  1 / 4,  # 头部附近
+        "zzz":             1 / 2,  # 窗口中部
     }
 
     def spawn(self, effect: str, cx: float | None = None, cy: float | None = None):
@@ -332,9 +352,10 @@ class ParticleWidget(QWidget):
             "hearts": _spawn_hearts,
             "dark_hearts": _spawn_dark_hearts,
             "bubbles": _spawn_bubbles,
+            "question_marks": _spawn_question_marks,
         }.get(effect)
         if spawner is None:
-            logger.warning(f"Unknown particle effect: {effect!r}, expected one of dust/stars/zzz/notes/hearts/dark_hearts/bubbles")
+            logger.warning(f"Unknown particle effect: {effect!r}, expected one of dust/stars/zzz/notes/hearts/dark_hearts/bubbles/question_marks")
             return
 
         if cx is not None:
