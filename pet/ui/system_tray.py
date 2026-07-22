@@ -129,6 +129,15 @@ class SystemTrayManager(QObject):
             show_action.triggered.connect(self.pet.show)
             menu.addAction(show_action)
 
+        # 鼠标穿透开关
+        pen = self.pet._mouse_penetration
+        pen_action = QAction("关闭鼠标穿透" if pen else "开启鼠标穿透", menu)
+        pen_action.triggered.connect(
+            lambda: self.pet.set_mouse_penetration(not self.pet._mouse_penetration)
+        )
+        menu.addAction(pen_action)
+        menu.addSeparator()
+
         # 设置入口
         settings_action = QAction("设置", menu)
         settings_action.triggered.connect(lambda: SettingsWindow.show_instance(self._agent, self.pet))
