@@ -1,3 +1,4 @@
+import ctypes
 import logging
 import sys
 
@@ -82,6 +83,7 @@ class PetWindow(TransparentWindow):
         self._log_relay = None
         self._app = None
         self._event_reaction = False
+        self._mouse_penetration = False  # 鼠标穿透开关，默认关
         self._drag_history: list = []  # [(坐标点, 时间戳毫秒), ...]
         self._press_pos: QPoint | None = None  # 按下时的全局坐标
         self._click_timer = QTimer(self)       # 单击检测定时器
@@ -450,5 +452,30 @@ class PetWindow(TransparentWindow):
             self._emotion_bubble.hide()
         super().hide()
 
+    def set_mouse_penetration(self, enabled: bool):
+        """开启/关闭鼠标穿透：开启后窗口不接收任何鼠标事件，点击穿透到下层。"""
+        self._mouse_penetration = enabled
+        if sys.platform == "win32":
+            try:
+                hwnd = int(self.winId())
+                if not hwnd:
+                    return
+                GWL_EXSTYLE = -20
+                WS_EX_TRANSPARENT = 0x00000020
+                user32 = ctypes.windll.user32
+                style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+                if enabled:
+                    style |= WS_EX_TRANSPARENT
+                else:
+                    style &= ~WS_EX_TRANSPARENT
+                user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style)
+            except Exception as e:
+                logger.warning(f"[PetWindow] set_mouse_penetration({enabled}) failed: {e}")
+        else:
+            self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, enabled)
+        logger.info(f"[PetWindow] mouse_penetration={enabled}")
+
     def show(self):
         super().show()
+        if self._mouse_penetration:
+            self.set_mouse_penetration(True)
