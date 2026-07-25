@@ -209,7 +209,6 @@ class BrowserTool:
         self.close()
         return False
 
-    # ─── 配置属性 ───
 
     @staticmethod
     def _get_playwright_sync():
@@ -247,7 +246,6 @@ class BrowserTool:
             return f"{label}只允许 http/https 协议: {url}"
         return None
 
-    # ─── 生命周期 ───
 
     def _acquire(self):
         """启动 Playwright + Chromium，存入实例属性。
@@ -315,7 +313,6 @@ class BrowserTool:
         ctx.add_init_script(_STEALTH_INIT_JS)
         return ctx
 
-    # ─── 搜索 ───
 
     def _wait_results(self, page, engine, timeout_ms=10000):
         wait_items = engine.get("wait_items_selector")
@@ -417,7 +414,6 @@ class BrowserTool:
 
         raise RuntimeError("unreachable")
 
-    # ─── 读取网页 ───
 
     def read_url(self, url: str, max_chars: int = 10000,
                  wait_seconds: float = 3.0, page: int = 1,
@@ -499,7 +495,6 @@ class BrowserTool:
             "__context__": f"读取网页 {url}「{title}」第{page}/{total_pages}页（{len(text)}字符）",
         }
 
-    # ─── 截图 ───
 
     def screenshot_url(self, url: str, width: int = 1280, height: int = 800,
                        wait_seconds: float = 3.0, full_page: bool = False) -> dict:
