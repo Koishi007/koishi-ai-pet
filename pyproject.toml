@@ -30,6 +30,7 @@ dependencies = [
     "sounddevice>=0.4.6",
     "websocket-client>=1.6.0",
     "pynput>=1.7.6",
+    "pycaw>=20231227; sys_platform == 'win32'",
     "pyobjc-framework-Quartz; sys_platform == 'darwin'",
     "pyobjc-framework-AppKit; sys_platform == 'darwin'",
     "python-xlib; sys_platform == 'linux'",
