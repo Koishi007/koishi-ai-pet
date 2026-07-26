@@ -6,7 +6,7 @@ import logging
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QListWidget, QListWidgetItem,
-    QPushButton, QLabel, QMessageBox,
+    QPushButton, QLabel, QMessageBox, QMenu, QApplication,
     QDialog, QLineEdit, QFormLayout, QDialogButtonBox,
 )
 from PySide6.QtCore import Qt
@@ -97,6 +97,8 @@ class TodoPanel(QWidget):
 
         self._list = QListWidget()
         self._list.setStyleSheet(LIST_QSS)
+        self._list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._list.customContextMenuRequested.connect(self._on_list_context_menu)
         self._list.setFrameShape(QListWidget.Shape.NoFrame)
         self._list.setAlternatingRowColors(True)
         layout.addWidget(self._list, stretch=1)
@@ -167,6 +169,7 @@ class TodoPanel(QWidget):
                 text = f"  ○  {t['title']}"
             item = QListWidgetItem(text)
             item.setData(Qt.ItemDataRole.UserRole, t["id"])
+            item.setData(Qt.ItemDataRole.ToolTipRole, t["title"])
             self._list.addItem(item)
         done_count = sum(1 for t in items if t["status"] == "done")
         self._stats.setText(f"共 {len(items)} 条，{done_count} 已完成")
@@ -213,6 +216,20 @@ class TodoPanel(QWidget):
             return
         self._storage.toggle(tid)
         self._refresh()
+
+    def _on_list_context_menu(self, pos):
+        """右键菜单：复制选中项的纯文本标题。"""
+        item = self._list.itemAt(pos)
+        if item is None:
+            return
+        title = item.data(Qt.ItemDataRole.ToolTipRole)
+        if not title:
+            title = item.text().strip().lstrip("○✅ ").replace("~~", "").strip()
+
+        menu = QMenu(self)
+        act_copy = menu.addAction("复制")
+        if menu.exec(self._list.mapToGlobal(pos)) == act_copy:
+            QApplication.clipboard().setText(title)
 
     def _on_delete(self):
         tid = self._current_id()
