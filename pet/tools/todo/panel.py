@@ -68,14 +68,14 @@ class TodoPanel(QWidget):
         title_row = QHBoxLayout(title_bar)
         title_row.setContentsMargins(0, 0, 0, 0)
 
-        title = QLabel("📋 待办事项")
+        title = QLabel("待办事项")
         title.setStyleSheet(
             "font-size: 16px; font-weight: bold; color: #333;"
         )
         title_row.addWidget(title)
         title_row.addStretch()
 
-        btn_close = QPushButton("✕")
+        btn_close = QPushButton("×")
         btn_close.setFixedSize(28, 28)
         btn_close.setStyleSheet("""
             QPushButton {
@@ -107,21 +107,21 @@ class TodoPanel(QWidget):
         btn_row.setSpacing(6)
 
         for text, handler, extra_qss in [
-            ("➕ 添加", self._on_add, """
+            ("添加", self._on_add, """
                 QPushButton:hover {
                     background: #4a90d9;
                     border-color: #4a90d9;
                     color: #fff;
                 }
             """),
-            ("✓ 完成", self._on_toggle, """
+            ("完成", self._on_toggle, """
                 QPushButton:hover {
                     background: #27ae60;
                     border-color: #27ae60;
                     color: #fff;
                 }
             """),
-            ("✗ 删除", self._on_delete, """
+            ("删除", self._on_delete, """
                 QPushButton:hover {
                     background: #e74c3c;
                     border-color: #e74c3c;
@@ -164,9 +164,9 @@ class TodoPanel(QWidget):
         self._list.clear()
         for t in items:
             if t["status"] == "done":
-                text = f"  ✅  ~~{t['title']}~~"
+                text = f"  [√] ~~{t['title']}~~"
             else:
-                text = f"  ○  {t['title']}"
+                text = f"  [ ] {t['title']}"
             item = QListWidgetItem(text)
             item.setData(Qt.ItemDataRole.UserRole, t["id"])
             item.setData(Qt.ItemDataRole.ToolTipRole, t["title"])
@@ -224,7 +224,7 @@ class TodoPanel(QWidget):
             return
         title = item.data(Qt.ItemDataRole.ToolTipRole)
         if not title:
-            title = item.text().strip().lstrip("○✅ ").replace("~~", "").strip()
+            title = title.replace("[√]", "").replace("[ ]", "").replace("~~", "").strip()
 
         menu = QMenu(self)
         act_copy = menu.addAction("复制")

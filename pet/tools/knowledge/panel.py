@@ -64,12 +64,12 @@ class KnowledgePanel(QWidget):
         title_row = QHBoxLayout(title_bar)
         title_row.setContentsMargins(0, 0, 0, 0)
 
-        title = QLabel("📚 知识库")
+        title = QLabel("知识库")
         title.setStyleSheet("font-size: 16px; font-weight: bold; color: #333;")
         title_row.addWidget(title)
         title_row.addStretch()
 
-        btn_close = QPushButton("✕")
+        btn_close = QPushButton("×")
         btn_close.setFixedSize(28, 28)
         btn_close.setStyleSheet("""
             QPushButton {
@@ -95,7 +95,7 @@ class KnowledgePanel(QWidget):
         self._search_input.returnPressed.connect(self._on_search)
         search_row.addWidget(self._search_input)
 
-        btn_search = QPushButton("🔍 搜索")
+        btn_search = QPushButton("搜索")
         btn_search.setStyleSheet("""
             QPushButton {
                 background: #fff; border: 1px solid #ddd;
@@ -124,7 +124,7 @@ class KnowledgePanel(QWidget):
         self._result_label.setVisible(False)
         layout.addWidget(self._result_label)
 
-        self._btn_back = QPushButton("📋 返回列表")
+        self._btn_back = QPushButton("返回列表")
         self._btn_back.setStyleSheet("""
             QPushButton {
                 background: #fff; border: 1px solid #ddd;
@@ -142,11 +142,11 @@ class KnowledgePanel(QWidget):
         btn_row.setSpacing(6)
 
         for text, handler, hover_qss in [
-            ("➕ 添加", self._on_add,
+            ("添加", self._on_add,
              "QPushButton:hover { background: #4a90d9; border-color: #4a90d9; color: #fff; }"),
-            ("📁 导入文件", self._on_import,
+            ("导入文件", self._on_import,
              "QPushButton:hover { background: #27ae60; border-color: #27ae60; color: #fff; }"),
-            ("🗑️ 删除", self._on_delete,
+            ("删除", self._on_delete,
              "QPushButton:hover { background: #e74c3c; border-color: #e74c3c; color: #fff; }"),
         ]:
             btn = QPushButton(text)
@@ -164,7 +164,7 @@ class KnowledgePanel(QWidget):
 
         btn_row.addStretch()
 
-        self._btn_prev = QPushButton("◀ 上一页")
+        self._btn_prev = QPushButton("上一页")
         self._btn_prev.setStyleSheet("""
             QPushButton { background: #fff; border: 1px solid #ddd;
                 border-radius: 6px; padding: 4px 12px; font-size: 12px; color: #666; }
@@ -174,7 +174,7 @@ class KnowledgePanel(QWidget):
         self._btn_prev.clicked.connect(self._prev_page)
         btn_row.addWidget(self._btn_prev)
 
-        self._btn_next = QPushButton("下一页 ▶")
+        self._btn_next = QPushButton("下一页")
         self._btn_next.setStyleSheet(self._btn_prev.styleSheet())
         self._btn_next.clicked.connect(self._next_page)
         btn_row.addWidget(self._btn_next)
@@ -329,7 +329,7 @@ class KnowledgePanel(QWidget):
             score_str = f" (相似度: {score:.2f})" if score else ""
             title = r.get("title", "")
             preview = r["content"][:100].replace("\n", " ")
-            text = f"  📄 {title}{score_str}\n      {preview}..."
+            text = f"  {title}{score_str}\n      {preview}..."
             item = QListWidgetItem(text)
             item.setData(Qt.ItemDataRole.UserRole, r.get("doc_id"))
             self._list.addItem(item)
