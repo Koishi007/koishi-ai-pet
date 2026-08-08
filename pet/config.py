@@ -57,6 +57,7 @@ _KEY_META = {
     "AUTO_START_ON_BOOT":        {"type": "bool",     "default": False,         "category": "appearance", "needs_restart": False, "hidden": False, "description": "开机自动启动"},
     "HIDE_CONSOLE":              {"type": "bool",     "default": True,          "category": "appearance", "needs_restart": True,  "hidden": True,  "description": "启动时隐藏控制台窗口"},
     "LOG_LEVEL":                 {"type": "str",      "default": "DEBUG",       "category": "appearance", "needs_restart": False, "hidden": True,  "description": "日志级别(DEBUG/INFO/WARNING/ERROR)"},
+    "CRASH_REPORT_ENABLED":      {"type": "bool",     "default": True,          "category": "appearance", "needs_restart": True,  "hidden": True,  "description": "启用崩溃信息收集(写入 logs/crash 目录)"},
     "PET_PERSONALITY":           {"type": "str",      "default": "",            "category": "personality", "needs_restart": False, "hidden": False, "description": "宠物人格描述(注入 system prompt)"},
     "XF_APPID":                  {"type": "str",      "default": "",            "category": "connection", "needs_restart": False, "hidden": False, "description": "讯飞语音听写 APPID"},
     "XF_API_KEY":                {"type": "str",      "default": "",            "category": "connection", "needs_restart": False, "hidden": False, "description": "讯飞语音听写 API Key"},

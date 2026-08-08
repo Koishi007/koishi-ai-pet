@@ -6,3 +6,12 @@ pulse/    — 状态引擎：vitals(生理参数) 与 mood(情绪参数) 的数�
 tools/   — 工具系统：注册表、执行器、上下文构建、工具自动发现与加载
 ui/       — Qt 界面：宠物窗口、气泡对话、粒子特效、调试面板、系统托盘
 """
+
+# 尽早安装崩溃信息收集钩子；即使安装失败也不阻塞主程序启动
+try:
+    from pet.crash_reporter import install as _install_crash_reporter
+
+    _crash_reporter = _install_crash_reporter()
+except Exception:
+    pass
+

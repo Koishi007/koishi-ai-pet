@@ -25,6 +25,7 @@ from pet.tools import load_tools
 from pet.tools.context import TOOL_CTX
 from pet.config import config
 from pet.auto_start import set_auto_start
+from pet.crash_reporter import get_guard
 from pet.version_check import UpdateChecker
 
 logger = logging.getLogger(__name__)
@@ -81,6 +82,9 @@ def main():
 
     logger.info("===== KoishiAI 启动 =====")
     logger.info(f"BRAIN={config.BRAIN}, MODEL={config.LLM_MODEL}")
+
+    # 按用户配置开关崩溃信息收集
+    get_guard().set_enabled(config.CRASH_REPORT_ENABLED)
 
     # 启动时加载工具插件
     load_tools(config.TOOLS_ENABLED)
@@ -313,6 +317,8 @@ def main():
     def _shutdown():
         """aboutToQuit 回调：轻量善后。"""
         logging.getLogger().removeHandler(_log_handler)
+        # 正常退出：清除启动标记，避免下次启动误报异常退出
+        get_guard().clear_marker()
 
     app.aboutToQuit.connect(_shutdown)
 
@@ -320,5 +326,7 @@ def main():
     window._quit_fn = _do_quit
     tray._quit_fn = _do_quit
 
+    # 初始化完成：更新启动标记，区分"启动中途崩溃"与"正常运行中崩溃"
+    get_guard().mark_started()
     logger.info("Entering event loop")
     sys.exit(app.exec())
