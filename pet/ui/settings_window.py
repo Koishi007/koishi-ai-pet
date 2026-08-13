@@ -34,33 +34,48 @@ class _LLMTestWorker(QObject):
     """子线程执行 LLM 连通性测试。"""
     finished = Signal(bool, str, float)  # 成功, 内容或错误, 耗时
 
-    def __init__(self, url: str, key: str, model: str, timeout: float = 30.0):
+    def __init__(self, url: str, key: str, model: str, timeout: float = 30.0,
+                 thinking: bool = True):
         super().__init__()
         self._url = url
         self._key = key
         self._model = model
         self._timeout = timeout
+        self._thinking = thinking
 
     def run(self):
         import time
         start = time.time()
         try:
-            from openai import OpenAI
+            from openai import OpenAI, BadRequestError
             client = OpenAI(
                 api_key=self._key or "empty",
                 base_url=self._url or "",
                 timeout=self._timeout,
             )
-            reply = client.chat.completions.create(
-                model=self._model,
-                messages=[
+            kwargs = {
+                "model": self._model,
+                "messages": [
                     {"role": "system", "content": "你是调试助手。"},
                     {"role": "user", "content": "请回复 'OK' 表示联通正常。"},
                 ],
-                max_tokens=50,
-            )
+                "max_tokens": 50,
+                "extra_body": {
+                    "thinking": {"type": "enabled" if self._thinking else "disabled"}
+                },
+            }
+            degraded = False
+            try:
+                reply = client.chat.completions.create(**kwargs)
+            except BadRequestError:
+                # 服务商不支持 thinking 参数，移除后重试
+                kwargs.pop("extra_body", None)
+                reply = client.chat.completions.create(**kwargs)
+                degraded = True
             elapsed = time.time() - start
             content = reply.choices[0].message.content or "(空响应)"
+            if degraded:
+                content = "(服务商不支持思考模式参数，已自动降级) " + content
             self.finished.emit(True, content, elapsed)
         except Exception as e:
             elapsed = time.time() - start
@@ -480,6 +495,12 @@ class SettingsWindow(QWidget):
         self._cache_check = self._check("LLM_CACHE_PROMPT", "Prompt 缓存")
         form.addRow("", self._cache_check)
 
+        self._thinking_check = self._check("LLM_THINKING_DISABLED", "关闭思考模式")
+        form.addRow("", self._thinking_check)
+        self._thinking_hint = QLabel("关闭可提升调用速度")
+        self._thinking_hint.setStyleSheet(f"color:{_COLOR_TEXT_MUTED}; font-size:11px;")
+        form.addRow("", self._thinking_hint)
+
         inner.addLayout(form)
 
         # 测试连接按钮
@@ -526,6 +547,7 @@ class SettingsWindow(QWidget):
                          self._tokens_interact_edit, self._tokens_chat_edit,
                          self._tokens_auto_edit,
                          self._tool_rounds_edit,
+                         self._thinking_check, self._thinking_hint,
                          self._btn_test, self._label_test, self._test_output]
 
         if mode == "local":
@@ -989,7 +1011,10 @@ class SettingsWindow(QWidget):
         self._label_test.setText("测试中...")
 
         self._llm_thread = QThread()
-        self._llm_worker = _LLMTestWorker(url, key, model, timeout)
+        self._llm_worker = _LLMTestWorker(
+            url, key, model, timeout,
+            thinking=not self._thinking_check.isChecked(),
+        )
         self._llm_worker.moveToThread(self._llm_thread)
         self._llm_thread.started.connect(self._llm_worker.run)
         self._llm_worker.finished.connect(self._on_llm_test_result)
