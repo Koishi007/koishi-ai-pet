@@ -22,6 +22,7 @@ _KEY_META = {
     "LLM_RETRY_DELAY":           {"type": "float",    "default": 1,             "category": "connection", "needs_restart": False, "hidden": True,  "description": "重试延迟(秒)"},
     "LLM_RETRY_MAX_DELAY":       {"type": "float",    "default": 4,             "category": "connection", "needs_restart": False, "hidden": True,  "description": "最大重试延迟(秒)"},
     "LLM_CACHE_PROMPT":          {"type": "bool",     "default": False,         "category": "connection", "needs_restart": False, "hidden": False, "description": "启用 Prompt 缓存"},
+    "LLM_THINKING_DISABLED":     {"type": "bool",     "default": False,         "category": "connection", "needs_restart": False, "hidden": False, "description": "关闭思考模式"},
     "LLM_MAX_TOKENS_INTERACT":    {"type": "int",      "default": 1024,           "category": "connection", "needs_restart": False, "hidden": False, "description": "交互模式LLM输出Token上限"},
     "LLM_MAX_TOKENS_CHAT":        {"type": "int",      "default": 4096,          "category": "connection", "needs_restart": False, "hidden": False, "description": "聊天模式LLM输出Token上限"},
     "LLM_MAX_TOKENS_AUTONOMOUS":  {"type": "int",      "default": 4096,          "category": "connection", "needs_restart": False, "hidden": False, "description": "自主模式LLM输出Token上限"},

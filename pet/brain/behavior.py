@@ -10,6 +10,8 @@ import threading
 from dataclasses import dataclass, field
 from typing import Optional
 
+from openai import BadRequestError
+
 from pet.brain.base import BrainMixin
 from pet.brain.context_builder import ContextBuilder
 from pet.brain.llm_client import LLMClient
@@ -20,6 +22,9 @@ from pet.brain.llm_retry import llm_retry
 from pet.tools.registry import TOOL_REGISTRY
 
 logger = logging.getLogger(__name__)
+
+# 服务商是否不支持 thinking 参数（首次 400 后自动降级，后续请求不再携带）
+_thinking_unsupported = False
 
 
 @dataclass
@@ -199,6 +204,28 @@ class Behavior(BrainMixin):
             result = fn(*args, **kwargs)
         return result
 
+    @staticmethod
+    def _apply_thinking_param(kwargs: dict):
+        """按配置注入思考模式参数"""
+        if _thinking_unsupported:
+            return
+        state = "disabled" if config.LLM_THINKING_DISABLED else "enabled"
+        kwargs.setdefault("extra_body", {})["thinking"] = {"type": state}
+
+    def _create_completion(self, kwargs: dict):
+        """发起补全请求；若服务商不支持 thinking 参数（400），自动移除后重试一次。"""
+        global _thinking_unsupported
+        try:
+            return self._llm.client.chat.completions.create(**kwargs)
+        except BadRequestError:
+            if "extra_body" not in kwargs:
+                raise
+            logger.warning("[Behavior] 请求被拒绝(400)，可能不支持 thinking 参数，自动降级重试")
+            kwargs.pop("extra_body", None)
+            resp = self._llm.client.chat.completions.create(**kwargs)
+            _thinking_unsupported = True
+            return resp
+
     @llm_retry(tag="Behavior")
     def _llm_call(self, messages: list, max_tokens: int = 4000, tools: list = None):
         self.llm_stats.increment()
@@ -206,7 +233,8 @@ class Behavior(BrainMixin):
         kwargs = {"model": self._llm.model, "messages": messages, "max_tokens": max_tokens, "temperature": config.LLM_TEMPERATURE}
         if tools:
             kwargs["tools"] = tools
-        resp = self._llm.client.chat.completions.create(**kwargs)
+        self._apply_thinking_param(kwargs)
+        resp = self._create_completion(kwargs)
         elapsed = time.perf_counter() - t0
         usage = resp.usage
         if usage:
@@ -224,8 +252,9 @@ class Behavior(BrainMixin):
                    "stream_options": {"include_usage": True}}
         if tools:
             kwargs["tools"] = tools
+        self._apply_thinking_param(kwargs)
         return llm_stream_with_retry(
-            lambda: self._llm.client.chat.completions.create(**kwargs),
+            lambda: self._create_completion(kwargs),
             tag="Behavior.stream",
         )
 
