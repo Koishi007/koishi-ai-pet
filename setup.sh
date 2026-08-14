@@ -98,7 +98,7 @@ echo "[3/4] 安装依赖..."
 
 echo "   安装: pip install -e \"$SCRIPT_DIR\""
 
-if ! pip install -e "$SCRIPT_DIR" -q -i https://pypi.tuna.tsinghua.edu.cn/simple; then
+if ! pip install -e "$SCRIPT_DIR" -i https://pypi.tuna.tsinghua.edu.cn/simple; then
     echo -e "${RED}[错误]${NC} 安装依赖失败"
     echo "       请检查网络连接或 pyproject.toml 配置"
     deactivate 2>/dev/null || true
