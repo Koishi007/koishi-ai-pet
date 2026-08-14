@@ -76,7 +76,7 @@ if errorlevel 1 (
 :: ===== 5. 安装依赖 =====
 echo.
 echo [3/4] 安装依赖...
-pip install -e "%~dp0." -q -i https://pypi.tuna.tsinghua.edu.cn/simple
+pip install -e "%~dp0." -i https://pypi.tuna.tsinghua.edu.cn/simple
 if errorlevel 1 (
     echo [错误] 安装依赖失败，请检查网络或 pyproject.toml
     pause
