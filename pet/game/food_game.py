@@ -34,8 +34,9 @@ class FoodGameManager(QObject):
 
     # 跨线程请求：脑线程 spawn → 主线程创建 FoodWindow
     spawn_ui_requested = Signal(str, str, int, int)  # food_id, emoji, x, y
-    # 跨线程启动：单例可能在脑线程创建，绑定动作投递到主线程执行
-    bind_requested = Signal(object)
+    # 跨线程启动：单例可能在脑线程创建，绑定动作投递到主线程执行。
+    # 注意：必须无参——PySide6 的 QueuedConnection 无法排队 object 类型参数（事件会被静默丢弃）。
+    bind_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -59,26 +60,28 @@ class FoodGameManager(QObject):
         self._food_window = None
         self._last_event: Optional[str] = None  # describe 输出一次后清空
 
-        self._tick_timer = QTimer(self)
-        self._tick_timer.setInterval(_TICK_MS)
-        self._tick_timer.timeout.connect(self.tick)
+        self._tick_timer = None  # 在主线程绑定后创建（QTimer 归属创建线程，不能在线程外 start）
 
         self.spawn_ui_requested.connect(self._spawn_ui)
         self.bind_requested.connect(self._bind_agent)
 
         if getattr(TOOL_CTX, "_agent", None) is not None:
             # 已在 bind 之后被创建（可能在脑线程）：投递到主线程再绑定
-            self.bind_requested.emit(TOOL_CTX._agent)
+            self.bind_requested.emit()
         else:
             # on_bind 回调为无参调用，绑定时统一从 TOOL_CTX 取 agent
-            TOOL_CTX.on_bind(lambda: self.bind_requested.emit(TOOL_CTX._agent))
+            TOOL_CTX.on_bind(lambda: self.bind_requested.emit())
 
-    def _bind_agent(self, agent):
+    def _bind_agent(self, agent=None):
         """主线程执行：绑定 agent 并启动 tick 定时器。"""
         if self._bound:
             return
         self._bound = True
-        self._agent = agent
+        self._agent = agent if agent is not None else getattr(TOOL_CTX, "_agent", None)
+        # QTimer 归属其创建线程：必须在主线程创建并启动，否则 tick 永不触发
+        self._tick_timer = QTimer(self)
+        self._tick_timer.setInterval(_TICK_MS)
+        self._tick_timer.timeout.connect(self.tick)
         self._tick_timer.start()
         logger.info("[FoodGame] bound to agent, tick started")
 
