@@ -169,8 +169,8 @@ class ToolRegistry:
             tool_name="food",
             method_name="status",
             description=(
-                "查询桌面上食物的状态：是否存在、位置、实时水平偏移 dx 与垂直偏移 dy、"
-                "建议跳高 bounce_height、是否已经到达、剩余过期时间。没有食物时可用来确认是否需要生成。"
+                "查询当前食物状态：实时偏移 dx/dy/bounce_height、是否到达、剩余过期时间；"
+                "无食物则确认是否需要生成。"
             ),
             handler=self._food_status,
         )
