@@ -277,6 +277,13 @@ class ContextBuilder:
 
         def _pick(key: str, value: float) -> str | None:
             if key == "satiety":
+                if not config.FOOD_ENABLED:
+                    # 觅食关闭：只保留向用户讨吃的引导
+                    if value >= 80:    return "刚吃饱，"
+                    elif value >= 60:  return None
+                    elif value >= 40:  return "肚子有点空了，想吃点东西。"
+                    elif value >= 20:  return "饿得肚子咕咕叫，想吃点东西。"
+                    else:              return "快要饿死了，眼前发黑，想吃点东西。"
                 if value >= 80:    return "刚吃饱，"
                 elif value >= 60:  return None
                 elif value >= 40:  return "肚子有点空了——可以撒娇向用户讨点吃的，也可以自己调用 food__spawn 生成食物吃掉。"

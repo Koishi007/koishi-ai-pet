@@ -1,6 +1,7 @@
 """觅食游戏的食物悬浮窗 — 纯展示组件，生命周期由 FoodGameManager 管理。"""
 
 import logging
+import random
 
 from PySide6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve
 from PySide6.QtGui import QFont
@@ -33,6 +34,7 @@ class FoodWindow(QWidget):
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.WindowDoesNotAcceptFocus
             | Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -78,24 +80,24 @@ class FoodWindow(QWidget):
         self._float_timer.stop()
         self._fade_anim.stop()
 
-        anim = QPropertyAnimation(self, b"windowOpacity")
-        anim.setDuration(200)
-        anim.setStartValue(self.windowOpacity())
-        anim.setEndValue(0.0)
-        anim.setEasingCurve(QEasingCurve.Type.InCubic)
+        # 动画必须持有引用，否则局部变量被 GC 后淡出中断、窗口泄漏
+        self._disappear_anim = QPropertyAnimation(self, b"windowOpacity")
+        self._disappear_anim.setDuration(200)
+        self._disappear_anim.setStartValue(self.windowOpacity())
+        self._disappear_anim.setEndValue(0.0)
+        self._disappear_anim.setEasingCurve(QEasingCurve.Type.InCubic)
 
         def _finish():
             self.deleteLater()
             if on_finished:
                 on_finished()
 
-        anim.finished.connect(_finish)
-        anim.start()
+        self._disappear_anim.finished.connect(_finish)
+        self._disappear_anim.start()
 
     @staticmethod
     def pick_emoji(food_type: str | None = None) -> str:
         """按模型指定的食物类型选 emoji；未指定或未知则随机。"""
-        import random
         if food_type:
             for emoji, name in FOOD_NAMES.items():
                 if name == food_type:

@@ -124,7 +124,10 @@ def _autonomous_task() -> list[str]:
         "7. 按[记忆]判断是否输出 Memory 行；心理无变化时省略 Mood 行",
     ]
 
-    return [format_guide] + constraints + [_MOOD_GUIDE, _FOOD_GUIDE]
+    guides = [_MOOD_GUIDE]
+    if config.FOOD_ENABLED:
+        guides.append(_FOOD_GUIDE)
+    return [format_guide] + constraints + guides
 
 
 def _chat_task() -> list[str]:
@@ -155,7 +158,10 @@ def _chat_task() -> list[str]:
         "8. 按[记忆]判断是否输出 Memory 行；心理无变化时省略 Mood 行",
     ]
 
-    return [format_guide] + constraints + [_MOOD_GUIDE, _FOOD_GUIDE]
+    guides = [_MOOD_GUIDE]
+    if config.FOOD_ENABLED:
+        guides.append(_FOOD_GUIDE)
+    return [format_guide] + constraints + guides
 
 
 def _interact_task() -> list[str]:

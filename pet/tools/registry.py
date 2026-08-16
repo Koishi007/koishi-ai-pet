@@ -1,8 +1,10 @@
-"""工具注册表 — 自动发现、注册、描述可用工具。"""
+﻿"""工具注册表 — 自动发现、注册、描述可用工具。"""
 
 import logging
 from dataclasses import dataclass, field
 from typing import Callable, Any
+
+from pet.config import config
 
 logger = logging.getLogger(__name__)
 
@@ -139,9 +141,12 @@ class ToolRegistry:
                 }
             },
         )
-        # 觅食游戏元工具：与 tool_search 同级常驻（不受 TOOLS_ENABLED 控制，
-        # 计入 behavior._META_TOOL_NAMES 免轮次配额）。handler 懒 import
-        # FoodGameManager，注册表本体不依赖游戏层。
+        # 觅食游戏工具
+        if config.FOOD_ENABLED:
+            self._register_food_tools()
+
+    def _register_food_tools(self):
+        """注册觅食游戏工具（FOOD_ENABLED=True 时调用）。"""
         self.register("food", "觅食：在桌面上生成食物，或查询食物状态与距离", group="default")
         self.add_method(
             tool_name="food",

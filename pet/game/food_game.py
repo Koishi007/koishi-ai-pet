@@ -1,14 +1,4 @@
-"""觅食游戏 — 桌宠自主觅食的状态机与判定。
-
-闭环：饱食度<60 提示词注入饥饿（两个选择）→ 模型调用 food__spawn 生成食物 →
-模型用现有 walk 动作走向食物坐标 → 本模块在主线程 tick 判定到达 →
-触发进食交互（interact_self_fed_prompt），模型输出反应与 Vitals/Mood 变化。
-
-线程模型：
-- 主线程：FoodWindow 生命周期、tick 判定、位置读取、交互触发；
-- 脑线程：工具 handler（spawn/status），只读位置快照与食物状态（锁保护）。
-跨线程调度：Qt 信号（自动 QueuedConnection 投递到主线程）。
-"""
+"""觅食游戏 — 桌宠自主觅食的状态机与判定"""
 
 import logging
 import random
@@ -34,7 +24,7 @@ _SPAWN_MARGIN = 200
 
 
 class FoodGameManager(QObject):
-    """觅食游戏核心：生成 / 过期 / 到达判定 / 进食交互触发。"""
+    """生成 / 过期 / 到达判定 / 进食交互触发。"""
 
     # 跨线程请求：脑线程 spawn → 主线程创建 FoodWindow
     spawn_ui_requested = Signal(str, str, int, int)  # food_id, emoji, x, y
@@ -52,10 +42,11 @@ class FoodGameManager(QObject):
         self._agent = None
         self._bound = False
 
-        # 宠物位置快照（脑线程只读，tick 主线程更新）
+        # 宠物位置快照
         self._pet_x = 0
         self._pet_y = 0
         self._screen_geo = (0, 0, 1920, 1080)  # left, top, right, bottom
+        self._snapshot_ready = False  # 首个 tick 心跳完成前 spawn 不可用
 
         # 当前食物状态（主线程修改，脑线程锁内读取）
         self._food: Optional[dict] = None
@@ -73,9 +64,8 @@ class FoodGameManager(QObject):
             # 已在 bind 之后被创建（可能在脑线程）：投递到主线程再绑定
             self.bind_requested.emit(TOOL_CTX._agent)
         else:
-            TOOL_CTX.on_bind(lambda agent: self.bind_requested.emit(agent))
-
-    # ---------- 绑定与生命周期 ----------
+            # on_bind 回调为无参调用，绑定时统一从 TOOL_CTX 取 agent
+            TOOL_CTX.on_bind(lambda: self.bind_requested.emit(TOOL_CTX._agent))
 
     def _bind_agent(self, agent):
         """主线程执行：绑定 agent 并启动 tick 定时器。"""
@@ -85,8 +75,6 @@ class FoodGameManager(QObject):
         self._agent = agent
         self._tick_timer.start()
         logger.info("[FoodGame] bound to agent, tick started")
-
-    # ---------- 位置快照 ----------
 
     def _update_position_snapshot(self):
         """主线程调用：读取宠物窗口位置与屏幕几何，更新快照。"""
@@ -101,6 +89,7 @@ class FoodGameManager(QObject):
                 if screen is not None:
                     geo = screen.availableGeometry()
                     self._screen_geo = (geo.left(), geo.top(), geo.right(), geo.bottom())
+                self._snapshot_ready = True
         except RuntimeError:
             pass
 
@@ -115,20 +104,28 @@ class FoodGameManager(QObject):
         direction = "right" if target_center_x >= pet_cx else "left"
         return dx, direction
 
-    # ---------- 工具接口（脑线程调用） ----------
-
     def spawn(self, food_type: Optional[str] = None) -> dict:
         """food__spawn：生成一份食物，返回坐标与相对宠物的偏移。"""
         if not config.FOOD_ENABLED:
-            return {"summary": "觅食已关闭（FOOD_ENABLED=False）", "success": False}
+            return {
+                "summary": "觅食已关闭（FOOD_ENABLED=False）",
+                "success": False,
+                "error": "觅食已关闭（FOOD_ENABLED=False）",
+            }
         with self._lock:
+            if not self._snapshot_ready:
+                return {
+                    "summary": "宠物位置尚未就绪，请稍后重试",
+                    "success": False,
+                    "error": "宠物位置快照尚未就绪（首个心跳未完成），请稍后重试",
+                }
             if self._food is not None:
                 f = self._food
                 dx, direction = self._dx_to(f["center_x"])
                 remaining = max(0, int(f["ttl"] - (time.monotonic() - f["spawned_at"])))
                 return {
                     "summary": f"桌面上已经有{f['name']}了，直接去吃吧",
-                    "success": False,
+                    "success": True,
                     "food_id": f["id"],
                     "food_type": f["name"],
                     "position": {"x": f["x"], "y": f["y"]},
@@ -175,7 +172,7 @@ class FoodGameManager(QObject):
             dx, direction = self._dx_to(self._food["center_x"])
             logger.info(f"[FoodGame] spawned {name}({food_id}) at ({x},{y}), dx={dx} {direction}")
 
-            # 主线程创建食物窗口（跨线程信号，自动 QueuedConnection）
+            # 主线程创建食物窗口
             self.spawn_ui_requested.emit(food_id, emoji, x, y)
 
             return {
@@ -202,7 +199,9 @@ class FoodGameManager(QObject):
                 }
             f = self._food
             dx, direction = self._dx_to(f["center_x"])
-            remaining = max(0, int(f["ttl"] - (time.monotonic() - f["spawned_at"])))
+            elapsed = time.monotonic() - f["spawned_at"]
+            expired = elapsed > f["ttl"]
+            remaining = max(0, int(f["ttl"] - elapsed))
             pet_ground = self._pet_y + config.PET_HEIGHT
             arrived = (abs(pet_ground - f["ground_y"]) <= _HEIGHT_TOLERANCE
                        and abs(self._pet_x + config.PET_WIDTH // 2 - f["center_x"]) <= _ARRIVE_THRESHOLD)
@@ -218,18 +217,16 @@ class FoodGameManager(QObject):
                 "dx": dx,
                 "direction": direction,
                 "arrived": arrived,
-                "expired": False,
+                "expired": expired,
                 "ttl_seconds": remaining,
             }
-
-    # ---------- 主线程槽 ----------
 
     def _spawn_ui(self, food_id: str, emoji: str, x: int, y: int):
         """主线程：创建食物窗口。"""
         try:
             self._food_window = FoodWindow(emoji, x, y)
         except Exception as e:
-            logger.warning(f"[FoodGame] FoodWindow create failed: {e}")
+            logger.warning(f"[FoodGame] FoodWindow create failed ({food_id}): {e}")
 
     def tick(self):
         """主线程每秒：更新快照 → 过期检查 → 到达判定。"""
@@ -260,10 +257,9 @@ class FoodGameManager(QObject):
                 self._trigger_self_fed(name)
 
     def _clear_food(self, event_text: Optional[str] = None):
-        """清空食物状态：销毁窗口、记录事件。调用方须已持有锁。"""
+        """清空食物状态：销毁窗口、记录事件（落库由 describe 在脑线程完成）。调用方须已持有锁。"""
         if event_text:
             self._last_event = event_text
-            self._note_event()
         win = self._food_window
         self._food_window = None
         self._food = None
@@ -273,9 +269,8 @@ class FoodGameManager(QObject):
             except RuntimeError:
                 pass
 
-    def _note_event(self):
-        """把事件写入多轮上下文（供后续决策感知），并保留给 describe 输出一次。"""
-        text = self._last_event
+    def _note_event(self, text: str):
+        """把事件写入多轮上下文（供后续决策感知）。仅脑线程调用，与既有上下文写者一致。"""
         if text and self._agent is not None:
             try:
                 TOOL_CTX.add_context(f"[觅食] {text}")
@@ -299,14 +294,14 @@ class FoodGameManager(QObject):
         except Exception as e:
             logger.warning(f"[FoodGame] trigger interact failed: {e}")
 
-    # ---------- 上下文注入（脑线程调用） ----------
-
     def describe(self) -> str:
-        """供 context_builder 注入 [觅食] 行；事件文本输出一次后清空。"""
+        """供 context_builder 注入 [觅食] 行；事件文本输出一次后清空并落库（脑线程）。"""
         lines = []
+        event_text = None
         with self._lock:
             if self._last_event:
                 lines.append(f"[觅食] {self._last_event}")
+                event_text = self._last_event
                 self._last_event = None
             food = self._food
             if food is not None:
@@ -316,6 +311,9 @@ class FoodGameManager(QObject):
                     f"[觅食] 桌面上有一份{food['name']}：位置 x={food['x']} y={food['y']}，"
                     f"在你{direction}侧 {dx}px，{remaining}秒后过期"
                 )
+        # 锁外落库，避免持锁期间执行上下文写入
+        if event_text:
+            self._note_event(event_text)
         return "\n".join(lines)
 
 
