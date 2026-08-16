@@ -155,6 +155,15 @@ class ContextBuilder:
         titles = re.findall(r'"([^"]+)"', window_context)
         return "，".join(titles) if titles else window_context
 
+    @staticmethod
+    def _food_line() -> str:
+        """觅食状态行：食物位置/事件。游戏不可用时返回空串，不影响决策。"""
+        try:
+            from pet.game.food_game import FOOD_GAME
+            return FOOD_GAME.describe()
+        except Exception:
+            return ""
+
     def _build_multi_turn_autonomous(self, system: str, window_context: str,
                                      vision: bool, base64_img: str | None) -> list[dict]:
         """多轮消息模式：自主决策。"""
@@ -165,6 +174,9 @@ class ContextBuilder:
 
         # 当前 user prompt：时间 + 窗口探测 + 决策指令
         ctx_str = self._time_prefix() + "\n" + (window_context or "no context")
+        food_line = self._food_line()
+        if food_line:
+            ctx_str += "\n" + food_line
         if vision:
             current_prompt = prompts.autonomous_vision_user_prompt(ctx_str)
         else:
@@ -193,6 +205,9 @@ class ContextBuilder:
 
         # 当前 user prompt：时间 + 窗口探测 + 用户消息
         ctx = self._time_prefix() + "\n" + window_context
+        food_line = self._food_line()
+        if food_line:
+            ctx += "\n" + food_line
         if vision:
             current_prompt = prompts.chat_vision_user_prompt(user_message, ctx)
         else:
@@ -262,11 +277,18 @@ class ContextBuilder:
 
         def _pick(key: str, value: float) -> str | None:
             if key == "satiety":
+                if not config.FOOD_ENABLED:
+                    # 觅食关闭：只保留向用户讨吃的引导
+                    if value >= 80:    return "刚吃饱，"
+                    elif value >= 60:  return None
+                    elif value >= 40:  return "肚子有点空了，想吃点东西。"
+                    elif value >= 20:  return "饿得肚子咕咕叫，想吃点东西。"
+                    else:              return "快要饿死了，眼前发黑，想吃点东西。"
                 if value >= 80:    return "刚吃饱，"
                 elif value >= 60:  return None
-                elif value >= 40:  return "肚子有点空了，想吃点东西。"
-                elif value >= 20:  return "饿得肚子咕咕叫，想吃点东西。"
-                else:              return "快要饿死了，眼前发黑，想吃点东西。"
+                elif value >= 40:  return "肚子有点空了——可以撒娇向用户讨点吃的，也可以自己调用 food__spawn 生成食物吃掉。"
+                elif value >= 20:  return "饿得肚子咕咕叫！别干等着——向用户讨吃的，或者自己生成食物走过去吃。"
+                else:              return "快要饿死了，眼前发黑！马上向用户讨吃的，或者立刻自己生成食物吃掉！"
             elif key == "energy":
                 if value >= 80:    return "浑身充满力气，"
                 elif value >= 60:  return None
