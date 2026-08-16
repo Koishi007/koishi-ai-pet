@@ -1,4 +1,4 @@
-﻿"""与 AI 通信，解析响应为动作序列。"""
+"""与 AI 通信，解析响应为动作序列。"""
 
 import queue
 import random
@@ -652,8 +652,11 @@ class Behavior(BrainMixin):
                 args.append(token)
         return ActionStep(name, tuple(args), kwargs)
 
-    # 元工具（工具发现类）不消耗实际工具调用轮次
-    _META_TOOL_NAMES = frozenset({"tool_search__search", "tool_search__list_groups"})
+    # 元工具（工具发现/觅食类）不消耗实际工具调用轮次
+    _META_TOOL_NAMES = frozenset({
+        "tool_search__search", "tool_search__list_groups",
+        "food__spawn", "food__status",
+    })
     _META_TOOL_MAX_ROUNDS = 10  # 元工具调用安全上限，防止死循环
 
     def _handle_tool_calls(self, messages, tool_calls_map, first_content,

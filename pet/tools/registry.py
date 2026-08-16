@@ -1,4 +1,4 @@
-﻿"""工具注册表 — 自动发现、注册、描述可用工具。"""
+"""工具注册表 — 自动发现、注册、描述可用工具。"""
 
 import logging
 from dataclasses import dataclass, field
@@ -139,6 +139,47 @@ class ToolRegistry:
                 }
             },
         )
+        # 觅食游戏元工具：与 tool_search 同级常驻（不受 TOOLS_ENABLED 控制，
+        # 计入 behavior._META_TOOL_NAMES 免轮次配额）。handler 懒 import
+        # FoodGameManager，注册表本体不依赖游戏层。
+        self.register("food", "觅食：在桌面上生成食物，或查询食物状态与距离", group="default")
+        self.add_method(
+            tool_name="food",
+            method_name="spawn",
+            description=(
+                "在桌面上生成一份食物，返回坐标和相对你当前位置的水平偏移 dx 与方向。"
+                "生成后用 Action: walk left/right <dx> 走过去；走到食物附近会自动开吃。"
+                "桌面上已有食物时不会重复生成，会返回已有食物的位置。"
+            ),
+            handler=self._food_spawn,
+            args={
+                "food_type": {
+                    "type": "str",
+                    "required": False,
+                    "description": "想要的食物类型；不填则随机",
+                    "enum": ["蛋糕", "饭团", "苹果", "拉面", "鸡腿", "甜甜圈", "披萨", "草莓", "饺子", "寿司"],
+                }
+            },
+        )
+        self.add_method(
+            tool_name="food",
+            method_name="status",
+            description=(
+                "查询桌面上食物的状态：是否存在、位置、距离你多远（实时 dx）、"
+                "是否已经到达、剩余过期时间。没有食物时可用来确认是否需要生成。"
+            ),
+            handler=self._food_status,
+        )
+
+    def _food_spawn(self, food_type: str = None) -> dict:
+        """food__spawn 工具实现（懒 import，避免注册表依赖游戏层）。"""
+        from pet.game.food_game import FOOD_GAME
+        return FOOD_GAME.spawn(food_type)
+
+    def _food_status(self) -> dict:
+        """food__status 工具实现（懒 import，避免注册表依赖游戏层）。"""
+        from pet.game.food_game import FOOD_GAME
+        return FOOD_GAME.status()
 
     def _tool_search_list_groups(self) -> dict:
         groups = []
