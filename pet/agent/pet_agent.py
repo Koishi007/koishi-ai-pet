@@ -219,8 +219,12 @@ class PetAgent(QObject):
             if self._pet_window:
                 self._pet_window.action_queue.clear()
                 if wait_anim:
-                    # 入队等待动画：falling 时队列暂停，落地 resume 后再播放
-                    self._pet_window.action_queue.enqueue(wait_anim)
+                    if wait_anim == "thinking":
+                        # 循环占位动画：直接播放，模型动作返回后覆盖
+                        self._pet_window.pet_actions.thinking()
+                    else:
+                        # 一次性动画入队：falling 时队列暂停，落地后播放
+                        self._pet_window.action_queue.enqueue(wait_anim)
 
             self._async_brain(self._interact_pipeline, hint, record_context, context_hint)
 
