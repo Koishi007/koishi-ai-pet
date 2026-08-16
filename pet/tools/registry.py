@@ -1,4 +1,4 @@
-﻿"""工具注册表 — 自动发现、注册、描述可用工具。"""
+"""工具注册表 — 自动发现、注册、描述可用工具。"""
 
 import logging
 from dataclasses import dataclass, field
@@ -152,9 +152,11 @@ class ToolRegistry:
             tool_name="food",
             method_name="spawn",
             description=(
-                "在桌面上生成一份食物，返回坐标和相对你当前位置的水平偏移 dx 与方向。"
-                "生成后用 Action: walk left/right <dx> 走过去；走到食物附近会自动开吃。"
-                "桌面上已有食物时不会重复生成，会返回已有食物的位置。"
+                "在桌面随机位置（可能在地上、窗口上，甚至半空中）生成一份食物，"
+                "返回坐标、水平偏移 dx/direction 和垂直偏移 dy/bounce_height。"
+                "水平用 Action: walk left/right <dx> 或 drive 接近；食物在上方用 "
+                "Action: bounce <方向> 0 <bounce_height> 跳起来抓，在下方就走到窗口边缘掉下去。"
+                "走到/跳到食物附近会自动开吃。桌面上已有食物时不会重复生成，会返回已有食物的位置。"
             ),
             handler=self._food_spawn,
             args={
@@ -170,8 +172,8 @@ class ToolRegistry:
             tool_name="food",
             method_name="status",
             description=(
-                "查询桌面上食物的状态：是否存在、位置、距离你多远（实时 dx）、"
-                "是否已经到达、剩余过期时间。没有食物时可用来确认是否需要生成。"
+                "查询桌面上食物的状态：是否存在、位置、实时水平偏移 dx 与垂直偏移 dy、"
+                "建议跳高 bounce_height、是否已经到达、剩余过期时间。没有食物时可用来确认是否需要生成。"
             ),
             handler=self._food_status,
         )

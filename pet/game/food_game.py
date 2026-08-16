@@ -17,10 +17,16 @@ logger = logging.getLogger(__name__)
 
 # 到达判定：水平距离阈值（px）
 _ARRIVE_THRESHOLD = 60
-# 到达判定：宠物底边与食物底边的高度差容差（px）
-_HEIGHT_TOLERANCE = 30
+# 到达判定：宠物底边与食物底边的高度差容差（px）。
+# 120 覆盖：地面平齐(0)、bounce 跳起抓取空中食物（动画中段/终点 ±60）、窗口边缘小落差。
+# 宠物窗口高 125px > 食物窗 64px，bounce 到顶时宠物底边必然越过任意空中食物的底边（差≤51px）。
+_HEIGHT_TOLERANCE = 120
 # 生成时与宠物的最小水平间隔（px）
 _SPAWN_MARGIN = 200
+# 建议跳高额外超出量：让 bounce 终点越过食物底边，扩大动画中段的命中窗口
+_BOUNCE_OVER = 60
+# 判定轮询间隔（ms）：需能捕捉 bounce 动画（800ms）的上升过程
+_TICK_MS = 500
 
 
 class FoodGameManager(QObject):
@@ -54,7 +60,7 @@ class FoodGameManager(QObject):
         self._last_event: Optional[str] = None  # describe 输出一次后清空
 
         self._tick_timer = QTimer(self)
-        self._tick_timer.setInterval(1000)
+        self._tick_timer.setInterval(_TICK_MS)
         self._tick_timer.timeout.connect(self.tick)
 
         self.spawn_ui_requested.connect(self._spawn_ui)
@@ -104,6 +110,28 @@ class FoodGameManager(QObject):
         direction = "right" if target_center_x >= pet_cx else "left"
         return dx, direction
 
+    def _dy_info(self, food_ground_y: int) -> tuple[int, int]:
+        """食物底边相对宠物底边的垂直信息：(dy, 建议跳高)。
+
+        dy = 宠物底边 − 食物底边：正值=食物在上方（需 bounce），负值=在下方，≈0=同平面。
+        建议跳高 = dy + 超出量，钳制到屏幕上边缘（bounce 内部同样钳制）。
+        """
+        pet_ground = self._pet_y + config.PET_HEIGHT
+        dy = pet_ground - food_ground_y
+        if dy <= 0:
+            return dy, 0
+        max_bounce = max(0, self._pet_y - self._screen_geo[1])
+        return dy, min(dy + _BOUNCE_OVER, max_bounce)
+
+    @staticmethod
+    def _height_hint(dy: int) -> str:
+        """垂直差的自然语言提示，供工具返回与 describe 使用。"""
+        if dy > _HEIGHT_TOLERANCE:
+            return f"在你上方约{dy}px，需要 bounce 跳起来吃"
+        if dy < -_HEIGHT_TOLERANCE:
+            return f"在你下方约{-dy}px，可以走到窗口边缘掉下去再吃"
+        return "和你同一平面，直接走过去就行"
+
     def spawn(self, food_type: Optional[str] = None) -> dict:
         """food__spawn：生成一份食物，返回坐标与相对宠物的偏移。"""
         if not config.FOOD_ENABLED:
@@ -122,6 +150,7 @@ class FoodGameManager(QObject):
             if self._food is not None:
                 f = self._food
                 dx, direction = self._dx_to(f["center_x"])
+                dy, bounce_height = self._dy_info(f["ground_y"])
                 remaining = max(0, int(f["ttl"] - (time.monotonic() - f["spawned_at"])))
                 return {
                     "summary": f"桌面上已经有{f['name']}了，直接去吃吧",
@@ -130,6 +159,7 @@ class FoodGameManager(QObject):
                     "food_type": f["name"],
                     "position": {"x": f["x"], "y": f["y"]},
                     "dx": dx, "direction": direction,
+                    "dy": dy, "bounce_height": bounce_height,
                     "ttl_seconds": remaining,
                 }
 
@@ -153,9 +183,10 @@ class FoodGameManager(QObject):
                 ]
                 x = random.choice(candidates) if candidates else random.randint(lo, hi)
 
-            # 食物「放」在宠物当前地面线上
-            ground_y = self._pet_y + config.PET_HEIGHT
-            y = max(top + 10, min(ground_y - FOOD_SIZE + 4, bottom - FOOD_SIZE - 10))
+            # 全屏随机高度：可能在地面、窗口顶，也可能悬在半空（需 bounce 抓取）
+            y_lo = top + 10
+            y_hi = max(y_lo, bottom - FOOD_SIZE - 10)
+            y = random.randint(y_lo, y_hi)
 
             food_id = f"food-{int(time.time() * 1000)}"
             self._food = {
@@ -170,19 +201,24 @@ class FoodGameManager(QObject):
                 "ttl": float(config.FOOD_TTL_SECONDS),
             }
             dx, direction = self._dx_to(self._food["center_x"])
-            logger.info(f"[FoodGame] spawned {name}({food_id}) at ({x},{y}), dx={dx} {direction}")
+            dy, bounce_height = self._dy_info(self._food["ground_y"])
+            height_hint = self._height_hint(dy)
+            logger.info(f"[FoodGame] spawned {name}({food_id}) at ({x},{y}), dx={dx} {direction}, dy={dy}")
 
             # 主线程创建食物窗口
             self.spawn_ui_requested.emit(food_id, emoji, x, y)
 
             return {
-                "summary": f"已生成{name}，在你{direction}侧 {dx}px 处，走过去吃掉它",
+                "summary": f"已生成{name}，在你{direction}侧 {dx}px，{height_hint}",
                 "success": True,
                 "food_id": food_id,
                 "food_type": name,
                 "position": {"x": x, "y": y},
                 "dx": dx,
                 "direction": direction,
+                "dy": dy,
+                "bounce_height": bounce_height,
+                "height_hint": height_hint,
                 "ttl_seconds": config.FOOD_TTL_SECONDS,
             }
 
@@ -199,6 +235,8 @@ class FoodGameManager(QObject):
                 }
             f = self._food
             dx, direction = self._dx_to(f["center_x"])
+            dy, bounce_height = self._dy_info(f["ground_y"])
+            height_hint = self._height_hint(dy)
             elapsed = time.monotonic() - f["spawned_at"]
             expired = elapsed > f["ttl"]
             remaining = max(0, int(f["ttl"] - elapsed))
@@ -206,8 +244,8 @@ class FoodGameManager(QObject):
             arrived = (abs(pet_ground - f["ground_y"]) <= _HEIGHT_TOLERANCE
                        and abs(self._pet_x + config.PET_WIDTH // 2 - f["center_x"]) <= _ARRIVE_THRESHOLD)
             return {
-                "summary": f"{f['name']}在你{direction}侧 {dx}px，{'已经到达可以吃了' if arrived else '还没到，继续走'}"
-                           + f"，{remaining}秒后过期",
+                "summary": f"{f['name']}在你{direction}侧 {dx}px，{height_hint}，"
+                           f"{'已经到达可以吃了' if arrived else '还没到，继续走'}，{remaining}秒后过期",
                 "success": True,
                 "has_food": True,
                 "food_id": f["id"],
@@ -216,6 +254,9 @@ class FoodGameManager(QObject):
                 "pet_position": pet_pos,
                 "dx": dx,
                 "direction": direction,
+                "dy": dy,
+                "bounce_height": bounce_height,
+                "height_hint": height_hint,
                 "arrived": arrived,
                 "expired": expired,
                 "ttl_seconds": remaining,
@@ -246,13 +287,13 @@ class FoodGameManager(QObject):
                 self._clear_food(f"你生成的食物（{food['name']}）放太久变质消失了")
                 return
 
-            # 到达判定：水平距离 + 底边高度差
+            # 到达判定：水平距离 + 底边高度差（覆盖地面平齐与 bounce 抓取）
             pet_cx = self._pet_x + config.PET_WIDTH // 2
             pet_ground = self._pet_y + config.PET_HEIGHT
             if (abs(pet_cx - food["center_x"]) <= _ARRIVE_THRESHOLD
                     and abs(pet_ground - food["ground_y"]) <= _HEIGHT_TOLERANCE):
                 name = food["name"]
-                self._clear_food(f"你在桌面上找到了{name}并吃掉了（自己觅食）")
+                self._clear_food(f"你找到了{name}并吃掉了（自己觅食）")
                 logger.info(f"[FoodGame] arrived, food eaten: {food['id']}")
                 self._trigger_self_fed(name)
 
@@ -289,7 +330,7 @@ class FoodGameManager(QObject):
                 hint=interact_self_fed_prompt(name),
                 delay_ms=150,
                 record_context=True,
-                context_hint=f"你在桌面上找到了{name}并吃掉了（自己觅食）",
+                context_hint=f"你找到了{name}并吃掉了（自己觅食）",
             )
         except Exception as e:
             logger.warning(f"[FoodGame] trigger interact failed: {e}")
@@ -306,10 +347,11 @@ class FoodGameManager(QObject):
             food = self._food
             if food is not None:
                 dx, direction = self._dx_to(food["center_x"])
+                dy, _ = self._dy_info(food["ground_y"])
                 remaining = max(0, int(food["ttl"] - (time.monotonic() - food["spawned_at"])))
                 lines.append(
                     f"[觅食] 桌面上有一份{food['name']}：位置 x={food['x']} y={food['y']}，"
-                    f"在你{direction}侧 {dx}px，{remaining}秒后过期"
+                    f"在你{direction}侧 {dx}px，{self._height_hint(dy)}，{remaining}秒后过期"
                 )
         # 锁外落库，避免持锁期间执行上下文写入
         if event_text:

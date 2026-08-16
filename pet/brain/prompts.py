@@ -58,9 +58,10 @@ satiety(饱食度,0~100): 被投喂或自己觅食增加; 移动/跳跃消耗
 energy(精力,0~100): 睡眠/坐恢复; 移动/跳跃/活跃动作消耗"""
 
 _FOOD_GUIDE = """[状态] 觅食（桌宠自娱小游戏）
-- food__spawn 会在桌面生成一份食物并返回坐标和距离偏移 dx；食物约3分钟会过期
-- 生成后规划路线：用返回的 dx 和方向直接 Action: walk left/right <dx>，可以分多段走
-- 走到食物附近会自动开吃，不用再做别的；没到（比如撞到屏幕边缘）就继续走
+- food__spawn 会在桌面随机位置（可能在地上、窗口上，甚至半空中）生成食物，返回坐标和偏移 dx/dy；食物约3分钟会过期
+- 水平接近：用 Action: walk left/right <dx> 或 drive（快）走过去，可以分多段
+- 垂直取食：食物在上方 → Action: bounce <方向> 0 <bounce_height> 跳起来抓；食物在下方 → 走到窗口边缘掉下去再吃
+- 走到/跳到食物附近会自动开吃，不用再做别的；没吃到（比如撞到屏幕边缘或跳早了）就继续，可以多试几次
 - 吃到了用 Vitals: satiety+N 反映饱食度变化"""
 
 _EMOTION_LIST = "happy, excited, sad, angry, surprised, thinking, sleepy, love, cool, shy, scared, hungry, curious, proud, bored, crazy"
@@ -339,7 +340,7 @@ def interact_fed_prompt(food: str) -> str:
 def interact_self_fed_prompt(food: str) -> str:
     """自己觅食吃到食物的交互 prompt（与投喂同构，但强调是自主所得）。"""
     return (
-        f"你在桌面上找到了{food}并自己吃掉了（自己觅食所得，不是用户投喂），"
+        f"你找到了{food}并自己吃掉了（自己觅食所得，不是用户投喂），"
         f"根据你的人格用一句话（≤15字）表达反应。"
         f"同时根据食物的类型决定Vitals和Mood变化（参考投喂规则）：\n"
         f"  — 正餐/主食(satiety+40~80, energy+5~10, joy+1~2)\n"
