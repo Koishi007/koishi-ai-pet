@@ -194,7 +194,7 @@ class PetAgent(QObject):
 
     def _trigger_interact(self, hint: str = "", delay_ms: int = 100,
                           cooldown_ms: int = 15000, record_context: bool = False,
-                          context_hint: str = ""):
+                          context_hint: str = "", wait_anim: str = "thinking"):
         if not hint:
             return
         from PySide6.QtCore import QDateTime
@@ -218,7 +218,13 @@ class PetAgent(QObject):
 
             if self._pet_window:
                 self._pet_window.action_queue.clear()
-                self._pet_window.pet_actions.thinking()
+                if wait_anim:
+                    anim_fn = getattr(self._pet_window.pet_actions, wait_anim, None)
+                    if not callable(anim_fn):
+                        anim_fn = self._pet_window.pet_actions.thinking
+                    # 悬空时跳过等待动画，避免覆盖 falling（重力会接管下落动画）
+                    if not self._pet_window.pet_actions.gravity.falling:
+                        anim_fn()
 
             self._async_brain(self._interact_pipeline, hint, record_context, context_hint)
 

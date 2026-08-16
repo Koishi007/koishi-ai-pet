@@ -333,6 +333,7 @@ class FoodGameManager(QObject):
                 delay_ms=150,
                 record_context=True,
                 context_hint=f"你找到了{name}并吃掉了（自己觅食）",
+                wait_anim="shake_arms",
             )
         except Exception as e:
             logger.warning(f"[FoodGame] trigger interact failed: {e}")
