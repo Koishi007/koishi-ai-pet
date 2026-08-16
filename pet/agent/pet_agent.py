@@ -219,12 +219,8 @@ class PetAgent(QObject):
             if self._pet_window:
                 self._pet_window.action_queue.clear()
                 if wait_anim:
-                    anim_fn = getattr(self._pet_window.pet_actions, wait_anim, None)
-                    if not callable(anim_fn):
-                        anim_fn = self._pet_window.pet_actions.thinking
-                    # 悬空时跳过等待动画，避免覆盖 falling（重力会接管下落动画）
-                    if not self._pet_window.pet_actions.gravity.falling:
-                        anim_fn()
+                    # 入队等待动画：falling 时队列暂停，落地 resume 后再播放
+                    self._pet_window.action_queue.enqueue(wait_anim)
 
             self._async_brain(self._interact_pipeline, hint, record_context, context_hint)
 
