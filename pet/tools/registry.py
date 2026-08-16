@@ -152,11 +152,8 @@ class ToolRegistry:
             tool_name="food",
             method_name="spawn",
             description=(
-                "在桌面随机位置（可能在地上、窗口上，甚至半空中）生成一份食物，"
-                "返回坐标、水平偏移 dx/direction 和垂直偏移 dy/bounce_height。"
-                "水平用 Action: walk left/right <dx> 或 drive 接近；食物在上方用 "
-                "Action: bounce <方向> 0 <bounce_height> 跳起来抓，在下方就走到窗口边缘掉下去。"
-                "走到/跳到食物附近会自动开吃。桌面上已有食物时不会重复生成，会返回已有食物的位置。"
+                "在桌面随机位置（含半空）生成食物，返回坐标与偏移 dx/dy/bounce_height；"
+                "用 walk/drive 接近、bounce 跳起来吃，走到附近自动开吃；已有食物时不重复生成。"
             ),
             handler=self._food_spawn,
             args={
