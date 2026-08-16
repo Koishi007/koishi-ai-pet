@@ -192,6 +192,18 @@ class PetAgent(QObject):
             self.speak_stream_end.emit(5000)
         return result
 
+    def _play_wait_anim(self, wait_anim: str = "thinking"):
+        """播放交互等待动画：时长动画直接播放（模型动作覆盖），其余入队（falling 时暂停落地后播）。"""
+        if not self._pet_window or not wait_anim:
+            return
+        self._pet_window.action_queue.clear()
+        if wait_anim in _DURATION_ACTION_DEFS:
+            anim_fn = getattr(self._pet_window.pet_actions, wait_anim, None)
+            if callable(anim_fn):
+                anim_fn()
+                return
+        self._pet_window.action_queue.enqueue(wait_anim)
+
     def _trigger_interact(self, hint: str = "", delay_ms: int = 100,
                           cooldown_ms: int = 15000, record_context: bool = False,
                           context_hint: str = "", wait_anim: str = "thinking"):
@@ -216,15 +228,7 @@ class PetAgent(QObject):
 
             self.state_machine.transition(PetState.INTERACTING)
 
-            if self._pet_window:
-                self._pet_window.action_queue.clear()
-                if wait_anim:
-                    if wait_anim == "thinking":
-                        # 循环占位动画：直接播放，模型动作返回后覆盖
-                        self._pet_window.pet_actions.thinking()
-                    else:
-                        # 一次性动画入队：falling 时队列暂停，落地后播放
-                        self._pet_window.action_queue.enqueue(wait_anim)
+            self._play_wait_anim(wait_anim)
 
             self._async_brain(self._interact_pipeline, hint, record_context, context_hint)
 
@@ -264,7 +268,7 @@ class PetAgent(QObject):
             self.speak_stream_end.emit(4000)
         return result
 
-    def _trigger_chat(self, message: str = ""):
+    def _trigger_chat(self, message: str = "", wait_anim: str = "thinking"):
         from pet.agent.state import PetState
         if self.state_machine.state == PetState.INTERACTING:
             logger.info("[PetAgent] chat request ignored (INTERACTING)")
@@ -279,9 +283,7 @@ class PetAgent(QObject):
             pet_x = self._pet_window.x()
             pet_y = self._pet_window.y()
 
-        if self._pet_window:
-            self._pet_window.action_queue.clear()
-            self._pet_window.pet_actions.thinking()
+        self._play_wait_anim(wait_anim)
 
         self._async_brain(self._chat_pipeline, message, pet_x, pet_y)
         logger.info(f"[PetAgent] user chat:{message}")
