@@ -120,6 +120,7 @@ class ScheduledTasks:
         self._agent.mood.save()
 
     def _mood_check(self):
+        self._agent.mood.apply_decay()   # 自然衰减（内部联动阈值检查）
         self._agent.mood.check_thresholds()
 
     def _wakeup(self):
