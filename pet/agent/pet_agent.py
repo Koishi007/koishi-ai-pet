@@ -187,7 +187,7 @@ class PetAgent(QObject):
                 self.speak_stream_end.emit(5000)
                 stream_started = False
 
-        result = self.behavior.autonomous_decide_stream(context, screenshot=True, on_chunk=on_chunk, on_stream_end=on_stream_end)
+        result = self.behavior.autonomous_decide_stream(context, screenshot=True, on_chunk=on_chunk, on_stream_end=on_stream_end, cancel_check=self._is_cancelled)
 
         if stream_started:
             self.speak_stream_end.emit(5000)
@@ -266,6 +266,7 @@ class PetAgent(QObject):
         result = self.behavior.interact_decide_stream(
             hint, on_chunk=on_chunk, on_stream_end=on_stream_end,
             thinking=thinking, enable_tools=enable_tools,
+            cancel_check=self._is_cancelled,
         )
 
         if stream_started:
@@ -333,11 +334,16 @@ class PetAgent(QObject):
             message, context, screenshot=True,
             on_chunk=on_chunk, on_stream_end=on_stream_end,
             thinking=thinking, enable_tools=enable_tools,
+            cancel_check=self._is_cancelled,
         )
 
         if stream_started:
             self.speak_stream_end.emit(4000)
         return result
+
+    def _is_cancelled(self) -> bool:
+        """协作式取消检查：供 Behavior 流式循环轮询。"""
+        return self._cancel_flag
 
     def _async_brain(self, fn, *args, on_result=None, on_error=None):
         fn_name = getattr(fn, "__name__", repr(fn))
@@ -346,18 +352,16 @@ class PetAgent(QObject):
         old_thread = self._thread
         old_worker = self._worker
         if old_thread is not None and old_thread.isRunning():
+            # 协作式取消：设置标志让旧线程在流式循环里快速退出，不阻塞主线程
             self._cancel_flag = True
-            try:
-                old_thread.quit()
-                if not old_thread.wait(2000):
-                    logger.warning(f"[{ts}] [PetAgent] old brain thread timeout, force terminate")
-                    old_thread.terminate()
-                    old_thread.wait(500)
-                    if hasattr(self, 'behavior') and hasattr(self.behavior, '_lock'):
-                        self.behavior._lock = threading.RLock()  # terminate 后原锁可能随线程死锁，重建一把
-                        logger.warning(f"[PetAgent] behavior._lock rebuilt after thread terminate")
-            except RuntimeError:
-                pass
+            old_thread.quit()
+            # 给旧线程一个短等待窗口（最多 1s），超时不强杀，让其自然退出
+            for _ in range(20):
+                if not old_thread.isRunning():
+                    break
+                QThread.msleep(50)
+            if old_thread.isRunning():
+                logger.warning(f"[{ts}] [PetAgent] old brain thread still running after cancel, continue anyway")
         if old_thread is not None:
             try:
                 old_thread.finished.disconnect()
