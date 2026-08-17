@@ -17,29 +17,22 @@ logger = logging.getLogger(__name__)
 
 # 到达判定：水平距离阈值（px）
 _ARRIVE_THRESHOLD = 60
-# 到达判定：宠物底边与食物底边的高度差容差（px）。
-# 120 覆盖：地面平齐(0)、bounce 跳起抓取空中食物（动画中段/终点 ±60）、窗口边缘小落差。
-# 宠物窗口高 125px > 食物窗 64px，bounce 到顶时宠物底边必然越过任意空中食物的底边（差≤51px）。
 _HEIGHT_TOLERANCE = 120
 # 生成时与宠物的最小水平间隔（px）
 _SPAWN_MARGIN = 200
-# 建议跳高额外超出量：让 bounce 终点越过食物底边，扩大动画中段的命中窗口
 _BOUNCE_OVER = 60
-# 判定轮询间隔（ms）：需能捕捉 bounce 动画（800ms）的上升过程
 _TICK_MS = 500
 
 
 class FoodGameManager(QObject):
     """生成 / 过期 / 到达判定 / 进食交互触发。"""
 
-    # 跨线程请求：脑线程 spawn → 主线程创建 FoodWindow
     spawn_ui_requested = Signal(str, str, int, int)  # food_id, emoji, x, y
-    # 跨线程启动：单例可能在脑线程创建，绑定动作投递到主线程执行（无参，agent 从 TOOL_CTX 取）
     bind_requested = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        # 单例可能首次在脑线程创建（handler 懒 import），强制归属主线程
+        # 单例可能首次在脑线程创建
         app = QApplication.instance()
         if app is not None and self.thread() is not app.thread():
             self.moveToThread(app.thread())
@@ -51,13 +44,12 @@ class FoodGameManager(QObject):
         # 宠物位置快照
         self._pet_x = 0
         self._pet_y = 0
-        self._screen_geo = (0, 0, 1920, 1080)  # left, top, right, bottom
-        self._snapshot_ready = False  # 首个 tick 心跳完成前 spawn 不可用
+        self._screen_geo = (0, 0, 1920, 1080)
+        self._snapshot_ready = False
 
-        # 当前食物状态（主线程修改，脑线程锁内读取）
         self._food: Optional[dict] = None
         self._food_window = None
-        self._last_event: Optional[str] = None  # describe 输出一次后清空
+        self._last_event: Optional[str] = None
 
         self._tick_timer = None  # 主线程绑定后创建
 
@@ -65,10 +57,8 @@ class FoodGameManager(QObject):
         self.bind_requested.connect(self._bind_agent)
 
         if getattr(TOOL_CTX, "_agent", None) is not None:
-            # 已在 bind 之后被创建（可能在脑线程）：投递到主线程再绑定
             self.bind_requested.emit()
         else:
-            # on_bind 回调为无参调用，绑定时统一从 TOOL_CTX 取 agent
             TOOL_CTX.on_bind(lambda: self.bind_requested.emit())
 
     def _bind_agent(self, agent=None):
@@ -176,7 +166,6 @@ class FoodGameManager(QObject):
             if hi <= lo:
                 x = lo
             else:
-                # 避开宠物左右各 _SPAWN_MARGIN 的区域，保证需要走一段路
                 excluded_lo = pet_cx - _SPAWN_MARGIN
                 excluded_hi = pet_cx + _SPAWN_MARGIN
                 candidates = [
@@ -185,7 +174,6 @@ class FoodGameManager(QObject):
                 ]
                 x = random.choice(candidates) if candidates else random.randint(lo, hi)
 
-            # 全屏随机高度：可能在地面、窗口顶，也可能悬在半空（需 bounce 抓取）
             y_lo = top + 10
             y_hi = max(y_lo, bottom - FOOD_SIZE - 10)
             y = random.randint(y_lo, y_hi)
@@ -289,7 +277,7 @@ class FoodGameManager(QObject):
                 self._clear_food(f"你生成的食物（{food['name']}）放太久变质消失了")
                 return
 
-            # 到达判定：水平距离 + 底边高度差（覆盖地面平齐与 bounce 抓取）
+            # 到达判定：水平距离 + 底边高度差
             pet_cx = self._pet_x + config.PET_WIDTH // 2
             pet_ground = self._pet_y + config.PET_HEIGHT
             if (abs(pet_cx - food["center_x"]) <= _ARRIVE_THRESHOLD
@@ -300,7 +288,7 @@ class FoodGameManager(QObject):
                 self._trigger_self_fed(name)
 
     def _clear_food(self, event_text: Optional[str] = None):
-        """清空食物状态：销毁窗口、记录事件（落库由 describe 在脑线程完成）。调用方须已持有锁。"""
+        """清空食物状态"""
         if event_text:
             self._last_event = event_text
         win = self._food_window
@@ -313,7 +301,7 @@ class FoodGameManager(QObject):
                 pass
 
     def _note_event(self, text: str):
-        """把事件写入多轮上下文（供后续决策感知）。仅脑线程调用，与既有上下文写者一致。"""
+        """把事件写入上下文"""
         if text and self._agent is not None:
             try:
                 TOOL_CTX.add_context(f"[觅食] {text}")
@@ -321,7 +309,7 @@ class FoodGameManager(QObject):
                 pass
 
     def _trigger_self_fed(self, name: str):
-        """触发进食交互：模型输出吃到食物的反应 + Vitals/Mood（与用户投喂同构）。"""
+        """触发进食交互"""
         agent = self._agent
         if agent is None:
             return
@@ -339,7 +327,7 @@ class FoodGameManager(QObject):
             logger.warning(f"[FoodGame] trigger interact failed: {e}")
 
     def describe(self) -> str:
-        """供 context_builder 注入 [觅食] 行；事件文本输出一次后清空并落库（脑线程）。"""
+        """供 context_builder 注入 [觅食] 行；事件文本输出一次后清空并落库"""
         lines = []
         event_text = None
         with self._lock:
