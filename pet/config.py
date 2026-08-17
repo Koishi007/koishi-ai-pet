@@ -92,7 +92,7 @@ _KEY_META = {
     
     "CONTEXT_PERSIST_ENABLED":   {"type": "bool",     "default": True,           "category": "behavior", "needs_restart": False, "hidden": True,  "description": "启用上下文持久化"},
     "FOOD_ENABLED":              {"type": "bool",     "default": True,           "category": "behavior", "needs_restart": True,  "hidden": False, "description": "觅食总开关（桌宠自主生成食物并吃掉），修改后需重启生效"},
-    "FOOD_TTL_SECONDS":          {"type": "int",      "default": 180,            "category": "behavior", "needs_restart": False, "hidden": False, "description": "觅食食物存活秒数，超时未吃自动消失"},
+    "FOOD_TTL_SECONDS":          {"type": "int",      "default": 300,            "category": "behavior", "needs_restart": False, "hidden": False, "description": "觅食食物存活秒数，超时未吃自动消失"},
     "ATTENTION_THRESHOLDS":      {"type": "str_list", "default": ["10", "20", "30"], "category": "behavior", "needs_restart": False, "hidden": False, "description": "连续未互动轮次阈值，达到后向桌宠注入求关注提示（如10/20/30轮）"},
 }
 
