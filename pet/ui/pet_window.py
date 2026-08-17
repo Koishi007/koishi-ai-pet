@@ -301,11 +301,11 @@ class PetWindow(TransparentWindow):
             # 工具子菜单（每工具支持独立子菜单）
             tool_menu = StickyMenu("工具", menu)
             for name in TOOL_REGISTRY.tool_names:
-                if name == "tool_search":
-                    continue  # 元工具，始终启用不可禁用
                 tool = TOOL_REGISTRY._tools.get(name)
                 if not tool:
                     continue
+                if tool.meta:
+                    continue  # 元工具（如 tool_search、food），始终启用不可禁用
 
                 # 工具开关（可勾选）
                 tool_action = tool_menu.addAction(name)

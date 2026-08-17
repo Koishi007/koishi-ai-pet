@@ -25,6 +25,7 @@ class ToolDef:
     methods: dict[str, ToolMethod] = field(default_factory=dict)
     menu_items: list[dict] = field(default_factory=list)
     group: str = "default"
+    meta: bool = False  # 元工具：系统内置，不可禁用、不出现在工具管理列表
 
 
 class ToolRegistry:
@@ -34,8 +35,9 @@ class ToolRegistry:
         self._disabled: set[str] = set()
         self._register_default_tools()
 
-    def register(self, tool_name: str, description: str, group: str = None) -> "ToolDef":
-        tool = ToolDef(name=tool_name, description=description)
+    def register(self, tool_name: str, description: str, group: str = None,
+                 meta: bool = False) -> "ToolDef":
+        tool = ToolDef(name=tool_name, description=description, meta=meta)
         if group:
             tool.group = group
         self._tools[tool_name] = tool
@@ -113,7 +115,8 @@ class ToolRegistry:
 
     def _register_default_tools(self):
         """注册内置元工具 tool_search（不可插拔，始终可用）。"""
-        self.register("tool_search", "工具发现：浏览和搜索可用的工具", group="default")
+        self.register("tool_search", "工具发现：浏览和搜索可用的工具",
+                      group="default", meta=True)
         self.add_method(
             tool_name="tool_search",
             method_name="list_groups",
@@ -147,7 +150,8 @@ class ToolRegistry:
 
     def _register_food_tools(self):
         """注册觅食游戏工具（FOOD_ENABLED=True 时调用）。"""
-        self.register("food", "觅食：在桌面上生成食物，或查询食物状态与距离", group="default")
+        self.register("food", "觅食：在桌面上生成食物，或查询食物状态与距离",
+                      group="default", meta=True)
         self.add_method(
             tool_name="food",
             method_name="spawn",
