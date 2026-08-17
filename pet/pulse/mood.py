@@ -32,13 +32,12 @@ class MoodDecayConfig:
     """心理数值自然衰减配置（slow tick 周期性调用）。
 
     joy/affection 采用"回归基线"机制：高于基线向下移、低于基线向上移，
-    步长为对应 per_tick 速率。sanity 不随时间衰减（由事件/行为恢复）。
+    步长为对应 per_tick 速率。sanity 不参与自然衰减（完全由事件/行为/LLM 驱动）。
     """
     joy_baseline: float = 50.0
     joy_per_tick: float = 1.5
     affection_baseline: float = 60.0
     affection_per_tick: float = 0.8
-    sanity_floor: float = 20.0          # sanity 时间维度下限（实际不衰减，仅兜底）
     grace_seconds: float = 600.0        # 互动后免衰减秒数
     enabled: bool = True
 
@@ -251,11 +250,7 @@ class Mood(QObject):
         self._last_activity_ts = time.monotonic()
 
     def apply_decay(self):
-        """按衰减配置向基线回归（愉悦/好感），理智不随时间衰减。
-
-        防抖：距上次互动（modify_*）在 grace_seconds 内时跳过衰减，
-        避免"刚被哄好又回落"的抵消感。衰减后联动阈值检查。
-        """
+        """按衰减配置向基线回归（愉悦/好感），理智不随时间衰减"""
         if not self._decay.enabled:
             return
         now = time.monotonic()
@@ -278,12 +273,6 @@ class Mood(QObject):
             self._affection = aff_new
             changed = True
             logger.info(f"[Mood] 好感度自然回归 → {self._affection:.1f}")
-
-        # 理智值：不随时间衰减，仅做下限兜底
-        if self._sanity < self._decay.sanity_floor:
-            self._sanity = self._decay.sanity_floor
-            changed = True
-            logger.info(f"[Mood] 理智值兜底回升 → {self._sanity:.1f}")
 
         if changed:
             self.save()
