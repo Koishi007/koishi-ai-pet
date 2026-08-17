@@ -25,6 +25,17 @@ _SCHEMA = 1
 _SENSITIVE_FRAGMENTS = ("KEY", "SECRET", "TOKEN", "PASSWORD", "APPID")
 _ENV_MAX_VALUE = 500
 
+_NATIVE_CRASH_PATTERNS = (
+    "Windows fatal exception",
+    "Fatal Python error",
+    "Segmentation fault",
+    "Bus error",
+    "Aborted",
+    "Illegal instruction",
+    "Stack overflow",
+    "Current thread",
+)
+
 
 def _project_root() -> str:
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -75,12 +86,10 @@ class CrashReporter:
         self._old_thread_excepthook = threading.excepthook
         threading.excepthook = self._on_thread_exception
 
-        # 原生崩溃：faulthandler dump 线程栈（写入固定文件，仅崩溃时有内容）
         try:
             dump_path = os.path.join(self.crash_dir, "faulthandler.log")
             self._faulthandler_file = open(dump_path, "a", encoding="utf-8", errors="replace")
             faulthandler.enable(file=self._faulthandler_file, all_threads=True)
-            # register 仅在 Unix 上可用；Windows 由 enable 的异常处理器兜底
             if hasattr(faulthandler, "register"):
                 for _name in ("SIGSEGV", "SIGFPE", "SIGABRT", "SIGBUS", "SIGILL"):
                     _sig = getattr(signal, _name, None)
@@ -109,13 +118,14 @@ class CrashReporter:
 
     def record(self, reason: str, report_type: str = "crash",
                exc_info=None, thread_name: str | None = None,
-               uptime: float | None = None) -> str | None:
+               uptime: float | None = None,
+               native_crash: str | None = None) -> str | None:
         """收集并持久化一份报告，返回报告文件路径（失败返回 None）。"""
         if not self._enabled or self._recording:
             return None
         self._recording = True
         try:
-            report = self._collect(reason, report_type, exc_info, thread_name, uptime)
+            report = self._collect(reason, report_type, exc_info, thread_name, uptime, native_crash)
             return self._save(report)
         except Exception as e:  # 收集过程出错也不能影响主流程
             try:
@@ -138,7 +148,6 @@ class CrashReporter:
             self.clear_marker()
         except Exception:
             pass
-        # 交给原钩子（默认打印到 stderr），保持既有行为
         if self._old_excepthook is not None:
             try:
                 self._old_excepthook(exc_type, exc_value, exc_tb)
@@ -195,15 +204,34 @@ class CrashReporter:
             return
         _uptime = _parse_uptime(marker.get("started_at"))
         _extra = f"，已运行约 {_uptime:g} 秒" if _uptime is not None else ""
+        _native = self._consume_faulthandler_log() or None
         self.record(
             reason=f"上次会话未正常退出（pid={marker.get('pid')}, "
                    f"status={marker.get('status')!r}, 启动于 {marker.get('started_at')}{_extra}）",
             report_type="abnormal_exit",
             uptime=_uptime,
+            native_crash=_native,
         )
 
+    def _consume_faulthandler_log(self) -> str:
+        path = os.path.join(self.crash_dir, "faulthandler.log")
+        try:
+            if not os.path.exists(path) or os.path.getsize(path) == 0:
+                return ""
+            # 该钩子在本流程（install 开头）尚未打开，此时读写是安全的
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                content = f.read().strip()
+            if content:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.truncate(0)
+            return content
+        except OSError as e:
+            logger.warning("[CrashReport] 读取 faulthandler.log 失败: %s", e)
+            return ""
+
     def _collect(self, reason: str, report_type: str, exc_info,
-                 thread_name: str | None, uptime: float | None) -> dict:
+                 thread_name: str | None, uptime: float | None,
+                 native_crash: str | None = None) -> dict:
         report = {
             "schema": _SCHEMA,
             "type": report_type,
@@ -238,6 +266,11 @@ class CrashReporter:
         if _threads:
             report["threads"] = _threads
 
+        if native_crash:
+            report["native_crash"] = {
+                "detected": _detect_native_crash(native_crash),
+                "faulthandler_log": native_crash,
+            }
         report["config"] = _safe_config()
         report["environment"] = _safe_environment()
         try:
@@ -376,6 +409,13 @@ def _is_sensitive(key: str) -> bool:
     return any(s in k for s in _SENSITIVE_FRAGMENTS)
 
 
+def _detect_native_crash(content: str) -> bool:
+    if not content:
+        return False
+    lower = content.lower()
+    return any(p.lower() in lower for p in _NATIVE_CRASH_PATTERNS)
+
+
 def _settings_path() -> str | None:
     try:
         if sys.platform == "win32":
@@ -458,9 +498,17 @@ def _format_text(report: dict) -> str:
         lines += ["=" * 60, "各线程当前调用栈:"]
         for name, stack in threads.items():
             lines += [f"--- 线程: {name} ---", stack, ""]
+    native = report.get("native_crash")
+    if native:
+        lines += [
+            "=" * 60,
+            f"是否原生崩溃: {'是' if native.get('detected') else '疑似'}",
+            native.get("faulthandler_log", ""),
+            "",
+        ]
     lines += [
         "=" * 60,
-        "配置摘要（已脱敏）:",
+        "配置摘要:",
         json.dumps(report.get("config", {}), ensure_ascii=False, indent=2),
     ]
     return "\n".join(lines)
