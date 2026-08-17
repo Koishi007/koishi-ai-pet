@@ -192,21 +192,20 @@ class PetAgent(QObject):
             self.speak_stream_end.emit(5000)
         return result
 
-    def _play_wait_anim(self, wait_anim: str = "thinking"):
-        """播放交互等待动画：时长动画直接播放（模型动作覆盖），其余入队（falling 时暂停落地后播）。"""
-        if not self._pet_window or not wait_anim:
+    def _play_loading(self, is_play_loading: bool = True):
+        """is_play_loading 为 True 时清空动作队列并直接播放 thinking 动画。"""
+        if not is_play_loading or not self._pet_window:
             return
         self._pet_window.action_queue.clear()
-        if wait_anim in _DURATION_ACTION_DEFS:
-            anim_fn = getattr(self._pet_window.pet_actions, wait_anim, None)
-            if callable(anim_fn):
-                anim_fn()
-                return
-        self._pet_window.action_queue.enqueue(wait_anim)
+        anim_fn = getattr(self._pet_window.pet_actions, "thinking", None)
+        if callable(anim_fn):
+            anim_fn()
 
     def _trigger_interact(self, hint: str = "", delay_ms: int = 100,
                           cooldown_ms: int = 15000, record_context: bool = False,
-                          context_hint: str = "", wait_anim: str = "thinking"):
+                          context_hint: str = "", is_play_loading: bool = True,
+                          thinking: bool | None = None,
+                          enable_tools: bool | None = None):
         if not hint:
             return
         from PySide6.QtCore import QDateTime
@@ -228,14 +227,15 @@ class PetAgent(QObject):
 
             self.state_machine.transition(PetState.INTERACTING)
 
-            self._play_wait_anim(wait_anim)
+            self._play_loading(is_play_loading)
 
-            self._async_brain(self._interact_pipeline, hint, record_context, context_hint)
+            self._async_brain(self._interact_pipeline, hint, record_context, context_hint, thinking, enable_tools)
 
         QTimer.singleShot(delay_ms, _execute)
 
     def _interact_pipeline(self, hint: str, record_context: bool = False,
-                           context_hint: str = ""):
+                           context_hint: str = "", thinking: bool | None = None,
+                           enable_tools: bool | None = None):
         if record_context:
             store_hint = context_hint if context_hint else hint
             self.behavior.add_context(role="user", content=store_hint)
@@ -262,13 +262,16 @@ class PetAgent(QObject):
 
         result = self.behavior.interact_decide_stream(
             hint, on_chunk=on_chunk, on_stream_end=on_stream_end,
+            thinking=thinking, enable_tools=enable_tools,
         )
 
         if stream_started:
             self.speak_stream_end.emit(4000)
         return result
 
-    def _trigger_chat(self, message: str = "", wait_anim: str = "thinking"):
+    def _trigger_chat(self, message: str = "", is_play_loading: bool = True,
+                      thinking: bool | None = None,
+                      enable_tools: bool | None = None):
         from pet.agent.state import PetState
         if self.state_machine.state == PetState.INTERACTING:
             logger.info("[PetAgent] chat request ignored (INTERACTING)")
@@ -283,16 +286,18 @@ class PetAgent(QObject):
             pet_x = self._pet_window.x()
             pet_y = self._pet_window.y()
 
-        self._play_wait_anim(wait_anim)
+        self._play_loading(is_play_loading)
 
-        self._async_brain(self._chat_pipeline, message, pet_x, pet_y)
+        self._async_brain(self._chat_pipeline, message, pet_x, pet_y, thinking, enable_tools)
         logger.info(f"[PetAgent] user chat:{message}")
         try:
             self.conversation_store.add("user", message)
         except Exception:
             pass
 
-    def _chat_pipeline(self, message: str, pet_x: int, pet_y: int):
+    def _chat_pipeline(self, message: str, pet_x: int, pet_y: int,
+                       thinking: bool | None = None,
+                       enable_tools: bool | None = None):
         self.behavior.add_context(role="user", content=message)
 
         window_context = self.behavior.ctx.build_window_context(pet_x, pet_y, int(self._pet_window.winId()) if self._pet_window else 0)
@@ -322,6 +327,7 @@ class PetAgent(QObject):
         result = self.behavior.chat_decide_stream(
             message, context, screenshot=True,
             on_chunk=on_chunk, on_stream_end=on_stream_end,
+            thinking=thinking, enable_tools=enable_tools,
         )
 
         if stream_started:

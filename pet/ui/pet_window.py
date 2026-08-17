@@ -205,7 +205,7 @@ class PetWindow(TransparentWindow):
         self.pet_actions.grabbed()
         logger.info("[PetWindow] grabbed")
         if self._agent and self._event_reaction:
-            self._agent.trigger("interact", hint=self._PROMPT_GRABBED)
+            self._agent.trigger("interact", hint=self._PROMPT_GRABBED, is_play_loading=False, thinking=False, enable_tools=False)
 
     def _on_click_confirmed(self):
         """200ms 内无移动，判定为单击，并提升心理状态。"""
@@ -260,7 +260,7 @@ class PetWindow(TransparentWindow):
             self.pet_actions.gravity.apply_impulse(vx, vy)
         logger.info(f"[PetWindow] released speed={speed:.0f}px/s flick={speed > 80}")
         if self._agent and self._event_reaction:
-            self._agent.trigger("interact", hint=self._PROMPT_RELEASED)
+            self._agent.trigger("interact", hint=self._PROMPT_RELEASED, is_play_loading=False, thinking=False)
 
     def _show_context_menu(self, pos):
         """右键菜单。"""
@@ -415,7 +415,7 @@ class PetWindow(TransparentWindow):
             hint += f"\n消失的窗口标题：「{window_title}」"
         logger.info(f"[PetWindow] standing_lost: \"{window_title}\"")
         if self._agent and self._event_reaction:
-            self._agent.trigger("interact", hint=hint)
+            self._agent.trigger("interact", hint=hint, is_play_loading=False, thinking=False, enable_tools=False)
 
 
     def queue_enqueue(self, method: str, *args, **kwargs):
