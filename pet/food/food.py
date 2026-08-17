@@ -1,4 +1,4 @@
-"""觅食游戏 — 桌宠自主觅食的状态机与判定"""
+"""觅食本能 — 需求驱动的自主觅食行为（satiety 低时触发）。"""
 
 import logging
 import random
@@ -21,7 +21,7 @@ _SPAWN_MARGIN = 200
 _TICK_MS = 200
 
 
-class FoodGameManager(QObject):
+class FoodManager(QObject):
     """生成 / 过期 / 到达判定 / 进食交互触发。"""
 
     spawn_ui_requested = Signal(str, str, int, int)  # food_id, emoji, x, y
@@ -69,7 +69,7 @@ class FoodGameManager(QObject):
         self._tick_timer.setInterval(_TICK_MS)
         self._tick_timer.timeout.connect(self.tick)
         self._tick_timer.start()
-        logger.info("[FoodGame] bound to agent, tick started")
+        logger.info("[Food] bound to agent, tick started")
 
     def _update_position_snapshot(self):
         """主线程调用：读取宠物窗口位置与屏幕几何，更新快照。"""
@@ -201,7 +201,7 @@ class FoodGameManager(QObject):
             dx, direction = self._dx_to(self._food["center_x"])
             dy, bounce_height = self._dy_info(self._food["ground_y"])
             height_hint = self._height_hint(dy)
-            logger.info(f"[FoodGame] spawned {name}({food_id}) at ({x},{y}), dx={dx} {direction}, dy={dy}")
+            logger.info(f"[Food] spawned {name}({food_id}) at ({x},{y}), dx={dx} {direction}, dy={dy}")
 
             # 主线程创建食物窗口
             self.spawn_ui_requested.emit(food_id, emoji, x, y)
@@ -263,7 +263,7 @@ class FoodGameManager(QObject):
         try:
             self._food_window = FoodWindow(emoji, x, y)
         except Exception as e:
-            logger.warning(f"[FoodGame] FoodWindow create failed ({food_id}): {e}")
+            logger.warning(f"[Food] FoodWindow create failed ({food_id}): {e}")
 
     def tick(self):
         """主线程每秒：更新快照 → 过期检查 → 到达判定。"""
@@ -297,7 +297,7 @@ class FoodGameManager(QObject):
             if self._arrived(self._pet_x, self._pet_y, food["x"], food["y"]):
                 name = food["name"]
                 self._clear_food(f"你找到了{name}并吃掉了（自己觅食）")
-                logger.info(f"[FoodGame] arrived, food eaten: {food['id']}")
+                logger.info(f"[Food] arrived, food eaten: {food['id']}")
                 self._trigger_self_fed(name)
 
     def _clear_food(self, event_text: Optional[str] = None):
@@ -339,7 +339,7 @@ class FoodGameManager(QObject):
                 enable_tools=False,
             )
         except Exception as e:
-            logger.warning(f"[FoodGame] trigger interact failed: {e}")
+            logger.warning(f"[Food] trigger interact failed: {e}")
 
     def describe(self) -> str:
         """供 context_builder 注入 [觅食] 行；事件文本输出一次后清空并落库"""
@@ -365,4 +365,4 @@ class FoodGameManager(QObject):
         return "\n".join(lines)
 
 
-FOOD_GAME = FoodGameManager()
+FOOD = FoodManager()

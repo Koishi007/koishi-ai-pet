@@ -157,10 +157,10 @@ class ContextBuilder:
 
     @staticmethod
     def _food_line() -> str:
-        """觅食状态行：食物位置/事件。游戏不可用时返回空串，不影响决策。"""
+        """觅食状态行：食物位置/事件。不可用时返回空串，不影响决策。"""
         try:
-            from pet.game.food_game import FOOD_GAME
-            return FOOD_GAME.describe()
+            from pet.food.food import FOOD
+            return FOOD.describe()
         except Exception:
             return ""
 

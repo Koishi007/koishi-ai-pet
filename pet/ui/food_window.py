@@ -1,4 +1,4 @@
-"""觅食游戏的食物悬浮窗 — 纯展示组件，生命周期由 FoodGameManager 管理。"""
+"""觅食的食物悬浮窗 — 纯展示组件，生命周期由 FoodManager 管理。"""
 
 import logging
 import random
@@ -24,7 +24,7 @@ FOOD_SIZE = 64
 class FoodWindow(QWidget):
     """无边框置顶的 emoji 食物悬浮窗，鼠标穿透，带淡入与浮动动画。
 
-    不包含任何游戏逻辑：只负责展示，出现/消失由 FoodGameManager 驱动。
+    不包含任何行为逻辑：只负责展示，出现/消失由 FoodManager 驱动。
     """
 
     def __init__(self, emoji: str, x: int, y: int, parent=None):

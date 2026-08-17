@@ -144,12 +144,12 @@ class ToolRegistry:
                 }
             },
         )
-        # 觅食游戏工具
+        # 觅食工具
         if config.FOOD_ENABLED:
             self._register_food_tools()
 
     def _register_food_tools(self):
-        """注册觅食游戏工具（FOOD_ENABLED=True 时调用）。"""
+        """注册觅食工具（FOOD_ENABLED=True 时调用）。"""
         self.register("food", "觅食：在桌面上生成食物，或查询食物状态与距离",
                       group="default", meta=True)
         self.add_method(
@@ -180,14 +180,14 @@ class ToolRegistry:
         )
 
     def _food_spawn(self, food_type: str = None) -> dict:
-        """food__spawn 工具实现（懒 import，避免注册表依赖游戏层）。"""
-        from pet.game.food_game import FOOD_GAME
-        return FOOD_GAME.spawn(food_type)
+        """food__spawn 工具实现（懒 import，避免注册表依赖行为层）。"""
+        from pet.food.food import FOOD
+        return FOOD.spawn(food_type)
 
     def _food_status(self) -> dict:
-        """food__status 工具实现（懒 import，避免注册表依赖游戏层）。"""
-        from pet.game.food_game import FOOD_GAME
-        return FOOD_GAME.status()
+        """food__status 工具实现（懒 import，避免注册表依赖行为层）。"""
+        from pet.food.food import FOOD
+        return FOOD.status()
 
     def _tool_search_list_groups(self) -> dict:
         groups = []
