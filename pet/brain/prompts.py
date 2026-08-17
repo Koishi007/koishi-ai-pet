@@ -198,6 +198,30 @@ _TASK_SECTIONS = {
 }
 
 
+def build_attention_hint(rounds: int, thresholds: list[int]) -> str:
+    """按连续未互动轮次生成求关注提示；未达阈值返回空串。
+
+    分级递进：达到第 i 档阈值时，提示强度随档位提升。
+    """
+    if not thresholds or rounds < thresholds[0]:
+        return ""
+    level = 0
+    for i, t in enumerate(thresholds):
+        if rounds >= t:
+            level = i + 1
+        else:
+            break
+
+    if level == 1:
+        hint = "用户有一段时间没和你说话互动了"
+    elif level == 2:
+        hint = "用户已经较长时间没和你说话互动了"
+    else:
+        hint = "用户已经很久没和你说话互动了"
+
+    return hint
+
+
 def build_system_prompt(mode: str, task: str, include_feeling_marker: bool = True) -> str:
     """分层组装 system prompt。
 

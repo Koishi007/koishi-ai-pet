@@ -234,8 +234,14 @@ class ContextBuilder:
 
         # 人格驱动：始终注入当前感受到 FEELING_MARKER 锚点
         feeling = self._build_feeling()
-        if feeling:
-            feeling_block = f"[你现在的状态]\n{feeling}"
+        attention = self._build_attention_hint(task)
+        if feeling or attention:
+            status_lines = []
+            if feeling:
+                status_lines.append(feeling)
+            if attention:
+                status_lines.append(attention)
+            feeling_block = f"[你现在的状态]\n" + "\n".join(status_lines)
             content = content.replace(
                 prompts.FEELING_MARKER,
                 feeling_block,
@@ -247,6 +253,17 @@ class ContextBuilder:
                 content += f"\n\n[你对用户的记忆]\n{memory_text}"
 
         return content
+
+    def _build_attention_hint(self, task: str) -> str:
+        """根据连续未互动轮次生成状态描述（仅自主决策时注入）。"""
+        if task != "autonomous" or self._brain is None:
+            return ""
+        try:
+            thresholds = [int(t) for t in config.ATTENTION_THRESHOLDS]
+            return prompts.build_attention_hint(
+                self._brain.rounds_without_user, thresholds)
+        except Exception:
+            return ""
 
     def _time_prefix(self) -> str:
         """当前时间信息，注入 user prompt 顶部（不放 system prompt 以免破坏缓存）。"""

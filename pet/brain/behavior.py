@@ -54,6 +54,7 @@ class Behavior(BrainMixin):
         super().__init__(db_path=db_path)
         self._llm = LLMClient()
         self._lock = threading.RLock()
+        self._rounds_without_user = 0
 
         self._actions = ACTION_NAMES
         self.ctx = ContextBuilder(
@@ -112,6 +113,22 @@ class Behavior(BrainMixin):
         """互动结束时重置激活状态，仅保留 default 组。"""
         self._active_tool_groups = {"default"}
         logger.debug("[Behavior] reset active tool groups")
+
+    def note_autonomous_round(self):
+        """自主行动一轮：累计未与用户互动的轮次。"""
+        with self._lock:
+            self._rounds_without_user += 1
+
+    def reset_user_interaction(self):
+        """用户主动互动（chat/interact）：清零未互动轮次。"""
+        with self._lock:
+            self._rounds_without_user = 0
+
+    @property
+    def rounds_without_user(self) -> int:
+        """连续未与用户互动的自主轮次数（供 context 注入关注提示）。"""
+        with self._lock:
+            return self._rounds_without_user
     
     def autonomous_decide(self, context: str = "", screenshot: bool = True) -> BehaviorOutput:
         t = datetime.now().strftime("%H:%M:%S")

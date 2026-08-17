@@ -162,6 +162,7 @@ class PetAgent(QObject):
             logger.debug(f"[PetAgent] duration for '{name}': {kw['duration']}s")
         self.action_requested.emit(name, tuple(arg_list), kw)
     def _autonomous_pipeline(self, pet_x=0, pet_y=0):
+        self.behavior.note_autonomous_round()
         window_context = self.behavior.ctx.build_window_context(pet_x, pet_y, int(self._pet_window.winId()) if self._pet_window else 0)
         context = window_context if window_context else ""
 
@@ -223,6 +224,8 @@ class PetAgent(QObject):
                 logger.info("[PetAgent] interact ignored (INTERACTING)")
                 return
 
+            self.behavior.reset_user_interaction()
+
             self.speak_stream_end.emit(0)
 
             self.state_machine.transition(PetState.INTERACTING)
@@ -276,6 +279,8 @@ class PetAgent(QObject):
         if self.state_machine.state == PetState.INTERACTING:
             logger.info("[PetAgent] chat request ignored (INTERACTING)")
             return
+
+        self.behavior.reset_user_interaction()
 
         self.speak_stream_end.emit(0)
 
