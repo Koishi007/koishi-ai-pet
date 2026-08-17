@@ -205,7 +205,7 @@ class PetWindow(TransparentWindow):
         self.pet_actions.grabbed()
         logger.info("[PetWindow] grabbed")
         if self._agent and self._event_reaction:
-            self._agent.trigger("interact", hint=self._PROMPT_GRABBED)
+            self._agent.trigger("interact", hint=self._PROMPT_GRABBED, is_play_loading=False, thinking=False, enable_tools=False)
 
     def _on_click_confirmed(self):
         """200ms 内无移动，判定为单击，并提升心理状态。"""
@@ -260,7 +260,7 @@ class PetWindow(TransparentWindow):
             self.pet_actions.gravity.apply_impulse(vx, vy)
         logger.info(f"[PetWindow] released speed={speed:.0f}px/s flick={speed > 80}")
         if self._agent and self._event_reaction:
-            self._agent.trigger("interact", hint=self._PROMPT_RELEASED)
+            self._agent.trigger("interact", hint=self._PROMPT_RELEASED, is_play_loading=False, thinking=False)
 
     def _show_context_menu(self, pos):
         """右键菜单。"""
@@ -301,11 +301,11 @@ class PetWindow(TransparentWindow):
             # 工具子菜单（每工具支持独立子菜单）
             tool_menu = StickyMenu("工具", menu)
             for name in TOOL_REGISTRY.tool_names:
-                if name == "tool_search":
-                    continue  # 元工具，始终启用不可禁用
                 tool = TOOL_REGISTRY._tools.get(name)
                 if not tool:
                     continue
+                if tool.meta:
+                    continue  # 元工具（如 tool_search、food），始终启用不可禁用
 
                 # 工具开关（可勾选）
                 tool_action = tool_menu.addAction(name)
@@ -415,7 +415,7 @@ class PetWindow(TransparentWindow):
             hint += f"\n消失的窗口标题：「{window_title}」"
         logger.info(f"[PetWindow] standing_lost: \"{window_title}\"")
         if self._agent and self._event_reaction:
-            self._agent.trigger("interact", hint=hint)
+            self._agent.trigger("interact", hint=hint, is_play_loading=False, thinking=False, enable_tools=False)
 
 
     def queue_enqueue(self, method: str, *args, **kwargs):

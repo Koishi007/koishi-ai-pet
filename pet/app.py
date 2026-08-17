@@ -126,7 +126,8 @@ def main():
     window.set_feed_bubble(feed_bubble)
     feed_bubble.feed_submitted.connect(
         lambda text: agent.trigger("interact", hint=interact_fed_prompt(text),
-                                    record_context=True, context_hint=f"用户投喂了{text}")
+                                    record_context=True, context_hint=f"用户投喂了{text}",
+                                    enable_tools=False)
     )
 
     music_bubble = MusicBubble(window)

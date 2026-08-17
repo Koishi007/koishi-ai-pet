@@ -1,4 +1,4 @@
-﻿"""与 AI 通信，解析响应为动作序列。"""
+"""与 AI 通信，解析响应为动作序列。"""
 
 import queue
 import random
@@ -25,6 +25,10 @@ logger = logging.getLogger(__name__)
 
 # 服务商是否不支持 thinking 参数（首次 400 后自动降级，后续请求不再携带）
 _thinking_unsupported = False
+
+
+class CancelledError(Exception):
+    """流式调用被新请求协作式取消。"""
 
 
 @dataclass
@@ -54,6 +58,7 @@ class Behavior(BrainMixin):
         super().__init__(db_path=db_path)
         self._llm = LLMClient()
         self._lock = threading.RLock()
+        self._rounds_without_user = 0
 
         self._actions = ACTION_NAMES
         self.ctx = ContextBuilder(
@@ -80,9 +85,11 @@ class Behavior(BrainMixin):
     def has_vision(self) -> bool:
         return self._llm.has_vision
 
-    def _build_tools_param(self):
-        """根据当前已激活的分组构建 tools 参数，仅包含激活组中的工具。"""
-        if not config.LLM_TOOLS_ENABLED:
+    def _build_tools_param(self, enable_tools: bool | None = None):
+        """根据当前已激活的分组构建 tools 参数；enable_tools 非 None 时覆盖全局开关。"""
+        if enable_tools is False:
+            return None
+        if enable_tools is None and not config.LLM_TOOLS_ENABLED:
             return None
         return TOOL_REGISTRY.to_openai_tools(groups=self._active_tool_groups)
 
@@ -110,6 +117,22 @@ class Behavior(BrainMixin):
         """互动结束时重置激活状态，仅保留 default 组。"""
         self._active_tool_groups = {"default"}
         logger.debug("[Behavior] reset active tool groups")
+
+    def note_autonomous_round(self):
+        """自主行动一轮：累计未与用户互动的轮次。"""
+        with self._lock:
+            self._rounds_without_user += 1
+
+    def reset_user_interaction(self):
+        """用户主动互动（chat/interact）：清零未互动轮次。"""
+        with self._lock:
+            self._rounds_without_user = 0
+
+    @property
+    def rounds_without_user(self) -> int:
+        """连续未与用户互动的自主轮次数（供 context 注入关注提示）。"""
+        with self._lock:
+            return self._rounds_without_user
     
     def autonomous_decide(self, context: str = "", screenshot: bool = True) -> BehaviorOutput:
         t = datetime.now().strftime("%H:%M:%S")
@@ -127,7 +150,8 @@ class Behavior(BrainMixin):
         return self._retry_if_empty(self._call_llm_and_parse, messages, messages[0]["content"], tag, tag=tag, max_tokens=config.LLM_MAX_TOKENS_AUTONOMOUS)
 
     def autonomous_decide_stream(self, context: str = "", screenshot: bool = True,
-                      on_chunk=None, on_stream_end=None) -> BehaviorOutput:
+                      on_chunk=None, on_stream_end=None,
+                      cancel_check: callable = None) -> BehaviorOutput:
         if not self._llm:
             return self._decide_local()
         if not self._lock.acquire(timeout=0.5):
@@ -137,7 +161,7 @@ class Behavior(BrainMixin):
             messages = self.ctx.build_autonomous_decide(context, screenshot=screenshot)
             is_vision = isinstance(messages[1]["content"], list)
             tag = "autonomous_decide_vision_stream" if is_vision else "autonomous_decide_stream"
-            return self._retry_if_empty(self._stream_and_build_output, messages, tag=tag, on_chunk=on_chunk, on_stream_end=on_stream_end, max_tokens=config.LLM_MAX_TOKENS_AUTONOMOUS)
+            return self._retry_if_empty(self._stream_and_build_output, messages, tag=tag, on_chunk=on_chunk, on_stream_end=on_stream_end, max_tokens=config.LLM_MAX_TOKENS_AUTONOMOUS, cancel_check=cancel_check)
         finally:
             self._lock.release()
 
@@ -148,7 +172,10 @@ class Behavior(BrainMixin):
         return self._retry_if_empty(self._call_llm_and_parse, messages, messages[0]["content"], "interact", tag="interact", max_tokens=config.LLM_MAX_TOKENS_INTERACT)
 
     def interact_decide_stream(self, event_hint: str,
-                               on_chunk=None, on_stream_end=None) -> BehaviorOutput:
+                               on_chunk=None, on_stream_end=None,
+                               thinking: bool | None = None,
+                               enable_tools: bool | None = None,
+                               cancel_check: callable = None) -> BehaviorOutput:
         if not self._llm:
             return self._interact_decide_local(event_hint)
         if not self._lock.acquire(timeout=2):
@@ -156,7 +183,7 @@ class Behavior(BrainMixin):
             return self._interact_decide_local(event_hint)
         try:
             messages = self.ctx.build_interact(event_hint)
-            return self._retry_if_empty(self._stream_and_build_output, messages, tag="interact", on_chunk=on_chunk, on_stream_end=on_stream_end, max_tokens=config.LLM_MAX_TOKENS_INTERACT)
+            return self._retry_if_empty(self._stream_and_build_output, messages, tag="interact", on_chunk=on_chunk, on_stream_end=on_stream_end, max_tokens=config.LLM_MAX_TOKENS_INTERACT, thinking=thinking, enable_tools=enable_tools, cancel_check=cancel_check)
         finally:
             self._lock.release()
 
@@ -179,7 +206,10 @@ class Behavior(BrainMixin):
         return self._retry_if_empty(self._call_llm_and_parse, messages, messages[0]["content"], tag, tag=tag, max_tokens=config.LLM_MAX_TOKENS_CHAT)
 
     def chat_decide_stream(self, user_message: str, context: str, screenshot: bool = True,
-                           on_chunk=None, on_stream_end=None) -> BehaviorOutput:
+                           on_chunk=None, on_stream_end=None,
+                           thinking: bool | None = None,
+                           enable_tools: bool | None = None,
+                           cancel_check: callable = None) -> BehaviorOutput:
         if not self._llm:
             return self._chat_decide_local(user_message)
         if not self._lock.acquire(timeout=5):
@@ -192,7 +222,7 @@ class Behavior(BrainMixin):
             messages = self.ctx.build_chat_decide(user_message, context, screenshot=screenshot)
             is_vision = isinstance(messages[1]["content"], list)
             tag = "chat_decide_vision_stream" if is_vision else "chat_decide_stream"
-            return self._retry_if_empty(self._stream_and_build_output, messages, tag=tag, on_chunk=on_chunk, on_stream_end=on_stream_end, max_tokens=config.LLM_MAX_TOKENS_CHAT)
+            return self._retry_if_empty(self._stream_and_build_output, messages, tag=tag, on_chunk=on_chunk, on_stream_end=on_stream_end, max_tokens=config.LLM_MAX_TOKENS_CHAT, thinking=thinking, enable_tools=enable_tools, cancel_check=cancel_check)
         finally:
             self._lock.release()
 
@@ -205,11 +235,14 @@ class Behavior(BrainMixin):
         return result
 
     @staticmethod
-    def _apply_thinking_param(kwargs: dict):
-        """按配置注入思考模式参数"""
+    def _apply_thinking_param(kwargs: dict, thinking: bool | None = None):
+        """按配置注入思考模式参数；thinking 非 None 时覆盖全局开关。"""
         if _thinking_unsupported:
             return
-        state = "disabled" if config.LLM_THINKING_DISABLED else "enabled"
+        if thinking is None:
+            state = "disabled" if config.LLM_THINKING_DISABLED else "enabled"
+        else:
+            state = "enabled" if thinking else "disabled"
         kwargs.setdefault("extra_body", {})["thinking"] = {"type": state}
 
     def _create_completion(self, kwargs: dict):
@@ -227,13 +260,14 @@ class Behavior(BrainMixin):
             return resp
 
     @llm_retry(tag="Behavior")
-    def _llm_call(self, messages: list, max_tokens: int = 4000, tools: list = None):
+    def _llm_call(self, messages: list, max_tokens: int = 4000, tools: list = None,
+                  thinking: bool | None = None):
         self.llm_stats.increment()
         t0 = time.perf_counter()
         kwargs = {"model": self._llm.model, "messages": messages, "max_tokens": max_tokens, "temperature": config.LLM_TEMPERATURE}
         if tools:
             kwargs["tools"] = tools
-        self._apply_thinking_param(kwargs)
+        self._apply_thinking_param(kwargs, thinking)
         resp = self._create_completion(kwargs)
         elapsed = time.perf_counter() - t0
         usage = resp.usage
@@ -244,7 +278,8 @@ class Behavior(BrainMixin):
             logger.info(f"[Behavior] LLM call completed in {elapsed:.2f}s")
         return resp
 
-    def _llm_call_stream(self, messages: list, max_tokens: int = 4000, tools: list = None):
+    def _llm_call_stream(self, messages: list, max_tokens: int = 4000, tools: list = None,
+                         thinking: bool | None = None):
         self.llm_stats.increment()
         from pet.brain.llm_retry import llm_stream_with_retry
         kwargs = {"model": self._llm.model, "messages": messages, "max_tokens": max_tokens,
@@ -252,7 +287,7 @@ class Behavior(BrainMixin):
                    "stream_options": {"include_usage": True}}
         if tools:
             kwargs["tools"] = tools
-        self._apply_thinking_param(kwargs)
+        self._apply_thinking_param(kwargs, thinking)
         return llm_stream_with_retry(
             lambda: self._create_completion(kwargs),
             tag="Behavior.stream",
@@ -289,14 +324,16 @@ class Behavior(BrainMixin):
             parts.append(f"images: {image_count}{' (' + image_fmt + ')' if image_fmt else ''} ({image_bytes // 1024}KB base64)")
         logger.info(f"[{t}] [Behavior]   {', '.join(parts)} ({tag})")
 
-    def _call_llm_and_parse(self, messages: list, system_content: str, tag: str, max_tokens: int = 4000) -> BehaviorOutput:
+    def _call_llm_and_parse(self, messages: list, system_content: str, tag: str,
+                            max_tokens: int = 4000, thinking: bool | None = None,
+                            enable_tools: bool | None = None) -> BehaviorOutput:
         t = datetime.now().strftime("%H:%M:%S")
         self._apply_cache_control(messages)
         self._dump_context(tag, messages)
         self._log_prompt_size(messages, tag)
         try:
-            tools_param = self._build_tools_param()
-            resp = self._llm_call(messages, max_tokens=max_tokens, tools=tools_param)
+            tools_param = self._build_tools_param(enable_tools)
+            resp = self._llm_call(messages, max_tokens=max_tokens, tools=tools_param, thinking=thinking)
             msg = resp.choices[0].message
             content = msg.content or ""
             logger.info(f"[{t}] [Behavior] === LLM RESPONSE ({tag}) ===")
@@ -316,7 +353,7 @@ class Behavior(BrainMixin):
                     messages, tool_calls_map, content,
                     tag=tag, max_tokens=max_tokens,
                     max_rounds=config.LLM_TOOL_MAX_ROUNDS,
-                    speech_streamed=False,
+                    speech_streamed=False, enable_tools=enable_tools,
                 )
 
             result = self._parse_behavior(content)
@@ -327,7 +364,8 @@ class Behavior(BrainMixin):
             logger.warning(f"[{t}] [Behavior]   falling back to local")
             return self._decide_local()
 
-    def _iterate_stream_with_timeout(self, stream, total_timeout: float):
+    def _iterate_stream_with_timeout(self, stream, total_timeout: float,
+                                     cancel_check: callable = None):
         chunk_queue: queue.Queue = queue.Queue()
         stop_event = threading.Event()
         exception_holder: list = [None]
@@ -352,6 +390,10 @@ class Behavior(BrainMixin):
         deadline = time.monotonic() + total_timeout
         try:
             while True:
+                # 协作式取消：被新请求抢占时尽快退出，释放资源
+                if cancel_check and cancel_check():
+                    stop_event.set()
+                    raise CancelledError("流式调用被新请求取消")
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     stop_event.set()
@@ -371,14 +413,18 @@ class Behavior(BrainMixin):
             stop_event.set()
             t.join(timeout=3)
 
-    def _stream_and_build_output(self, messages: list, on_chunk=None, on_stream_end=None, tag: str = "", max_tokens: int = 4000) -> BehaviorOutput:
+    def _stream_and_build_output(self, messages: list, on_chunk=None, on_stream_end=None,
+                                 tag: str = "", max_tokens: int = 4000,
+                                 thinking: bool | None = None,
+                                 enable_tools: bool | None = None,
+                                 cancel_check: callable = None) -> BehaviorOutput:
         self._apply_cache_control(messages)
         self._dump_context(tag, messages)
         self._log_prompt_size(messages, tag)
         t0 = time.perf_counter()
         try:
-            tools_param = self._build_tools_param()
-            stream = self._llm_call_stream(messages, max_tokens=max_tokens, tools=tools_param)
+            tools_param = self._build_tools_param(enable_tools)
+            stream = self._llm_call_stream(messages, max_tokens=max_tokens, tools=tools_param, thinking=thinking)
 
             buffer = ""
             actions = []
@@ -396,7 +442,8 @@ class Behavior(BrainMixin):
             finish_reason = None
             stream_usage = None
 
-            for chunk in self._iterate_stream_with_timeout(stream, config.LLM_STREAM_TIMEOUT):
+            for chunk in self._iterate_stream_with_timeout(stream, config.LLM_STREAM_TIMEOUT,
+                                                           cancel_check=cancel_check):
                 # usage-only chunk（choices 为空，仅含 usage）
                 if not chunk.choices:
                     if hasattr(chunk, "usage") and chunk.usage:
@@ -499,7 +546,8 @@ class Behavior(BrainMixin):
                     messages, accumulated_tool_calls, first_content,
                     on_chunk=on_chunk, on_stream_end=on_stream_end, tag=tag,
                     max_tokens=max_tokens, max_rounds=config.LLM_TOOL_MAX_ROUNDS,
-                    speech_streamed=speech_streamed,
+                    speech_streamed=speech_streamed, enable_tools=enable_tools,
+                    thinking=thinking,
                 )
 
             raw = "\n".join(
@@ -528,6 +576,9 @@ class Behavior(BrainMixin):
                 vitals_deltas=vitals_deltas,
             )
 
+        except CancelledError:
+            logger.info(f"[{tag}] stream cancelled")
+            raise
         except Exception as e:
             logger.exception(f"[{tag}] stream failed: {type(e).__name__}: {e}")
             return self._decide_local()
@@ -652,14 +703,19 @@ class Behavior(BrainMixin):
                 args.append(token)
         return ActionStep(name, tuple(args), kwargs)
 
-    # 元工具（工具发现类）不消耗实际工具调用轮次
-    _META_TOOL_NAMES = frozenset({"tool_search__search", "tool_search__list_groups"})
+    # 元工具（工具发现/觅食类）不消耗实际工具调用轮次
+    _META_TOOL_NAMES = frozenset({
+        "tool_search__search", "tool_search__list_groups",
+        "food__spawn", "food__status",
+    })
     _META_TOOL_MAX_ROUNDS = 10  # 元工具调用安全上限，防止死循环
 
     def _handle_tool_calls(self, messages, tool_calls_map, first_content,
                             on_chunk=None, on_stream_end=None, tag="",
                             max_rounds=5, max_tokens: int = 4000,
-                            speech_streamed: bool = False) -> BehaviorOutput:
+                            speech_streamed: bool = False,
+                            enable_tools: bool | None = None,
+                            thinking: bool | None = None) -> BehaviorOutput:
         """执行 tool_calls 并循环直到 LLM 不再请求工具。
 
         tool_search / list_groups 等元工具不消耗 max_rounds 配额，
@@ -793,8 +849,8 @@ class Behavior(BrainMixin):
 
             # 再次调用 LLM（每轮重建 tools_param，包含新激活的分组）
             t0 = time.perf_counter()
-            tools_param = self._build_tools_param()
-            stream = self._llm_call_stream(current_messages, max_tokens=max_tokens, tools=tools_param)
+            tools_param = self._build_tools_param(enable_tools)
+            stream = self._llm_call_stream(current_messages, max_tokens=max_tokens, tools=tools_param, thinking=thinking)
             _chunk_invoked[0] = False
             content, new_tool_calls = self._collect_stream_raw(stream, on_chunk=_wrapped_chunk, on_stream_end=on_stream_end, tag=f"{tag}_round_{display_round}", t0=t0)
             if _chunk_invoked[0]:

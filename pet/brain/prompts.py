@@ -1,4 +1,4 @@
-﻿"""系统提示词分层组装"""
+"""系统提示词分层组装"""
 
 from pet.action.registry import generate_action_section, target_sequence_duration, min_action_count, default_duration
 from pet.config import config
@@ -54,8 +54,15 @@ Mood: affection±值 joy±值 sanity±值
 
 _VITALS_GUIDE = """[状态] 生理变化 (仅变化时输出)
 Vitals: satiety±值 energy±值
-satiety(饱食度,0~100): 被投喂增加; 移动/跳跃消耗
+satiety(饱食度,0~100): 被投喂或自己觅食增加; 移动/跳跃消耗
 energy(精力,0~100): 睡眠/坐恢复; 移动/跳跃/活跃动作消耗"""
+
+_FOOD_GUIDE = """[状态] 觅食（桌宠自娱小游戏）
+- food__spawn 会在桌面随机位置（可能在地上、窗口上，甚至半空中）生成食物，返回坐标和偏移 dx/dy；食物约3分钟会过期
+- 水平接近：用 Action: walk left/right <dx> 或 drive（快）走过去，可以分多段
+- 垂直取食：食物在上方 → Action: bounce <方向> 0 <bounce_height> 跳起来抓；食物在下方 → 走到窗口边缘掉下去再吃
+- 走到/跳到食物附近会自动开吃，不用再做别的；没吃到（比如撞到屏幕边缘或跳早了）就继续，可以多试几次
+- 吃到了用 Vitals: satiety+N 反映饱食度变化"""
 
 _EMOTION_LIST = "happy, excited, sad, angry, surprised, thinking, sleepy, love, cool, shy, scared, hungry, curious, proud, bored, crazy"
 
@@ -118,7 +125,10 @@ def _autonomous_task() -> list[str]:
         "7. 按[记忆]判断是否输出 Memory 行；心理无变化时省略 Mood 行",
     ]
 
-    return [format_guide] + constraints + [_MOOD_GUIDE]
+    guides = [_MOOD_GUIDE]
+    if config.FOOD_ENABLED:
+        guides.append(_FOOD_GUIDE)
+    return [format_guide] + constraints + guides
 
 
 def _chat_task() -> list[str]:
@@ -149,7 +159,10 @@ def _chat_task() -> list[str]:
         "8. 按[记忆]判断是否输出 Memory 行；心理无变化时省略 Mood 行",
     ]
 
-    return [format_guide] + constraints + [_MOOD_GUIDE]
+    guides = [_MOOD_GUIDE]
+    if config.FOOD_ENABLED:
+        guides.append(_FOOD_GUIDE)
+    return [format_guide] + constraints + guides
 
 
 def _interact_task() -> list[str]:
@@ -183,6 +196,30 @@ _TASK_SECTIONS = {
     "chat":        _chat_task,
     "interact":    _interact_task,
 }
+
+
+def build_attention_hint(rounds: int, thresholds: list[int]) -> str:
+    """按连续未互动轮次生成求关注提示；未达阈值返回空串。
+
+    分级递进：达到第 i 档阈值时，提示强度随档位提升。
+    """
+    if not thresholds or rounds < thresholds[0]:
+        return ""
+    level = 0
+    for i, t in enumerate(thresholds):
+        if rounds >= t:
+            level = i + 1
+        else:
+            break
+
+    if level == 1:
+        hint = "用户有一段时间没和你说话互动了"
+    elif level == 2:
+        hint = "用户已经较长时间没和你说话互动了"
+    else:
+        hint = "用户已经很久没和你说话互动了"
+
+    return hint
 
 
 def build_system_prompt(mode: str, task: str, include_feeling_marker: bool = True) -> str:
@@ -240,6 +277,7 @@ def autonomous_vision_user_prompt(context: str) -> str:
         f"3. 规划动作序列：先用移动类动作接近目标，中间穿插驻留类动作，最后用耗时动作收尾，按输出格式要求凑满时长\n"
         f"   • 有窗口 → 移动到附近 + 跳上窗口顶部，参数用探测数据的「相对桌宠」和「上跳_N_px」\n"
         f"   • 无窗口 → 巡视桌面或找地方坐下\n"
+        f"   • 饿了（饱食度<60）→ 按[状态]觅食规则：先 food__spawn 生成食物，再 walk 过去吃\n"
         f"4. 理智不正常时主动调用可用工具做疯狂的事；多个独立工具可一次并行调用\n"
         f"5. 尽量从屏幕中寻找新细节进行评论，保持言行的新鲜感\n"
         f"6. 按顺序写出完整输出（Summary → Emotion → Speech → Actions → Mood）"
@@ -260,6 +298,7 @@ def autonomous_non_vision_user_prompt(context: str) -> str:
         f"   • 有窗口 → 移动到附近，用人格语气评论窗口内容\n"
         f"   • 无窗口 → 巡视桌面或找地方坐下\n"
         f"   • 移动方向可随机\n"
+        f"   • 饿了（饱食度<60）→ 按[状态]觅食规则：先 food__spawn 生成食物，再 walk 过去吃\n"
         f"3. 理智不正常时主动调用可用工具做疯狂的事；多个独立工具可一次并行调用\n"
         f"4. 尝试发散思维，不要局限于近期已充分讨论的内容\n"
         f"5. 按顺序写出完整输出（Summary → Emotion → Speech → Actions → Mood）"
@@ -320,6 +359,20 @@ def interact_fed_prompt(food: str) -> str:
         "  仅输出受影响项，未列出的食物类型根据特征自行推断。"
     )
     return template.format(food=food)
+
+
+def interact_self_fed_prompt(food: str) -> str:
+    """自己觅食吃到食物的交互 prompt（与投喂同构，但强调是自主所得）。"""
+    return (
+        f"你找到了{food}并自己吃掉了（自己觅食所得，不是用户投喂），"
+        f"根据你的人格用一句话（≤15字）表达反应。"
+        f"同时根据食物的类型决定Vitals和Mood变化（参考投喂规则）：\n"
+        f"  — 正餐/主食(satiety+40~80, energy+5~10, joy+1~2)\n"
+        f"  — 零食/甜点(satiety+20~50, energy+5~15, joy+2~3)\n"
+        f"  — 水果(satiety+5~15, energy+5~10, joy+1~2)\n"
+        f"  — 饮料(satiety+1~5, energy+10~20)\n"
+        f"  仅输出受影响项，未列出的食物类型根据特征自行推断。"
+    )
 
 
 

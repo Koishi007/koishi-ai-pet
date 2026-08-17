@@ -162,6 +162,7 @@ class PetAgent(QObject):
             logger.debug(f"[PetAgent] duration for '{name}': {kw['duration']}s")
         self.action_requested.emit(name, tuple(arg_list), kw)
     def _autonomous_pipeline(self, pet_x=0, pet_y=0):
+        self.behavior.note_autonomous_round()
         window_context = self.behavior.ctx.build_window_context(pet_x, pet_y, int(self._pet_window.winId()) if self._pet_window else 0)
         context = window_context if window_context else ""
 
@@ -186,15 +187,26 @@ class PetAgent(QObject):
                 self.speak_stream_end.emit(5000)
                 stream_started = False
 
-        result = self.behavior.autonomous_decide_stream(context, screenshot=True, on_chunk=on_chunk, on_stream_end=on_stream_end)
+        result = self.behavior.autonomous_decide_stream(context, screenshot=True, on_chunk=on_chunk, on_stream_end=on_stream_end, cancel_check=self._is_cancelled)
 
         if stream_started:
             self.speak_stream_end.emit(5000)
         return result
 
+    def _play_loading(self, is_play_loading: bool = True):
+        """is_play_loading 为 True 时清空动作队列并直接播放 thinking 动画。"""
+        if not is_play_loading or not self._pet_window:
+            return
+        self._pet_window.action_queue.clear()
+        anim_fn = getattr(self._pet_window.pet_actions, "thinking", None)
+        if callable(anim_fn):
+            anim_fn()
+
     def _trigger_interact(self, hint: str = "", delay_ms: int = 100,
                           cooldown_ms: int = 15000, record_context: bool = False,
-                          context_hint: str = ""):
+                          context_hint: str = "", is_play_loading: bool = True,
+                          thinking: bool | None = None,
+                          enable_tools: bool | None = None):
         if not hint:
             return
         from PySide6.QtCore import QDateTime
@@ -212,20 +224,21 @@ class PetAgent(QObject):
                 logger.info("[PetAgent] interact ignored (INTERACTING)")
                 return
 
+            self.behavior.reset_user_interaction()
+
             self.speak_stream_end.emit(0)
 
             self.state_machine.transition(PetState.INTERACTING)
 
-            if self._pet_window:
-                self._pet_window.action_queue.clear()
-                self._pet_window.pet_actions.thinking()
+            self._play_loading(is_play_loading)
 
-            self._async_brain(self._interact_pipeline, hint, record_context, context_hint)
+            self._async_brain(self._interact_pipeline, hint, record_context, context_hint, thinking, enable_tools)
 
         QTimer.singleShot(delay_ms, _execute)
 
     def _interact_pipeline(self, hint: str, record_context: bool = False,
-                           context_hint: str = ""):
+                           context_hint: str = "", thinking: bool | None = None,
+                           enable_tools: bool | None = None):
         if record_context:
             store_hint = context_hint if context_hint else hint
             self.behavior.add_context(role="user", content=store_hint)
@@ -252,17 +265,23 @@ class PetAgent(QObject):
 
         result = self.behavior.interact_decide_stream(
             hint, on_chunk=on_chunk, on_stream_end=on_stream_end,
+            thinking=thinking, enable_tools=enable_tools,
+            cancel_check=self._is_cancelled,
         )
 
         if stream_started:
             self.speak_stream_end.emit(4000)
         return result
 
-    def _trigger_chat(self, message: str = ""):
+    def _trigger_chat(self, message: str = "", is_play_loading: bool = True,
+                      thinking: bool | None = None,
+                      enable_tools: bool | None = None):
         from pet.agent.state import PetState
         if self.state_machine.state == PetState.INTERACTING:
             logger.info("[PetAgent] chat request ignored (INTERACTING)")
             return
+
+        self.behavior.reset_user_interaction()
 
         self.speak_stream_end.emit(0)
 
@@ -273,18 +292,18 @@ class PetAgent(QObject):
             pet_x = self._pet_window.x()
             pet_y = self._pet_window.y()
 
-        if self._pet_window:
-            self._pet_window.action_queue.clear()
-            self._pet_window.pet_actions.thinking()
+        self._play_loading(is_play_loading)
 
-        self._async_brain(self._chat_pipeline, message, pet_x, pet_y)
+        self._async_brain(self._chat_pipeline, message, pet_x, pet_y, thinking, enable_tools)
         logger.info(f"[PetAgent] user chat:{message}")
         try:
             self.conversation_store.add("user", message)
         except Exception:
             pass
 
-    def _chat_pipeline(self, message: str, pet_x: int, pet_y: int):
+    def _chat_pipeline(self, message: str, pet_x: int, pet_y: int,
+                       thinking: bool | None = None,
+                       enable_tools: bool | None = None):
         self.behavior.add_context(role="user", content=message)
 
         window_context = self.behavior.ctx.build_window_context(pet_x, pet_y, int(self._pet_window.winId()) if self._pet_window else 0)
@@ -314,11 +333,17 @@ class PetAgent(QObject):
         result = self.behavior.chat_decide_stream(
             message, context, screenshot=True,
             on_chunk=on_chunk, on_stream_end=on_stream_end,
+            thinking=thinking, enable_tools=enable_tools,
+            cancel_check=self._is_cancelled,
         )
 
         if stream_started:
             self.speak_stream_end.emit(4000)
         return result
+
+    def _is_cancelled(self) -> bool:
+        """协作式取消检查：供 Behavior 流式循环轮询。"""
+        return self._cancel_flag
 
     def _async_brain(self, fn, *args, on_result=None, on_error=None):
         fn_name = getattr(fn, "__name__", repr(fn))
@@ -327,18 +352,16 @@ class PetAgent(QObject):
         old_thread = self._thread
         old_worker = self._worker
         if old_thread is not None and old_thread.isRunning():
+            # 协作式取消：设置标志让旧线程在流式循环里快速退出，不阻塞主线程
             self._cancel_flag = True
-            try:
-                old_thread.quit()
-                if not old_thread.wait(2000):
-                    logger.warning(f"[{ts}] [PetAgent] old brain thread timeout, force terminate")
-                    old_thread.terminate()
-                    old_thread.wait(500)
-                    if hasattr(self, 'behavior') and hasattr(self.behavior, '_lock'):
-                        self.behavior._lock = threading.RLock()  # terminate 后原锁可能随线程死锁，重建一把
-                        logger.warning(f"[PetAgent] behavior._lock rebuilt after thread terminate")
-            except RuntimeError:
-                pass
+            old_thread.quit()
+            # 给旧线程一个短等待窗口（最多 1s），超时不强杀，让其自然退出
+            for _ in range(20):
+                if not old_thread.isRunning():
+                    break
+                QThread.msleep(50)
+            if old_thread.isRunning():
+                logger.warning(f"[{ts}] [PetAgent] old brain thread still running after cancel, continue anyway")
         if old_thread is not None:
             try:
                 old_thread.finished.disconnect()

@@ -3,11 +3,13 @@
 import logging
 import sqlite3
 import threading
+import time
 from dataclasses import dataclass
 from typing import Optional
 
 from PySide6.QtCore import QObject, Signal
 
+from pet.config import config
 from pet.db import get_db_path
 
 logger = logging.getLogger(__name__)
@@ -25,6 +27,21 @@ class MoodThresholds:
     sanity_mad: float = 10.0
 
 
+@dataclass(frozen=True)
+class MoodDecayConfig:
+    """心理数值自然衰减配置（slow tick 周期性调用）。
+
+    joy/affection 采用"回归基线"机制：高于基线向下移、低于基线向上移，
+    步长为对应 per_tick 速率。sanity 不参与自然衰减（完全由事件/行为/LLM 驱动）。
+    """
+    joy_baseline: float = 50.0
+    joy_per_tick: float = 1.5
+    affection_baseline: float = 60.0
+    affection_per_tick: float = 0.8
+    grace_seconds: float = 600.0        # 互动后免衰减秒数
+    enabled: bool = True
+
+
 
 class Mood(QObject):
     """心理数值系统"""
@@ -39,9 +56,19 @@ class Mood(QObject):
     mood_recovered      = Signal()
 
     def __init__(self, db_path: Optional[str] = None,
-                 thresholds: Optional[MoodThresholds] = None, parent=None):
+                 thresholds: Optional[MoodThresholds] = None,
+                 decay: Optional[MoodDecayConfig] = None, parent=None):
         super().__init__(parent)
         self._thresholds = thresholds or MoodThresholds()
+        self._decay = decay or MoodDecayConfig(
+            enabled=config.MOOD_DECAY_ENABLED,
+            joy_baseline=config.MOOD_JOY_BASELINE,
+            joy_per_tick=config.MOOD_JOY_DECAY_PER_TICK,
+            affection_baseline=config.MOOD_AFFECTION_BASELINE,
+            affection_per_tick=config.MOOD_AFFECTION_DECAY_PER_TICK,
+            grace_seconds=config.MOOD_GRACE_SECONDS,
+        )
+        self._last_activity_ts: float = 0.0  # 最近一次互动时间（防抖）
 
         # SQLite 持久化
         self._db_path = db_path or _DB_PATH
@@ -185,6 +212,7 @@ class Mood(QObject):
         delta = max(-self._DELTA_MAX, min(self._DELTA_MAX, delta))
         old = self._affection
         self._affection = max(0.0, min(100.0, self._affection + delta))
+        self._touch_activity()
         logger.info(f"[Mood] 好感度 {delta:+.1f} ({old:.1f}→{self._affection:.1f})")
         if delta > 0:
             self.affection_increased.emit()
@@ -193,24 +221,71 @@ class Mood(QObject):
         delta = max(-self._DELTA_MAX, min(self._DELTA_MAX, delta))
         old = self._joy
         self._joy = max(0.0, min(100.0, self._joy + delta))
+        self._touch_activity()
         logger.info(f"[Mood] 愉悦度 {delta:+.1f} ({old:.1f}→{self._joy:.1f})")
 
     def modify_sanity(self, delta: float):
         old = self._sanity
         self._sanity = max(0.0, min(100.0, self._sanity + delta))
+        self._touch_activity()
         logger.info(f"[Mood] 理智值 {delta:+.1f} ({old:.1f}→{self._sanity:.1f})")
 
     def set_affection(self, value: float):
         self._affection = max(0.0, min(100.0, value))
+        self._touch_activity()
         logger.info(f"[Mood] 好感度 直接设置 → {self._affection:.1f}")
 
     def set_joy(self, value: float):
         self._joy = max(0.0, min(100.0, value))
+        self._touch_activity()
         logger.info(f"[Mood] 愉悦度 直接设置 → {self._joy:.1f}")
 
     def set_sanity(self, value: float):
         self._sanity = max(0.0, min(100.0, value))
+        self._touch_activity()
         logger.info(f"[Mood] 理智值 直接设置 → {self._sanity:.1f}")
+
+    def _touch_activity(self):
+        """标记互动时间，重置衰减防抖窗口。"""
+        self._last_activity_ts = time.monotonic()
+
+    def apply_decay(self):
+        """按衰减配置向基线回归（愉悦/好感），理智不随时间衰减"""
+        if not self._decay.enabled:
+            return
+        now = time.monotonic()
+        if now - self._last_activity_ts < self._decay.grace_seconds:
+            return
+
+        changed = False
+        # 愉悦度：向基线回归
+        joy_new = self._decay_to(self._joy, self._decay.joy_baseline,
+                                 self._decay.joy_per_tick)
+        if abs(joy_new - self._joy) > 1e-9:
+            self._joy = joy_new
+            changed = True
+            logger.info(f"[Mood] 愉悦度自然回归 → {self._joy:.1f}")
+
+        # 好感度：向基线回归
+        aff_new = self._decay_to(self._affection, self._decay.affection_baseline,
+                                 self._decay.affection_per_tick)
+        if abs(aff_new - self._affection) > 1e-9:
+            self._affection = aff_new
+            changed = True
+            logger.info(f"[Mood] 好感度自然回归 → {self._affection:.1f}")
+
+        if changed:
+            self.save()
+            self.check_thresholds()
+
+    @staticmethod
+    def _decay_to(value: float, baseline: float, per_tick: float) -> float:
+        """向基线移动一步：高于基线减 per_tick，低于基线加 per_tick。"""
+        if value > baseline:
+            return max(baseline, value - per_tick)
+        if value < baseline:
+            return min(baseline, value + per_tick)
+        return value
 
     def _init_threshold_flags(self):
         """启动时根据当前数值设置防抖标记。"""
