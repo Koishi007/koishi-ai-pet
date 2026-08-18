@@ -785,6 +785,7 @@ class Behavior(BrainMixin):
                 tool_speech = args.pop("speech", None)
                 if tool_speech:
                     from pet.tools.context import TOOL_CTX
+                    logger.info(f"[Behavior] tool_call speech: {tool_speech}")
                     TOOL_CTX.speech(str(tool_speech))
                     TOOL_CTX.push_model_speech_pending()
                 try:
