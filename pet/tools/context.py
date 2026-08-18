@@ -36,8 +36,16 @@ class ToolContext:
         return True
 
     def speech(self, text: str, duration: int = 5000):
-        if self._check_agent():
-            self._agent.speak_requested.emit(text, duration)
+        if not self._check_agent():
+            return
+        self._agent.speak_requested.emit(text, duration)
+        # 写入对话历史（含 tool_call 自带 speech），失败不影响播出
+        store = getattr(self._agent, "conversation_store", None)
+        if store is not None:
+            try:
+                store.add("pet", text)
+            except Exception:
+                pass
 
     def speech_random(self, texts: list[str], duration: int = 3000):
         """随机选择一条台词发射；模型已在 tool_call 里带 speech 时跳过（避免两句）。"""
