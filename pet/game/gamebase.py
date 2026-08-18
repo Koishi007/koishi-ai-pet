@@ -1,8 +1,16 @@
 """Game 基类"""
 
 import logging
+import random
+
+from pet.tools.context import TOOL_CTX
 
 logger = logging.getLogger(__name__)
+
+# 回合进行中的默认台词（依据 result 字段拼装）
+_WIN_SPEECH = ["赢啦！", "猜中了，耶！", "太好啦，我猜中啦！", "哈哈哈我太聪明了"]
+_LOSE_SPEECH = ["没猜中…", "呜呜，差一点", "下次一定行！", "好可惜，答案不是这个"]
+_STOP_SPEECH = ["不玩了不玩了", "今天先到这吧", "换个心情，不玩啦"]
 
 
 class Game:
@@ -69,6 +77,7 @@ class GameBase:
             self._sessions.pop(game_name, None)
         result.setdefault("success", True)
         result.setdefault("game_name", game_name)
+        self._emit_speech(result)
         return result
 
     def stop(self, game_name: str) -> dict:
@@ -79,11 +88,28 @@ class GameBase:
                 "ended": True,
             }
         self._sessions.pop(game_name)
+        TOOL_CTX.speech(random.choice(_STOP_SPEECH))
         return {
             "summary": f"已结束 {game_name} 游戏",
             "success": True,
             "ended": True,
         }
+
+    def _emit_speech(self, result: dict):
+        """根据回合结果输出桌宠台词（模型可能不输出 Speech，需补台词的辨别感）。"""
+        speech = result.pop("speech", None)
+        if speech:
+            TOOL_CTX.speech(speech)
+            return
+        ended = result.get("ended")
+        if ended and result.get("won"):
+            TOOL_CTX.speech(random.choice(_WIN_SPEECH))
+        elif ended and result.get("won") is False:
+            TOOL_CTX.speech(random.choice(_LOSE_SPEECH))
+        elif result.get("result"):
+            TOOL_CTX.speech(f"嗯…{result['result']}了")
+        elif result.get("summary"):
+            TOOL_CTX.speech(result["summary"])
 
 
 GAME = GameBase()
