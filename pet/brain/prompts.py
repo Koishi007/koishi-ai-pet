@@ -1,4 +1,4 @@
-"""系统提示词分层组装"""
+﻿"""系统提示词分层组装"""
 
 from pet.action.registry import generate_action_section, target_sequence_duration, min_action_count, default_duration
 from pet.config import config
@@ -64,9 +64,9 @@ _FOOD_GUIDE = """[状态] 觅食（桌宠自娱小游戏）
 - 走到/跳到食物附近会自动开吃，不用再做别的；没吃到（比如撞到屏幕边缘或跳早了）就继续，可以多试几次
 - 吃到了用 Vitals: satiety+N 反映饱食度变化"""
 
-_TOOL_SPEECH_GUIDE = ("调用工具时，如果想说话，在工具参数里加 speech 字段，"
-                      "这句话会在工具执行时替你播出；"
-                      "若本次已在工具 speech 里说过，最终输出的 Speech 就不要重复相同内容（可以补充新的话或省略）")
+_TOOL_SPEECH_GUIDE = ("调用工具时，可以配合Speech字段来表现地言行统一；"
+                      "这句话会在工具执行时输出给用户；"
+                      "工具调用时的Speech仅作为辅助让用户理解你正在行动，最终输出的Speech才是本轮主要语句输出")
 
 _EMOTION_LIST = "happy, excited, sad, angry, surprised, thinking, sleepy, love, cool, shy, scared, hungry, curious, proud, bored, crazy"
 
