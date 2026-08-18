@@ -64,6 +64,8 @@ _FOOD_GUIDE = """[状态] 觅食（桌宠自娱小游戏）
 - 走到/跳到食物附近会自动开吃，不用再做别的；没吃到（比如撞到屏幕边缘或跳早了）就继续，可以多试几次
 - 吃到了用 Vitals: satiety+N 反映饱食度变化"""
 
+_TOOL_SPEECH_GUIDE = ("调用工具时，如果想说话，在工具参数里加 speech 字段")
+
 _EMOTION_LIST = "happy, excited, sad, angry, surprised, thinking, sleepy, love, cool, shy, scared, hungry, curious, proud, bored, crazy"
 
 
@@ -125,7 +127,7 @@ def _autonomous_task() -> list[str]:
         "7. 按[记忆]判断是否输出 Memory 行；心理无变化时省略 Mood 行",
     ]
 
-    guides = [_MOOD_GUIDE]
+    guides = [_MOOD_GUIDE, _TOOL_SPEECH_GUIDE]
     if config.FOOD_ENABLED:
         guides.append(_FOOD_GUIDE)
     return [format_guide] + constraints + guides
@@ -159,7 +161,7 @@ def _chat_task() -> list[str]:
         "8. 按[记忆]判断是否输出 Memory 行；心理无变化时省略 Mood 行",
     ]
 
-    guides = [_MOOD_GUIDE]
+    guides = [_MOOD_GUIDE, _TOOL_SPEECH_GUIDE]
     if config.FOOD_ENABLED:
         guides.append(_FOOD_GUIDE)
     return [format_guide] + constraints + guides
