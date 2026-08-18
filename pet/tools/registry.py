@@ -209,6 +209,8 @@ class ToolRegistry:
             description=(
                 "玩一回合游戏：传 game_name 和该游戏需要的动作参数（如猜数字的 number），"
                 "返回本回合结果。结束（ended=True）前可反复调用；结束时会自动结算。"
+                "你可以在一次输出里连续调用多次 game__play（把每次的猜测当作一次调用），"
+                "直到某次返回 ended=True 就不要再调用了。"
             ),
             handler=self._game_play,
             args={
