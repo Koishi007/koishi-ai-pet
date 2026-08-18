@@ -10,6 +10,9 @@ class GuessNumberGame(Game):
 
     RANGE_MIN, RANGE_MAX = 1, 100
     MAX_GUESSES = 7
+    _WIN_SPEECH = ["赢了…嘿嘿", "猜中了…", "我猜中了…"]
+    _LOSE_SPEECH = ["没猜中…", "呜呜，差一点", "下次一定行…", "好可惜，答案不是这个…"]
+    _STOP_SPEECH = ["不玩了…", "今天先到这吧…", "不好玩…"]
 
     def name(self) -> str:
         return "guess_number"
@@ -61,3 +64,12 @@ class GuessNumberGame(Game):
             "guesses_left": left,
             "speech": f"我猜 {number}！{hint}，还有 {left} 次机会",
         }
+
+    def win_speech(self) -> str | None:
+        return random.choice(self._WIN_SPEECH)
+
+    def lose_speech(self) -> str | None:
+        return random.choice(self._LOSE_SPEECH)
+
+    def stop_speech(self) -> str | None:
+        return random.choice(self._STOP_SPEECH)
