@@ -80,7 +80,7 @@ class ToolExecutor:
                 raise box["error"]
 
             data = box.get("data")
-            logger.info(f"[ToolExecutor] {call.name} -> {str(data)[:100]}")
+            logger.info(f"[ToolExecutor] {call.name} -> {str(data)}")
             image_b64 = None
             image_mime = "image/png"
             context_brief = ""
