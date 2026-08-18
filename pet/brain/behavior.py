@@ -703,10 +703,11 @@ class Behavior(BrainMixin):
                 args.append(token)
         return ActionStep(name, tuple(args), kwargs)
 
-    # 元工具（工具发现/觅食类）不消耗实际工具调用轮次
+    # 元工具（工具发现/觅食/游戏类）不消耗实际工具调用轮次
     _META_TOOL_NAMES = frozenset({
         "tool_search__search", "tool_search__list_groups",
         "food__spawn", "food__status",
+        "game__list", "game__play", "game__stop",
     })
     _META_TOOL_MAX_ROUNDS = 10  # 元工具调用安全上限，防止死循环
 

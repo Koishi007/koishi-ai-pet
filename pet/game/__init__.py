@@ -1,1 +1,5 @@
-"""game 包 — 桌宠自娱消遣游戏系统（joy 驱动，可选娱乐）。当前为空，等待接入。"""
+"""game"""
+
+from pet.game.gamebase import GAME, Game, GameBase
+
+__all__ = ["GAME", "Game", "GameBase"]

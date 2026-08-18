@@ -147,6 +147,8 @@ class ToolRegistry:
         # 觅食工具
         if config.FOOD_ENABLED:
             self._register_food_tools()
+        # 游戏管理工具
+        self._register_game_tools()
 
     def _register_food_tools(self):
         """注册觅食工具（FOOD_ENABLED=True 时调用）。"""
@@ -188,6 +190,70 @@ class ToolRegistry:
         """food__status 工具实现（懒 import，避免注册表依赖行为层）。"""
         from pet.food.food import FOOD
         return FOOD.status()
+
+    def _register_game_tools(self):
+        """注册游戏元工具：回合制游戏，模型通过 game__play 连续调用游玩。"""
+        self.register("game", "游戏：玩回合制小游戏，如猜数字",
+                      group="default", meta=True)
+        self.add_method(
+            tool_name="game",
+            method_name="list",
+            description=(
+                "列出当前可玩的游戏及规则。想玩游戏时先调用此方法了解可选游戏。"
+            ),
+            handler=self._game_list,
+        )
+        self.add_method(
+            tool_name="game",
+            method_name="play",
+            description=(
+                "玩一回合游戏：传 game_name 和该游戏需要的动作参数（如猜数字的 number），"
+                "返回本回合结果。结束（ended=True）前可反复调用；结束时会自动结算。"
+            ),
+            handler=self._game_play,
+            args={
+                "game_name": {
+                    "type": "str",
+                    "required": True,
+                    "description": "游戏名（先调用 game__list 查看）",
+                },
+                "number": {
+                    "type": "int",
+                    "required": False,
+                    "description": "猜数字时传你猜的数",
+                },
+            },
+        )
+        self.add_method(
+            tool_name="game",
+            method_name="stop",
+            description=(
+                "主动结束某个进行中的游戏。游戏自然结束后无需调用。"
+            ),
+            handler=self._game_stop,
+            args={
+                "game_name": {
+                    "type": "str",
+                    "required": True,
+                    "description": "要结束的游戏名",
+                },
+            },
+        )
+
+    def _game_list(self) -> dict:
+        """game__list 工具实现（懒 import，避免注册表依赖游戏层）。"""
+        from pet.game.gamebase import GAME
+        return GAME.list_games()
+
+    def _game_play(self, game_name: str, **params) -> dict:
+        """game__play 工具实现。"""
+        from pet.game.gamebase import GAME
+        return GAME.play(game_name, **params)
+
+    def _game_stop(self, game_name: str) -> dict:
+        """game__stop 工具实现。"""
+        from pet.game.gamebase import GAME
+        return GAME.stop(game_name)
 
     def _tool_search_list_groups(self) -> dict:
         groups = []
