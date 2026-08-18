@@ -786,8 +786,14 @@ class Behavior(BrainMixin):
                 if tool_speech:
                     from pet.tools.context import TOOL_CTX
                     TOOL_CTX.speech(str(tool_speech))
-                call = ToolCall(name=tc["name"], args=args)
-                result = executor._execute_one(call)
+                    TOOL_CTX.push_model_speech_pending()
+                try:
+                    call = ToolCall(name=tc["name"], args=args)
+                    result = executor._execute_one(call)
+                finally:
+                    if tool_speech:
+                        from pet.tools.context import TOOL_CTX
+                        TOOL_CTX.pop_model_speech_pending()
                 # 在 _normalize 之前提取摘要（_normalize 会 pop summary）
                 tool_brief = ""
                 if result.success and isinstance(result.data, dict):

@@ -62,7 +62,6 @@ class GuessNumberGame(Game):
             "ended": False,
             "result": hint,
             "guesses_left": left,
-            "speech": f"我猜 {number}！{hint}，还有 {left} 次机会",
         }
 
     def win_speech(self) -> str | None:

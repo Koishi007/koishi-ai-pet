@@ -95,6 +95,12 @@ class GameBase:
                 "ended": True,
             }
         self._sessions.pop(game_name)
+        if TOOL_CTX.is_model_speech_pending():
+            return {
+                "summary": f"已结束 {game_name} 游戏",
+                "success": True,
+                "ended": True,
+            }
         game = self._games.get(game_name)
         speech = game.stop_speech() if game else None
         if not speech:
@@ -107,8 +113,13 @@ class GameBase:
         }
 
     def _emit_speech(self, game: Game, result: dict):
-        """按优先级输出桌宠台词：结果自带 speech → 游戏钩子 → summary 兜底。"""
+        """按优先级输出桌宠台词：结果自带 speech → 游戏钩子 → summary 兜底。
+
+        模型已在 tool_call 里带 speech（由 _exec_tool 播出）时跳过，避免播两句。
+        """
         speech = result.pop("speech", None)
+        if TOOL_CTX.is_model_speech_pending():
+            return
         if not speech:
             ended = result.get("ended")
             if ended and result.get("won"):
