@@ -781,6 +781,11 @@ class Behavior(BrainMixin):
                     args = _json.loads(tc["arguments"] or "{}")
                 except _json.JSONDecodeError:
                     args = {}
+                # 通用 speech 参数：模型调用工具时可带台词，播出后不传给 handler
+                tool_speech = args.pop("speech", None)
+                if tool_speech:
+                    from pet.tools.context import TOOL_CTX
+                    TOOL_CTX.speech(str(tool_speech))
                 call = ToolCall(name=tc["name"], args=args)
                 result = executor._execute_one(call)
                 # 在 _normalize 之前提取摘要（_normalize 会 pop summary）
