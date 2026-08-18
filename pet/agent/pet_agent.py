@@ -439,10 +439,12 @@ class PetAgent(QObject):
                 pass
 
         if hasattr(result, 'memory_line') and result.memory_line:
-            try:
-                self.memory_store.save_from_line(result.memory_line)
-            except Exception as e:
-                logger.warning(f"[PetAgent] memory save failed: {e}")
+            # 保存含 embedding 网络调用，放后台线程避免阻塞主线程 UI
+            threading.Thread(
+                target=self._save_memory_line,
+                args=(result.memory_line,),
+                daemon=True,
+            ).start()
         if hasattr(result, 'mood_deltas') and result.mood_deltas:
             try:
                 for key, delta in result.mood_deltas.items():
@@ -463,7 +465,14 @@ class PetAgent(QObject):
         # 工具动态激活：每次互动结束重置
         self.behavior.reset_active_tool_groups()
         threading.Thread(target=self.behavior._flush_pending_summaries, daemon=True).start()
-        
+
+    def _save_memory_line(self, line: str):
+        """后台线程保存记忆（含 embedding 网络调用）。"""
+        try:
+            self.memory_store.save_from_line(line)
+        except Exception as e:
+            logger.warning(f"[PetAgent] memory save failed: {e}")
+
     def _on_brain_error(self, msg: str):
         self._stop_loading()
         from pet.agent.state import PetState
