@@ -709,7 +709,7 @@ class Behavior(BrainMixin):
         "food__spawn", "food__status",
         "game__list", "game__play", "game__stop",
     })
-    _META_TOOL_MAX_ROUNDS = 10  # 元工具调用安全上限，防止死循环
+    _META_TOOL_MAX_ROUNDS = 20  # 元工具调用安全上限
 
     def _handle_tool_calls(self, messages, tool_calls_map, first_content,
                             on_chunk=None, on_stream_end=None, tag="",
