@@ -25,6 +25,10 @@ class Game:
         """初始化会话状态（首次 play 时创建）。"""
         return {}
 
+    def args_schema(self) -> dict:
+        """本游戏 play 所需的参数 schema（格式同工具 args：{参数名: {type, required, description}}）。"""
+        return {}
+
     def play(self, state: dict, **params) -> dict:
         """推进一回合，返回结果 dict（含 ended 标记）。"""
         raise NotImplementedError
@@ -57,6 +61,22 @@ class GameBase:
             "success": True,
             "games": games,
         }
+
+    def play_args_schema(self) -> dict:
+        """合并所有游戏的 play 参数 schema（供 game__play 工具动态生成）。"""
+        schema: dict = {
+            "game_name": {
+                "type": "str",
+                "required": True,
+                "description": "想玩的游戏名",
+            },
+        }
+        if self._games:
+            schema["game_name"]["enum"] = list(self._games)
+        for game in self._games.values():
+            for arg_name, spec in game.args_schema().items():
+                schema[arg_name] = spec
+        return schema
 
     def play(self, game_name: str, **params) -> dict:
         game = self._games.get(game_name)

@@ -31,6 +31,15 @@ class GuessNumberGame(Game):
             "max": self.MAX_GUESSES,
         }
 
+    def args_schema(self) -> dict:
+        return {
+            "number": {
+                "type": "int",
+                "required": True,
+                "description": f"你猜的数字（{self.RANGE_MIN}-{self.RANGE_MAX} 之间）",
+            },
+        }
+
     def play(self, state: dict, **params) -> dict:
         number = params.get("number")
         if not isinstance(number, int) or not (self.RANGE_MIN <= number <= self.RANGE_MAX):

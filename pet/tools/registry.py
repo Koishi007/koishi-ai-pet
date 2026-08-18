@@ -207,24 +207,12 @@ class ToolRegistry:
             tool_name="game",
             method_name="play",
             description=(
-                "玩一回合游戏：传 game_name 和该游戏需要的动作参数（如猜数字的 number），"
-                "返回本回合结果。结束（ended=True）前可反复调用；结束时会自动结算。"
-                "你可以在一次输出里连续调用多次 game__play（把每次的猜测当作一次调用），"
-                "直到某次返回 ended=True 就不要再调用了。"
+                "玩一回合游戏：传 game_name 和该游戏需要的动作参数（参数因游戏而异，"
+                "见 game_name 枚举及参数说明），返回本回合结果。结束（ended=True）前可反复调用；"
+                "结束时会自动结算。你可以在一次输出里连续调用多次 game__play，"
+                "根据每次返回结果继续，直到某次返回 ended=True。"
             ),
             handler=self._game_play,
-            args={
-                "game_name": {
-                    "type": "str",
-                    "required": True,
-                    "description": "游戏名（先调用 game__list 查看）",
-                },
-                "number": {
-                    "type": "int",
-                    "required": False,
-                    "description": "猜数字时传你猜的数",
-                },
-            },
         )
         self.add_method(
             tool_name="game",
@@ -256,6 +244,15 @@ class ToolRegistry:
         """game__stop 工具实现。"""
         from pet.game.gamebase import GAME
         return GAME.stop(game_name)
+
+    def _refresh_game_play_args(self):
+        """每次生成工具列表前，用当前已注册游戏动态刷新 game__play 的参数 schema。"""
+        tool = self._tools.get("game")
+        method = tool.methods.get("play") if tool else None
+        if method is None:
+            return
+        from pet.game.gamebase import GAME
+        method.args = GAME.play_args_schema()
 
     def _tool_search_list_groups(self) -> dict:
         groups = []
@@ -325,6 +322,7 @@ class ToolRegistry:
         Args:
             groups: 指定分组集合，None 表示返回全部已启用工具。
         """
+        self._refresh_game_play_args()
         tools = []
         for tool in self.enabled_tools:
             if groups is not None and tool.group not in groups:
