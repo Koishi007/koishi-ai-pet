@@ -133,13 +133,26 @@ def main():
     music_bubble = MusicBubble(window)
     window.set_music_bubble(music_bubble)
 
-    # 游戏棋盘面板：由 game__play 跨线程驱动渲染，点击格子提交落子
-    from pet.ui.game_board import GameBoardPanel
-    game_board_panel = GameBoardPanel()
+    # 游戏面板：由 game__play 跨线程驱动渲染
+    from pet.ui.tic_tac_toe_panel import TicTacToePanel
+    from pet.ui.rps_panel import RpsPanel
+    game_board_panel = TicTacToePanel()
     game_board_panel.set_pet_window(window)
-    agent.game_board_requested.connect(game_board_panel.render)
-    # 脑线程运行中暂停棋盘闲置收场，避免模型慢响应被 30s 定时器误关
+    rps_panel = RpsPanel()
+    rps_panel.set_pet_window(window)
+    # 统一分发：按游戏名路由到对应面板，新游戏只需在此加一行映射
+    _game_panel_handlers = {
+        "tic_tac_toe": game_board_panel.render,
+        "rps": rps_panel.render,
+    }
+    def _dispatch_game_board(game_name, payload):
+        handler = _game_panel_handlers.get(game_name)
+        if handler is not None:
+            handler(game_name, payload)
+    agent.game_board_requested.connect(_dispatch_game_board)
+    # 脑线程运行中暂停面板闲置收场，避免模型慢响应被 30s 定时器误关
     agent.llm_loading.connect(game_board_panel.set_llm_loading)
+    agent.llm_loading.connect(rps_panel.set_llm_loading)
 
     agent.action_requested.connect(window.queue_enqueue_action)
     agent.emotion_requested.connect(

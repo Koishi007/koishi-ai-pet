@@ -69,8 +69,8 @@ class GameBase:
             "games": games,
         }
 
-    def submit_move(self, game_name: str, row: int, col: int) -> bool:
-        """UI 线程调用：提交玩家落子并唤醒等待中的 play。
+    def submit(self, game_name: str, payload: dict) -> bool:
+        """UI 线程调用：提交玩家动作（任意 dict）并唤醒等待中的 play。
 
         线程安全：dict 写入在 GIL 下原子完成，wait_event.set() 唤醒脑线程。
         仅当游戏会话存在、且当前正处于等待玩家动作时生效。
@@ -84,24 +84,37 @@ class GameBase:
         with state["move_lock"]:
             if state.get("pending_move") is not None:
                 return False
-            state["pending_move"] = {"row": row, "col": col}
+            state["pending_move"] = payload
         ev.set()
         return True
+
+    def submit_move(self, game_name: str, row: int, col: int) -> bool:
+        """UI 线程调用：提交玩家落子并唤醒等待中的 play（井字棋专用）。"""
+        return self.submit(game_name, {"row": row, "col": col})
 
     def cancel_all(self):
         """程序退出/丢弃旧脑线程时取消所有进行中的会话，唤醒等待中的 play。
 
-        遍历用 list() 副本，避免 UI 线程并发 pop 导致迭代时字典变更异常。
+        遍历用 list() 副本，避免 UI 线程并发 pop 导致迭代时字典变更异常；
+        同时隐藏对应游戏面板，避免残留 UI。
         """
         for name, state in list(self._sessions.items()):
             state["_cancelled"] = True
             ev = state.get("wait_event")
             if ev is not None:
                 ev.set()
+            try:
+                TOOL_CTX.hide_game_board(name)
+            except Exception:
+                pass
         self._sessions.clear()
 
     def play_args_schema(self) -> dict:
-        """合并所有游戏的 play 参数 schema（供 game__play 工具动态生成）。"""
+        """合并所有游戏的 play 参数 schema（供 game__play 工具动态生成）。
+
+        各游戏可能有互斥的必填参数（如猜数字 number 与猜拳 pet_move），
+        平铺合并后无法同时满足 required，故统一降级为可选，由各游戏 play 内部自行校验缺失。
+        """
         schema: dict = {
             "game_name": {
                 "type": "str",
@@ -113,7 +126,10 @@ class GameBase:
             schema["game_name"]["enum"] = list(self._games)
         for game in self._games.values():
             for arg_name, spec in game.args_schema().items():
-                schema[arg_name] = spec
+                merged = dict(spec)
+                merged["required"] = False  # 合并后必填参数互斥，统一降级由 play 内校验
+                merged["description"] = f"[仅 {game.name()} 需要] {spec.get('description', '')}"
+                schema[arg_name] = merged
         return schema
 
     def play(self, game_name: str, **params) -> dict:
