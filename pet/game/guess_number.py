@@ -6,7 +6,7 @@ from pet.game.gamebase import Game
 
 
 class GuessNumberGame(Game):
-    """每次传 number 猜一个数，反馈大了/小了，7 次内猜中算赢。"""
+    """每次传 guess 猜一个数，反馈大了/小了，7 次内猜中算赢。"""
 
     RANGE_MIN, RANGE_MAX = 1, 100
     MAX_GUESSES = 7
@@ -20,7 +20,7 @@ class GuessNumberGame(Game):
     def description(self) -> str:
         return (
             f"猜数字：我心里想了一个 {self.RANGE_MIN}-{self.RANGE_MAX} 的数字，"
-            f"每次传 number 猜一个数，我会告诉你大了还是小了，"
+            f"每次传 guess 猜一个数，我会告诉你大了还是小了，"
             f"{self.MAX_GUESSES} 次内猜中算赢。"
         )
 
@@ -33,7 +33,7 @@ class GuessNumberGame(Game):
 
     def args_schema(self) -> dict:
         return {
-            "number": {
+            "guess": {
                 "type": "int",
                 "required": True,
                 "description": f"你猜的数字（{self.RANGE_MIN}-{self.RANGE_MAX} 之间）",
@@ -41,10 +41,10 @@ class GuessNumberGame(Game):
         }
 
     def play(self, state: dict, **params) -> dict:
-        number = params.get("number")
+        number = params.get("guess")
         if not isinstance(number, int) or not (self.RANGE_MIN <= number <= self.RANGE_MAX):
             return {
-                "summary": f"请传一个 {self.RANGE_MIN}-{self.RANGE_MAX} 之间的整数 number",
+                "summary": f"请传一个 {self.RANGE_MIN}-{self.RANGE_MAX} 之间的整数 guess",
                 "ended": False,
             }
         state["guesses"] += 1

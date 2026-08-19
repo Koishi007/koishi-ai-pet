@@ -120,7 +120,7 @@ class TicTacToePanel(GamePanelBase):
             return
         if self._board[r][c]:
             return
-        if GAME.submit_move(self._game_name, r, c):
+        if GAME.submit(self._game_name, {"row": r, "col": c}):
             self._waiting = False
             self._countdown_timer.stop()
             self._idle_timer.stop()

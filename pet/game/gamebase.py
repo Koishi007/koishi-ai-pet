@@ -88,9 +88,15 @@ class GameBase:
         ev.set()
         return True
 
-    def submit_move(self, game_name: str, row: int, col: int) -> bool:
-        """UI 线程调用：提交玩家落子并唤醒等待中的 play（井字棋专用）。"""
-        return self.submit(game_name, {"row": row, "col": col})
+    def _arg_owners(self) -> dict[str, str]:
+        """参数名 → 所属游戏名 的映射（参数名全局唯一，用于归属校验）。"""
+        owners = {}
+        for game in self._games.values():
+            for arg in game.args_schema():
+                if arg in owners:
+                    logger.warning(f"[Game] 参数名 {arg} 同时被 {owners[arg]} 与 {game.name()} 声明，归属校验将以后者为准")
+                owners[arg] = game.name()
+        return owners
 
     def cancel_all(self):
         """程序退出/丢弃旧脑线程时取消所有进行中的会话，唤醒等待中的 play。
@@ -109,10 +115,14 @@ class GameBase:
                 pass
         self._sessions.clear()
 
+    def names(self) -> list[str]:
+        """已注册的游戏名列表。"""
+        return list(self._games)
+
     def play_args_schema(self) -> dict:
         """合并所有游戏的 play 参数 schema（供 game__play 工具动态生成）。
 
-        各游戏可能有互斥的必填参数（如猜数字 number 与猜拳 pet_move），
+        各游戏可能有互斥的必填参数（如猜数字 guess 与猜拳 rps_move），
         平铺合并后无法同时满足 required，故统一降级为可选，由各游戏 play 内部自行校验缺失。
         """
         schema: dict = {
@@ -132,6 +142,40 @@ class GameBase:
                 schema[arg_name] = merged
         return schema
 
+    def start(self, game_name: str) -> dict:
+        """显式开启（或重新开始）一局游戏，创建全新会话。
+
+        所有游戏必须先调用 game__start 再 game__play；上次会话（如有）被强制丢弃，
+        并清理旧对局残留面板。返回结果带 ended=False 表示对局已就绪。
+        """
+        game = self._games.get(game_name)
+        if game is None:
+            return {
+                "summary": f"没有叫 {game_name} 的游戏，可玩：{', '.join(self._games) or '无'}",
+                "success": False,
+                "ended": True,
+            }
+        old = self._sessions.pop(game_name, None)
+        if old is not None:
+            # 取消并唤醒可能仍阻塞在等待中的旧 play，
+            # 否则旧 play 超时返回后会按名误删刚创建的新会话
+            old["_cancelled"] = True
+            ev = old.get("wait_event")
+            if ev is not None:
+                ev.set()
+        state = game.new_state()
+        state["last_active"] = time.time()
+        self._sessions[game_name] = state
+        try:
+            TOOL_CTX.hide_game_board(game_name)  # 清掉旧对局残留面板
+        except Exception:
+            pass
+        return {
+            "summary": f"已开始 {game_name} 游戏，现在可以调用 game__play 推进了",
+            "success": True,
+            "ended": False,
+        }
+
     def play(self, game_name: str, **params) -> dict:
         game = self._games.get(game_name)
         if game is None:
@@ -140,20 +184,37 @@ class GameBase:
                 "success": False,
                 "ended": True,
             }
+        # 参数归属校验：传入的参数必须属于该游戏，避免模型把别家参数传过来
+        # 参数名全局唯一（guess/ttt_move/rps_move），通过 参数名→游戏 映射判定
+        owners = self._arg_owners()
+        game_args = sorted(game.args_schema())
+        unknown = [k for k in params if owners.get(k) != game_name]
+        if unknown:
+            return {
+                "summary": f"参数 {', '.join(unknown)} 不属于 {game_name}，"
+                           f"{game_name} 需要的参数：{', '.join(game_args) or '无'}",
+                "success": False,
+                "ended": False,  # 本回合未执行，游戏状态不变，模型可纠正后重试
+            }
         state = self._sessions.get(game_name)
         if state is not None and time.time() - state.get("last_active", 0) > self.SESSION_TTL:
-            # 会话闲置超时（如模型提前退出未结束），丢弃旧状态重新开局
-            logger.info(f"[Game] {game_name} session expired after {self.SESSION_TTL}s, restart")
+            # 会话闲置超时（如模型提前退出未结束），视为已结束
+            logger.info(f"[Game] {game_name} session expired after {self.SESSION_TTL}s")
             self._sessions.pop(game_name, None)
             state = None
         if state is None:
-            state = game.new_state()
-            self._sessions[game_name] = state
+            # 未开始或已结束：要求显式 game__start，避免模型误以为可续局/静默重开
+            return {
+                "summary": f"{game_name} 游戏未开始或已结束，请先调用 game__start(game_name=\"{game_name}\") 开启新对局",
+                "success": False,
+                "ended": True,
+            }
         state["last_active"] = time.time()
         # 预检：会话已被外部取消（用户点×/stop/换脑线程）但 play 尚未退出。
         # 直接短路结束并弹会话，避免模型下一轮取到僵尸 session 重新弹面板/继续对局。
         if state.get("_cancelled"):
-            self._sessions.pop(game_name, None)
+            if self._sessions.get(game_name) is state:
+                self._sessions.pop(game_name, None)
             try:
                 TOOL_CTX.hide_game_board(game_name)
             except Exception:
@@ -180,13 +241,14 @@ class GameBase:
             result = game.play(state, **params)
         except Exception as e:
             logger.exception(f"[Game] {game_name} play error: {e}")
-            self._sessions.pop(game_name, None)
+            if self._sessions.get(game_name) is state:
+                self._sessions.pop(game_name, None)
             return {
                 "summary": f"游戏 {game_name} 出错了：{e}",
                 "success": False,
                 "ended": True,
             }
-        if result.get("ended"):
+        if result.get("ended") and self._sessions.get(game_name) is state:
             self._sessions.pop(game_name, None)
         result.setdefault("success", True)
         result.setdefault("game_name", game_name)

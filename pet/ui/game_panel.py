@@ -4,7 +4,7 @@
   - 覆写 TITLE / WIDTH / HEIGHT
   - 实现 _build_content(layout)：构建游戏特定 UI（须创建 self._message 供 render 更新）
   - 实现 _render_game(payload)：渲染游戏特定内容（waiting 已解析到 self._waiting）
-  - 实现用户交互（点击时调用 GAME.submit / GAME.submit_move 等）
+  - 实现用户交互（点击时调用 GAME.submit(game_name, payload)）
 
 render 是唯一入口，只做通用骨架（close/计时/闲置/定位），不包含任何具体游戏逻辑。
 """

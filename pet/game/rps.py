@@ -1,6 +1,6 @@
 """猜拳游戏 — 石头剪刀布，三局两胜。
 
-桌宠通过 game__play 传 pet_move 先出拳，用户在猜拳面板上点击出拳；
+桌宠通过 game__play 传 rps_move 先出拳，用户在猜拳面板上点击出拳；
 平局重新出拳；超过 MOVE_TIMEOUT 秒未出拳判用户输。
 等待用户出拳时阻塞脑线程（event.wait），主线程 UI 不受影响。
 """
@@ -54,7 +54,7 @@ class RockPaperScissorsGame(Game):
 
     def args_schema(self) -> dict:
         return {
-            "pet_move": {
+            "rps_move": {
                 "type": "str",
                 "required": True,
                 "description": "桌宠本回合出的拳：rock（石头）/ paper（布）/ scissors（剪刀）；"
@@ -64,7 +64,7 @@ class RockPaperScissorsGame(Game):
         }
 
     def play(self, state: dict, **params) -> dict:
-        pet_move = params.get("pet_move")
+        pet_move = params.get("rps_move")
         if pet_move not in MOVES:
             return {
                 "summary": f"无效出拳 {pet_move!r}，请用 rock/paper/scissors",

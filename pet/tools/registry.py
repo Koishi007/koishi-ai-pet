@@ -205,11 +205,28 @@ class ToolRegistry:
         )
         self.add_method(
             tool_name="game",
+            method_name="start",
+            description=(
+                "开始（或重新开始）一局游戏：传 game_name 创建新对局。"
+                "所有游戏必须先调用 game__start 开启，再通过 game__play 推进；"
+                "游戏结束（ended=True）或返回『未开始/已结束』后，需要再次调用 game__start 才能开新局。"
+            ),
+            handler=self._game_start,
+            args={
+                "game_name": {
+                    "type": "str",
+                    "required": True,
+                    "description": "要开始/重新开始的游戏名",
+                },
+            },
+        )
+        self.add_method(
+            tool_name="game",
             method_name="play",
             description=(
-                "玩一回合游戏：传 game_name 和该游戏需要的动作参数（参数因游戏而异，"
-                "见 game_name 枚举及参数说明），返回本回合结果。游戏未结束（ended=False）前"
-                "必须继续调用 game__play 推进游戏，不要提前输出最终答复；"
+                "玩一回合游戏：需先调用 game__start 开启对局，再传 game_name 和该游戏需要的动作参数"
+                "（参数因游戏而异，见 game_name 枚举及参数说明），返回本回合结果。"
+                "游戏未结束（ended=False）前必须继续调用 game__play 推进游戏，不要提前输出最终答复；"
                 "结束（ended=True）时会自动结算，也可以主动调 game__stop 结束不想玩的游戏。"
                 "你可以在一次输出里连续调用多次 game__play，根据每次返回结果继续，直到某次返回 ended=True。"
             ),
@@ -241,19 +258,35 @@ class ToolRegistry:
         from pet.game.gamebase import GAME
         return GAME.play(game_name, **params)
 
+    def _game_start(self, game_name: str) -> dict:
+        """game__start 工具实现。"""
+        from pet.game.gamebase import GAME
+        return GAME.start(game_name)
+
     def _game_stop(self, game_name: str) -> dict:
         """game__stop 工具实现。"""
         from pet.game.gamebase import GAME
         return GAME.stop(game_name)
 
     def _refresh_game_play_args(self):
-        """每次生成工具列表前，用当前已注册游戏动态刷新 game__play 的参数 schema。"""
+        """每次生成工具列表前，用当前已注册游戏动态刷新 game__play/start 的参数 schema。"""
         tool = self._tools.get("game")
-        method = tool.methods.get("play") if tool else None
-        if method is None:
+        if tool is None:
             return
         from pet.game.gamebase import GAME
-        method.args = GAME.play_args_schema()
+        play = tool.methods.get("play")
+        if play is not None:
+            play.args = GAME.play_args_schema()
+        start = tool.methods.get("start")
+        if start is not None:
+            start.args = {
+                "game_name": {
+                    "type": "str",
+                    "required": True,
+                    "description": "要开始/重新开始的游戏名",
+                    "enum": GAME.names(),
+                },
+            }
 
     def _tool_search_list_groups(self) -> dict:
         groups = []

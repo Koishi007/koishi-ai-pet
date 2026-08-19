@@ -708,7 +708,7 @@ class Behavior(BrainMixin):
     _META_TOOL_NAMES = frozenset({
         "tool_search__search", "tool_search__list_groups",
         "food__spawn", "food__status",
-        "game__list", "game__play", "game__stop",
+        "game__list", "game__start", "game__play", "game__stop",
     })
     _META_TOOL_MAX_ROUNDS = 20  # 元工具调用安全上限
 
@@ -804,7 +804,13 @@ class Behavior(BrainMixin):
                 return idx, tc, result, tool_brief, result_text
 
             tool_results = {}
-            use_parallel = config.LLM_TOOL_PARALLEL and len(sorted_indices) > 1
+            # 游戏工具（game__*）有跨调用会话依赖（如 start 必须先于 play），
+            # 同轮并行会打乱执行顺序导致未开始/错乱，退化为串行按声明顺序执行
+            has_game_tool = any(
+                tool_calls_map[idx]["name"].startswith("game__")
+                for idx in sorted_indices
+            )
+            use_parallel = config.LLM_TOOL_PARALLEL and len(sorted_indices) > 1 and not has_game_tool
             if use_parallel:
                 import concurrent.futures
                 with concurrent.futures.ThreadPoolExecutor(max_workers=len(sorted_indices)) as pool:

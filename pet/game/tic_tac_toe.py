@@ -91,13 +91,13 @@ class TicTacToeGame(Game):
 
     def args_schema(self) -> dict:
         return {
-            "move": {
+            "ttt_move": {
                 "type": "str",
                 "required": False,
                 "description": (
                     "本回合桌宠落子的位置，用 A1~C3 格式（A 为行、1 为列），如 A1、B2、C3；"
                     "开局先后手随机（X 先手），你执 X 还是 O、是否先手，以首次 game__play 返回的 "
-                    "pet_mark/user_mark/first 字段为准；仅当轮到桌宠落子时才传 move，"
+                    "pet_mark/user_mark/first 字段为准；仅当轮到桌宠落子时才传 ttt_move，"
                     "用户落子通过棋盘面板点击完成，无需你传。"
                 ),
             },
@@ -122,19 +122,19 @@ class TicTacToeGame(Game):
 
         # 阶段 1：轮到桌宠时处理模型落子
         if state["turn"] == pet_mark:
-            if not params.get("move"):
+            if not params.get("ttt_move"):
                 return {
-                    "summary": _s("轮到桌宠（你）落子，请传 move 参数（A1~C3）。"),
+                    "summary": _s("轮到桌宠（你）落子，请传 ttt_move 参数（A1~C3）。"),
                     "ended": False,
                     "pet_mark": pet_mark,
                     "user_mark": user_mark,
                     "first": state["first"],
                     "board_text": _board_text(board),
                 }
-            pos = _POS_MAP.get(str(params["move"]).strip().upper())
+            pos = _POS_MAP.get(str(params["ttt_move"]).strip().upper())
             if pos is None:
                 return {
-                    "summary": _s(f"无效位置 {params['move']}，请用 A1~C3 格式"),
+                    "summary": _s(f"无效位置 {params['ttt_move']}，请用 A1~C3 格式"),
                     "ended": False,
                     "pet_mark": pet_mark,
                     "user_mark": user_mark,
@@ -144,7 +144,7 @@ class TicTacToeGame(Game):
             r, c = pos
             if board[r][c]:
                 return {
-                    "summary": _s(f"位置 {params['move']} 已经有子了，请换个位置"),
+                    "summary": _s(f"位置 {params['ttt_move']} 已经有子了，请换个位置"),
                     "ended": False,
                     "pet_mark": pet_mark,
                     "user_mark": user_mark,
@@ -157,7 +157,7 @@ class TicTacToeGame(Game):
             if winner == pet_mark:
                 self._finish(state, "桌宠获胜")
                 return {
-                    "summary": _s(f"桌宠落子 {params['move']} 连成三子，桌宠获胜。\n{_board_text(board)}"),
+                    "summary": _s(f"桌宠落子 {params['ttt_move']} 连成三子，桌宠获胜。\n{_board_text(board)}"),
                     "ended": True,
                     "won": True,
                     "pet_mark": pet_mark,
@@ -169,7 +169,7 @@ class TicTacToeGame(Game):
             if _is_full(board):
                 self._finish(state, "平局")
                 return {
-                    "summary": _s(f"桌宠落子 {params['move']} 后棋盘已满，平局。\n{_board_text(board)}"),
+                    "summary": _s(f"桌宠落子 {params['ttt_move']} 后棋盘已满，平局。\n{_board_text(board)}"),
                     "ended": True,
                     "won": None,
                     "pet_mark": pet_mark,
