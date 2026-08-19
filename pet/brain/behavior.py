@@ -702,7 +702,7 @@ class Behavior(BrainMixin):
     _META_TOOL_NAMES = frozenset({
         "tool_search__search", "tool_search__list_groups",
         "food__spawn", "food__status",
-        "game__list", "game__start", "game__play", "game__stop",
+        "game__list", "game__init", "game__play", "game__stop",
     })
     _META_TOOL_MAX_ROUNDS = 20  # 元工具调用安全上限
 

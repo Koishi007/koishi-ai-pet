@@ -142,10 +142,10 @@ class GameBase:
                 schema[arg_name] = merged
         return schema
 
-    def start(self, game_name: str) -> dict:
+    def init(self, game_name: str) -> dict:
         """显式开启（或重新开始）一局游戏，创建全新会话。
 
-        所有游戏必须先调用 game__start 再 game__play；上次会话（如有）被强制丢弃，
+        所有游戏必须先调用 game__init 再 game__play；上次会话（如有）被强制丢弃，
         并清理旧对局残留面板。返回结果带 ended=False 表示对局已就绪。
         """
         game = self._games.get(game_name)
@@ -171,7 +171,7 @@ class GameBase:
         except Exception:
             pass
         return {
-            "summary": f"已开始 {game_name} 游戏，现在可以调用 game__play 推进了",
+            "summary": f"{game_name} 游戏初始化完成，现在可以调用 game__play 推进了",
             "success": True,
             "ended": False,
         }
@@ -203,9 +203,9 @@ class GameBase:
             self._sessions.pop(game_name, None)
             state = None
         if state is None:
-            # 未开始或已结束：要求显式 game__start，避免模型误以为可续局/静默重开
+            # 未开始或已结束：要求显式 game__init，避免模型误以为可续局/静默重开
             return {
-                "summary": f"{game_name} 游戏未开始或已结束，请先调用 game__start(game_name=\"{game_name}\") 开启新对局",
+                "summary": f"{game_name} 游戏未开始或已结束，请先调用 game__init(game_name=\"{game_name}\") 开启新对局",
                 "success": False,
                 "ended": True,
             }
@@ -264,7 +264,7 @@ class GameBase:
             return {
                 "summary": f"{game_name} 没有进行中的对局（已结束或未开始）。"
                            f"若刚结束，请直接输出最终回复，无需调用 game__stop；"
-                           f"想再玩一局请调用 game__start",
+                           f"想再玩一局请调用 game__init",
                 "success": False,
                 "ended": True,
             }
