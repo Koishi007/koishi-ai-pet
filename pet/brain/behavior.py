@@ -774,7 +774,7 @@ class Behavior(BrainMixin):
                     args = _json.loads(tc["arguments"] or "{}")
                 except _json.JSONDecodeError:
                     args = {}
-                # 通用 aside 参数：模型调用工具时可带旁白，播出后不传给 handler
+                # 通用 aside 参数：模型调用工具时可带自言自语，播出后不传给 handler
                 tool_aside = args.pop("aside", None)
                 if tool_aside:
                     from pet.tools.context import TOOL_CTX
