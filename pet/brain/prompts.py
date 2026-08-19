@@ -64,9 +64,9 @@ _FOOD_GUIDE = """[状态] 觅食（桌宠自娱小游戏）
 - 走到/跳到食物附近会自动开吃，不用再做别的；没吃到（比如撞到屏幕边缘或跳早了）就继续，可以多试几次
 - 吃到了用 Vitals: satiety+N 反映饱食度变化"""
 
-_TOOL_SPEECH_GUIDE = ("调用工具时，可以配合Speech字段来表现地言行统一；"
-                      "这句话会在工具执行时输出给用户；"
-                      "工具调用时的Speech仅作为辅助让用户理解你正在行动，最终输出的Speech才是本轮主要语句输出")
+_TOOL_ASIDE_GUIDE = ("调用工具时，可以配合 aside 字段表现地言行统一；"
+                     "aside 是旁白/自言自语，仅作为辅助让用户理解你正在行动，不会作为对用户的正式回复；"
+                     "最终输出的 Speech 才是本轮主要语句输出")
 
 _EMOTION_LIST = "happy, excited, sad, angry, surprised, thinking, sleepy, love, cool, shy, scared, hungry, curious, proud, bored, crazy"
 
@@ -129,7 +129,7 @@ def _autonomous_task() -> list[str]:
         "7. 按[记忆]判断是否输出 Memory 行；心理无变化时省略 Mood 行",
     ]
 
-    guides = [_MOOD_GUIDE, _TOOL_SPEECH_GUIDE]
+    guides = [_MOOD_GUIDE, _TOOL_ASIDE_GUIDE]
     if config.FOOD_ENABLED:
         guides.append(_FOOD_GUIDE)
     return [format_guide] + constraints + guides
@@ -163,7 +163,7 @@ def _chat_task() -> list[str]:
         "8. 按[记忆]判断是否输出 Memory 行；心理无变化时省略 Mood 行",
     ]
 
-    guides = [_MOOD_GUIDE, _TOOL_SPEECH_GUIDE]
+    guides = [_MOOD_GUIDE, _TOOL_ASIDE_GUIDE]
     if config.FOOD_ENABLED:
         guides.append(_FOOD_GUIDE)
     return [format_guide] + constraints + guides

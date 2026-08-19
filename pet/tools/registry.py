@@ -378,10 +378,10 @@ class ToolRegistry:
                     properties[arg_name] = prop
                     if spec.get("required"):
                         required.append(arg_name)
-                # 通用可选参数：模型调用工具时可带 speech，作为桌宠台词播出（不传给 handler）
-                properties["speech"] = {
+                # 通用可选参数：模型调用工具时可带 aside，作为旁白播出（不传给 handler）
+                properties["aside"] = {
                     "type": "string",
-                    "description": "（可选）调用此工具时你想说的话，会作为桌宠的台词说出来；不想说话可不填",
+                    "description": "（可选）调用此工具时的旁白/自言自语，只让用户理解你正在做什么，不会作为对用户的正式回复；不想说可不填",
                 }
                 tools.append({
                     "type": "function",

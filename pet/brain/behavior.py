@@ -774,20 +774,20 @@ class Behavior(BrainMixin):
                     args = _json.loads(tc["arguments"] or "{}")
                 except _json.JSONDecodeError:
                     args = {}
-                # 通用 speech 参数：模型调用工具时可带台词，播出后不传给 handler
-                tool_speech = args.pop("speech", None)
-                if tool_speech:
+                # 通用 aside 参数：模型调用工具时可带旁白，播出后不传给 handler
+                tool_aside = args.pop("aside", None)
+                if tool_aside:
                     from pet.tools.context import TOOL_CTX
-                    logger.info(f"[Behavior] tool_call speech: {tool_speech}")
-                    TOOL_CTX.speech(str(tool_speech))
-                    TOOL_CTX.push_model_speech_pending()
+                    logger.info(f"[Behavior] tool_call aside: {tool_aside}")
+                    TOOL_CTX.speech(str(tool_aside))
+                    TOOL_CTX.push_model_aside_pending()
                 try:
                     call = ToolCall(name=tc["name"], args=args)
                     result = executor._execute_one(call)
                 finally:
-                    if tool_speech:
+                    if tool_aside:
                         from pet.tools.context import TOOL_CTX
-                        TOOL_CTX.pop_model_speech_pending()
+                        TOOL_CTX.pop_model_aside_pending()
                 # 在 _normalize 之前提取摘要（_normalize 会 pop summary）
                 tool_brief = ""
                 if result.success and isinstance(result.data, dict):

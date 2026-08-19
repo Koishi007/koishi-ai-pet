@@ -269,7 +269,7 @@ class GameBase:
                 "ended": True,
             }
         self._teardown(game_name)
-        if TOOL_CTX.is_model_speech_pending():
+        if TOOL_CTX.is_model_aside_pending():
             return {
                 "summary": f"已结束 {game_name} 游戏",
                 "success": True,
@@ -338,7 +338,7 @@ class GameBase:
         if result.pop("suppress_speech", False):
             return
         speech = result.pop("speech", None)
-        if TOOL_CTX.is_model_speech_pending():
+        if TOOL_CTX.is_model_aside_pending():
             return
         if not speech:
             ended = result.get("ended")

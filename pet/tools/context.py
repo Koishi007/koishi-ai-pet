@@ -16,7 +16,7 @@ class ToolContext:
         self._agent = None
         self._panels: dict[str, Callable] = {}
         self._pending_callbacks: list[Callable] = []
-        self._model_speech_pending = 0
+        self._model_aside_pending = 0
         self._speech_lock = threading.Lock()
 
     def bind(self, agent):
@@ -39,7 +39,7 @@ class ToolContext:
         if not self._check_agent():
             return
         self._agent.speak_requested.emit(text, duration)
-        # 写入对话历史（含 tool_call 自带 speech），失败不影响播出
+        # 写入对话历史（含 tool_call 自带 aside），失败不影响播出
         store = getattr(self._agent, "conversation_store", None)
         if store is not None:
             try:
@@ -48,29 +48,29 @@ class ToolContext:
                 pass
 
     def speech_random(self, texts: list[str], duration: int = 3000):
-        """随机选择一条台词发射；模型已在 tool_call 里带 speech 时跳过（避免两句）。"""
-        if self.is_model_speech_pending():
+        """随机选择一条台词发射；模型已在 tool_call 里带 aside 时跳过（避免两句）。"""
+        if self.is_model_aside_pending():
             return
         import random
         self.speech(random.choice(texts), duration)
 
-    def push_model_speech_pending(self):
-        """计数 +1：标记当前工具调用已播出模型 speech，供兜底台词抑制。
+    def push_model_aside_pending(self):
+        """计数 +1：标记当前工具调用已播出模型 aside，供兜底台词抑制。
 
-        并行工具调用时每个带 speech 的调用各 push 一次，pop 配对称量，
+        并行工具调用时每个带 aside 的调用各 push 一次，pop 配对称量，
         避免布尔标志在并发下互相覆盖。
         """
         with self._speech_lock:
-            self._model_speech_pending += 1
+            self._model_aside_pending += 1
 
-    def pop_model_speech_pending(self):
+    def pop_model_aside_pending(self):
         """计数 -1：与 push 配对，工具执行结束后调用。"""
         with self._speech_lock:
-            if self._model_speech_pending > 0:
-                self._model_speech_pending -= 1
+            if self._model_aside_pending > 0:
+                self._model_aside_pending -= 1
 
-    def is_model_speech_pending(self) -> bool:
-        return self._model_speech_pending > 0
+    def is_model_aside_pending(self) -> bool:
+        return self._model_aside_pending > 0
 
     def action(self, name: str, args: tuple = (), kwargs: dict = None):
         if self._check_agent():
