@@ -58,7 +58,7 @@ class RockPaperScissorsGame(Game):
                 "type": "str",
                 "required": True,
                 "description": "桌宠本回合出的拳：rock（石头）/ paper（布）/ scissors（剪刀）；"
-                               "你执桌宠，每次调用传自己出的拳，用户通过猜拳面板点击出拳，无需你传。",
+                               "你执桌宠，每次调用传自己出的拳，用户通过猜拳面板点击出拳，无需你传。不要透露你会出什么，用户可以看到语句输出",
                 "enum": ["rock", "paper", "scissors"],
             },
         }
@@ -72,9 +72,7 @@ class RockPaperScissorsGame(Game):
                 "pet_move": pet_move,
             }
 
-        # 阶段：桌宠出拳 → 等待用户出拳（阻塞脑线程，UI 不受影响）
-        # 猜拳是同时博弈：等待阶段不亮出桌宠的拳（pet_move=None），
-        # 避免用户看到后点克制拳必胜；判定时再由结果 payload 同时亮出双方。
+        # 阶段：桌宠出拳 → 等待用户出拳
         self._emit_panel(state, waiting=True, pet_move=None,
                          message="桌宠已出拳，轮到你出拳")
         move = self._wait_for_move(state)
