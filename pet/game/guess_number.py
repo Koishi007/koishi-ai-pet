@@ -51,7 +51,7 @@ class GuessNumberGame(Game):
         left = state["max"] - state["guesses"]
         if number == state["target"]:
             return {
-                "summary": f"猜中了！答案是 {state['target']}，用了 {state['guesses']} 次",
+                "summary": f"我猜中了！答案是 {state['target']}，用了 {state['guesses']} 次",
                 "ended": True,
                 "won": True,
                 "target": state["target"],
@@ -67,7 +67,7 @@ class GuessNumberGame(Game):
             }
         hint = "大了" if number > state["target"] else "小了"
         return {
-            "summary": f"猜 {number}：{hint}，还有 {left} 次机会",
+            "summary": f"我猜 {number}：{hint}，还有 {left} 次机会",
             "ended": False,
             "result": hint,
             "guesses_left": left,

@@ -1,4 +1,4 @@
-"""游戏面板基类 — 通用无边框窗口框架 + 统一渲染入口 + 收场机制。
+"""游戏面板基类 — 通用无边框窗口框架 + 统一渲染入口 + 用户手动收场。
 
 子类继承 GamePanelBase，只需：
   - 覆写 TITLE / WIDTH / HEIGHT
@@ -6,7 +6,8 @@
   - 实现 _render_game(payload)：渲染游戏特定内容（waiting 已解析到 self._waiting）
   - 实现用户交互（点击时调用 GAME.submit(game_name, payload)）
 
-render 是唯一入口，只做通用骨架（close/计时/闲置/定位），不包含任何具体游戏逻辑。
+render 是唯一入口，只做通用骨架（close/倒计时/定位），不包含任何具体游戏逻辑。
+面板不自动隐藏，由用户点击 × 手动关闭（forfeit 判输）。
 """
 
 import logging
@@ -44,12 +45,11 @@ _BTN_CLOSE_QSS = (
 
 
 class GamePanelBase(QWidget):
-    """游戏面板基类：通用窗口框架 + 渲染入口 + 收场机制。"""
+    """游戏面板基类：通用窗口框架 + 渲染入口 + 用户手动收场。"""
 
     TITLE = "游戏"
     WIDTH = 300
     HEIGHT = 300
-    IDLE_TIMEOUT_MS = 30_000  # 面板 30s 无更新（模型未继续/游戏已结束）自动收场
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -57,7 +57,6 @@ class GamePanelBase(QWidget):
         self._waiting = False
         self._placed = False          # 是否已定位/被用户拖动过
         self._drag_pos: QPoint | None = None
-        self._llm_loading = False     # 脑线程运行中：暂停闲置收场
         self._countdown = 0
 
         self.setObjectName("gamePanel")
@@ -72,9 +71,6 @@ class GamePanelBase(QWidget):
 
         self._countdown_timer = QTimer(self)
         self._countdown_timer.timeout.connect(self._tick_countdown)
-        self._idle_timer = QTimer(self)
-        self._idle_timer.setSingleShot(True)
-        self._idle_timer.timeout.connect(self._on_idle_timeout)
 
         self._setup_ui()
         self.hide()
@@ -141,32 +137,14 @@ class GamePanelBase(QWidget):
         if waiting:
             self._countdown = int(payload.get("timeout") or 0)
             self._countdown_timer.start(1000)
-            self._idle_timer.stop()  # 等待用户期间由倒计时驱动，不设闲置
         else:
             self._countdown = 0
             self._countdown_timer.stop()
-            if not self._llm_loading:
-                self._idle_timer.start(self.IDLE_TIMEOUT_MS)  # 等待桌宠/结束：无更新则自动收场
         self._update_countdown_label()
         if not self.isVisible():
             self._place_near_pet()
             self.show()
             self.raise_()
-
-    def set_llm_loading(self, loading: bool):
-        """脑线程运行状态。
-
-        运行中（loading=True）：暂停闲置收场定时器，避免模型慢响应/重试被误收场；
-        结束（loading=False）：若面板仍显示且不在等待用户（游戏结束/模型提前退出），
-        重启闲置计时——模型继续下棋会由新一轮 render 重置，否则超时后自动收场。
-        """
-        self._llm_loading = loading
-        if loading:
-            if self._idle_timer.isActive():
-                self._idle_timer.stop()
-        else:
-            if not self._waiting and self._game_name and self.isVisible():
-                self._idle_timer.start(self.IDLE_TIMEOUT_MS)
 
     def _update_countdown_label(self):
         if self._waiting and self._countdown > 0:
@@ -180,7 +158,7 @@ class GamePanelBase(QWidget):
         if self._countdown <= 0:
             self._countdown_timer.stop()
 
-    # ---- 收场机制 ----
+    # ---- 收场机制（用户手动） ----
 
     def _on_close_clicked(self):
         """关闭/结束面板：用户主动结束游戏，判用户输并提示。"""
@@ -191,18 +169,8 @@ class GamePanelBase(QWidget):
                 pass
         self._close_panel()
 
-    def _on_idle_timeout(self):
-        """面板长时间无更新（模型未继续/游戏已结束）自动收场。"""
-        if self._game_name:
-            try:
-                GAME.stop(self._game_name)
-            except Exception:
-                pass
-        self._close_panel()
-
     def _close_panel(self):
         self._countdown_timer.stop()
-        self._idle_timer.stop()
         self._game_name = None
         self._waiting = False
         self._title.setText(self.TITLE)

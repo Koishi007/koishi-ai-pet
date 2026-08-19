@@ -150,9 +150,6 @@ def main():
         if handler is not None:
             handler(game_name, payload)
     agent.game_board_requested.connect(_dispatch_game_board)
-    # 脑线程运行中暂停面板闲置收场，避免模型慢响应被 30s 定时器误关
-    agent.llm_loading.connect(game_board_panel.set_llm_loading)
-    agent.llm_loading.connect(rps_panel.set_llm_loading)
 
     agent.action_requested.connect(window.queue_enqueue_action)
     agent.emotion_requested.connect(

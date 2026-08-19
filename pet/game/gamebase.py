@@ -250,6 +250,9 @@ class GameBase:
             }
         if result.get("ended") and self._sessions.get(game_name) is state:
             self._sessions.pop(game_name, None)
+            # 明确告知游戏已结束，避免模型继续调用 game__play/game__stop
+            if result.get("summary"):
+                result["summary"] = f"{result['summary']} 本局游戏已结束"
         result.setdefault("success", True)
         result.setdefault("game_name", game_name)
         self._emit_speech(game, result)
@@ -259,7 +262,9 @@ class GameBase:
         """主动结束（模型 game__stop / 面板闲置超时）：普通收场，不算胜负。"""
         if game_name not in self._sessions:
             return {
-                "summary": f"没有进行中的 {game_name} 游戏",
+                "summary": f"{game_name} 没有进行中的对局（已结束或未开始）。"
+                           f"若刚结束，请直接输出最终回复，无需调用 game__stop；"
+                           f"想再玩一局请调用 game__start",
                 "success": False,
                 "ended": True,
             }

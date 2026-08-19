@@ -95,9 +95,9 @@ class TicTacToeGame(Game):
                 "type": "str",
                 "required": False,
                 "description": (
-                    "本回合桌宠落子的位置，用 A1~C3 格式（A 为行、1 为列），如 A1、B2、C3；"
+                    "本回合你落子的位置，用 A1~C3 格式（A 为行、1 为列），如 A1、B2、C3；"
                     "开局先后手随机（X 先手），你执 X 还是 O、是否先手，以首次 game__play 返回的 "
-                    "pet_mark/user_mark/first 字段为准；仅当轮到桌宠落子时才传 ttt_move，"
+                    "pet_mark/user_mark/first 字段为准；仅当轮到你落子时才传 ttt_move，"
                     "用户落子通过棋盘面板点击完成，无需你传。"
                 ),
             },
@@ -113,9 +113,9 @@ class TicTacToeGame(Game):
         if not state.get("_notified"):
             state["_notified"] = True
             if state["first"] == "user":
-                first_notice = f"你执 {pet_mark}，用户执 {user_mark}，用户先手。"
+                first_notice = f"我执 {pet_mark}，你执 {user_mark}，你先手。"
             else:
-                first_notice = f"你执 {pet_mark}，用户执 {user_mark}，你（桌宠）先手。"
+                first_notice = f"我执 {pet_mark}，你执 {user_mark}，我先手。"
 
         def _s(text: str) -> str:
             return f"{first_notice}{text}"
@@ -124,7 +124,7 @@ class TicTacToeGame(Game):
         if state["turn"] == pet_mark:
             if not params.get("ttt_move"):
                 return {
-                    "summary": _s("轮到桌宠（你）落子，请传 ttt_move 参数（A1~C3）。"),
+                    "summary": _s("轮到我落子，请传 ttt_move 参数（A1~C3）。"),
                     "ended": False,
                     "pet_mark": pet_mark,
                     "user_mark": user_mark,
@@ -155,9 +155,9 @@ class TicTacToeGame(Game):
             state["turn"] = user_mark
             winner = _check_winner(board)
             if winner == pet_mark:
-                self._finish(state, "桌宠获胜")
+                self._finish(state, "我获胜")
                 return {
-                    "summary": _s(f"桌宠落子 {params['ttt_move']} 连成三子，桌宠获胜。\n{_board_text(board)}"),
+                    "summary": _s(f"我落子 {params['ttt_move']} 连成三子，我获胜。\n{_board_text(board)}"),
                     "ended": True,
                     "won": True,
                     "pet_mark": pet_mark,
@@ -169,7 +169,7 @@ class TicTacToeGame(Game):
             if _is_full(board):
                 self._finish(state, "平局")
                 return {
-                    "summary": _s(f"桌宠落子 {params['ttt_move']} 后棋盘已满，平局。\n{_board_text(board)}"),
+                    "summary": _s(f"我落子 {params['ttt_move']} 后棋盘已满，平局。\n{_board_text(board)}"),
                     "ended": True,
                     "won": None,
                     "pet_mark": pet_mark,
@@ -202,9 +202,9 @@ class TicTacToeGame(Game):
                     "suppress_speech": True, "board": board}
         if move is None:
             # 用户超时未落子 → 直接判用户输（独立超时台词，不走 win_speech）
-            self._emit_board(state, waiting=False, message="你超时了，桌宠获胜")
+            self._emit_board(state, waiting=False, message="你超时了，我获胜")
             return {
-                "summary": _s(f"你在 {self.MOVE_TIMEOUT} 秒内没有落子，判你输，桌宠获胜。\n{_board_text(board)}"),
+                "summary": _s(f"你在 {self.MOVE_TIMEOUT} 秒内没有落子，判你输，我获胜。\n{_board_text(board)}"),
                 "speech": random.choice(self._TIMEOUT_SPEECH),
                 "ended": True,
                 "won": True,
@@ -223,7 +223,7 @@ class TicTacToeGame(Game):
         if winner == user_mark:
             self._emit_board(state, waiting=False, message="你获胜")
             return {
-                "summary": _s(f"用户落子 {_GRID_LABELS[r][c]} 连成三子，用户获胜。\n{_board_text(board)}"),
+                "summary": _s(f"你落子 {_GRID_LABELS[r][c]} 连成三子，你获胜。\n{_board_text(board)}"),
                 "ended": True,
                 "won": False,
                 "pet_mark": pet_mark,
@@ -235,7 +235,7 @@ class TicTacToeGame(Game):
         if _is_full(board):
             self._emit_board(state, waiting=False, message="平局")
             return {
-                "summary": _s(f"用户落子 {_GRID_LABELS[r][c]} 后棋盘已满，平局。\n{_board_text(board)}"),
+                "summary": _s(f"你落子 {_GRID_LABELS[r][c]} 后棋盘已满，平局。\n{_board_text(board)}"),
                 "ended": True,
                 "won": None,
                 "pet_mark": pet_mark,
@@ -245,9 +245,9 @@ class TicTacToeGame(Game):
                 "board_text": _board_text(board),
             }
 
-        self._emit_board(state, waiting=False, message="轮到桌宠")
+        self._emit_board(state, waiting=False, message="轮到我")
         return {
-            "summary": _s(f"用户落子 {_GRID_LABELS[r][c]}，轮到桌宠。\n{_board_text(board)}"),
+            "summary": _s(f"你落子 {_GRID_LABELS[r][c]}，轮到我。\n{_board_text(board)}"),
             "ended": False,
             "pet_mark": pet_mark,
             "user_mark": user_mark,

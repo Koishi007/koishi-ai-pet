@@ -58,7 +58,8 @@ class RockPaperScissorsGame(Game):
                 "type": "str",
                 "required": True,
                 "description": "桌宠本回合出的拳：rock（石头）/ paper（布）/ scissors（剪刀）；"
-                               "你执桌宠，每次调用传自己出的拳，用户通过猜拳面板点击出拳，无需你传。不要透露你会出什么，用户可以看到语句输出",
+                               "你执桌宠，每次调用传自己出的拳，用户通过猜拳面板点击出拳，无需你传。"
+                               "猜拳是同时博弈，绝对不要在任何 speech/语句里说出你会出什么（如'我出石头'），否则用户必赢",
                 "enum": ["rock", "paper", "scissors"],
             },
         }
@@ -74,7 +75,7 @@ class RockPaperScissorsGame(Game):
 
         # 阶段：桌宠出拳 → 等待用户出拳
         self._emit_panel(state, waiting=True, pet_move=None,
-                         message="桌宠已出拳，轮到你出拳")
+                         message="我已出拳，轮到你出拳")
         move = self._wait_for_move(state)
         if state.get("_cancelled"):
             if state.get("_forfeit"):
@@ -116,7 +117,7 @@ class RockPaperScissorsGame(Game):
             self._emit_panel(state, waiting=False, pet_move=pet_move,
                              message=f"你出「{user_name}」，平局，重新出拳")
             return {
-                "summary": f"桌宠「{pet_name}」vs 你「{user_name}」，平局，重新出拳",
+                "summary": f"我出「{pet_name}」，你出「{user_name}」，平局，重新出拳",
                 "ended": False,
                 "result": "draw",
                 "pet_move": pet_move,
@@ -125,18 +126,18 @@ class RockPaperScissorsGame(Game):
 
         if winner == "pet":
             state["pet_wins"] += 1
-            result_text = f"桌宠「{pet_name}」克制你「{user_name}」"
+            result_text = f"我「{pet_name}」克制你「{user_name}」"
         else:
             state["user_wins"] += 1
-            result_text = f"你「{user_name}」克制桌宠「{pet_name}」"
+            result_text = f"你「{user_name}」克制我「{pet_name}」"
         state["round"] += 1
-        score = f"比分：桌宠 {state['pet_wins']} - {state['user_wins']} 你"
+        score = f"比分：我 {state['pet_wins']} - {state['user_wins']} 你"
 
         if state["pet_wins"] >= state["need_wins"]:
             self._emit_panel(state, waiting=False, pet_move=pet_move,
-                             message=f"{result_text}，桌宠获胜")
+                             message=f"{result_text}，我获胜")
             return {
-                "summary": f"{result_text}。{score}，三局两胜桌宠获胜",
+                "summary": f"{result_text}。{score}，三局两胜我获胜",
                 "ended": True,
                 "won": True,
                 "pet_move": pet_move,
@@ -158,7 +159,7 @@ class RockPaperScissorsGame(Game):
             }
 
         self._emit_panel(state, waiting=False, pet_move=pet_move,
-                         message=f"{result_text}，轮到桌宠")
+                         message=f"{result_text}，轮到我")
         return {
             "summary": f"{result_text}。{score}，继续下一局",
             "ended": False,

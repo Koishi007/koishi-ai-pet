@@ -116,7 +116,6 @@ class RpsPanel(GamePanelBase):
         if GAME.submit(self._game_name, {"move": move}):
             self._waiting = False
             self._countdown_timer.stop()
-            self._idle_timer.stop()
             self._update_countdown_label()
             self._set_buttons_enabled(False)
             self._message.setText(f"你出「{MOVES[move]}」，等待判定…")

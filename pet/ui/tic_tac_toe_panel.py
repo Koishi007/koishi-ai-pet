@@ -123,7 +123,6 @@ class TicTacToePanel(GamePanelBase):
         if GAME.submit(self._game_name, {"row": r, "col": c}):
             self._waiting = False
             self._countdown_timer.stop()
-            self._idle_timer.stop()
             self._update_countdown_label()
             self._message.setText("已落子，等待桌宠…")
         else:
