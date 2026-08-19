@@ -158,7 +158,7 @@ class ToolRegistry:
             tool_name="food",
             method_name="spawn",
             description=(
-                "在桌面随机位置（含半空）生成食物，返回坐标与偏移 dx/dy/bounce_height；"
+                "在肚子饿了的时候调用，在桌面随机位置生成食物，返回坐标与偏移 dx/dy/bounce_height；"
                 "用 walk/drive 接近、bounce 跳起来吃，走到附近自动开吃；已有食物时不重复生成。"
             ),
             handler=self._food_spawn,
