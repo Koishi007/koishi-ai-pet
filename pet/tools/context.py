@@ -90,6 +90,16 @@ class ToolContext:
         if self._check_agent():
             self._agent.notify_requested.emit(title, message, duration)
 
+    def game_board(self, game_name: str, payload: dict):
+        """通知 UI 渲染游戏棋盘（Qt 队列连接，跨线程安全）。"""
+        if self._check_agent():
+            self._agent.game_board_requested.emit(game_name, payload)
+
+    def hide_game_board(self, game_name: str):
+        """通知 UI 隐藏游戏棋盘面板。"""
+        if self._check_agent():
+            self._agent.game_board_requested.emit(game_name, {"action": "close"})
+
     def register_tick(self, name: str, callback: Callable[[], None]):
         if self._check_agent():
             self._agent.scheduler.register(name, callback)

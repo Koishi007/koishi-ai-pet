@@ -56,6 +56,7 @@ class PetAgent(QObject):
     speak_stream_end   = Signal(int)
     llm_loading        = Signal(bool)  # True=开始等待, False=结束
     notify_requested   = Signal(str, str, int)  # title, message, duration_ms
+    game_board_requested = Signal(str, object)  # (game_name, board_payload)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -118,6 +119,12 @@ class PetAgent(QObject):
     def stop(self):
         self.scheduler.stop()
         self.screen_reader.disable()
+        # 唤醒等待中的游戏会话，避免脑线程卡在等待用户落子导致退出挂起
+        try:
+            from pet.game.gamebase import GAME
+            GAME.cancel_all()
+        except Exception:
+            pass
         try:
             if self._thread and self._thread.isRunning():
                 self._thread.quit()
@@ -354,6 +361,13 @@ class PetAgent(QObject):
         if old_thread is not None and old_thread.isRunning():
             # 协作式取消：设置标志让旧线程在流式循环里快速退出，不阻塞主线程
             self._cancel_flag = True
+            # 终结旧线程持有的游戏会话（可能阻塞在等待用户落子，远超 1s 等待窗口），
+            # 避免新旧脑线程并发操作同一 session
+            try:
+                from pet.game.gamebase import GAME
+                GAME.cancel_all()
+            except Exception:
+                pass
             old_thread.quit()
             # 给旧线程一个短等待窗口（最多 1s），超时不强杀，让其自然退出
             for _ in range(20):

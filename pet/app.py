@@ -133,6 +133,14 @@ def main():
     music_bubble = MusicBubble(window)
     window.set_music_bubble(music_bubble)
 
+    # 游戏棋盘面板：由 game__play 跨线程驱动渲染，点击格子提交落子
+    from pet.ui.game_board import GameBoardPanel
+    game_board_panel = GameBoardPanel()
+    game_board_panel.set_pet_window(window)
+    agent.game_board_requested.connect(game_board_panel.render)
+    # 脑线程运行中暂停棋盘闲置收场，避免模型慢响应被 30s 定时器误关
+    agent.llm_loading.connect(game_board_panel.set_llm_loading)
+
     agent.action_requested.connect(window.queue_enqueue_action)
     agent.emotion_requested.connect(
         lambda e, d: emotion_bubble.show_emotion(e, d) if window.isVisible() else None

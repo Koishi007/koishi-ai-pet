@@ -208,9 +208,10 @@ class ToolRegistry:
             method_name="play",
             description=(
                 "玩一回合游戏：传 game_name 和该游戏需要的动作参数（参数因游戏而异，"
-                "见 game_name 枚举及参数说明），返回本回合结果。结束（ended=True）前可反复调用；"
-                "结束时会自动结算。你可以在一次输出里连续调用多次 game__play，"
-                "根据每次返回结果继续，直到某次返回 ended=True。"
+                "见 game_name 枚举及参数说明），返回本回合结果。游戏未结束（ended=False）前"
+                "必须继续调用 game__play 推进游戏，不要提前输出最终答复；"
+                "结束（ended=True）时会自动结算，也可以主动调 game__stop 结束不想玩的游戏。"
+                "你可以在一次输出里连续调用多次 game__play，根据每次返回结果继续，直到某次返回 ended=True。"
             ),
             handler=self._game_play,
         )
