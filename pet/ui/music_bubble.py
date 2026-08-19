@@ -144,7 +144,6 @@ class MusicBubble(QWidget):
         self._btn.clicked.connect(self._toggle_expand)
         self._layout.addWidget(self._btn)
 
-        # 展开面板
         self._panel = QWidget()
         self._panel.setObjectName("musicPanel")
         self._panel.setStyleSheet(_PANEL_STYLE)
@@ -176,7 +175,6 @@ class MusicBubble(QWidget):
         self._btn_next.clicked.connect(lambda: (self._send_media_key(_KEY_NEXT), self._say(_NEXT_RESPONSES)))
         panel_layout.addWidget(self._btn_next)
 
-        # 音量减按钮
         self._btn_vol_down = QPushButton()
         self._btn_vol_down.setFixedSize(32, 32)
         self._btn_vol_down.setIcon(QIcon(str(BASE_DIR / "assets" / "icon" / "volume_down.png")))
@@ -194,7 +192,6 @@ class MusicBubble(QWidget):
         self._btn_mute.clicked.connect(self._on_mute_clicked)
         panel_layout.addWidget(self._btn_mute)
 
-        # 音量加按钮
         self._btn_vol_up = QPushButton()
         self._btn_vol_up.setFixedSize(32, 32)
         self._btn_vol_up.setIcon(QIcon(str(BASE_DIR / "assets" / "icon" / "volume_up.png")))

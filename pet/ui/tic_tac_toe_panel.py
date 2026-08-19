@@ -52,14 +52,12 @@ class TicTacToePanel(GamePanelBase):
         super().__init__(parent)
 
     def _build_content(self, layout):
-        # 状态消息
         self._message = QLabel("")
         self._message.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._message.setStyleSheet("font-size: 13px; color: #555;")
         self._message.setFixedHeight(22)
         layout.addWidget(self._message)
 
-        # 棋盘 3x3
         grid = QGridLayout()
         grid.setContentsMargins(0, 0, 0, 0)
         grid.setSpacing(6)
@@ -76,13 +74,10 @@ class TicTacToePanel(GamePanelBase):
             self._cells.append(row_btns)
         layout.addLayout(grid)
 
-        # 底部提示
         hint = QLabel("轮到你时点击空格落子")
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         hint.setStyleSheet("font-size: 12px; color: #999;")
         layout.addWidget(hint)
-
-    # ---- 游戏渲染 ----
 
     def _render_game(self, payload: dict):
         # 执子与先后手：显示在标题栏，用户一眼看到自己该不该走
@@ -112,8 +107,6 @@ class TicTacToePanel(GamePanelBase):
                 else:
                     style = _CELL_DISABLED_QSS  # 桌宠回合：空格视觉禁用
                 btn.setStyleSheet(style)
-
-    # ---- 用户交互 ----
 
     def _on_cell_clicked(self, r: int, c: int):
         if not self._waiting or not self._game_name:

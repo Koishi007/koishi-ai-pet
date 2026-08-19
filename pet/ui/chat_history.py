@@ -178,7 +178,6 @@ class ChatHistoryWindow(QWidget):
 
         self.setStyleSheet(_WINDOW_QSS)
 
-        # 窗口图标
         try:
             self.setWindowIcon(QIcon(ICON_PATH))
         except Exception:
@@ -192,7 +191,6 @@ class ChatHistoryWindow(QWidget):
         header_layout.setContentsMargins(12, 0, 6, 0)
         header_layout.setSpacing(6)
 
-        # 图标
         icon_label = QLabel()
         try:
             icon_label.setPixmap(QIcon(ICON_PATH).pixmap(18, 18))
@@ -200,24 +198,20 @@ class ChatHistoryWindow(QWidget):
             pass
         header_layout.addWidget(icon_label)
 
-        # 标题
         title_label = QLabel("对话历史")
         title_label.setStyleSheet(TITLE_LABEL_QSS)
         header_layout.addWidget(title_label)
 
         header_layout.addStretch()
 
-        # 最小化按钮
         header_layout.addWidget(make_minimize_button(self))
 
-        # 关闭按钮
         header_layout.addWidget(make_close_button(self, on_close=self.hide))
 
         body = QHBoxLayout()
         body.setContentsMargins(0, 0, 0, 0)
         body.setSpacing(8)
 
-        # 左侧日期列表
         self._date_list = QListWidget()
         self._date_list.setFixedWidth(120)
         self._date_list.setStyleSheet(LIST_QSS + SCROLLBAR_QSS + f"""

@@ -251,7 +251,6 @@ class _MemoryRetriever(ABC):
     def _record_blocked(self, content: str):
         """记录被冷却拦截的记忆内容，供上下文反馈使用。"""
         self._recently_blocked.append((content, datetime.now()))
-        # 清理过期记录
         cutoff = datetime.now() - timedelta(seconds=self._BLOCKED_TTL)
         self._recently_blocked = [(c, t) for c, t in self._recently_blocked if t > cutoff]
 

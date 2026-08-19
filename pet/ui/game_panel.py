@@ -5,9 +5,6 @@
   - 实现 _build_content(layout)：构建游戏特定 UI（须创建 self._message 供 render 更新）
   - 实现 _render_game(payload)：渲染游戏特定内容（waiting 已解析到 self._waiting）
   - 实现用户交互（点击时调用 GAME.submit(game_name, payload)）
-
-render 是唯一入口，只做通用骨架（close/倒计时/定位），不包含任何具体游戏逻辑。
-面板不自动隐藏，由用户点击 × 手动关闭（forfeit 判输）。
 """
 
 import logging
@@ -110,8 +107,6 @@ class GamePanelBase(QWidget):
 
         self._build_content(self._content_layout)
 
-    # ---- 子类钩子 ----
-
     def _build_content(self, layout: QVBoxLayout):
         """子类构建游戏特定 UI（须创建 self._message 供 render 更新）。"""
         raise NotImplementedError
@@ -119,8 +114,6 @@ class GamePanelBase(QWidget):
     def _render_game(self, payload: dict):
         """子类渲染游戏特定内容（payload 的 waiting 已解析到 self._waiting）。"""
         raise NotImplementedError
-
-    # ---- 渲染入口（唯一入口，通用骨架） ----
 
     def render(self, game_name: str, payload: dict):
         if payload.get("action") == "close":
@@ -148,7 +141,7 @@ class GamePanelBase(QWidget):
 
     def _update_countdown_label(self):
         if self._waiting and self._countdown > 0:
-            self._countdown_label.setText(f"⏳ {self._countdown}s")
+            self._countdown_label.setText(f"剩余 {self._countdown}s")
         else:
             self._countdown_label.setText("")
 
@@ -157,8 +150,6 @@ class GamePanelBase(QWidget):
         self._update_countdown_label()
         if self._countdown <= 0:
             self._countdown_timer.stop()
-
-    # ---- 收场机制（用户手动） ----
 
     def _on_close_clicked(self):
         """关闭/结束面板：用户主动结束游戏，判用户输并提示。"""
@@ -175,8 +166,6 @@ class GamePanelBase(QWidget):
         self._waiting = False
         self._title.setText(self.TITLE)
         self.hide()
-
-    # ---- 窗口定位与拖动 ----
 
     def set_pet_window(self, window):
         self._pet_window = window

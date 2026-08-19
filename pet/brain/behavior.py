@@ -68,7 +68,6 @@ class Behavior(BrainMixin):
         )
         self.llm_stats = LlmStats()
 
-        # 工具动态激活
         self._active_tool_groups: set[str] = {"default"}
 
         t = datetime.now().strftime("%H:%M:%S")
@@ -341,7 +340,6 @@ class Behavior(BrainMixin):
             logger.info(f"[{t}] [Behavior]   finish_reason: {resp.choices[0].finish_reason}")
             logger.info(f"[{t}] [Behavior]   raw: {content}")
 
-            # 处理 tool_calls
             if msg.tool_calls:
                 tool_calls_map = {}
                 for i, tc in enumerate(msg.tool_calls):
@@ -455,7 +453,6 @@ class Behavior(BrainMixin):
                     finish_reason = choice.finish_reason
                 delta = choice.delta
 
-                # 文本内容
                 if delta.content:
                     delta_speech = ""
                     for char in delta.content:
@@ -504,7 +501,6 @@ class Behavior(BrainMixin):
                         on_chunk(delta_speech)
                         speech_streamed = True
 
-                # 工具调用增量
                 if delta.tool_calls:
                     for tc_delta in delta.tool_calls:
                         idx = tc_delta.index
@@ -527,9 +523,7 @@ class Behavior(BrainMixin):
                               f"completion={stream_usage.completion_tokens}, total={stream_usage.total_tokens}")
             logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] [Behavior] stream completed in {elapsed:.2f}s ({tag}){usage_log}")
 
-            # 如果有 tool_calls，执行工具并循环
             if accumulated_tool_calls:
-                # 构建第一轮的 content 文本
                 first_content = "\n".join(
                     ([f"Summary: {summary_holder[0]}"] if summary_holder else []) +
                     ([f"Emotion: {emotion_holder[0]}"] if emotion_holder else []) +
@@ -752,7 +746,6 @@ class Behavior(BrainMixin):
                 logger.warning(f"[Behavior] reached META_MAX_ROUNDS={self._META_TOOL_MAX_ROUNDS}, force terminate")
                 break
 
-            # 构建 assistant 消息（含 tool_calls）
             openai_tool_calls = []
             for idx in sorted(tool_calls_map.keys()):
                 tc = tool_calls_map[idx]
@@ -772,7 +765,6 @@ class Behavior(BrainMixin):
                 assistant_msg["content"] = first_content
             current_messages.append(assistant_msg)
 
-            # 执行工具调用（并行或串行）
             sorted_indices = sorted(tool_calls_map.keys())
 
             def _exec_tool(idx):
@@ -884,7 +876,6 @@ class Behavior(BrainMixin):
                     self.add_context(role="assistant", content=f"[工具调用] {' | '.join(tool_log)}")
                 return result
 
-            # 准备下一轮
             first_content = content
             tool_calls_map = new_tool_calls
 

@@ -134,7 +134,6 @@ class LogWindow(QWidget):
         header_layout.setContentsMargins(12, 0, 6, 0)
         header_layout.setSpacing(6)
 
-        # 图标
         icon_label = QLabel()
         try:
             icon_label.setPixmap(QIcon(ICON_PATH).pixmap(18, 18))
@@ -142,23 +141,19 @@ class LogWindow(QWidget):
             pass
         header_layout.addWidget(icon_label)
 
-        # 标题
         title_label = QLabel("日志")
         title_label.setStyleSheet(TITLE_LABEL_QSS)
         header_layout.addWidget(title_label)
 
         header_layout.addStretch()
 
-        # 最小化按钮
         header_layout.addWidget(make_minimize_button(self))
 
-        # 关闭按钮（日志窗口关闭即隐藏）
         header_layout.addWidget(make_close_button(self, on_close=self.hide))
 
         toolbar = QHBoxLayout()
         toolbar.setContentsMargins(0, 0, 0, 0)
 
-        # 日志级别切换
         self._level_combo = QComboBox()
         self._level_combo.addItems(["DEBUG", "INFO", "WARNING", "ERROR"])
         self._level_combo.setCurrentText(relay.current_level_name())
@@ -208,9 +203,7 @@ class LogWindow(QWidget):
         rect = self.rect().adjusted(0, 0, -1, -1)
         path = QPainterPath()
         path.addRoundedRect(rect, WINDOW_RADIUS, WINDOW_RADIUS)
-        # 填充背景
         painter.fillPath(path, QColor(_COLOR_BG))
-        # 细描边
         painter.setPen(QPen(QColor("#000000"), 1))
         painter.drawPath(path)
 
@@ -249,7 +242,7 @@ class LogWindow(QWidget):
         )
         cursor.select(QTextCursor.SelectionType.BlockUnderCursor)
         cursor.removeSelectedText()
-        cursor.deleteChar()  # 删除残留换行
+        cursor.deleteChar()
 
     def closeEvent(self, event):
         if event.spontaneous():

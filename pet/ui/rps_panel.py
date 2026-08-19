@@ -31,9 +31,9 @@ _BTN_QSS = (
 )
 
 _MOVE_ICONS = {
-    "rock": "✊ 石头",
-    "scissors": "✌️ 剪刀",
-    "paper": "✋ 布",
+    "rock": "石头",
+    "scissors": "剪刀",
+    "paper": "布",
 }
 
 
@@ -51,27 +51,23 @@ class RpsPanel(GamePanelBase):
         super().__init__(parent)
 
     def _build_content(self, layout):
-        # 比分
         self._score = QLabel("")
         self._score.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._score.setStyleSheet("font-size: 13px; font-weight: bold; color: #555;")
         layout.addWidget(self._score)
 
-        # 消息
         self._message = QLabel("")
         self._message.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._message.setStyleSheet("font-size: 13px; color: #555;")
         self._message.setFixedHeight(22)
         layout.addWidget(self._message)
 
-        # 桌宠出拳展示
         self._pet_move_label = QLabel("")
         self._pet_move_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._pet_move_label.setStyleSheet("font-size: 15px; color: #e67e22;")
         self._pet_move_label.setFixedHeight(24)
         layout.addWidget(self._pet_move_label)
 
-        # 出拳按钮
         btn_row = QHBoxLayout()
         btn_row.setSpacing(8)
         self._move_btns = {}
@@ -84,13 +80,10 @@ class RpsPanel(GamePanelBase):
             self._move_btns[move] = btn
         layout.addLayout(btn_row)
 
-        # 底部提示
         hint = QLabel("轮到你时点击出拳")
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         hint.setStyleSheet("font-size: 12px; color: #999;")
         layout.addWidget(hint)
-
-    # ---- 游戏渲染 ----
 
     def _render_game(self, payload: dict):
         pet_move = payload.get("pet_move")
@@ -107,8 +100,6 @@ class RpsPanel(GamePanelBase):
     def _set_buttons_enabled(self, enabled: bool):
         for btn in self._move_btns.values():
             btn.setEnabled(enabled)
-
-    # ---- 用户交互 ----
 
     def _on_move_clicked(self, move: str):
         if not self._waiting or not self._game_name:

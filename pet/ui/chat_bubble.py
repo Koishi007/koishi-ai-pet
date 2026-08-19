@@ -171,7 +171,6 @@ class ChatBubble(QWidget):
     def _on_submit(self):
         # 取消语音自动收回定时器
         self._voice_auto_collapse.stop()
-        # 关闭回车拦截
         self.enter_intercept.emit(False)
         text = self._input.text().strip()
         if text:

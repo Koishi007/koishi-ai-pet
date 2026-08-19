@@ -339,7 +339,6 @@ class MemoryWindow(QWidget):
         self._detail_effective = QLabel("—")
         layout.addRow("有效分:", self._detail_effective)
 
-        # 保存按钮
         save_row = QHBoxLayout()
         save_row.addStretch()
         self._btn_save = QPushButton("保存")
@@ -410,7 +409,6 @@ class MemoryWindow(QWidget):
         for i, row in enumerate(self._rows):
             lookup = dict(row)
 
-            # 复选框
             cb = QCheckBox()
             cb.stateChanged.connect(
                 lambda state, mid=lookup["id"]: self._on_checkbox_toggled(mid, state)
@@ -422,21 +420,17 @@ class MemoryWindow(QWidget):
             cb_layout.setContentsMargins(0, 0, 0, 0)
             self._table.setCellWidget(i, 0, container)
 
-            # 内容
             content = lookup["content"] or ""
             display = content[:60] + ("…" if len(content) > 60 else "")
             self._table.setItem(i, 1, QTableWidgetItem(display))
 
-            # 级别
             lvl_item = QTableWidgetItem(lookup.get("level", "L2"))
             lvl = lookup.get("level", "L2")
             lvl_item.setForeground(QColor(_LEVEL_COLORS.get(lvl, "#333")))
             self._table.setItem(i, 2, lvl_item)
 
-            # 重要性
             self._table.setItem(i, 3, QTableWidgetItem(str(lookup.get("importance", 3))))
 
-            # 创建时间
             created = lookup.get("created_at", "")
             if created:
                 try:
@@ -446,7 +440,6 @@ class MemoryWindow(QWidget):
                     pass
             self._table.setItem(i, 4, QTableWidgetItem(created))
 
-            # 访问次数
             self._table.setItem(i, 5, QTableWidgetItem(str(lookup.get("access_count", 0))))
 
         self._update_pagination_buttons()
@@ -611,7 +604,6 @@ class MemoryWindow(QWidget):
 
         self._detail_access_count.setText(str(lookup.get("access_count", 0)))
 
-        # 有效分值
         try:
             eff = self._memory_store.get_effective_importance(lookup)
             self._detail_effective.setText(f"{eff:.2f}")
