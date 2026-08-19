@@ -37,6 +37,18 @@ _CELL_QSS = (
     "}"
 )
 
+# 桌宠回合的空格：视觉禁用（灰底、无 hover），点击由 _waiting 拦截
+_CELL_DISABLED_QSS = (
+    "QPushButton {"
+    "  background: #eceef3;"
+    "  border: 2px solid #d0d6e0;"
+    "  border-radius: 12px;"
+    "  font-size: 40px;"
+    "  font-weight: bold;"
+    "  color: #999;"
+    "}"
+)
+
 _BG_QSS = (
     "QWidget#boardBg {"
     "  background: #f5f6fa;"
@@ -71,7 +83,6 @@ class GameBoardPanel(QWidget):
         self._first: str | None = None      # "user"=用户先手 / "pet"=桌宠先手
         self._placed = False          # 是否已定位/被用户拖动过
         self._llm_loading = False     # 脑线程运行中：暂停闲置收场，避免模型慢响应被误收场
-        self._idle_paused_by_loading = False
         self._drag_pos: QPoint | None = None
         self._board = [[""] * 3 for _ in range(3)]
         self._countdown = 0
@@ -173,12 +184,12 @@ class GameBoardPanel(QWidget):
             self._first = payload.get("first")
             side = "先手" if self._first == "user" else "后手"
             self._title.setText(f"井字棋 · 你执 {your_mark}（{side}）")
+        waiting = bool(payload.get("waiting"))
+        self._waiting = waiting
         board = payload.get("board")
         if board:
             self._board = [row[:] for row in board]  # 拷贝，避免与脑线程共享可变对象
             self._update_cells()
-        waiting = bool(payload.get("waiting"))
-        self._waiting = waiting
         msg = payload.get("message")
         if msg:
             self._message.setText(msg)
@@ -189,7 +200,6 @@ class GameBoardPanel(QWidget):
         else:
             self._countdown = 0
             self._countdown_timer.stop()
-            self._idle_paused_by_loading = False
             if not self._llm_loading:
                 self._idle_timer.start(_IDLE_TIMEOUT_MS)  # 等待桌宠/游戏结束：无更新则自动收场
         self._update_countdown_label()
@@ -199,21 +209,19 @@ class GameBoardPanel(QWidget):
             self.raise_()
 
     def set_llm_loading(self, loading: bool):
-        """脑线程运行状态：运行中暂停闲置收场定时器。
+        """脑线程运行状态。
 
-        模型推理/重试可能超过 30s，若在"轮到桌宠"时误收场会拆掉会话并重开一局；
-        本轮交互结束后（loading=False）再恢复闲置计时。
+        运行中（loading=True）：暂停闲置收场定时器，避免模型慢响应/重试被 30s 误收场；
+        结束（loading=False）：若棋盘仍显示且不在等待用户（游戏结束/模型提前退出），
+        重启 30s 闲置计时——模型继续下棋会由新一轮 render 重置，否则 30s 后自动收场。
         """
         self._llm_loading = loading
         if loading:
             if self._idle_timer.isActive():
                 self._idle_timer.stop()
-                self._idle_paused_by_loading = True
         else:
-            if self._idle_paused_by_loading:
-                self._idle_paused_by_loading = False
-                if not self._waiting and self._game_name and self.isVisible():
-                    self._idle_timer.start(_IDLE_TIMEOUT_MS)
+            if not self._waiting and self._game_name and self.isVisible():
+                self._idle_timer.start(_IDLE_TIMEOUT_MS)
 
     def _update_cells(self):
         for r in range(3):
@@ -221,11 +229,14 @@ class GameBoardPanel(QWidget):
                 mark = self._board[r][c]
                 btn = self._cells[r][c]
                 btn.setText(mark)
-                style = _CELL_QSS
                 if mark == "X":
-                    style = style.replace("color: #333;", "color: #e67e22;")
+                    style = _CELL_QSS.replace("color: #333;", "color: #e67e22;")
                 elif mark == "O":
-                    style = style.replace("color: #333;", "color: #2e86c1;")
+                    style = _CELL_QSS.replace("color: #333;", "color: #2e86c1;")
+                elif self._waiting:
+                    style = _CELL_QSS  # 用户回合：空格可点
+                else:
+                    style = _CELL_DISABLED_QSS  # 桌宠回合：空格视觉禁用
                 btn.setStyleSheet(style)
 
     def _update_countdown_label(self):
