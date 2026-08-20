@@ -171,7 +171,9 @@ class GameBase:
         except Exception:
             pass
         return {
-            "summary": f"{game_name} 游戏初始化完成，现在可以调用 game__play 推进了",
+            "summary": f"{game_name} 游戏初始化完成，但游戏尚未开始。"
+                       f"（对模型）请立即继续调用 game__play(game_name=\"{game_name}\" 及该游戏出招参数) "
+                       f"开启第一回合并持续推进，不要在此输出最终答复；只有某次 game__play 返回 ended=True 才代表游戏结束。",
             "success": True,
             "ended": False,
         }
@@ -192,7 +194,8 @@ class GameBase:
         if unknown:
             return {
                 "summary": f"参数 {', '.join(unknown)} 不属于 {game_name}，"
-                           f"{game_name} 需要的参数：{', '.join(game_args) or '无'}",
+                           f"{game_name} 需要的参数：{', '.join(game_args) or '无'}。"
+                           f"（对模型）请用正确的参数重新调用 game__play 继续游戏，不要输出最终答复。",
                 "success": False,
                 "ended": False,  # 本回合未执行，游戏状态不变，模型可纠正后重试
             }
@@ -252,7 +255,14 @@ class GameBase:
             self._sessions.pop(game_name, None)
             # 明确告知游戏已结束，避免模型继续调用 game__play/game__stop
             if result.get("summary"):
-                result["summary"] = f"{result['summary']} 本局游戏已结束"
+                result["summary"] = f"{result['summary']}（对模型）游戏已结束（ended=True），请总结本局结果并输出最终答复，不要继续调用游戏工具。"
+        elif result.get("summary"):
+            # 游戏未结束：必须在 summary 里明确"继续推进"，否则模型可能提前输出最终答复
+            result["summary"] = (
+                f"{result['summary']}（对模型）本回合尚未结束（ended=False），"
+                f"请立即继续调用 game__play 推进游戏并等待玩家动作，不要输出最终答复；"
+                f"只有某次返回 ended=True 才结束并总结。"
+            )
         result.setdefault("success", True)
         result.setdefault("game_name", game_name)
         self._emit_speech(game, result)
@@ -352,7 +362,8 @@ class GameBase:
         if speech:
             TOOL_CTX.speech(speech)
         elif result.get("summary"):
-            TOOL_CTX.speech(result["summary"])
+            # 剥离（对模型）指令段，只把自然内容播给用户
+            TOOL_CTX.speech(str(result["summary"]).split("（对模型）", 1)[0].strip())
 
 
 GAME = GameBase()
