@@ -768,7 +768,7 @@ class Behavior(BrainMixin):
             sorted_indices = sorted(tool_calls_map.keys())
 
             def _exec_tool(idx):
-                """执行单个工具调用，返回 (idx, tc, result, tool_brief, result_text)。"""
+                """执行单个工具调用，返回 (idx, tc, result, tool_brief, result_text, tool_aside)。"""
                 tc = tool_calls_map[idx]
                 try:
                     args = _json.loads(tc["arguments"] or "{}")
@@ -793,7 +793,7 @@ class Behavior(BrainMixin):
                 if result.success and isinstance(result.data, dict):
                     tool_brief = result.data.get("summary", "")
                 result_text = executor._normalize(result.data) if result.success else result.error
-                return idx, tc, result, tool_brief, result_text
+                return idx, tc, result, tool_brief, result_text, tool_aside
 
             tool_results = {}
             # 游戏工具（game__*）有跨调用会话依赖（如 start 必须先于 play），
@@ -823,14 +823,17 @@ class Behavior(BrainMixin):
 
             # 按 index 排序后依次 append（保持顺序一致性）
             for idx in sorted_indices:
-                _, tc, result, tool_brief, result_text = tool_results[idx]
+                _, tc, result, tool_brief, result_text, tool_aside = tool_results[idx]
                 current_messages.append({
                     "role": "tool",
                     "tool_call_id": tc["id"],
                     "content": result_text,
                 })
                 logger.info(f"[Behavior] tool_round_{display_round} {tc['name']} -> {'OK' if result.success else 'FAIL'}")
-                tool_log.append(f"{tc['name']} → {result.context_brief or tool_brief or result_text[:200]}")
+                log_entry = f"{tc['name']} → {result.context_brief or tool_brief or result_text[:200]}"
+                if tool_aside:
+                    log_entry = f"（自言自语：{tool_aside}）{log_entry}"
+                tool_log.append(log_entry)
 
                 # 搜索工具执行后自动激活匹配的分组
                 if tc["name"] == "tool_search__search":

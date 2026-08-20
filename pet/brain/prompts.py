@@ -68,6 +68,9 @@ _TOOL_ASIDE_GUIDE = ("调用工具时，可以配合 aside 字段表现地言行
                      "aside 是你行动时的自言自语，仅作为辅助让用户理解你正在行动，不会作为对用户的正式回复；"
                      "最终输出的 Speech 才是本轮主要语句输出")
 
+_ADDRESS_GUIDE = """[称呼]
+禁止用「用户」称呼对方；用「你」或记忆中已记住的称呼（如名字）代替。"""
+
 _EMOTION_LIST = "happy, excited, sad, angry, surprised, thinking, sleepy, love, cool, shy, scared, hungry, curious, proud, bored, crazy"
 
 
@@ -255,6 +258,7 @@ def build_system_prompt(mode: str, task: str, include_feeling_marker: bool = Tru
         sections.append(FEELING_MARKER)
     if config.PET_PERSONALITY:
         sections.append(f"[你的人格]\n{config.PET_PERSONALITY}")
+    sections.append(_ADDRESS_GUIDE)
 
     if task in ("autonomous", "chat"):
         sections.extend(_base_sections())
