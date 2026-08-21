@@ -332,8 +332,7 @@ class FoodManager(QObject):
                 "interact",
                 hint=interact_self_fed_prompt(name),
                 delay_ms=150,
-                record_context=True,
-                context_hint=f"你找到了{name}并吃掉了（自己觅食）",
+                record_context=False,  # 事件由 describe() 的 system 路径落库，避免与 user 消息重复
                 is_play_loading=False,
                 thinking=False,
                 enable_tools=False,
