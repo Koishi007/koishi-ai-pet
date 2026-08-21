@@ -182,8 +182,7 @@ class ContextBuilder:
         else:
             current_prompt = prompts.autonomous_non_vision_user_prompt(ctx_str)
 
-        messages = [{"role": "system", "content": system}]
-        messages.extend(history_msgs)
+        messages = self._merge_system_history(system, history_msgs)
 
         if vision:
             mime = self._image_mime()
@@ -213,8 +212,7 @@ class ContextBuilder:
         else:
             current_prompt = prompts.chat_non_vision_user_prompt(user_message, ctx)
 
-        messages = [{"role": "system", "content": system}]
-        messages.extend(history_msgs)
+        messages = self._merge_system_history(system, history_msgs)
 
         if vision:
             mime = self._image_mime()
@@ -225,6 +223,20 @@ class ContextBuilder:
         else:
             messages.append({"role": "user", "content": current_prompt})
         return messages
+
+    @staticmethod
+    def _merge_system_history(system: str, history_msgs: list[dict]) -> list[dict]:
+        """把历史中的 system 类消息（历史摘要、离开提示等）并入主 system prompt。
+
+        部分后端模板（如 ollama 的 qwen3 系列）强制要求 system 消息唯一且位于
+        首位，历史中穿插的 system 消息会触发 500 (Jinja Exception)。
+        合并后消息列表以单条 system 开头，其余对话按时间顺序保留。
+        """
+        notes = [m["content"] for m in history_msgs if m.get("role") == "system"]
+        dialog = [m for m in history_msgs if m.get("role") != "system"]
+        if notes:
+            system = system + "\n\n[上下文备注]\n" + "\n".join(notes)
+        return [{"role": "system", "content": system}, *dialog]
 
     # internal
 
