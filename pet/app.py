@@ -155,9 +155,6 @@ def main():
     agent.emotion_requested.connect(
         lambda e, d: emotion_bubble.show_emotion(e, d) if window.isVisible() else None
     )
-    agent.emotion_requested.connect(
-        lambda e, d: window.particles.spawn("hearts") if window.isVisible() and e == "love" else None
-    )
     agent.mood.affection_increased.connect(
         lambda: window.particles.spawn("hearts") if window.isVisible() else None
     )

@@ -1,5 +1,7 @@
 """桌宠情绪气泡显示 emoji 表情"""
 
+import re
+
 from PySide6.QtWidgets import QLabel, QWidget
 from PySide6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve
 from pet.config import config
@@ -51,17 +53,33 @@ class EmotionBubble(QLabel):
 
         self._hide_timer = QTimer(self)
         self._hide_timer.setSingleShot(True)
-        self._hide_timer.timeout.connect(self._hide_bubble)
+        self._hide_timer.timeout.connect(self._advance_emotion)
 
         self._follow_timer = QTimer(self)
         self._follow_timer.timeout.connect(self._follow_pet)
 
         self._fade_anim: QPropertyAnimation | None = None
+        self._emotion_queue: list[str] = []
+        self._emotion_index = 0
+        self._emotion_duration = 3000
         self.hide()
 
     def show_emotion(self, emotion: str, duration: int = 3000, parent_pos=None):
-        """显示情绪 emoji。emotion 可为情绪名或 emoji 文本。"""
-        emoji = emotion_to_emoji(emotion)
+        """显示情绪 emoji。emotion 可为情绪名、emoji 文本，或逗号分隔的多个情绪（按序播放）。"""
+        names = [e.strip() for e in re.split(r"[,，、\s]+", emotion) if e.strip()]
+        valid = [e for e in names if e.lower() in VALID_EMOTIONS]
+        if not valid:
+            # 无合法情绪（如直接传入 emoji 文本）：原样显示一次
+            valid = [emotion]
+
+        self._emotion_queue = valid
+        self._emotion_index = 0
+        self._emotion_duration = duration
+        self._show_current(parent_pos)
+
+    def _show_current(self, parent_pos):
+        """显示队列当前情绪，并按其均分时长排定切换/隐藏定时器。"""
+        emoji = emotion_to_emoji(self._emotion_queue[self._emotion_index])
         self.setText(emoji)
 
         if parent_pos is None and isinstance(self.parent(), QWidget):
@@ -83,7 +101,17 @@ class EmotionBubble(QLabel):
             self.show()
 
         self._follow_timer.start(50)
-        self._hide_timer.start(duration)
+        count = len(self._emotion_queue)
+        per = max(800, self._emotion_duration // count) if count else self._emotion_duration
+        self._hide_timer.start(per)
+
+    def _advance_emotion(self):
+        """切换到下一个情绪；播完则隐藏。"""
+        if self._emotion_index + 1 < len(self._emotion_queue):
+            self._emotion_index += 1
+            self._show_current(None)
+        else:
+            self._hide_bubble()
 
     def _hide_bubble(self):
         # 淡出

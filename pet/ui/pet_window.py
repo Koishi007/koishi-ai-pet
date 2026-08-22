@@ -404,10 +404,6 @@ class PetWindow(TransparentWindow):
         self.action_queue.resume()
         self.particles.spawn("dust")
 
-    def _on_emotion_hearts(self):
-        """love 情绪时触发爱心粒子。"""
-        self.particles.spawn("hearts")
-
     def _on_standing_lost(self, window_title: str):
         """站立窗口消失/被遮挡时，触发 LLM 交互反应。"""
         hint = self._PROMPT_WINDOW_DISAPPEARED

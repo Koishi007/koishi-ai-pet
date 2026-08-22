@@ -526,7 +526,7 @@ class Behavior(BrainMixin):
             if accumulated_tool_calls:
                 first_content = "\n".join(
                     ([f"Summary: {summary_holder[0]}"] if summary_holder else []) +
-                    ([f"Emotion: {emotion_holder[0]}"] if emotion_holder else []) +
+                    ([f"Emotion: {', '.join(emotion_holder)}"] if emotion_holder else []) +
                     [f"Speech: {s}" for s in speech_parts] +
                     [f"Action: {a.name} {' '.join(map(str, a.args))} {' '.join(f'{k}={v}' for k, v in a.kwargs.items())}".strip() for a in actions] +
                     ([f"Memory: {memory_holder[0]}"] if memory_holder else []) +
@@ -547,7 +547,7 @@ class Behavior(BrainMixin):
 
             raw = "\n".join(
                 ([f"Summary: {summary_holder[0]}"] if summary_holder else []) +
-                ([f"Emotion: {emotion_holder[0]}"] if emotion_holder else []) +
+                ([f"Emotion: {', '.join(emotion_holder)}"] if emotion_holder else []) +
                 [f"Speech: {s}" for s in speech_parts] +
                 [f"Action: {a.name} {' '.join(map(str, a.args))} {' '.join(f'{k}={v}' for k, v in a.kwargs.items())}".strip() for a in actions] +
                 ([f"Memory: {memory_holder[0]}"] if memory_holder else []) +
@@ -566,7 +566,7 @@ class Behavior(BrainMixin):
                 speech_streamed=speech_streamed,
                 summary=summary_holder[0] if summary_holder else None,
                 memory_line=memory_holder[0] if memory_holder else None,
-                emotion=emotion_holder[0] if emotion_holder else None,
+                emotion=", ".join(emotion_holder) if emotion_holder else None,
                 mood_deltas=mood_deltas,
                 vitals_deltas=vitals_deltas,
             )
@@ -583,7 +583,7 @@ class Behavior(BrainMixin):
         speech_parts = []
         summary = None
         memory_line = None
-        emotion = None
+        emotion_parts = []
         mood_line = None
         vitals_line = None
         for line in content.split("\n"):
@@ -605,7 +605,7 @@ class Behavior(BrainMixin):
             elif lower.startswith("memory:") and memory_line is None:
                 memory_line = line.split(":", 1)[1].strip()
             elif lower.startswith("emotion:"):
-                emotion = line.split(":", 1)[1].strip()
+                emotion_parts.append(line.split(":", 1)[1].strip())
             elif lower.startswith("mood:") and mood_line is None:
                 mood_line = line.split(":", 1)[1].strip()
             elif lower.startswith("vitals:") and vitals_line is None:
@@ -615,7 +615,7 @@ class Behavior(BrainMixin):
         mood_deltas = self._parse_mood_line(mood_line) if mood_line else None
         vitals_deltas = self._parse_vitals_line(vitals_line) if vitals_line else None
         speech = " ".join(speech_parts) if speech_parts else None
-        return BehaviorOutput(actions=actions, speech=speech, speech_parts=speech_parts, summary=summary, memory_line=memory_line, emotion=emotion, mood_deltas=mood_deltas, vitals_deltas=vitals_deltas)
+        return BehaviorOutput(actions=actions, speech=speech, speech_parts=speech_parts, summary=summary, memory_line=memory_line, emotion=", ".join(emotion_parts) if emotion_parts else None, mood_deltas=mood_deltas, vitals_deltas=vitals_deltas)
 
     def _finish_line(self, buffer, actions, speech_parts,
                       summary_holder=None, memory_holder=None, emotion_holder=None,
