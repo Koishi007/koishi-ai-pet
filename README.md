@@ -11,9 +11,12 @@
 - **视觉感知**：截图分析 + 窗口探测，理解屏幕上正在发生什么
 - **物理交互**：模拟重力下落，可站立在其他窗口顶部；可拖拽、点击
 - **主动对话**：可以键盘输入、语音输入（需要配置讯飞API），与桌宠对话
-- **持久记忆**：使用SQLite实现持久记忆
-- **宠物状态**：有生理和心理参数，会影响桌宠行为
-- **工具系统**：内置浏览器、天气、待办、文件操作、系统监控等工具，参照指南可以自行拓展
+- **持久记忆**：使用SQLite实现持久记忆，带可视化记忆管理窗口（浏览/搜索/筛选/编辑）
+- **宠物状态**：有生理（饱食、精力）和心理（好感、愉悦、理智）参数，会影响桌宠行为
+- **互动游戏**：内置猜数字、猜拳、井字棋，可以和桌宠游玩
+- **自主觅食**：饿了会自己寻找食物、跳起来吃掉
+- **音乐控制**：悬停桌宠可控制系统媒体播放/暂停、切歌、音量与静音
+- **工具系统**：内置浏览器、天气、待办、文件操作、系统监控、知识库等工具，参照指南可以自行拓展
 
 ## 项目结构
 
@@ -28,6 +31,8 @@ KoishiAI/
     ├── agent/                  # 调度层：PetAgent、Scheduler、StateMachine
     ├── brain/                  # LLM 集成：Behavior、prompts、memory、window_detector
     ├── pulse/                  # 心理数值引擎：Mood（好感/愉悦/理智）、Vitals（饱食/精力）
+    ├── food/                   # 觅食系统：食物生成、过期、自主进食
+    ├── game/                   # 回合制游戏：GameBase 容器 + 猜数字/猜拳/井字棋
     ├── tools/                  # 工具系统：Registry、Executor、内置工具
     ├── ui/                     # Qt 界面：宠物窗口、气泡、聊天框、托盘、设置
     └── voice/                  # 语音输入：麦克风采集、讯飞 STT
@@ -118,14 +123,37 @@ chmod +x update.sh && ./update.sh
 
 | 分组 | 工具 | 方法 | 说明 |
 |------|------|------|------|
+| `default` | `tool_search` | `list_groups` / `search` | 工具发现：列出分组、按关键词搜索并自动激活匹配分组 |
+| `default` | `food` | `spawn` / `status` | 觅食：在桌面生成食物、查询食物位置与过期状态 |
+| `default` | `game` | `list` / `init` / `play` / `stop` | 回合制小游戏：列出游戏、开局、玩一回合、主动结束 |
 | `web` | `browser` | `search` / `read_url` / `screenshot_url` / `close` | 多引擎网页搜索、读取网页正文（分页）、截图 |
 | `web` | `web_search` | `search` / `deep_search` | SearXNG / Bing API 搜索，深度搜索自动抓取全文 |
 | `info` | `weather` | `get_current` / `get_forecast` | 基于 Open-Meteo 的免费天气查询 |
 | `info` | `system_monitor` | `get_overview` / `get_top_processes` / `get_memory_detail` / `get_network` | CPU、内存、磁盘、电池、进程 |
-| `file` | `file_ops` | `list_dir` / `read_file` / `write_note` / `write_file` | 列目录、读写文件（限桌面/文档） |
+| `file` | `file` | `list_dir` / `read_file` / `write_note` / `write_file` | 列目录、读写文件（限桌面/文档） |
 | `productivity` | `timer` | `set` / `list` / `cancel` / `cancel_all` | 倒计时定时器，到时宠物主动提醒 |
 | `productivity` | `todo` | `add` / `list` / `toggle` / `delete` / `update` | 待办事项管理 |
-| `memory` | `knowledge` | `search` / `list` | RAG 知识库：语义检索、导入 txt/md |
+| `memory` | `knowledge` | `search` / `list` | RAG 知识库：语义检索、知识条目管理 |
+
+### food
+
+觅食系统：桌宠饱食度低时会主动生成食物并走过去吃掉，也可以从悬停按钮或直接投喂触发。
+
+- `spawn(food_type)`：在桌面随机位置生成食物（10 种 emoji，可指定类型），返回坐标与偏移
+- `status`：查询当前食物的实时位置、是否到达、剩余过期时间
+- 食物会随时间过期变质，桌宠到达后自动"吃掉"并触发互动台词
+
+### game
+
+回合制小游戏系统。桌宠会主动邀请你玩游戏：
+
+| 游戏 | 玩法 |
+|------|------|
+| `guess_number` | 猜数字：随机生成 1-100 的数，桌宠每回合猜一个，给桌宠反馈"大了/小了"，7 次内猜中算赢 |
+| `rps` | 猜拳：石头剪刀布，桌宠先出拳、你后出，三局两胜，15 秒未出拳判你输 |
+| `tic_tac_toe` | 井字棋：3×3 棋盘，随机先后手，先连成三子获胜，15 秒未落子判你输 |
+
+游戏流程：`game__list` 了解可选游戏 → `game__init` 开局 → `game__play` 每回合推进 → 返回 `ended=True` 即结束。猜拳和井字棋有可视化交互面板，点击按钮/格子即可操作。
 
 ### browser
 
@@ -200,7 +228,7 @@ RAG 知识库，支持语义检索。可配置向量嵌入以启用语义搜索�
 
 无需额外配置。
 
-### file_ops
+### file
 
 所有文件操作限定在桌面和文档目录内，保证安全。
 
@@ -218,9 +246,15 @@ RAG 知识库，支持语义检索。可配置向量嵌入以启用语义搜索�
 
 无需额外配置。
 
-## 右键菜单
+## 悬停交互与右键菜单
 
-桌宠有两个右键入口：**桌宠身体**和**系统托盘**。
+### 悬停桌宠
+
+鼠标靠近桌宠时，顶部浮现三个快捷按钮：
+
+- **对话**：点击展开聊天输入框
+- **喂食**：点击弹出喂食气泡，输入想喂的食物
+- **音乐**：点击展开音乐控制条——上一首 / 播放·暂停 / 下一首、音量加减、静音
 
 ### 桌宠身体右键
 
@@ -257,6 +291,7 @@ RAG 知识库，支持语义检索。可配置向量嵌入以启用语义搜索�
 | 菜单项 | 功能 |
 |--------|------|
 | **隐藏/显示** | 切换桌宠窗口的可见状态 |
+| **开启/关闭鼠标穿透** | 开启后鼠标可穿透桌宠，不影响点击下方窗口 |
 | **设置** | 打开设置窗口 |
 | **退出** | 退出应用程序 |
 
@@ -310,14 +345,14 @@ def register(registry):
 
 | 分组 | 包含工具 | 说明 |
 |------|----------|------|
-| `default` | `tool_search` | 始终激活，无需搜索 |
+| `default` | `tool_search`, `food`, `game` | 始终激活，无需搜索 |
 | `web` | `browser`, `web_search` | 浏览器与网络搜索 |
-| `file` | `file_ops` | 本地文件操作 |
+| `file` | `file` | 本地文件操作 |
 | `info` | `weather`, `system_monitor` | 信息查询 |
 | `productivity` | `todo`, `timer` | 效率工具 |
 | `memory` | `knowledge` | 知识库 |
 
-初始状态下 LLM 仅能调用 `default` 组的 `tool_search`。当 LLM 需要某个功能时，先调用 `tool_search.list_groups` 或 `tool_search.search(keyword)` 探索工具，匹配到的分组自动激活，后续请求即可调用该组的全部工具。
+当 LLM 需要某个功能时，先调用 `tool_search.list_groups` 或 `tool_search.search(keyword)` 探索工具，匹配到的分组自动激活，后续请求即可调用该组的全部工具。
 
 ### 参数定义
 
@@ -377,6 +412,10 @@ def alert() -> dict:
 ```
 
 `TOOL_CTX` 可用方法：`speech`、`action`、`add_context`、`notify`、`request_interact`、`register_tick`、`register_alarm`。
+
+### aside 通用参数
+
+所有工具方法自动附带一个可选参数 `aside`（自言自语）。模型调用工具时可以带一句台词（如"搜搜看今天天气…"），系统会播给用户听，但不会作为正式回复、也不会传给 handler。它是模型"言行统一"的过程性辅助，最终输出 `Speech` 才是正式答复。
 
 ### 启用工具
 
