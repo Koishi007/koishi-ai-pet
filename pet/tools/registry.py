@@ -381,7 +381,7 @@ class ToolRegistry:
                 # 通用可选参数：模型调用工具时可带 aside，作为自言自语播出（不传给 handler）
                 properties["aside"] = {
                     "type": "string",
-                    "description": "（可选）调用此工具时的自言自语，只让用户理解你正在做什么，不会作为对用户的正式回复；不想说可不填",
+                    "description": "（可选）调用此工具时的自言自语，按你的人格口吻说一句，只让用户理解你正在做什么，不会作为对用户的正式回复；不想说可不填",
                 }
                 tools.append({
                     "type": "function",
