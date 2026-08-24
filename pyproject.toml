@@ -7,7 +7,7 @@ name = "koishi-ai-pet"
 version = "1.5.0"
 description = "古明地恋AI桌宠"
 readme = "README.md"
-requires-python = ">=3.11,<3.14"
+requires-python = ">=3.11,<3.15"
 license = { text = "GPL-3.0-only" }
 authors = [
     { name = "Koishi007" },
@@ -33,7 +33,7 @@ dependencies = [
     "pynput>=1.7.6",
     "pycaw>=20231227; sys_platform == 'win32'",
     "pyobjc-framework-Quartz; sys_platform == 'darwin'",
-    "pyobjc-framework-AppKit; sys_platform == 'darwin'",
+    "pyobjc-framework-Cocoa; sys_platform == 'darwin'",  # AppKit/NSScreen/NSApp 在 Cocoa 包中，PyPI 无独立 AppKit 包
     "python-xlib; sys_platform == 'linux'",
 ]
 

@@ -42,7 +42,7 @@ KoishiAI/
 
 ### Windows
 
-1. 安装 Python 3.11~3.13：[python.org/downloads](https://www.python.org/downloads/)（勾选 **"Add Python to PATH"**）
+1. 安装 Python 3.11~3.14：[python.org/downloads](https://www.python.org/downloads/)（勾选 **"Add Python to PATH"**；须为 **64 位标准版**，不支持 32 位及 free-threaded 版本）
 2. 在右侧下载**最新**的release版本
 3. **双击 `setup.bat`**，自动完成安装和桌面快捷方式创建
 4. 双击桌面 **"Koishi AI Pet"** 快捷方式启动
