@@ -102,7 +102,8 @@ class EmotionBubble(QLabel):
 
         self._follow_timer.start(50)
         count = len(self._emotion_queue)
-        per = max(800, self._emotion_duration // count) if count else self._emotion_duration
+        # 总时长均分给每个情绪，但每个情绪至少展示 1.5s
+        per = max(1500, self._emotion_duration // count) if count else self._emotion_duration
         self._hide_timer.start(per)
 
     def _advance_emotion(self):
