@@ -4,7 +4,7 @@ import sqlite3
 import logging
 import threading
 
-from pet.db import get_db_path
+from pet.db import get_conn, get_db_path
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +18,7 @@ class LlmStats:
         if db_path is None:
             db_path = get_db_path()
         self._lock = threading.Lock()
-        self._conn = sqlite3.connect(db_path, check_same_thread=False)
+        self._conn = get_conn(db_path)
         self._conn.execute(self._TABLE_SQL)
         self._conn.commit()
         self._total = self._load("total_calls")

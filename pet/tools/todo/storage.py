@@ -8,6 +8,7 @@ import logging
 from datetime import datetime
 
 from pet.tools.context import TOOL_CTX
+from pet.db import get_conn
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +16,7 @@ logger = logging.getLogger(__name__)
 class TodoStorage:
     def __init__(self, db_path: str | None = None):
         self._db_path = db_path or TOOL_CTX.db_path()
-        self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
+        self._conn = get_conn(self._db_path)
         self._conn.row_factory = sqlite3.Row
         self._lock = threading.Lock()
         self._create_table()

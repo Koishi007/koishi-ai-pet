@@ -11,7 +11,7 @@ from typing import Optional, List, Tuple
 from abc import ABC, abstractmethod
 
 from pet.config import config
-from pet.db import get_db_path
+from pet.db import get_conn, get_db_path
 
 logger = logging.getLogger(__name__)
 
@@ -1046,7 +1046,7 @@ class MemoryStore:
             db_path = get_db_path()
 
         self._db_path = db_path
-        self._conn = sqlite3.connect(db_path, check_same_thread=False)
+        self._conn = get_conn(db_path)
         self._conn.row_factory = sqlite3.Row
         self._lock = threading.RLock()
         

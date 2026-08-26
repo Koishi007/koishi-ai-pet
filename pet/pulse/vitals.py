@@ -8,7 +8,7 @@ from typing import Optional
 
 from PySide6.QtCore import QObject, Signal
 
-from pet.db import get_db_path
+from pet.db import get_conn, get_db_path
 
 logger = logging.getLogger(__name__)
 
@@ -56,11 +56,14 @@ class Vitals(QObject):
         self._thresholds = thresholds or Thresholds()
 
         # SQLite 持久化（与 MemoryStore 共用 pet.db，不同表）
+        # 构造期用充足 timeout 保证建表/加载不被并发写打断；
+        # 完成后收短 busy_timeout，save 在主线程 slow_tick 执行时最长只等 0.5s
         self._db_path = db_path or _DB_PATH
-        self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
+        self._conn = get_conn(self._db_path, timeout=5.0)
         self._lock = threading.Lock()
         self._create_table()
         self._load()
+        self._conn.execute("PRAGMA busy_timeout=500")
 
         # 信号防抖
         self._was_hungry     = False
@@ -94,12 +97,17 @@ class Vitals(QObject):
             self._energy: float  = row[1]
 
     def save(self):
-        with self._lock:
-            self._conn.execute(
-                "UPDATE vitals SET satiety=?, energy=? WHERE id = 1",
-                (round(self._satiety, 3), round(self._energy, 3))
-            )
-            self._conn.commit()
+        try:
+            with self._lock:
+                self._conn.execute(
+                    "UPDATE vitals SET satiety=?, energy=? WHERE id = 1",
+                    (round(self._satiety, 3), round(self._energy, 3))
+                )
+                self._conn.commit()
+        except sqlite3.OperationalError as e:
+            # 锁竞争（或磁盘/表等 DB 错误）时快速跳过，
+            # 数值保留在内存，下个 slow_tick 重试
+            logger.warning(f"[Vitals] save failed, will retry next tick: {e}")
 
 
     @property

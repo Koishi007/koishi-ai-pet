@@ -5,7 +5,7 @@ import sqlite3
 import threading
 from datetime import datetime, timedelta
 
-from pet.db import get_db_path
+from pet.db import get_conn, get_db_path
 
 logger = logging.getLogger(__name__)
 
@@ -18,9 +18,8 @@ class ConversationStore:
         self._conn: sqlite3.Connection | None = None
         self._lock = threading.Lock()
         try:
-            self._conn = sqlite3.connect(self._db_path, check_same_thread=False, timeout=5.0)
+            self._conn = get_conn(self._db_path, timeout=5.0)
             self._conn.row_factory = sqlite3.Row
-            self._conn.execute("PRAGMA busy_timeout=5000")
             self._create_table()
             self._cleanup_old(7)
         except Exception as e:

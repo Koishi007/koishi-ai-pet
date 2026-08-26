@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import List, Optional
 
 from pet.config import config
+from pet.db import get_conn
 
 logger = logging.getLogger(__name__)
 
@@ -59,10 +60,8 @@ class BrainMixin:
     def _init_db(self):
         """初始化上下文持久化表。"""
         try:
-            self._db_conn = sqlite3.connect(self._db_path, check_same_thread=False)
+            self._db_conn = get_conn(self._db_path)
             self._db_conn.row_factory = sqlite3.Row
-            # 启用 WAL 模式提升并发性能
-            self._db_conn.execute("PRAGMA journal_mode=WAL;")
             self._db_conn.execute("""
                 CREATE TABLE IF NOT EXISTS context_entries (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 
 from pet.tools.context import TOOL_CTX
+from pet.db import get_conn
 
 logger = logging.getLogger(__name__)
 
@@ -42,10 +43,9 @@ class KnowledgeStorage:
 
     def __init__(self, db_path: str | None = None):
         self._db_path = db_path or TOOL_CTX.db_path()
-        self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
+        # 知识库涉及批量向量写入，保持原 5s busy_timeout
+        self._conn = get_conn(self._db_path, timeout=5.0)
         self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA journal_mode=WAL")
-        self._conn.execute("PRAGMA busy_timeout=5000")
         self._lock = threading.RLock()
         self._embedder = None
 
