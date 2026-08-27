@@ -2,6 +2,7 @@
 
 import logging
 import threading
+import time
 from datetime import datetime
 from PySide6.QtCore import QObject, QThread, QThreadPool, QTimer, Signal
 
@@ -60,13 +61,14 @@ class PetAgent(QObject):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._last_head_pat_ts: float = 0.0  # 最近一次用户摸头时间（monotonic）
         self.memory_store = MemoryStore()
         self.conversation_store = ConversationStore()
         self.screen_reader = ScreenReader()
         self.screen_reader.enable()
         self.vitals = Vitals(parent=self)
         self.mood = Mood(parent=self)
-        self.behavior = Behavior(memory_store=self.memory_store, screen_reader=self.screen_reader, vitals=self.vitals, mood=self.mood)
+        self.behavior = Behavior(memory_store=self.memory_store, screen_reader=self.screen_reader, vitals=self.vitals, mood=self.mood, head_pat_ts_fn=self._head_pat_ts)
         self.scheduler = Scheduler(self)
         self.state_machine = StateMachine(parent=self)
         self.state_machine.state_changed.connect(self.state_changed)
@@ -81,6 +83,13 @@ class PetAgent(QObject):
         self._cancel_flag = False
         self._active_stream_id = 0
         self._last_interact_ms: dict[str, int] = {}
+
+    def note_head_pat(self):
+        """记录一次用户摸头（单击宠物），供上下文备注注入。"""
+        self._last_head_pat_ts = time.monotonic()
+
+    def _head_pat_ts(self) -> float:
+        return self._last_head_pat_ts
 
     def set_pet_window(self, window):
         self._pet_window = window

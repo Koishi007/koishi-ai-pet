@@ -208,10 +208,11 @@ class PetWindow(TransparentWindow):
             self._agent.trigger("interact", hint=self._PROMPT_GRABBED, is_play_loading=False, thinking=False, enable_tools=False)
 
     def _on_click_confirmed(self):
-        """200ms 内无移动，判定为单击，并提升心理状态。"""
+        """200ms 内无移动，判定为单击（摸头），并提升心理状态。"""
         self._press_pos = None
         self.particles.spawn("hearts")
         if self._agent is not None:
+            self._agent.note_head_pat()
             self._agent.mood.modify_sanity(1.0)
             self._agent.mood.modify_joy(1.0)
 

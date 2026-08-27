@@ -1,6 +1,7 @@
 """LLM 请求上下文的构建"""
 
 import re
+import time
 from datetime import datetime
 from typing import Optional
 
@@ -18,12 +19,14 @@ class ContextBuilder:
       build_tool_result_message — 工具多轮调用中的结果消息（单条 dict）
     """
 
-    def __init__(self, memory_store=None, screen_reader=None, vitals=None, mood=None, brain_mixin=None):
+    def __init__(self, memory_store=None, screen_reader=None, vitals=None, mood=None,
+                 brain_mixin=None, head_pat_ts_fn=None):
         self._memory_store = memory_store
         self._screen_reader = screen_reader
         self._vitals = vitals
         self._mood = mood
         self._brain = brain_mixin
+        self._head_pat_ts_fn = head_pat_ts_fn
 
     # public API
 
@@ -224,8 +227,7 @@ class ContextBuilder:
             messages.append({"role": "user", "content": current_prompt})
         return messages
 
-    @staticmethod
-    def _merge_system_history(system: str, history_msgs: list[dict]) -> list[dict]:
+    def _merge_system_history(self, system: str, history_msgs: list[dict]) -> list[dict]:
         """把历史中的 system 类消息（历史摘要、离开提示等）并入主 system prompt。
 
         部分后端模板（如 ollama 的 qwen3 系列）强制要求 system 消息唯一且位于
@@ -233,10 +235,25 @@ class ContextBuilder:
         合并后消息列表以单条 system 开头，其余对话按时间顺序保留。
         """
         notes = [m["content"] for m in history_msgs if m.get("role") == "system"]
+        head_pat_note = self._head_pat_note()
+        if head_pat_note:
+            notes.append(head_pat_note)
         dialog = [m for m in history_msgs if m.get("role") != "system"]
         if notes:
             system = system + "\n\n[上下文备注]\n" + "\n".join(notes)
         return [{"role": "system", "content": system}, *dialog]
+
+    def _head_pat_note(self) -> str:
+        """用户在一个 mid_tick 周期内摸过头则返回备注文本，否则返回空串。"""
+        if not self._head_pat_ts_fn:
+            return ""
+        last = self._head_pat_ts_fn()
+        if not last:
+            return ""
+        window_s = config.SCHEDULER_MID_MS / 1000.0
+        if time.monotonic() - last <= window_s:
+            return "用户最近摸了你的头"
+        return ""
 
     # internal
 
