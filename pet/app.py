@@ -136,14 +136,18 @@ def main():
     # 游戏面板：由 game__play 跨线程驱动渲染
     from pet.ui.tic_tac_toe_panel import TicTacToePanel
     from pet.ui.rps_panel import RpsPanel
+    from pet.ui.twenty_questions_panel import TwentyQuestionsPanel
     game_board_panel = TicTacToePanel()
     game_board_panel.set_pet_window(window)
     rps_panel = RpsPanel()
     rps_panel.set_pet_window(window)
+    tq_panel = TwentyQuestionsPanel()
+    tq_panel.set_pet_window(window)
     # 统一分发：按游戏名路由到对应面板，新游戏只需在此加一行映射
     _game_panel_handlers = {
         "tic_tac_toe": game_board_panel.render,
         "rps": rps_panel.render,
+        "twenty_questions": tq_panel.render,
     }
     def _dispatch_game_board(game_name, payload):
         handler = _game_panel_handlers.get(game_name)

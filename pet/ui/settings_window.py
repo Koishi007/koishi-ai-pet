@@ -489,7 +489,7 @@ class SettingsWindow(QWidget):
         hint.setStyleSheet(f"color:{_COLOR_TEXT_MUTED}; font-size:11px;")
         form.addRow("", hint)
 
-        self._tool_rounds_edit = self._line("LLM_TOOL_MAX_ROUNDS", "5", QIntValidator(1, 20))
+        self._tool_rounds_edit = self._line("LLM_TOOL_MAX_ROUNDS", "30", QIntValidator(10, 99))
         form.addRow("工具调用最大轮次:", self._tool_rounds_edit)
 
         self._cache_check = self._check("LLM_CACHE_PROMPT", "Prompt 缓存")
