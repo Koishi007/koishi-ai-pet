@@ -35,10 +35,10 @@ class MoodDecayConfig:
     步长为对应 per_tick 速率。sanity 不参与自然衰减（完全由事件/行为/LLM 驱动）。
     """
     joy_baseline: float = 50.0
-    joy_per_tick: float = 1.5
+    joy_per_tick: float = 2.5
     affection_baseline: float = 60.0
     affection_per_tick: float = 0.8
-    grace_seconds: float = 600.0        # 互动后免衰减秒数
+    grace_seconds: float = 60.0         # 互动后免衰减秒数
     enabled: bool = True
 
 
