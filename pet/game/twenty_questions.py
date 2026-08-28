@@ -82,19 +82,22 @@ class TwentyQuestionsGame(Game):
 
         if guess and question:
             return {
-                "summary": "tq_question 和 tq_guess 不要同时传：要么问问题，要么给出最终猜测。",
+                "summary": "tq_question 和 tq_guess 不要同时传：要么问问题，要么给出最终猜测。"
+                           "请重新调用 game__play 只传其中一个参数继续本局，不要输出最终答复。",
                 "ended": False,
             }
         if guess:
             return self._handle_guess(state, guess)
         if not question:
             return {
-                "summary": "请传 tq_question（一个'是/否'问题）继续提问，或传 tq_guess 给出最终猜测。",
+                "summary": "请传 tq_question（一个'是/否'问题）继续提问，或传 tq_guess 给出最终猜测；"
+                           "请继续调用 game__play 推进本局，不要输出最终答复。",
                 "ended": False,
             }
         if state["round"] >= state["max"]:
             return {
-                "summary": f"问题已用完（{state['max']} 个），请传 tq_guess 给出最终猜测。",
+                "summary": f"问题已用完（{state['max']} 个），本局尚未结束，"
+                           f"请继续调用 game__play 并传 tq_guess 给出最终猜测。",
                 "ended": False,
             }
 
@@ -144,7 +147,9 @@ class TwentyQuestionsGame(Game):
                          message=f"你的回答：{ANSWER_TEXT[answer]}")
         return {
             "summary": f"第 {round_no} 问：{question} → 你的回答是「{ANSWER_TEXT[answer]}」。"
-                       f"（已问 {round_no}/{state['max']}，还可问 {questions_left} 个）",
+                       f"（已问 {round_no}/{state['max']}，还可问 {questions_left} 个）"
+                       f"本局尚未结束，请继续调用 game__play 提出下一个问题，"
+                       f"或把握较大时传 tq_guess 给出最终猜测。",
             "ended": False,
             "answer": answer,
             "round": round_no,
@@ -224,8 +229,8 @@ class TwentyQuestionsGame(Game):
                          round_text="", waiting=False,
                          message="没猜中，继续猜")
         return {
-            "summary": f"我猜的「{guess}」不对。还剩 {questions_left} 个问题可用，"
-                       f"我可以继续提问或再次猜测。",
+            "summary": f"我猜的「{guess}」不对。还剩 {questions_left} 个问题可用。"
+                       f"本局尚未结束，请继续调用 game__play 提问或再次给出猜测（tq_guess）。",
             "ended": False,
             "correct": False,
             "guess": guess,
