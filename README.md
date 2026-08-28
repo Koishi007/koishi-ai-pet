@@ -90,6 +90,8 @@ python -m pet
 
 > 推荐方案：**Mimo v2.5** — 原生多模态、价格便宜（查看 [Mimo 官网](https://mimo.mi.com/docs/zh-CN/quick-start/summary/first-api-call/) 获取 API 信息）
 >
+> 推荐方案：**DeepSeek-V4-Flash-Vision-Exp** — 支持视觉的多模态模型，可作为备选
+>
 > 记忆系统推荐 **智谱 embedding-3** — 便宜且快速；不配置也能用基础的关键词匹配记忆
 
 ### 桌宠基本设置
