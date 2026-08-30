@@ -169,15 +169,15 @@ def main():
     from pet.ui.tic_tac_toe_panel import TicTacToePanel
     from pet.ui.rps_panel import RpsPanel
     from pet.ui.twenty_questions_panel import TwentyQuestionsPanel
-    game_board_panel = TicTacToePanel()
-    game_board_panel.set_pet_window(window)
+    tictac_panel = TicTacToePanel()
+    tictac_panel.set_pet_window(window)
     rps_panel = RpsPanel()
     rps_panel.set_pet_window(window)
     tq_panel = TwentyQuestionsPanel()
     tq_panel.set_pet_window(window)
     # 统一分发：按游戏名路由到对应面板，新游戏只需在此加一行映射
     _game_panel_handlers = {
-        "tic_tac_toe": game_board_panel.render,
+        "tic_tac_toe": tictac_panel.render,
         "rps": rps_panel.render,
         "twenty_questions": tq_panel.render,
     }
