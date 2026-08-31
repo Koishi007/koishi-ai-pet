@@ -224,7 +224,9 @@ class GameBase:
                 pass
             if state.get("_forfeit"):
                 result = {
-                    "summary": f"用户主动结束了 {game_name} 游戏，判用户输",
+                    "summary": f"用户主动结束了 {game_name} 游戏，判用户输。"
+                               f"（对模型）请总结本局结果并输出最终答复，"
+                               f"按本局结果输出 Mood 变动范围（仅输出有变化的维度）：joy+0~1、affection+0~1。",
                     "ended": True,
                     "won": False,
                     "forfeit": True,
@@ -255,7 +257,12 @@ class GameBase:
             self._sessions.pop(game_name, None)
             # 明确告知游戏已结束，避免模型继续调用 game__play/game__stop
             if result.get("summary"):
-                result["summary"] = f"{result['summary']}（对模型）游戏已结束（ended=True），请总结本局结果并输出最终答复，不要继续调用游戏工具。"
+                result["summary"] = (
+                    f"{result['summary']}（对模型）游戏已结束（ended=True），"
+                    f"请总结本局结果并输出最终答复，不要继续调用游戏工具；"
+                    f"按本局胜负输出 Mood 变动范围（仅输出有变化的维度，输赢都增加，大小有别）："
+                    f"获胜 joy+2~5、affection+2~5；落败 joy+0~2、affection+0~1。"
+                )
         elif result.get("summary"):
             # 游戏未结束：必须在 summary 里明确"继续推进"，否则模型可能提前输出最终答复
             result["summary"] = (
