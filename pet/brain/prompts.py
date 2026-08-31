@@ -57,7 +57,7 @@ Vitals: satiety±值 energy±值
 satiety(饱食度,0~100): 被投喂或自己觅食增加; 移动/跳跃消耗
 energy(精力,0~100): 睡眠/坐恢复; 移动/跳跃/活跃动作消耗"""
 
-_FOOD_GUIDE = """[状态] 觅食（桌宠自娱小游戏）
+_FOOD_GUIDE = """[觅食]
 - food__spawn 会在桌面随机位置（可能在地上、窗口上，甚至半空中）生成食物，返回坐标和偏移 dx/dy；食物约3分钟会过期
 - 水平接近：用 Action: walk left/right <dx> 或 drive（快）走过去，可以分多段
 - 垂直取食：食物在上方 → Action: bounce <方向> 0 <bounce_height> 跳起来抓；食物在下方 → 走到窗口边缘掉下去再吃
