@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Optional
 
 from pet.brain import prompts
+from pet.brain.base import BrainMixin
 from pet.config import config
 
 
@@ -244,15 +245,16 @@ class ContextBuilder:
         return [{"role": "system", "content": system}, *dialog]
 
     def _head_pat_note(self) -> str:
-        """用户在一个 mid_tick 周期内摸过头则返回备注文本，否则返回空串。"""
+        """用户在一个 mid_tick 周期内摸过头则返回带时间前缀的备注文本，否则返回空串。"""
         if not self._head_pat_ts_fn:
             return ""
         last = self._head_pat_ts_fn()
         if not last:
             return ""
         window_s = config.SCHEDULER_MID_MS / 1000.0
-        if time.monotonic() - last <= window_s:
-            return "用户最近摸了你的头"
+        if time.time() - last <= window_s:
+            time_str = BrainMixin._format_context_time(last)
+            return f"[{time_str}] 用户最近摸了你的头"
         return ""
 
     # internal

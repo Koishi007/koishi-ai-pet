@@ -61,7 +61,7 @@ class PetAgent(QObject):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._last_head_pat_ts: float = 0.0  # 最近一次用户摸头时间（monotonic）
+        self._last_head_pat_ts: float = 0.0  # 最近一次用户摸头时间（wall-clock，用于时效判断与展示）
         self.memory_store = MemoryStore()
         self.conversation_store = ConversationStore()
         self.screen_reader = ScreenReader()
@@ -86,7 +86,7 @@ class PetAgent(QObject):
 
     def note_head_pat(self):
         """记录一次用户摸头（单击宠物），供上下文备注注入。"""
-        self._last_head_pat_ts = time.monotonic()
+        self._last_head_pat_ts = time.time()
 
     def _head_pat_ts(self) -> float:
         return self._last_head_pat_ts
