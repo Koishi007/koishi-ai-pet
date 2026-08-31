@@ -39,7 +39,7 @@ if !PYMAJOR! equ 3 if !PYMINOR! geq 15 (
     exit /b 1
 )
 :: 检查是否为 64 位标准版 Python（拒绝 32 位与 free-threaded 构建，PySide6/sqlite-vec 无对应 wheel）
-python -c "import struct,sysconfig; sys.exit(0 if struct.calcsize('P')*8==64 and not sysconfig.get_config_var('Py_GIL_DISABLED') else 1)" >nul 2>nul
+python -c "import struct,sys,sysconfig; sys.exit(0 if struct.calcsize('P')*8==64 and not sysconfig.get_config_var('Py_GIL_DISABLED') else 1)" >nul 2>nul
 if errorlevel 1 (
     echo [错误] 需要 64 位标准版 Python（不支持 32 位或 free-threaded 版本）
     echo        请到 python.org 重新下载 64 位标准安装包
