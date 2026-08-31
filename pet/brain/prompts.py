@@ -15,13 +15,7 @@ level: L1=核心事实(永不衰减) L2=情景记忆(缓慢衰减) L3=临时信�
 发现用户新信息（姓名/住址/偏好/事件）时输出Memory行。"""
 
 
-def _base_sections() -> list[str]:
-    """autonomous / chat 共用的基础层（不含 personality，由顶层统一注入）。"""
-    target_s = target_sequence_duration()
-    return [
-        f"你是桌面宠物。每次输出完整动作序列（约{target_s}秒），禁止单个动作。",
-        _MEMORY_GUIDE,
-    ]
+_IDENTITY_GUIDE = "你是桌面宠物，生活在电脑桌面上。"
 
 
 _WINDOW_GUIDE = """[感知] 窗口探测
@@ -253,7 +247,7 @@ def build_system_prompt(mode: str, task: str, include_feeling_marker: bool = Tru
     if (mode, task) not in _VALID_COMBOS:
         raise ValueError(f"Invalid mode-task combination: ({mode!r}, {task!r})")
 
-    sections: list[str] = []
+    sections: list[str] = [_IDENTITY_GUIDE]
 
     if include_feeling_marker:
         sections.append(FEELING_MARKER)
@@ -262,7 +256,7 @@ def build_system_prompt(mode: str, task: str, include_feeling_marker: bool = Tru
     sections.append(_ADDRESS_GUIDE)
 
     if task in ("autonomous", "chat"):
-        sections.extend(_base_sections())
+        sections.append(_MEMORY_GUIDE)
 
     for item in _PERCEPTION_SECTIONS[mode]:
         sections.append(str(item))
