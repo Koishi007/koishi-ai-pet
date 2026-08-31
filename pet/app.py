@@ -1,12 +1,13 @@
 """KoishiAI 桌面宠物 — 主入口"""
 
+import atexit
 import ctypes
 import logging
 import os
 import sys
 from logging.handlers import TimedRotatingFileHandler
 
-from PySide6.QtWidgets import QApplication, QSystemTrayIcon
+from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMessageBox
 from PySide6.QtGui import QIcon
 from PySide6.QtCore import QTimer, Qt
 
@@ -26,9 +27,28 @@ from pet.tools.context import TOOL_CTX
 from pet.config import config
 from pet.auto_start import set_auto_start
 from pet.crash_reporter import get_guard
+from pet.single_instance import SingleInstanceGuard
 from pet.version_check import UpdateChecker
 
 logger = logging.getLogger(__name__)
+
+
+def _warn_already_running() -> None:
+    """提示已有实例在运行（独立 QApplication，无控制台时也能弹出提示）。"""
+    try:
+        _app = QApplication.instance() or QApplication(sys.argv)
+        _app.setQuitOnLastWindowClosed(False)
+        _box = QMessageBox(
+            QMessageBox.Icon.Warning,
+            "Koishi AI Pet",
+            "已检测到另一个 Koishi AI Pet 正在运行。\n"
+            "请从系统托盘退出当前实例后重试。",
+            QMessageBox.StandardButton.Ok,
+        )
+        _box.setWindowIcon(QIcon(ICON_PATH))
+        _box.exec()
+    except Exception as e:
+        logger.error("[Main] 单实例提示失败: %s", e)
 
 
 def main():
@@ -46,6 +66,18 @@ def main():
     # 静默 HTTP 库的 DEBUG 日志（它们会打印完整的 base64 图片数据）
     for _lib in ("httpx", "httpcore", "openai", "urllib3"):
         logging.getLogger(_lib).setLevel(logging.WARNING)
+
+    # 单实例限制：架构不支持多开，已被占用时提示并退出
+    _guard = SingleInstanceGuard()
+    if not _guard.try_acquire():
+        if _guard.is_locked_by_other():
+            _warn_already_running()
+            sys.exit(1)
+        # 锁机制不可用（权限/未知错误）：放行并告警，避免误伤
+        logger.warning("[Main] 无法建立单实例锁(%s)，本次启动不受单实例限制", _guard.error())
+    else:
+        # 正常退出由 aboutToQuit 释放；此处兜底覆盖初始化中途异常等场景
+        atexit.register(_guard.release)
 
     # 文件日志：按天切分，保留 3 天
     _log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
@@ -137,15 +169,15 @@ def main():
     from pet.ui.tic_tac_toe_panel import TicTacToePanel
     from pet.ui.rps_panel import RpsPanel
     from pet.ui.twenty_questions_panel import TwentyQuestionsPanel
-    game_board_panel = TicTacToePanel()
-    game_board_panel.set_pet_window(window)
+    tictac_panel = TicTacToePanel()
+    tictac_panel.set_pet_window(window)
     rps_panel = RpsPanel()
     rps_panel.set_pet_window(window)
     tq_panel = TwentyQuestionsPanel()
     tq_panel.set_pet_window(window)
     # 统一分发：按游戏名路由到对应面板，新游戏只需在此加一行映射
     _game_panel_handlers = {
-        "tic_tac_toe": game_board_panel.render,
+        "tic_tac_toe": tictac_panel.render,
         "rps": rps_panel.render,
         "twenty_questions": tq_panel.render,
     }
@@ -339,6 +371,7 @@ def main():
         logging.getLogger().removeHandler(_log_handler)
         # 正常退出：清除启动标记，避免下次启动误报异常退出
         get_guard().clear_marker()
+        _guard.release()
 
     app.aboutToQuit.connect(_shutdown)
 
