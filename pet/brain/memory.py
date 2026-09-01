@@ -91,6 +91,28 @@ def _escape_like(s: str) -> str:
     return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
+# 并入查询词的原始片段最大长度：超过该长度基本是被标点切开的长句片段，
+# 而非用户/模型手写的检索词
+_MAX_QUERY_TERM_LEN = 8
+
+
+def _drop_subsumed(terms: list[str]) -> list[str]:
+    """丢弃被其它更长词包含的碎片（不区分大小写），保持原顺序并按小写去重"""
+    unique: list[str] = []
+    seen: set[str] = set()
+    for term in terms:
+        key = term.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(term)
+    return [
+        t for i, t in enumerate(unique)
+        if not any(len(other) > len(t) and t.lower() in other.lower()
+                   for j, other in enumerate(unique) if j != i)
+    ]
+
+
 def _day_floor(date_str: str) -> str:
     """YYYY-MM-DD → 当天 00:00 的下界字符串（含当天）。
 
@@ -526,6 +548,20 @@ class _MemoryRetriever(ABC):
         ][:5]
         return keywords
 
+    def _extract_query_terms(self, query: str) -> list[str]:
+        """检索用的查询词：分词结果 + 空格/标点切分出的原始短语"""
+        terms = list(self._extract_keywords(query))
+        tokens = [
+            t.strip() for t in re.split(r"[\s,，。！？、；：\n]+", (query or "").strip())
+            if t.strip()
+        ]
+        if len(tokens) >= 2:
+            for token in tokens:
+                if (2 <= len(token) <= _MAX_QUERY_TERM_LEN
+                        and token not in STOP_WORDS and not token.isdigit()):
+                    terms.append(token)
+        return _drop_subsumed(terms)[:8]
+
     def _keyword_find_similar(self, content: str, keywords: list[str]) -> Tuple[Optional[dict], float]:
         """关键词捞取候选集 + 轻量文本相似度（两个子类的共享 fallback 逻辑）。"""
         candidate_rows = []
@@ -560,24 +596,40 @@ class _MemoryRetriever(ABC):
 
     def _keyword_query(self, text: str, limit: int = 3) -> list[dict]:
         """关键词查询的共享实现（VectorRetriever 的 fallback 也使用）。"""
-        keywords = self._extract_keywords(text)
+        keywords = self._extract_query_terms(text)
         if not keywords:
             return []
-        conditions = " OR ".join(["keywords LIKE ? ESCAPE '\\'" for _ in keywords])
-        params = [f"%{_escape_like(kw)}%" for kw in keywords]
+        # 每个查询词都同时匹配 keywords 与 content，词与词之间取 OR：
+        conditions = " OR ".join(
+            ["(keywords LIKE ? ESCAPE '\\' OR content LIKE ? ESCAPE '\\')"
+             for _ in keywords]
+        )
+        params = []
+        for kw in keywords:
+            like_val = f"%{_escape_like(kw)}%"
+            params.extend([like_val, like_val])
 
         with self._lock:
             rows = self._conn.execute(
                 f"SELECT * FROM memories WHERE {conditions} ORDER BY importance DESC, created_at DESC LIMIT ?",
-                params + [limit * 3]
+                params + [limit * 5]
             ).fetchall()
 
         def match_score(row):
-            row_kws = set(row["keywords"].split(","))
-            return len(row_kws & set(keywords))
+            """模糊命中加权分：keywords 命中权重高于 content，命中词越多分越高"""
+            row_kws = (row["keywords"] or "").lower()
+            row_content = (row["content"] or "").lower()
+            score = 0.0
+            for kw in keywords:
+                needle = kw.lower()
+                if needle in row_kws:
+                    score += 2.0
+                elif needle in row_content:
+                    score += 1.0
+            return score
 
         result_dicts = [dict(r) for r in rows]
-        # 先按关键词命中数筛选，再按 effective_importance 排序
+        # 先按命中加权分筛选，再按 effective_importance 排序
         result_dicts.sort(key=lambda r: (match_score(r), self._effective_importance(r)), reverse=True)
         result_dicts = result_dicts[:limit]
         self.touch(result_dicts)
