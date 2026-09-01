@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 TOOL_NAME = "knowledge"
 TOOL_DESCRIPTION = "RAG 知识库。可语义检索用户手动录入的知识和文档，只读。"
-TOOL_GROUP = "memory"
+TOOL_GROUP = "knowledge"
 
 _instance = None
 _panel = None
