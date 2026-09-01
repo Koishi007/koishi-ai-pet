@@ -8,11 +8,11 @@ from PySide6.QtWidgets import (
     QFormLayout, QTableWidget, QTableWidgetItem,
     QHeaderView, QAbstractItemView, QCheckBox,
     QComboBox, QScrollArea, QTextEdit, QMessageBox,
-    QSizePolicy, QSpacerItem,
+    QSizePolicy, QSpacerItem, QDateEdit,
 )
 from datetime import datetime
 
-from PySide6.QtCore import Qt, QTimer, QEvent
+from PySide6.QtCore import Qt, QTimer, QEvent, QDate, QSignalBlocker
 from PySide6.QtGui import QFont, QIcon, QPainter, QPainterPath, QColor, QPen
 
 from pet.ui.styles import (
@@ -56,6 +56,8 @@ class MemoryWindow(QWidget):
         self._filter_level = ""
         self._filter_importance = 0
         self._filter_search = ""
+        self._filter_start_date = ""
+        self._filter_end_date = ""
 
         # 当前选中记忆
         self._selected_ids: set[int] = set()
@@ -208,8 +210,26 @@ class MemoryWindow(QWidget):
         row1.addStretch()
         layout.addLayout(row1)
 
-        # 第二行：搜索 + 每页条数
+        # 第二行：日期范围 + 搜索 + 每页条数
         row2 = QHBoxLayout()
+
+        self._date_debounce = QTimer(self)
+        self._date_debounce.setSingleShot(True)
+        self._date_debounce.setInterval(300)
+        self._date_debounce.timeout.connect(self._on_date_filter_changed)
+
+        row2.addWidget(QLabel("日期:"))
+        self._date_start = self._make_date_edit()
+        self._date_start.dateChanged.connect(lambda: self._date_debounce.start())
+        row2.addWidget(self._date_start)
+
+        row2.addWidget(QLabel("~"))
+        self._date_end = self._make_date_edit()
+        self._date_end.dateChanged.connect(lambda: self._date_debounce.start())
+        row2.addWidget(self._date_end)
+
+        row2.addSpacing(12)
+
         row2.addWidget(QLabel("搜索:"))
         self._search_input = QLineEdit()
         self._search_input.setPlaceholderText("输入关键词搜索记忆内容…")
@@ -397,6 +417,8 @@ class MemoryWindow(QWidget):
             level=self._filter_level,
             importance=self._filter_importance,
             search=self._filter_search,
+            start_date=self._filter_start_date,
+            end_date=self._filter_end_date,
             page=self._page,
             page_size=self._page_size,
         )
@@ -484,6 +506,47 @@ class MemoryWindow(QWidget):
 
     def _on_search_changed(self):
         self._filter_search = self._search_input.text().strip()
+        self._page = 0
+        self._refresh_data()
+        self._clear_detail()
+
+    def _make_date_edit(self) -> QDateEdit:
+        """创建可选的日期筛选控件：最小值显示为「不限」。"""
+        de = QDateEdit()
+        de.setCalendarPopup(True)
+        de.setDisplayFormat("yyyy-MM-dd")
+        # 最小值兼作「不限」哨兵，取 1970 避免与真实可选日期冲突
+        de.setMinimumDate(QDate(1970, 1, 1))
+        de.setMaximumDate(QDate(2100, 12, 31))
+        de.setSpecialValueText("不限")
+        de.setDate(de.minimumDate())
+        de.setFixedWidth(110)
+        de.setStyleSheet(
+            "QDateEdit {"
+            "  border: 1px solid #ddd; border-radius: 6px;"
+            "  padding: 2px 8px; font-size: 12px;"
+            "}"
+        )
+        return de
+
+    def _date_filter_value(self, edit: QDateEdit) -> str:
+        """读取日期控件的筛选值，处于最小值时表示不筛选。"""
+        if edit.date() <= edit.minimumDate():
+            return ""
+        return edit.date().toString("yyyy-MM-dd")
+
+    def _on_date_filter_changed(self):
+        start = self._date_filter_value(self._date_start)
+        end = self._date_filter_value(self._date_end)
+        if start and end and start > end:
+            # 起止倒置时交换，避免用户看到无提示的空列表；
+            # 阻塞信号防止 setDate 再次触发本槽造成多余刷新
+            start, end = end, start
+            for edit, value in ((self._date_start, start), (self._date_end, end)):
+                with QSignalBlocker(edit):
+                    edit.setDate(QDate.fromString(value, Qt.DateFormat.ISODate))
+        self._filter_start_date = start
+        self._filter_end_date = end
         self._page = 0
         self._refresh_data()
         self._clear_detail()

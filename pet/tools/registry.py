@@ -2,6 +2,7 @@
 
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Callable, Any
 
 from pet.config import config
@@ -287,23 +288,23 @@ class ToolRegistry:
             tool_name="recall",
             method_name="browse",
             description=(
-                "分页翻阅你关于用户的全部记忆，可按层级/重要性/关键词筛选。"
+                "分页翻阅你关于用户的全部记忆，可按创建日期范围/关键词筛选。"
+                "日期均为 YYYY-MM-DD 且含首尾两天，可只填一端表示不限。"
                 "想不起来具体线索、或想整体看看自己记住了什么时调用。"
             ),
             handler=self._recall_browse,
             args={
-                "level": {
+                "start_date": {
                     "type": "str",
                     "required": False,
                     "default": "",
-                    "desc": "层级筛选：L1=核心事实 L2=情景记忆 L3=临时信息；不填=全部",
-                    "enum": ["", "L1", "L2", "L3"],
+                    "desc": "开始日期(YYYY-MM-DD)，含当天；不填=不限",
                 },
-                "importance": {
-                    "type": "int",
+                "end_date": {
+                    "type": "str",
                     "required": False,
-                    "default": 0,
-                    "desc": "重要性筛选(1~5)；不填=全部",
+                    "default": "",
+                    "desc": "结束日期(YYYY-MM-DD)，含当天；不填=不限",
                 },
                 "keyword": {
                     "type": "str",
@@ -321,8 +322,29 @@ class ToolRegistry:
         )
 
     @staticmethod
+    def _empty_recall(summary: str) -> dict:
+        """recall__browse 的空结果（含参数错误提示）。"""
+        return {"summary": summary, "memories": [], "total": 0,
+                "page": 1, "total_pages": 0}
+
+    @staticmethod
+    def _normalize_date(value: str, name: str) -> tuple[str, str]:
+        """把日期参数规范化为 YYYY-MM-DD，返回 (值, 错误信息)。
+
+        strptime 会接受 '2025-8-1' 这类非补零写法，但 SQL 端要求定长格式，
+        不回写为标准形态会出现「校验通过却查不到任何记录」的静默失败。
+        """
+        value = (value or "").strip()
+        if not value:
+            return "", ""
+        try:
+            return datetime.strptime(value, "%Y-%m-%d").strftime("%Y-%m-%d"), ""
+        except ValueError:
+            return "", f"{name} 格式无效，请使用 YYYY-MM-DD，例如 2025-08-01"
+
+    @staticmethod
     def _format_recall_memory(row: dict) -> dict:
-        """将记忆行精简为 LLM 可读字段（不暴露 id，节省 token）。"""
+        """将记忆行精简为 LLM 可读字段。"""
         from pet.brain.memory import _MemoryRetriever
         return {
             "content": row.get("content", ""),
@@ -332,7 +354,7 @@ class ToolRegistry:
         }
 
     def _recall_search(self, query: str, limit: int = 5) -> dict:
-        """recall__search 工具实现（懒 import，避免注册表依赖记忆层）。"""
+        """recall__search 工具实现。"""
         from pet.tools.context import TOOL_CTX
         from pet.brain.memory import get_memory_store
         TOOL_CTX.speech_random(["让我想想…", "回忆一下…", "翻翻记忆…"])
@@ -354,19 +376,26 @@ class ToolRegistry:
             "count": len(memories),
         }
 
-    def _recall_browse(self, level: str = "", importance: int = 0,
-                       keyword: str = "", page: int = 1) -> dict:
-        """recall__browse 工具实现（懒 import，避免注册表依赖记忆层）。"""
+    def _recall_browse(self, start_date: str = "", end_date: str = "",
+                       keyword: str = "", page: int = 1, **_) -> dict:
+        """recall__browse 工具实现。
+
+        **_ 吞掉模型多传的未声明参数：executor 会把 schema 外的键原样透传给
+        handler，缺少它时一个多余参数就会让整次调用 TypeError 失败。
+        """
         from pet.tools.context import TOOL_CTX
         from pet.brain.memory import get_memory_store
         TOOL_CTX.speech_random(["翻翻记忆…", "看看都记了些什么…", "回忆一下…"])
-        level = (level or "").strip().upper()
-        if level not in ("L1", "L2", "L3"):
-            level = ""
-        try:
-            importance = max(0, min(5, int(importance or 0)))
-        except (TypeError, ValueError):
-            importance = 0
+        start_date, err = self._normalize_date(start_date, "start_date")
+        if err:
+            return self._empty_recall(err)
+        end_date, err = self._normalize_date(end_date, "end_date")
+        if err:
+            return self._empty_recall(err)
+        if start_date and end_date and start_date > end_date:
+            return self._empty_recall(
+                f"日期范围无效：开始日期 {start_date} 晚于结束日期 {end_date}"
+            )
         keyword = (keyword or "").strip()
         try:
             page = max(1, int(page or 1))
@@ -375,12 +404,12 @@ class ToolRegistry:
         page_size = 10
         # list_memories 的 page 从 0 开始，工具入参从 1 开始
         rows, total = get_memory_store().list_memories(
-            level=level, importance=importance, search=keyword,
+            search=keyword, start_date=start_date, end_date=end_date,
             page=page - 1, page_size=page_size,
         )
         filters = [f for f in (
-            level if level else "",
-            f"重要性{importance}" if importance else "",
+            f"{start_date} 起" if start_date else "",
+            f"{end_date} 止" if end_date else "",
             f"关键词「{keyword}」" if keyword else "",
         ) if f]
         filter_str = f"（筛选：{' / '.join(filters)}）" if filters else ""
@@ -403,7 +432,7 @@ class ToolRegistry:
         }
 
     def _game_list(self) -> dict:
-        """game__list 工具实现（懒 import，避免注册表依赖游戏层）。"""
+        """game__list 工具实现。"""
         from pet.game.gamebase import GAME
         return GAME.list_games()
 
