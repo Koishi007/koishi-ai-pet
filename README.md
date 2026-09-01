@@ -42,10 +42,22 @@ KoishiAI/
 
 ### Windows
 
+#### 使用 setup.bat（需要自己安装 Python，稳定）
+
 1. 安装 Python 3.11~3.14：[python.org/downloads](https://www.python.org/downloads/)（勾选 **"Add Python to PATH"**；须为 **64 位标准版**，不支持 32 位及 free-threaded 版本）
 2. 在右侧下载**最新**的release版本
 3. **双击 `setup.bat`**，自动完成安装和桌面快捷方式创建
 4. 双击桌面 **"Koishi AI Pet"** 快捷方式启动
+
+#### 使用 koishi-manager（不需要自己安装 Python，公测中）
+
+1. 在项目根目录打开终端，运行下方代码
+```
+koishi-manager.exe install
+```
+2. 双击 `venv/Scripts/koishi.exe` 即可
+
+> 若出现 bug，请换回 setup.bat 安装，并将 bug 内容、复现条件等重要信息提交 issue。
 
 ### macOS / Linux
 
