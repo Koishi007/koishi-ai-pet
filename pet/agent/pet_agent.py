@@ -11,7 +11,7 @@ from pet.agent.scheduler import Scheduler
 from pet.agent.scheduled_tasks import ScheduledTasks
 from pet.agent.state import StateMachine
 from pet.agent.screen_reader import ScreenReader
-from pet.brain.memory import MemoryStore
+from pet.brain.memory import get_memory_store
 from pet.brain.conversation_store import ConversationStore
 from pet.action.registry import default_duration, _DURATION_ACTION_DEFS
 from pet.pulse.vitals import Vitals
@@ -62,7 +62,7 @@ class PetAgent(QObject):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._last_head_pat_ts: float = 0.0  # 最近一次用户摸头时间（wall-clock，用于时效判断与展示）
-        self.memory_store = MemoryStore()
+        self.memory_store = get_memory_store()
         self.conversation_store = ConversationStore()
         self.screen_reader = ScreenReader()
         self.screen_reader.enable()
