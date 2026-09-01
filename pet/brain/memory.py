@@ -91,6 +91,23 @@ def _escape_like(s: str) -> str:
     return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
+def _day_floor(date_str: str) -> str:
+    """YYYY-MM-DD → 当天 00:00 的下界字符串（含当天）。
+
+    created_at 以 datetime.isoformat() 存储，字典序与时间序一致，
+    故可与 'YYYY-MM-DD' 直接比较，且能命中 idx_created 索引。
+    """
+    return datetime.strptime(date_str.strip(), "%Y-%m-%d").strftime("%Y-%m-%d")
+
+
+def _day_ceil(date_str: str) -> str:
+    """YYYY-MM-DD → 次日 00:00 的开区间上界字符串（不含次日）。
+
+    与 _day_floor 配合得到 [当天 00:00, 次日 00:00) 的完整日期范围。
+    """
+    day = datetime.strptime(date_str.strip(), "%Y-%m-%d")
+    return (day + timedelta(days=1)).strftime("%Y-%m-%d")
+
 
 class _MemoryRetriever(ABC):
     """记忆检索策略的抽象基类，包含共享逻辑。"""
@@ -1179,9 +1196,14 @@ class MemoryStore:
 
     def list_memories(
         self, level: str = "", importance: int = 0, search: str = "",
+        start_date: str = "", end_date: str = "",
         page: int = 0, page_size: int = 50,
     ) -> tuple[list[dict], int]:
-        """分页查询记忆，返回 (rows, total)。"""
+        """分页查询记忆，返回 (rows, total)。
+
+        start_date / end_date 均为 YYYY-MM-DD，按 created_at 的日期闭区间筛选，
+        格式非法时记录告警并忽略该条件（而非静默返回空）。
+        """
         with self._retriever._lock:
             conn = self._retriever._conn
             where = "WHERE 1=1"
@@ -1197,6 +1219,20 @@ class MemoryStore:
                 where += " AND (content LIKE ? ESCAPE '\\' OR keywords LIKE ? ESCAPE '\\')"
                 like_val = f"%{_escape_like(search)}%"
                 params.extend([like_val, like_val])
+            # 用字符串边界比较代替 date(created_at)：后者对每行调用函数，
+            # 会导致 idx_created 索引失效并退化为全表扫描。
+            if start_date:
+                try:
+                    params.append(_day_floor(start_date))
+                    where += " AND created_at >= ?"
+                except ValueError:
+                    logger.warning(f"[MemoryStore] start_date 格式无效: {start_date!r}")
+            if end_date:
+                try:
+                    params.append(_day_ceil(end_date))
+                    where += " AND created_at < ?"
+                except ValueError:
+                    logger.warning(f"[MemoryStore] end_date 格式无效: {end_date!r}")
 
             total = conn.execute(
                 f"SELECT COUNT(*) FROM memories {where}", params
