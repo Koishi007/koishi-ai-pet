@@ -290,7 +290,7 @@ class ToolRegistry:
             description=(
                 "分页翻阅你关于用户的全部记忆，可按创建日期范围/关键词筛选。"
                 "日期均为 YYYY-MM-DD 且含首尾两天，可只填一端表示不限。"
-                "想不起来具体线索、或想整体看看自己记住了什么时调用。"
+                "如果想回忆某一天或者某一个时间段发生了什么，可以使用"
             ),
             handler=self._recall_browse,
             args={
