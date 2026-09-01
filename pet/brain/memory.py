@@ -268,6 +268,14 @@ class _MemoryRetriever(ABC):
             k: v for k, v in self._recall_times.items() if v > cutoff
         }
 
+    def mark_recalled(self, ids: list[int]):
+        """记录记忆被召回（进入冷却期），供 save 去重。"""
+        now = datetime.now()
+        with self._lock:
+            self._cleanup_recall_times()
+            for mid in ids:
+                self._recall_times[mid] = now
+
     @staticmethod
     def _do_merge(existing, content: str, keywords: list[str], importance: int, level: str = "L2"):
         """合并策略：保留较长内容和合并关键词，取较高 level，返回 (content, keywords, importance, level, content_changed)。"""
@@ -401,11 +409,7 @@ class _MemoryRetriever(ABC):
             return ""
 
         # 记录被召回的记忆 ID 和时间，用于冷却期去重（加锁保护防止与 save() 竞争）
-        now = datetime.now()
-        with self._lock:
-            self._cleanup_recall_times()
-            for m in results:
-                self._recall_times[m["id"]] = now
+        self.mark_recalled([m["id"] for m in results])
 
         lines = []
         for m in results:
@@ -1138,6 +1142,13 @@ class MemoryStore:
     def retrieve_context(self, user_message: str) -> str:
         return self._retriever.retrieve_context(user_message)
 
+    def search_memories(self, query: str, limit: int = 5) -> list[dict]:
+        """语义/关键词检索记忆并计入召回冷却（recall 工具入口）。"""
+        results = self._retriever.query_by_text(query, limit=limit)
+        if results:
+            self._retriever.mark_recalled([r["id"] for r in results])
+        return results
+
     def maintenance(self):
         """定期维护：轻量操作每次执行，重量操作每 6 次 slow_tick 执行一次。"""
         with self._retriever._lock:
@@ -1183,8 +1194,8 @@ class MemoryStore:
                 where += " AND importance = ?"
                 params.append(importance)
             if search:
-                where += " AND (content LIKE ? OR keywords LIKE ?)"
-                like_val = f"%{search}%"
+                where += " AND (content LIKE ? ESCAPE '\\' OR keywords LIKE ? ESCAPE '\\')"
+                like_val = f"%{_escape_like(search)}%"
                 params.extend([like_val, like_val])
 
             total = conn.execute(
@@ -1289,4 +1300,24 @@ class MemoryStore:
         return self._retriever._effective_importance(row)
 
     def close(self):
+        global _MEMORY_STORE
         self._retriever.close()
+        # 持锁置空，且仅当被关闭的正是全局单例（自建实例的 close 不影响全局单例）；
+        # 置空后极端时序下再次 get 会重建而非使用已关闭连接
+        with _MEMORY_STORE_LOCK:
+            if _MEMORY_STORE is self:
+                _MEMORY_STORE = None
+
+
+_MEMORY_STORE: "MemoryStore | None" = None
+_MEMORY_STORE_LOCK = threading.Lock()
+
+
+def get_memory_store() -> "MemoryStore":
+    """全局共享单例（PetAgent、recall 工具、UI 面板共用）。"""
+    global _MEMORY_STORE
+    if _MEMORY_STORE is None:
+        with _MEMORY_STORE_LOCK:
+            if _MEMORY_STORE is None:
+                _MEMORY_STORE = MemoryStore()
+    return _MEMORY_STORE

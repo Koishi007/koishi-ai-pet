@@ -705,6 +705,7 @@ class Behavior(BrainMixin):
         "tool_search__search", "tool_search__list_groups",
         "food__spawn", "food__status",
         "game__list", "game__init", "game__play", "game__stop",
+        "recall__search", "recall__browse",
     })
     _META_TOOL_MAX_ROUNDS = 99  # 元工具调用安全上限
 

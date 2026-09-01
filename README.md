@@ -128,6 +128,7 @@ chmod +x update.sh && ./update.sh
 | `default` | `tool_search` | `list_groups` / `search` | 工具发现：列出分组、按关键词搜索并自动激活匹配分组 |
 | `default` | `food` | `spawn` / `status` | 觅食：在桌面生成食物、查询食物位置与过期状态 |
 | `default` | `game` | `list` / `init` / `play` / `stop` | 回合制小游戏：列出游戏、开局、玩一回合、主动结束 |
+| `default` | `recall` | `search` / `browse` | 回忆：主动检索桌宠关于用户的长期记忆（语义回忆、分页翻阅） |
 | `web` | `browser` | `search` / `read_url` / `screenshot_url` / `close` | 多引擎网页搜索、读取网页正文（分页）、截图 |
 | `web` | `web_search` | `search` / `deep_search` | SearXNG / Bing API 搜索，深度搜索自动抓取全文 |
 | `info` | `weather` | `get_current` / `get_forecast` | 基于 Open-Meteo 的免费天气查询 |
@@ -135,7 +136,7 @@ chmod +x update.sh && ./update.sh
 | `file` | `file` | `list_dir` / `read_file` / `write_note` / `write_file` | 列目录、读写文件（限桌面/文档） |
 | `productivity` | `timer` | `set` / `list` / `cancel` / `cancel_all` | 倒计时定时器，到时宠物主动提醒 |
 | `productivity` | `todo` | `add` / `list` / `toggle` / `delete` / `update` | 待办事项管理 |
-| `memory` | `knowledge` | `search` / `list` | RAG 知识库：语义检索、知识条目管理 |
+| `knowledge` | `knowledge` | `search` / `list` | RAG 知识库：语义检索、知识条目管理 |
 
 ### food
 
@@ -156,6 +157,15 @@ chmod +x update.sh && ./update.sh
 | `tic_tac_toe` | 井字棋：3×3 棋盘，随机先后手，先连成三子获胜，15 秒未落子判你输 |
 
 游戏流程：`game__list` 了解可选游戏 → `game__init` 开局 → `game__play` 每回合推进 → 返回 `ended=True` 即结束。猜拳和井字棋有可视化交互面板，点击按钮/格子即可操作。
+
+### recall
+
+记忆检索元工具：每轮自动注入的记忆条数有限（按核心/最近/语义匹配分槽），当桌宠感觉记忆不完整、或用户提到过去的事而注入段中没有相关内容时，可主动检索自己的长期记忆补齐。
+
+- `search(query, limit)`：按语义或关键词回忆与查询相关的记忆（向量检索可用时走语义检索，否则降级关键词匹配）
+- `browse(level, importance, keyword, page)`：分页翻阅全部记忆，可按层级（L1/L2/L3）、重要性（1~5）、关键词筛选
+
+检索到的记忆进入召回冷却（防止随后输出重复的 Memory 行）并获得回忆强化（L3 高频访问自动升级 L2）。
 
 ### browser
 
@@ -347,12 +357,12 @@ def register(registry):
 
 | 分组 | 包含工具 | 说明 |
 |------|----------|------|
-| `default` | `tool_search`, `food`, `game` | 始终激活，无需搜索 |
+| `default` | `tool_search`, `food`, `game`, `recall` | 始终激活，无需搜索 |
 | `web` | `browser`, `web_search` | 浏览器与网络搜索 |
 | `file` | `file` | 本地文件操作 |
 | `info` | `weather`, `system_monitor` | 信息查询 |
 | `productivity` | `todo`, `timer` | 效率工具 |
-| `memory` | `knowledge` | 知识库 |
+| `knowledge` | `knowledge` | 知识库 |
 
 当 LLM 需要某个功能时，先调用 `tool_search.list_groups` 或 `tool_search.search(keyword)` 探索工具，匹配到的分组自动激活，后续请求即可调用该组的全部工具。
 

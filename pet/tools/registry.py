@@ -149,6 +149,8 @@ class ToolRegistry:
             self._register_food_tools()
         # 游戏管理工具
         self._register_game_tools()
+        # 记忆检索元工具
+        self._register_recall_tools()
 
     def _register_food_tools(self):
         """注册觅食工具（FOOD_ENABLED=True 时调用）。"""
@@ -247,6 +249,158 @@ class ToolRegistry:
                 },
             },
         )
+
+    def _register_recall_tools(self):
+        """注册记忆检索元工具（只读）：search 语义回忆，browse 分页翻阅。"""
+        self.register(
+            "recall",
+            "回忆：主动检索你关于用户的长期记忆。"
+            "系统每轮自动注入的记忆条数有限，当你感觉记忆不完整、"
+            "或用户提到过去的事而注入段中没有相关内容时，用此工具补齐。",
+            group="default", meta=True,
+        )
+        self.add_method(
+            tool_name="recall",
+            method_name="search",
+            description=(
+                "按语义或关键词回忆与查询相关的记忆。"
+                "自动注入的记忆不足、想不起细节、或用户问『你还记得…吗』『我之前说过什么』时调用；"
+                "检索到的结果直接使用即可，同一话题无需重复检索。"
+            ),
+            handler=self._recall_search,
+            args={
+                "query": {
+                    "type": "str",
+                    "required": True,
+                    "desc": "回忆的线索：人名、事件、话题关键词等",
+                },
+                "limit": {
+                    "type": "int",
+                    "required": False,
+                    "default": 5,
+                    "desc": "返回条数(1~10)",
+                },
+            },
+            timeout=30.0,
+        )
+        self.add_method(
+            tool_name="recall",
+            method_name="browse",
+            description=(
+                "分页翻阅你关于用户的全部记忆，可按层级/重要性/关键词筛选。"
+                "想不起来具体线索、或想整体看看自己记住了什么时调用。"
+            ),
+            handler=self._recall_browse,
+            args={
+                "level": {
+                    "type": "str",
+                    "required": False,
+                    "default": "",
+                    "desc": "层级筛选：L1=核心事实 L2=情景记忆 L3=临时信息；不填=全部",
+                    "enum": ["", "L1", "L2", "L3"],
+                },
+                "importance": {
+                    "type": "int",
+                    "required": False,
+                    "default": 0,
+                    "desc": "重要性筛选(1~5)；不填=全部",
+                },
+                "keyword": {
+                    "type": "str",
+                    "required": False,
+                    "default": "",
+                    "desc": "内容/关键词模糊匹配",
+                },
+                "page": {
+                    "type": "int",
+                    "required": False,
+                    "default": 1,
+                    "desc": "页码(从1开始)",
+                },
+            },
+        )
+
+    @staticmethod
+    def _format_recall_memory(row: dict) -> dict:
+        """将记忆行精简为 LLM 可读字段（不暴露 id，节省 token）。"""
+        from pet.brain.memory import _MemoryRetriever
+        return {
+            "content": row.get("content", ""),
+            "level": row.get("level", "L2"),
+            "importance": row.get("importance", 3),
+            "time": _MemoryRetriever._format_memory_time(row.get("created_at", "")),
+        }
+
+    def _recall_search(self, query: str, limit: int = 5) -> dict:
+        """recall__search 工具实现（懒 import，避免注册表依赖记忆层）。"""
+        from pet.tools.context import TOOL_CTX
+        from pet.brain.memory import get_memory_store
+        TOOL_CTX.speech_random(["让我想想…", "回忆一下…", "翻翻记忆…"])
+        query = (query or "").strip()
+        if not query:
+            return {"summary": "回忆线索为空，请提供人名、事件或话题关键词",
+                    "memories": [], "count": 0}
+        try:
+            limit = max(1, min(int(limit), 10))
+        except (TypeError, ValueError):
+            limit = 5
+        results = get_memory_store().search_memories(query, limit=limit)
+        if not results:
+            return {"summary": "没有想起相关记忆", "memories": [], "count": 0}
+        memories = [self._format_recall_memory(r) for r in results]
+        return {
+            "summary": f"想起 {len(memories)} 条与「{query}」相关的记忆",
+            "memories": memories,
+            "count": len(memories),
+        }
+
+    def _recall_browse(self, level: str = "", importance: int = 0,
+                       keyword: str = "", page: int = 1) -> dict:
+        """recall__browse 工具实现（懒 import，避免注册表依赖记忆层）。"""
+        from pet.tools.context import TOOL_CTX
+        from pet.brain.memory import get_memory_store
+        TOOL_CTX.speech_random(["翻翻记忆…", "看看都记了些什么…", "回忆一下…"])
+        level = (level or "").strip().upper()
+        if level not in ("L1", "L2", "L3"):
+            level = ""
+        try:
+            importance = max(0, min(5, int(importance or 0)))
+        except (TypeError, ValueError):
+            importance = 0
+        keyword = (keyword or "").strip()
+        try:
+            page = max(1, int(page or 1))
+        except (TypeError, ValueError):
+            page = 1
+        page_size = 10
+        # list_memories 的 page 从 0 开始，工具入参从 1 开始
+        rows, total = get_memory_store().list_memories(
+            level=level, importance=importance, search=keyword,
+            page=page - 1, page_size=page_size,
+        )
+        filters = [f for f in (
+            level if level else "",
+            f"重要性{importance}" if importance else "",
+            f"关键词「{keyword}」" if keyword else "",
+        ) if f]
+        filter_str = f"（筛选：{' / '.join(filters)}）" if filters else ""
+        total_pages = (total + page_size - 1) // page_size
+        if not rows:
+            if total == 0:
+                return {"summary": f"没有符合条件的记忆{filter_str}",
+                        "memories": [], "total": 0, "page": page, "total_pages": 0}
+            # 页码越界：明确告知范围，避免模型误判为「没有记忆」
+            return {"summary": f"第 {page} 页超出范围：共 {total} 条记忆，仅 {total_pages} 页{filter_str}",
+                    "memories": [], "total": total, "page": page,
+                    "total_pages": total_pages}
+        memories = [self._format_recall_memory(r) for r in rows]
+        return {
+            "summary": f"共 {total} 条记忆，第 {page}/{total_pages} 页{filter_str}",
+            "memories": memories,
+            "total": total,
+            "page": page,
+            "total_pages": total_pages,
+        }
 
     def _game_list(self) -> dict:
         """game__list 工具实现（懒 import，避免注册表依赖游戏层）。"""
