@@ -7,6 +7,13 @@ from pet.tools.context import TOOL_CTX
 
 logger = logging.getLogger(__name__)
 
+# 用户超时未交互/主动结束时附加给模型的收场提示
+_FRIENDLY_END_HINT = (
+    "（对模型）游戏已结束，不算任何一方输赢，用户可能暂时没空；"
+    "请输出最终答复，不要继续调用游戏工具，"
+    "Mood 无需按输赢结算（如有变化可给 joy+0~1）。"
+)
+
 
 class Game:
     """回合制游戏接口。
@@ -224,11 +231,9 @@ class GameBase:
                 pass
             if state.get("_forfeit"):
                 result = {
-                    "summary": f"用户主动结束了 {game_name} 游戏，判用户输。"
-                               f"（对模型）请总结本局结果并输出最终答复，"
-                               f"按本局结果输出 Mood 变动范围（仅输出有变化的维度）：joy+0~1、affection+0~1。",
+                    "summary": f"用户主动结束了 {game_name} 游戏。{_FRIENDLY_END_HINT}",
                     "ended": True,
-                    "won": False,
+                    "won": None,
                     "forfeit": True,
                 }
             else:
@@ -257,12 +262,16 @@ class GameBase:
             self._sessions.pop(game_name, None)
             # 明确告知游戏已结束，避免模型继续调用 game__play/game__stop
             if result.get("summary"):
-                result["summary"] = (
-                    f"{result['summary']}（对模型）游戏已结束（ended=True），"
-                    f"请总结本局结果并输出最终答复，不要继续调用游戏工具；"
-                    f"按本局胜负输出 Mood 变动范围（仅输出有变化的维度，输赢都增加，大小有别）："
-                    f"获胜 joy+2~5、affection+2~5；落败 joy+0~2、affection+0~1。"
-                )
+                if result.get("timeout") or result.get("forfeit"):
+                    # 用户超时未交互或主动结束：不算胜负，提示模型用户可能暂时没空
+                    result["summary"] = f"{result['summary']}{_FRIENDLY_END_HINT}"
+                else:
+                    result["summary"] = (
+                        f"{result['summary']}（对模型）游戏已结束（ended=True），"
+                        f"请总结本局结果并输出最终答复，不要继续调用游戏工具；"
+                        f"按本局胜负输出 Mood 变动范围（仅输出有变化的维度，输赢都增加，大小有别）："
+                        f"获胜 joy+2~5、affection+2~5；落败 joy+0~2、affection+0~1。"
+                    )
         elif result.get("summary"):
             # 游戏未结束：必须在 summary 里明确"继续推进"，否则模型可能提前输出最终答复
             result["summary"] = (
@@ -304,12 +313,7 @@ class GameBase:
         }
 
     def forfeit(self, game_name: str) -> dict:
-        """用户主动结束（棋盘面板点击关闭/结束）：判用户输。
-
-        游戏进行中（会话存在）：只打判负标志并唤醒等待中的 play，
-        由 play 以工具结果形式返回给模型，模型下一轮收到"用户主动结束、判输"。
-        游戏已结束（会话已清）：面板只是残留展示，静默关闭，不回应模型。
-        """
+        """用户主动结束（棋盘面板点击关闭/结束）：不算胜负"""
         state = self._sessions.get(game_name)
         if state is None:
             # 游戏已提前结束，用户只是关闭残留面板：不播台词、不回应 LLM
@@ -328,10 +332,10 @@ class GameBase:
         except Exception:
             pass
         return {
-            "summary": f"你结束了 {game_name} 游戏，判你输",
+            "summary": f"你结束了 {game_name} 游戏",
             "success": True,
             "ended": True,
-            "won": False,
+            "won": None,
         }
 
     def _teardown(self, game_name: str):
@@ -360,7 +364,7 @@ class GameBase:
         if not speech:
             ended = result.get("ended")
             if result.get("forfeit"):
-                # 用户主动结束：判输但播"你认输"台词，而非普通败北台词
+                # 用户主动结束：播收场台词，而非败北台词
                 speech = game.forfeit_speech()
             elif ended and result.get("won"):
                 speech = game.win_speech()

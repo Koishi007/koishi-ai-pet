@@ -1,7 +1,7 @@
 """猜拳游戏 — 石头剪刀布，三局两胜。
 
 桌宠通过 game__play 传 rps_move 先出拳，用户在猜拳面板上点击出拳；
-平局重新出拳；超过 MOVE_TIMEOUT 秒未出拳判用户输。
+平局重新出拳；超过 MOVE_TIMEOUT 秒未出拳则结束本局，不算胜负。
 等待用户出拳时阻塞脑线程（event.wait），主线程 UI 不受影响。
 """
 
@@ -22,14 +22,14 @@ _BEATS = {"rock": "scissors", "scissors": "paper", "paper": "rock"}  # key 克�
 class RockPaperScissorsGame(Game):
     """猜拳：桌宠先出、用户后出，三局两胜。"""
 
-    MOVE_TIMEOUT = 15   # 用户出拳超时（秒），超时直接判用户输
+    MOVE_TIMEOUT = 15   # 用户出拳超时（秒），超时结束本局，不算胜负
     NEED_WINS = 2       # 三局两胜
 
     _WIN_SPEECH = ["哈哈，我赢了…", "三局两胜，我拿下…", "猜拳我赢了…"]
     _LOSE_SPEECH = ["你赢了…哼", "被你赢了呢…", "猜拳输了…"]
     _STOP_SPEECH = ["不比了…", "今天不猜拳了…", "下次再战…"]
-    _FORFEIT_SPEECH = ["你认输了吧，算我赢…", "不比了，我赢了…", "你弃权了，猜拳归我…"]
-    _TIMEOUT_SPEECH = ["你太慢了，超时判负…", "等你太久，这局算我赢…"]
+    _FORFEIT_SPEECH = ["这么久没动静，猜拳先到这吧…", "你可能在忙，下次再比…"]
+    _TIMEOUT_SPEECH = ["这么久没动静，猜拳先到这吧…", "你可能在忙，下次再比…"]
 
     def name(self) -> str:
         return "rps"
@@ -37,7 +37,7 @@ class RockPaperScissorsGame(Game):
     def description(self) -> str:
         return (
             "猜拳：石头剪刀布，桌宠先出拳、你后出，三局两胜；"
-            f"轮到你时在猜拳面板上点击出拳，{self.MOVE_TIMEOUT} 秒内未出拳算你输。"
+            f"轮到你时在猜拳面板上点击出拳，{self.MOVE_TIMEOUT} 秒内未出拳则本局自动结束。"
         )
 
     def new_state(self) -> dict:
@@ -79,25 +79,25 @@ class RockPaperScissorsGame(Game):
         move = self._wait_for_move(state)
         if state.get("_cancelled"):
             if state.get("_forfeit"):
-                # 用户主动关闭面板结束游戏：判用户输，结果以工具形式返回给模型
+                # 用户主动关闭面板结束游戏：不算胜负
                 return {
-                    "summary": "用户主动结束了猜拳，判用户输",
+                    "summary": "用户主动结束了猜拳，不算胜负",
                     "ended": True,
-                    "won": False,
+                    "won": None,
                     "forfeit": True,
                 }
             # 外部取消（stop/闲置收场）已由调用方播收场词，抑制兜底台词避免重复
             return {"summary": "游戏已结束", "ended": True, "won": None,
                     "suppress_speech": True}
         if move is None:
-            # 用户超时未出拳 → 直接判用户输（独立超时台词）
+            # 用户超时未出拳 → 结束本局，不算胜负
             self._emit_panel(state, waiting=False, pet_move=pet_move,
-                             message="你超时了，桌宠获胜")
+                             message="长时间未操作，本局结束")
             return {
-                "summary": f"你在 {self.MOVE_TIMEOUT} 秒内没有出拳，判你输，桌宠获胜",
+                "summary": f"你在 {self.MOVE_TIMEOUT} 秒内没有出拳，本局结束",
                 "speech": random.choice(self._TIMEOUT_SPEECH),
                 "ended": True,
-                "won": True,
+                "won": None,
                 "timeout": True,
                 "pet_move": pet_move,
             }

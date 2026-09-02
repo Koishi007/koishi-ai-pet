@@ -1,7 +1,7 @@
 """井字棋游戏 — 3x3 棋盘，开局随机决定先后手（X 先手）。
 
 桌宠与用户执子随机：先手方执 X、后手方执 O。
-用户在棋盘面板上点击落子；超过 MOVE_TIMEOUT 秒未落子直接判用户输。
+用户在棋盘面板上点击落子；超过 MOVE_TIMEOUT 秒未落子则结束本局，不算胜负。
 等待用户落子时阻塞脑线程（event.wait），主线程 UI 不受影响。
 """
 
@@ -57,13 +57,13 @@ def _board_text(board) -> str:
 class TicTacToeGame(Game):
     """井字棋：开局随机先后手，先手方执 X。"""
 
-    MOVE_TIMEOUT = 15  # 用户落子超时（秒），超时直接判用户输
+    MOVE_TIMEOUT = 15  # 用户落子超时（秒），超时结束本局，不算胜负
 
     _WIN_SPEECH = ["嘿嘿，三连了，我赢了…", "我赢了…这局拿下…", "三连，赢了…"]
     _LOSE_SPEECH = ["被你赢了呢…", "呜，你赢了…", "这局是你赢了…"]
     _STOP_SPEECH = ["不下棋了…", "棋盘收起来了…", "下次再战…"]
-    _FORFEIT_SPEECH = ["你自己认输了吧，算我赢…", "不下了认输，我赢了…", "你弃权了，这局归我…"]
-    _TIMEOUT_SPEECH = ["你太慢了，超时判负…", "等你太久，这局算我赢…", "落子超时，我赢了…"]
+    _FORFEIT_SPEECH = ["这么久没动静，这局先到这吧…", "你可能在忙，棋盘先收起来了…"]
+    _TIMEOUT_SPEECH = ["这么久没动静，这局先到这吧…", "你可能在忙，棋盘先收起来了…"]
 
     def name(self) -> str:
         return "tic_tac_toe"
@@ -71,7 +71,7 @@ class TicTacToeGame(Game):
     def description(self) -> str:
         return (
             "井字棋：3x3 棋盘，你和桌宠轮流落子，开局随机决定先后手（X 先手），"
-            f"先连成三子获胜；轮到你时在棋盘面板上点击落子，{self.MOVE_TIMEOUT} 秒内未落子算你输。"
+            f"先连成三子获胜；轮到你时在棋盘面板上点击落子，{self.MOVE_TIMEOUT} 秒内未落子则本局自动结束。"
         )
 
     def new_state(self) -> dict:
@@ -184,11 +184,11 @@ class TicTacToeGame(Game):
         move = self._wait_for_move(state)
         if state.get("_cancelled"):
             if state.get("_forfeit"):
-                # 用户主动关闭棋盘结束游戏：判用户输，结果以工具形式返回给模型
+                # 用户主动关闭棋盘结束游戏：不算胜负
                 return {
-                    "summary": _s(f"用户主动结束了游戏，判用户输。\n{_board_text(board)}"),
+                    "summary": _s(f"用户主动结束了游戏，不算胜负。\n{_board_text(board)}"),
                     "ended": True,
-                    "won": False,
+                    "won": None,
                     "forfeit": True,
                     "pet_mark": pet_mark,
                     "user_mark": user_mark,
@@ -201,13 +201,13 @@ class TicTacToeGame(Game):
             return {"summary": _s("游戏已结束"), "ended": True, "won": None,
                     "suppress_speech": True, "board": board}
         if move is None:
-            # 用户超时未落子 → 直接判用户输（独立超时台词，不走 win_speech）
-            self._emit_board(state, waiting=False, message="你超时了，我获胜")
+            # 用户超时未落子 → 结束本局，不算胜负
+            self._emit_board(state, waiting=False, message="长时间未操作，本局结束")
             return {
-                "summary": _s(f"你在 {self.MOVE_TIMEOUT} 秒内没有落子，判你输，我获胜。\n{_board_text(board)}"),
+                "summary": _s(f"你在 {self.MOVE_TIMEOUT} 秒内没有落子，本局结束。\n{_board_text(board)}"),
                 "speech": random.choice(self._TIMEOUT_SPEECH),
                 "ended": True,
-                "won": True,
+                "won": None,
                 "timeout": True,
                 "pet_mark": pet_mark,
                 "user_mark": user_mark,

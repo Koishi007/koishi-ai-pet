@@ -23,13 +23,13 @@ class TwentyQuestionsGame(Game):
     """二十问：桌宠提问猜用户心想之物，最多 20 个是/否问题。"""
 
     MAX_QUESTIONS = 20   # 最多可问的是/否问题数
-    ANSWER_TIMEOUT = 20  # 用户作答/确认超时（秒），超时判用户输
+    ANSWER_TIMEOUT = 20  # 用户作答/确认超时（秒），超时结束本局，不算胜负
 
     _WIN_SPEECH = ["我猜中了…嘿嘿", "二十问拿下…", "猜中了，我果然很聪明…"]
     _LOSE_SPEECH = ["没猜中呢…", "猜错了…被你难住了", "再让我想一会就好了…"]
     _STOP_SPEECH = ["不猜了…", "今天先到这吧…", "想不出来，不玩了…"]
-    _FORFEIT_SPEECH = ["你认输了吧，算我赢…", "不让我猜了，我赢了…", "你放弃了，算我赢…"]
-    _TIMEOUT_SPEECH = ["你太慢了，超时判负…", "等你太久，这局算我赢…"]
+    _FORFEIT_SPEECH = ["这么久没动静，这局先到这吧…", "你可能在忙，下次再玩…"]
+    _TIMEOUT_SPEECH = ["这么久没动静，这局先到这吧…", "你可能在忙，下次再玩…"]
 
     def name(self) -> str:
         return "twenty_questions"
@@ -112,9 +112,9 @@ class TwentyQuestionsGame(Game):
         if state.get("_cancelled"):
             if state.get("_forfeit"):
                 return {
-                    "summary": "用户主动结束了二十问，判用户输",
+                    "summary": "用户主动结束了二十问，不算胜负",
                     "ended": True,
-                    "won": False,
+                    "won": None,
                     "forfeit": True,
                 }
             return {"summary": "游戏已结束", "ended": True, "won": None,
@@ -122,12 +122,12 @@ class TwentyQuestionsGame(Game):
         if mv is None:
             self._emit_panel(state, mode="question", text="",
                              round_text="", waiting=False,
-                             message="你超时了，桌宠获胜")
+                             message="长时间未操作，本局结束")
             return {
-                "summary": f"你在 {self.ANSWER_TIMEOUT} 秒内没有作答，判你输，桌宠获胜",
+                "summary": f"你在 {self.ANSWER_TIMEOUT} 秒内没有作答，本局结束",
                 "speech": random.choice(self._TIMEOUT_SPEECH),
                 "ended": True,
-                "won": True,
+                "won": None,
                 "timeout": True,
                 "round": round_no,
             }
@@ -168,9 +168,9 @@ class TwentyQuestionsGame(Game):
         if state.get("_cancelled"):
             if state.get("_forfeit"):
                 return {
-                    "summary": "用户主动结束了二十问，判用户输",
+                    "summary": "用户主动结束了二十问，不算胜负",
                     "ended": True,
-                    "won": False,
+                    "won": None,
                     "forfeit": True,
                 }
             return {"summary": "游戏已结束", "ended": True, "won": None,
@@ -178,12 +178,12 @@ class TwentyQuestionsGame(Game):
         if mv is None:
             self._emit_panel(state, mode="guess", text="",
                              round_text="", waiting=False,
-                             message="你超时了，桌宠获胜")
+                             message="长时间未操作，本局结束")
             return {
-                "summary": f"你在 {self.ANSWER_TIMEOUT} 秒内没有确认，判你输，桌宠获胜",
+                "summary": f"你在 {self.ANSWER_TIMEOUT} 秒内没有确认，本局结束",
                 "speech": random.choice(self._TIMEOUT_SPEECH),
                 "ended": True,
-                "won": True,
+                "won": None,
                 "timeout": True,
                 "guess": guess,
                 "round": round_no,
