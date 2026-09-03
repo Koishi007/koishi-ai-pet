@@ -10,6 +10,28 @@ from pet.tools.registry import TOOL_REGISTRY
 
 logger = logging.getLogger(__name__)
 
+
+_MAX_LOG_VALUE_LEN = 300    # 单个字段值最多显示的字符数
+_MAX_LOG_LINE_LEN = 4000    # 整行日志最多显示的字符数
+
+
+def _log_preview(data: Any) -> str:
+    """工具返回数据的日志预览：超长字段截断并标注溢出量"""
+    if isinstance(data, dict):
+        parts = []
+        for key, value in data.items():
+            text = str(value)
+            if len(text) > _MAX_LOG_VALUE_LEN:
+                text = text[:_MAX_LOG_VALUE_LEN] + f"...<+{len(text) - _MAX_LOG_VALUE_LEN}字>"
+            parts.append(f"{key}={text}")
+        preview = "{ " + ", ".join(parts) + " }"
+    else:
+        preview = str(data)
+    if len(preview) > _MAX_LOG_LINE_LEN:
+        preview = preview[:_MAX_LOG_LINE_LEN] + f"...<+{len(preview) - _MAX_LOG_LINE_LEN}字>"
+    return preview
+
+
 _TYPE_MAP = {
     "int": int,
     "float": (int, float),
@@ -80,7 +102,7 @@ class ToolExecutor:
                 raise box["error"]
 
             data = box.get("data")
-            logger.info(f"[ToolExecutor] {call.name} -> {str(data)}")
+            logger.info(f"[ToolExecutor] {call.name} -> {_log_preview(data)}")
             image_b64 = None
             image_mime = "image/png"
             context_brief = ""
