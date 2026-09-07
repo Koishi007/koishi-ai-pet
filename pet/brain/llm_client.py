@@ -27,6 +27,11 @@ class LLMClient:
             pool=5.0,
         )
 
+    @staticmethod
+    def _sdk_retries() -> int:
+        """SDK 内部重试禁用"""
+        return 0
+
     def _build(self):
         brain = config.BRAIN or "local"
         key = config.LLM_KEY
@@ -43,6 +48,7 @@ class LLMClient:
                 api_key="ollama",
                 base_url=config.OLLAMA_BASE_URL,
                 timeout=self._make_timeout(),
+                max_retries=self._sdk_retries(),
             )
             self._model = model or "llama3.2"
         elif brain == "api" and key:
@@ -50,6 +56,7 @@ class LLMClient:
                 api_key=key,
                 base_url=url or "",
                 timeout=self._make_timeout(),
+                max_retries=self._sdk_retries(),
             )
             self._model = model
         else:

@@ -32,6 +32,7 @@ class ScheduledTasks:
 
     def register_all(self, scheduler):
         scheduler.register("mid", self._autonomous)
+        scheduler.register("fast", self._brain_watchdog)
         scheduler.register("fast", self._vitals_tick)
         scheduler.register("fast", self._update_idle_anim)
         scheduler.register("fast", self._spawn_particles)
@@ -49,6 +50,11 @@ class ScheduledTasks:
         if not self._agent.state_machine.try_transition(PetState.AUTONOMOUS):
             logger.info(f"[{ts}] [PetAgent] [mid_tick] skipped (state={self._agent.state_machine.state.value})")
             return
+        # 上个脑线程仍未退出时不再叠加新线程（挂死由看门狗处理），避免线程堆积
+        if self._agent._thread is not None and self._agent._thread.isRunning():
+            logger.info(f"[{ts}] [PetAgent] [mid_tick] skipped (brain thread still running)")
+            self._agent.state_machine.transition(PetState.IDLE)
+            return
 
         pet_x, pet_y = 0, 0
         win = self._agent._pet_window
@@ -56,6 +62,27 @@ class ScheduledTasks:
             pet_x = win.x()
             pet_y = win.y()
         self._agent._async_brain(self._agent._autonomous_pipeline, pet_x, pet_y)
+
+    def _brain_watchdog(self):
+        """检测脑线程占用状态挂死（autonomous/interacting 无进展超时）并强制恢复"""
+        agent = self._agent
+        state = agent.state_machine.state
+        if state not in (PetState.AUTONOMOUS, PetState.INTERACTING):
+            return
+        if agent.is_game_active():
+            agent.note_brain_progress()
+            return
+        idle = agent.brain_idle_seconds()
+        if idle is None:
+            return
+        threshold = config.BRAIN_STUCK_TIMEOUT
+        if idle > threshold:
+            ts = datetime.now().strftime("%H:%M:%S")
+            logger.warning(
+                f"[{ts}] [PetAgent] [watchdog] state '{state.value}' no progress for {idle:.0f}s "
+                f"(> {threshold}s), forcing back to IDLE"
+            )
+            agent.recover_stuck_brain()
 
 
     def _vitals_tick(self):

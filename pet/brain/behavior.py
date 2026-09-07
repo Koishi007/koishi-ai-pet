@@ -54,10 +54,13 @@ class BehaviorOutput:
 class Behavior(BrainMixin):
 
     def __init__(self, memory_store=None, screen_reader=None, vitals=None, mood=None,
-                 head_pat_ts_fn=None):
+                 head_pat_ts_fn=None, progress_fn=None):
         db_path = memory_store._db_path if memory_store else None
         super().__init__(db_path=db_path)
         self._llm = LLMClient()
+        # 进展心跳回调：每产生一次实质进展（chunk / 工具轮次 / LLM 返回）通知一次，
+        # 供看门狗区分「跑得慢」与「挂死」，避免长流程被误判
+        self._progress_fn = progress_fn
         self._lock = threading.RLock()
         self._counter_lock = threading.Lock()  # 仅保护 _rounds_without_user，避免主线程等待 LLM 长锁
         self._rounds_without_user = 0
@@ -86,6 +89,15 @@ class Behavior(BrainMixin):
     @property
     def has_vision(self) -> bool:
         return self._llm.has_vision
+
+    def _note_progress(self):
+        """上报一次管线进展（best-effort，回调异常不影响主流程）。"""
+        if not self._progress_fn:
+            return
+        try:
+            self._progress_fn()
+        except Exception:
+            pass
 
     def _build_tools_param(self, enable_tools: bool | None = None):
         """根据当前已激活的分组构建 tools 参数；enable_tools 非 None 时覆盖全局开关。"""
@@ -149,7 +161,7 @@ class Behavior(BrainMixin):
         logger.info(f"[{t}] [Behavior]   model: {self._llm.model}, context({len(context)} chars): \"{ctx_preview}\"")
         logger.info(f"[{t}] [Behavior]   history: {self.context_count()} entries")
 
-        return self._retry_if_empty(self._call_llm_and_parse, messages, messages[0]["content"], tag, tag=tag, max_tokens=config.LLM_MAX_TOKENS_AUTONOMOUS)
+        return self._retry_if_empty(self._call_llm_and_parse, messages, messages[0]["content"], tag=tag, max_tokens=config.LLM_MAX_TOKENS_AUTONOMOUS)
 
     def autonomous_decide_stream(self, context: str = "", screenshot: bool = True,
                       on_chunk=None, on_stream_end=None,
@@ -171,7 +183,7 @@ class Behavior(BrainMixin):
         if not self._llm:
             return self._interact_decide_local(event_hint)
         messages = self.ctx.build_interact(event_hint)
-        return self._retry_if_empty(self._call_llm_and_parse, messages, messages[0]["content"], "interact", tag="interact", max_tokens=config.LLM_MAX_TOKENS_INTERACT)
+        return self._retry_if_empty(self._call_llm_and_parse, messages, messages[0]["content"], tag="interact", max_tokens=config.LLM_MAX_TOKENS_INTERACT)
 
     def interact_decide_stream(self, event_hint: str,
                                on_chunk=None, on_stream_end=None,
@@ -205,7 +217,7 @@ class Behavior(BrainMixin):
         logger.info(f"[{t}] [Behavior]   model: {self._llm.model}")
         logger.info(f"[{t}] [Behavior]   history: {self.context_count()} entries")
 
-        return self._retry_if_empty(self._call_llm_and_parse, messages, messages[0]["content"], tag, tag=tag, max_tokens=config.LLM_MAX_TOKENS_CHAT)
+        return self._retry_if_empty(self._call_llm_and_parse, messages, messages[0]["content"], tag=tag, max_tokens=config.LLM_MAX_TOKENS_CHAT)
 
     def chat_decide_stream(self, user_message: str, context: str, screenshot: bool = True,
                            on_chunk=None, on_stream_end=None,
@@ -228,8 +240,9 @@ class Behavior(BrainMixin):
         finally:
             self._lock.release()
 
-    def _retry_if_empty(self, fn, *args, tag="", **kwargs) -> BehaviorOutput:
-        """调用 fn 并在结果为空时重试一次。"""
+    def _retry_if_empty(self, fn, *args, **kwargs) -> BehaviorOutput:
+        """调用 fn 并在结果为空时重试一次"""
+        tag = kwargs.get("tag", "")
         result = fn(*args, **kwargs)
         if not result.actions and not result.speech:
             logger.warning(f"[Behavior] empty LLM response (no actions, no speech), retrying once ({tag})")
@@ -271,6 +284,7 @@ class Behavior(BrainMixin):
             kwargs["tools"] = tools
         self._apply_thinking_param(kwargs, thinking)
         resp = self._create_completion(kwargs)
+        self._note_progress()
         elapsed = time.perf_counter() - t0
         usage = resp.usage
         if usage:
@@ -293,6 +307,7 @@ class Behavior(BrainMixin):
         return llm_stream_with_retry(
             lambda: self._create_completion(kwargs),
             tag="Behavior.stream",
+            create_timeout=config.LLM_CREATE_TIMEOUT,
         )
 
     def _log_prompt_size(self, messages: list, tag: str):
@@ -409,6 +424,7 @@ class Behavior(BrainMixin):
                     if exception_holder[0]:
                         raise exception_holder[0]
                     break
+                self._note_progress()
                 yield value
         finally:
             stop_event.set()
@@ -743,6 +759,7 @@ class Behavior(BrainMixin):
         display_round = 0  # 仅用于日志展示
 
         while real_round < max_rounds:
+            self._note_progress()  # 每轮工具调用都算进展，长流程不被看门狗误杀
             meta_round += 1
             display_round += 1
             if meta_round > self._META_TOOL_MAX_ROUNDS:

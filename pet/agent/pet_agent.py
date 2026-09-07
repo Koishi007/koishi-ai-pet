@@ -62,13 +62,15 @@ class PetAgent(QObject):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._last_head_pat_ts: float = 0.0  # 最近一次用户摸头时间（wall-clock，用于时效判断与展示）
+        self._brain_busy_since: float | None = None  # 进入脑线程占用状态（autonomous/interacting）的时刻（monotonic）
+        self._brain_progress_ts: float | None = None  # 最近一次管线进展的时刻（monotonic）
         self.memory_store = get_memory_store()
         self.conversation_store = ConversationStore()
         self.screen_reader = ScreenReader()
         self.screen_reader.enable()
         self.vitals = Vitals(parent=self)
         self.mood = Mood(parent=self)
-        self.behavior = Behavior(memory_store=self.memory_store, screen_reader=self.screen_reader, vitals=self.vitals, mood=self.mood, head_pat_ts_fn=self._head_pat_ts)
+        self.behavior = Behavior(memory_store=self.memory_store, screen_reader=self.screen_reader, vitals=self.vitals, mood=self.mood, head_pat_ts_fn=self._head_pat_ts, progress_fn=self.note_brain_progress)
         self.scheduler = Scheduler(self)
         self.state_machine = StateMachine(parent=self)
         self.state_machine.state_changed.connect(self.state_changed)
@@ -83,6 +85,7 @@ class PetAgent(QObject):
         self._cancel_flag = False
         self._active_stream_id = 0
         self._last_interact_ms: dict[str, int] = {}
+        self.state_machine.state_changed.connect(self._on_state_changed)
 
     def note_head_pat(self):
         """记录一次用户摸头（单击宠物），供上下文备注注入。"""
@@ -361,30 +364,74 @@ class PetAgent(QObject):
         """协作式取消检查：供 Behavior 流式循环轮询。"""
         return self._cancel_flag
 
+    def _on_state_changed(self, state: str):
+        """记录进入脑线程占用状态（autonomous/interacting）的时刻，供看门狗检测挂死。"""
+        from pet.agent.state import PetState
+        if state in (PetState.AUTONOMOUS.value, PetState.INTERACTING.value):
+            now = time.monotonic()
+            self._brain_busy_since = now
+            self._brain_progress_ts = now
+        else:
+            self._brain_busy_since = None
+            self._brain_progress_ts = None
+
+    def note_brain_progress(self):
+        """管线产生实质进展（chunk / 工具轮次 / LLM 返回）时由 Behavior 回调。"""
+        if self._brain_busy_since is not None:
+            self._brain_progress_ts = time.monotonic()
+
+    def brain_idle_seconds(self) -> float | None:
+        """脑线程占用状态下「无进展」的秒数；空闲/休眠返回 None"""
+        if self._brain_busy_since is None:
+            return None
+        base = self._brain_progress_ts or self._brain_busy_since
+        return time.monotonic() - base
+
+    def is_game_active(self) -> bool:
+        """是否存在进行中的游戏对局（脑线程可能正阻塞等待玩家落子）。"""
+        try:
+            from pet.game.gamebase import GAME
+            return GAME.has_active_session()
+        except Exception:
+            return False
+
+    def recover_stuck_brain(self):
+        """脑线程管线疑似挂死：取消并回收脑线程，强制回 IDLE，复位加载态。"""
+        from pet.agent.state import PetState
+        ts = datetime.now().strftime("%H:%M:%S")
+        self._cancel_running_thread(ts)
+        self.state_machine.force(PetState.IDLE)
+        self.llm_loading.emit(False)
+        self.notify_requested.emit("状态恢复", "LLM调用疑似挂死，已强制恢复", 5000)
+
+    def _cancel_running_thread(self, ts: str = ""):
+        """协作式取消当前脑线程：置取消标志、终结游戏会话、短窗口等待退出"""
+        old_thread = self._thread
+        if old_thread is None or not old_thread.isRunning():
+            return
+        self._cancel_flag = True
+        # 终结旧线程持有的游戏会话
+        try:
+            from pet.game.gamebase import GAME
+            GAME.cancel_all()
+        except Exception:
+            pass
+        old_thread.quit()
+        # 给旧线程一个短等待窗口（最多 1s），超时不强杀，让其自然退出
+        for _ in range(20):
+            if not old_thread.isRunning():
+                break
+            QThread.msleep(50)
+        if old_thread.isRunning():
+            logger.warning(f"[{ts}] [PetAgent] old brain thread still running after cancel, continue anyway")
+
     def _async_brain(self, fn, *args, on_result=None, on_error=None):
         fn_name = getattr(fn, "__name__", repr(fn))
         ts = datetime.now().strftime("%H:%M:%S")
         logger.info(f"[{ts}] [PetAgent] _async_brain: {fn_name}")
         old_thread = self._thread
         old_worker = self._worker
-        if old_thread is not None and old_thread.isRunning():
-            # 协作式取消：设置标志让旧线程在流式循环里快速退出，不阻塞主线程
-            self._cancel_flag = True
-            # 终结旧线程持有的游戏会话（可能阻塞在等待用户落子，远超 1s 等待窗口），
-            # 避免新旧脑线程并发操作同一 session
-            try:
-                from pet.game.gamebase import GAME
-                GAME.cancel_all()
-            except Exception:
-                pass
-            old_thread.quit()
-            # 给旧线程一个短等待窗口（最多 1s），超时不强杀，让其自然退出
-            for _ in range(20):
-                if not old_thread.isRunning():
-                    break
-                QThread.msleep(50)
-            if old_thread.isRunning():
-                logger.warning(f"[{ts}] [PetAgent] old brain thread still running after cancel, continue anyway")
+        self._cancel_running_thread(ts)
         if old_thread is not None:
             try:
                 old_thread.finished.disconnect()

@@ -122,6 +122,14 @@ class GameBase:
                 pass
         self._sessions.clear()
 
+    def has_active_session(self) -> bool:
+        """是否存在进行中的对局（可能正阻塞等待玩家落子）。
+
+        看门狗据此区分「挂死」与「正常等待用户交互」，避免误伤长对局。
+        """
+        return any(not state.get("_cancelled")
+                   for state in list(self._sessions.values()))
+
     def names(self) -> list[str]:
         """已注册的游戏名列表。"""
         return list(self._games)
