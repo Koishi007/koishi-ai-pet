@@ -283,6 +283,7 @@ class _MemoryRetriever(ABC):
                 "UPDATE memories SET importance = importance + 1 WHERE id=?",
                 (memory_id,)
             )
+            self._conn.commit()
             logger.info(
                 f"[{self.__class__.__name__}] 加权冷却: memory#{memory_id} importance {cur}→{cur + 1}"
             )
@@ -973,6 +974,7 @@ class VectorRetriever(_MemoryRetriever):
                         self._conn.execute(
                             "UPDATE memories SET has_embedding=0 WHERE id=?", (existing["id"],)
                         )
+                        self._conn.commit()
                         logger.warning(
                             f"[VectorRetriever] embedding 生成失败，memory#{existing['id']} "
                             f"has_embedding 已重置，降级为关键词检索"

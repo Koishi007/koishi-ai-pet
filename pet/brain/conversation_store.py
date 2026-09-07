@@ -45,6 +45,14 @@ class ConversationStore:
             """)
             self._conn.commit()
 
+    def _safe_rollback(self):
+        """写失败后回滚残留的隐式事务"""
+        if self._conn:
+            try:
+                self._conn.rollback()
+            except Exception:
+                pass
+
     def _cleanup_old(self, days: int = 7):
         """清理超过指定天数的过期记录"""
         if not self._conn:
@@ -59,6 +67,7 @@ class ConversationStore:
                 self._conn.commit()
         except Exception as e:
             logger.warning(f"[ConversationStore] cleanup failed: {e}")
+            self._safe_rollback()
 
     def add(self, role: str, content: str):
         """写入一条对话记录。"""
@@ -73,6 +82,7 @@ class ConversationStore:
                 self._conn.commit()
         except Exception as e:
             logger.warning(f"[ConversationStore] add failed: {e}")
+            self._safe_rollback()
 
     def query_by_date(self, date_str: str) -> list[dict]:
         """按日期（YYYY-MM-DD）查询对话记录，按创建时间升序。"""

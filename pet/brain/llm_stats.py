@@ -43,6 +43,11 @@ class LlmStats:
                 self._conn.commit()
             except Exception as e:
                 logger.warning(f"[LlmStats] save failed: {e}")
+                # 回滚残留事务，避免连接停留在 BUSY_SNAPSHOT 中毒状态
+                try:
+                    self._conn.rollback()
+                except Exception:
+                    pass
 
     def close(self):
         self.save()
