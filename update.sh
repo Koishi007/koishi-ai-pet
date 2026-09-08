@@ -10,6 +10,29 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# PyPI 镜像源，按序尝试，官方源兜底
+PIP_MIRRORS=(
+    "https://pypi.tuna.tsinghua.edu.cn/simple"
+    "https://mirrors.aliyun.com/pypi/simple/"
+    "https://pypi.mirrors.ustc.edu.cn/simple/"
+    "https://repo.huaweicloud.com/repository/pypi/simple"
+    "https://mirrors.cloud.tencent.com/pypi/simple"
+    "https://pypi.org/simple"
+)
+
+# 逐个镜像源尝试 pip install，任一成功即返回 0
+pip_install() {
+    local mirror
+    for mirror in "${PIP_MIRRORS[@]}"; do
+        echo "   使用镜像源: $mirror"
+        if python -m pip install "$@" -i "$mirror"; then
+            return 0
+        fi
+        echo -e "${YELLOW}   该镜像源失败，切换下一个...${NC}"
+    done
+    return 1
+}
+
 REPO="Koishi007/koishi-ai-pet"
 API_URL="https://api.github.com/repos/${REPO}/releases/latest"
 
@@ -149,13 +172,14 @@ echo "[4/4] 激活虚拟环境并更新依赖..."
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/venv/bin/activate"
 
-python -m pip install --upgrade pip -q -i https://pypi.tuna.tsinghua.edu.cn/simple \
-    || echo -e "${YELLOW}[警告]${NC} pip 升级失败，继续使用内置版本"
+if ! pip_install --upgrade pip -q; then
+    echo -e "${YELLOW}[警告]${NC} pip 升级失败（已尝试全部镜像源），继续使用内置版本"
+fi
 
 echo "   执行: pip install -e \"$SCRIPT_DIR\""
-if ! pip install -e "$SCRIPT_DIR" -q -i https://pypi.tuna.tsinghua.edu.cn/simple; then
+if ! pip_install -e "$SCRIPT_DIR" -q; then
     echo -e "${RED}[错误]${NC} 依赖更新失败"
-    echo "       请检查网络连接或 pyproject.toml 配置"
+    echo "       已尝试全部 PyPI 镜像源（含官方源），请检查网络连接或 pyproject.toml 配置"
     deactivate 2>/dev/null || true
     exit 1
 fi

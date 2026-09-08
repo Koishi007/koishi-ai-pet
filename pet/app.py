@@ -79,6 +79,10 @@ def main():
         # 正常退出由 aboutToQuit 释放；此处兜底覆盖初始化中途异常等场景
         atexit.register(_guard.release)
 
+    # 应用上次更新遗留的 update.bat.new / update.sh.new
+    from pet.self_update import apply_pending_update_scripts
+    apply_pending_update_scripts()
+
     # 文件日志：按天切分，保留 3 天
     _log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
     os.makedirs(_log_dir, exist_ok=True)

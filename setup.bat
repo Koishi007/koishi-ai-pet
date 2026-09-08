@@ -57,6 +57,8 @@ if not exist "%~dp0pyproject.toml" (
 
 :: ===== 3. 创建虚拟环境 =====
 echo.
+::: PyPI 镜像源列表（空格分隔，按序尝试，官方源兜底）
+set "PIP_MIRRORS=https://pypi.tuna.tsinghua.edu.cn/simple https://mirrors.aliyun.com/pypi/simple/ https://pypi.mirrors.ustc.edu.cn/simple/ https://repo.huaweicloud.com/repository/pypi/simple https://mirrors.cloud.tencent.com/pypi/simple https://pypi.org/simple"
 echo [1/4] 创建虚拟环境...
 if exist "%~dp0venv\Scripts\python.exe" (
     echo   虚拟环境已存在，跳过
@@ -81,17 +83,37 @@ if errorlevel 1 (
     pause
     exit /b 1
 )
-python -m pip install --upgrade pip -q -i https://pypi.tuna.tsinghua.edu.cn/simple
-if errorlevel 1 (
-    echo [警告] pip 升级失败，继续使用内置版本
+set "PIP_UP_OK=0"
+for %%m in (%PIP_MIRRORS%) do (
+    if !PIP_UP_OK! equ 0 (
+        echo   尝试镜像源: %%m
+        python -m pip install --upgrade pip -q -i %%m
+        if !errorlevel! equ 0 (
+            set "PIP_UP_OK=1"
+        ) else (
+            echo   [警告] 该镜像源失败，切换下一个
+        )
+    )
 )
+if !PIP_UP_OK! equ 0 echo [警告] pip 升级失败（已尝试全部镜像源），继续使用内置版本
 
 :: ===== 5. 安装依赖 =====
 echo.
 echo [3/4] 安装依赖...
-pip install -e "%~dp0." -i https://pypi.tuna.tsinghua.edu.cn/simple
-if errorlevel 1 (
-    echo [错误] 安装依赖失败，请检查网络或 pyproject.toml
+set "INSTALL_OK=0"
+for %%m in (%PIP_MIRRORS%) do (
+    if !INSTALL_OK! equ 0 (
+        echo   尝试镜像源: %%m
+        pip install -e "%~dp0." -i %%m
+        if !errorlevel! equ 0 (
+            set "INSTALL_OK=1"
+        ) else (
+            echo   [警告] 该镜像源失败，切换下一个
+        )
+    )
+)
+if !INSTALL_OK! equ 0 (
+    echo [错误] 安装依赖失败（已尝试全部镜像源），请检查网络或 pyproject.toml
     pause
     exit /b 1
 )

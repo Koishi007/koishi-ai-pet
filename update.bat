@@ -24,6 +24,10 @@ if not exist "%~dp0venv\Scripts\python.exe" (
 )
 
 set "REPO=Koishi007/koishi-ai-pet"
+
+::: PyPI 镜像源列表（空格分隔，按序尝试，官方源兜底）
+set "PIP_MIRRORS=https://pypi.tuna.tsinghua.edu.cn/simple https://mirrors.aliyun.com/pypi/simple/ https://pypi.mirrors.ustc.edu.cn/simple/ https://repo.huaweicloud.com/repository/pypi/simple https://mirrors.cloud.tencent.com/pypi/simple https://pypi.org/simple"
+
 set "PROJ_DIR=%~dp0"
 if "!PROJ_DIR:~-1!"=="\" set "PROJ_DIR=!PROJ_DIR:~0,-1!"
 set "API_URL=https://api.github.com/repos/%REPO%/releases/latest"
@@ -156,7 +160,7 @@ if !RC_RC! geq 8 (
     exit /b 1
 )
 
-:: 单独把新版 update 脚本复制为 .new，供用户手动替换（运行中的脚本无法直接覆盖）
+:: 新版 update 脚本另存为 .new（运行中的脚本无法自我覆盖，下次启动桌宠时自动应用）
 if exist "!SRC_DIR!\update.bat" copy /y "!SRC_DIR!\update.bat" "%~dp0update.bat.new" >nul 2>nul
 if exist "!SRC_DIR!\update.sh" copy /y "!SRC_DIR!\update.sh" "%~dp0update.sh.new" >nul 2>nul
 
@@ -174,10 +178,29 @@ if errorlevel 1 (
     pause
     exit /b 1
 )
-python -m pip install --upgrade pip -q -i https://pypi.tuna.tsinghua.edu.cn/simple 2>nul
-pip install -e "%~dp0." -q -i https://pypi.tuna.tsinghua.edu.cn/simple
-if errorlevel 1 (
-    echo [错误] 依赖更新失败，请检查网络或 pyproject.toml
+set "PIP_UP_OK=0"
+for %%m in (%PIP_MIRRORS%) do (
+    if !PIP_UP_OK! equ 0 (
+        python -m pip install --upgrade pip -q -i %%m 2>nul
+        if !errorlevel! equ 0 set "PIP_UP_OK=1"
+    )
+)
+if !PIP_UP_OK! equ 0 echo [警告] pip 升级失败（已尝试全部镜像源），继续使用内置版本
+
+set "INSTALL_OK=0"
+for %%m in (%PIP_MIRRORS%) do (
+    if !INSTALL_OK! equ 0 (
+        echo   尝试镜像源: %%m
+        pip install -e "%~dp0." -q -i %%m
+        if !errorlevel! equ 0 (
+            set "INSTALL_OK=1"
+        ) else (
+            echo   [警告] 该镜像源失败，切换下一个
+        )
+    )
+)
+if !INSTALL_OK! equ 0 (
+    echo [错误] 依赖更新失败（已尝试全部镜像源），请检查网络或 pyproject.toml
     pause
     exit /b 1
 )
@@ -195,8 +218,8 @@ echo ============================================
 echo   更新完成！已更新到 !REL_TAG!
 if exist "%~dp0update.bat.new" (
     echo.
-    echo [提示] 检测到新版更新脚本: update.bat.new
-    echo        本次未自动覆盖运行中的脚本，可手动用其替换 update.bat
+    echo [提示] 新版更新脚本已存为 update.bat.new
+    echo        运行中的脚本无法自我覆盖，下次启动桌宠时自动应用
 )
 echo.
 echo   启动方式：
