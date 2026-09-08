@@ -152,9 +152,7 @@ class _MemoryRetriever(ABC):
     # recall 工具主动检索的晋升阈值：达到次数 → importance 提升目标
     _TOOL_HIT_PROMOTE_I4 = 40
     _TOOL_HIT_PROMOTE_I5 = 120
-    # 工具检索计数的周期衰减（每次重量维护执行）：
-    # 使 tool_hits 反映"近期持续被检索"而非历史累计，
-    # 偶发的高频检索会随时间衰减掉，不会累积成不可逆的晋升
+    # 工具检索计数的周期衰减：使 tool_hits 反映近期热度而非历史累计
     _TOOL_HIT_DECAY = 0.9
 
     @property
@@ -388,14 +386,9 @@ class _MemoryRetriever(ABC):
         self.save(category, content, keywords, importance, level)
 
     def query_core(self, limit: int = 5) -> tuple[list[dict], set[int]]:
-        """核心槽：i5 保底（冗余过滤 + 轮转）+ eff 填充。返回 (选中, 被抑制id)。
+        """核心槽：i5(L1/L2) 保底 + eff 填充，返回 (选中, 被抑制id)。
 
-        保底对象为 importance=5 的记忆（L1/L2 均有；L3 的 importance 上限为 4，
-        天然不入选），与 _promote_by_tool_hits 的晋升目标保持一致——
-        被反复主动检索的记忆同样享有"必被想起"语义。
-        独立 SQL 直接取全集，不受 top-N 候选池容量限制；
-        互为近重复（sim≥_CORE_DUP_THRESHOLD）的保底候选只占一个座位，
-        保证单位座位信息密度。
+        保底直接取全集不受候选池限制；近重复（sim≥_CORE_DUP_THRESHOLD）只占一个座位。
         """
         picked: list[dict] = []
         suppressed: set[int] = set()
@@ -407,12 +400,8 @@ class _MemoryRetriever(ABC):
                 for p in picked
             )
 
-        # 阶段 1：i5 保底。独立 SQL，不依赖 top-N 候选池，
-        # 避免 i5 数量增长后老 i5 先掉出池。
-        # 顺序：last_accessed_at ASC（轮转——刚被召回的排到队尾，
-        #       保证保底数量超过 limit 时不会永久饿死尾部记忆）
-        #       + 内容长度降序（单位座位信息量代理）
-        #       + created_at ASC（原创建优先于副本）
+        # 阶段 1：i5 保底。last_accessed_at ASC 使刚召回的排到队尾，
+        # 保底数超过 limit 时轮转，避免尾部永久记忆被饿死
         with self._lock:
             perm_rows = self._conn.execute(
                 "SELECT * FROM memories WHERE importance=5 AND level IN ('L1','L2') "
@@ -465,8 +454,7 @@ class _MemoryRetriever(ABC):
 
     def query_recent(self, hours: int = 24, limit: int = 3,
                      exclude_ids: Optional[set] = None) -> list[dict]:
-        """最近 N 小时的新记忆。exclude_ids 在 SQL 层剔除，
-        避免被排除的记忆仍被 touch（保持"未召回不计访问"的一致性）。"""
+        """最近 N 小时的新记忆。exclude_ids 在 SQL 层剔除，被排除者不会被 touch。"""
         since = (datetime.now() - timedelta(hours=hours)).isoformat()
         where, params = "created_at >= ?", [since]
         if exclude_ids:
@@ -499,15 +487,14 @@ class _MemoryRetriever(ABC):
         seen_ids = set()
         results = []
 
-        # 1. 核心槽：L1+i5 保底 + eff 填充（返回被抑制集合，向下传递）
+        # 1. 核心槽：i5 保底 + eff 填充（返回被抑制集合，向下传递）
         core_picked, suppressed = self.query_core(core_n)
         for m in core_picked:
             if m["id"] not in seen_ids:
                 seen_ids.add(m["id"])
                 results.append(m)
 
-        # 2. 新鲜槽：剔除已选与被抑制。剔除下推到 SQL，
-        #    使被抑制的记忆不会被 touch（否则"未召回却计访问"与核心槽语义矛盾）
+        # 2. 新鲜槽：剔除下推到 SQL，使被抑制的记忆不会被 touch
         for m in self.query_recent(24, recent_n, seen_ids | suppressed):
             if m["id"] not in seen_ids:
                 seen_ids.add(m["id"])
@@ -781,8 +768,7 @@ class _MemoryRetriever(ABC):
                 demote_l2_ids.append(r["id"])
         if demote_l2_ids:
             placeholders = ",".join(["?"] * len(demote_l2_ids))
-            # importance 一并钳到 4：维持"L3 最高 4"的不变量，
-            # 避免被工具检索晋升到 5 的 L2 记忆降级后仍以 i5 身份命中核心槽保底
+            # importance 一并钳到 4，维持"L3 最高 4"的不变量
             self._conn.execute(
                 f"UPDATE memories SET level='L3', importance=MIN(importance, 4) "
                 f"WHERE id IN ({placeholders})",
@@ -803,12 +789,9 @@ class _MemoryRetriever(ABC):
             )
 
     def _promote_by_tool_hits(self):
-        """recall 工具主动检索反哺重要性（仅 L1/L2；L3 走既有 L3→L2 通道）。
+        """recall 工具主动检索反哺 importance（仅 L1/L2；L3 走既有 L3→L2 通道）。
 
-        两步保证晋升是"持续被需要"的信号，而不是一次性累积的既成事实：
-        1. 周期衰减：tool_hits 先按 _TOOL_HIT_DECAY 打折，偶发高频会衰减掉；
-        2. 逐档晋升：按目标 importance 升序处理，命中即清零计数，
-           一条记忆必须先攒够 4 的门槛、再重新累积才可能到 5（不允许跳级）。
+        先按 _TOOL_HIT_DECAY 衰减计数，再按目标 importance 升序逐档晋升（命中即清零，不跳级）。
         """
         conn = self._conn
         conn.execute(
@@ -1343,8 +1326,7 @@ class MemoryStore:
             ids = [r["id"] for r in results]
             with self._retriever._lock:
                 placeholders = ",".join(["?"] * len(ids))
-                # 仅 L1/L2 计数：L3 的检索次数不计入晋升池，
-                # 否则 L3 期间累积的历史计数会在其升 L2 后被一次性兑现（跳级）
+                # 仅 L1/L2 计数：避免 L3 期间累积的计数在升 L2 后被一次性兑现
                 self._retriever._conn.execute(
                     f"UPDATE memories SET tool_hits = tool_hits + 1 "
                     f"WHERE id IN ({placeholders}) AND level IN ('L1','L2')",
