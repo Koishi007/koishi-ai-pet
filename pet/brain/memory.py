@@ -147,6 +147,15 @@ class _MemoryRetriever(ABC):
     _L3_PROMOTE_HITS = 6
     # 加权冷却：冷却期内再次命中，importance 奖励上限（避免无限增长）
     _COOLDOWN_BOOST_CAP = 5
+    # 核心槽保底的冗余抑制阈值：与已选记忆相似度达到该值视为信息已被覆盖
+    _CORE_DUP_THRESHOLD = 0.45
+    # recall 工具主动检索的晋升阈值：达到次数 → importance 提升目标
+    _TOOL_HIT_PROMOTE_I4 = 40
+    _TOOL_HIT_PROMOTE_I5 = 120
+    # 工具检索计数的周期衰减（每次重量维护执行）：
+    # 使 tool_hits 反映"近期持续被检索"而非历史累计，
+    # 偶发的高频检索会随时间衰减掉，不会累积成不可逆的晋升
+    _TOOL_HIT_DECAY = 0.9
 
     @property
     def MAX_MEMORIES(self) -> int:
@@ -378,29 +387,95 @@ class _MemoryRetriever(ABC):
             level = "L3"
         self.save(category, content, keywords, importance, level)
 
-    def query_core(self, limit: int = 5) -> list[dict]:
-        with self._lock:
-            rows = self._conn.execute(
-                "SELECT * FROM memories ORDER BY importance DESC, created_at DESC LIMIT ?",
-                (limit * 5,)
-            ).fetchall()
-        result_dicts = [dict(r) for r in rows]
-        # 按 effective_importance 过滤和排序
-        # L3 不再被排除，靠 effective_importance 自然降权——
-        # 新鲜 L3（recency_factor 高）有机会进入，老 L3（衰减大）自然落选
-        scored = [(r, self._effective_importance(r)) for r in result_dicts]
-        filtered = [r for r, s in scored if s >= 3.5]
-        filtered.sort(key=lambda r: self._effective_importance(r), reverse=True)
-        filtered = filtered[:limit]
-        self.touch(filtered)
-        return filtered
+    def query_core(self, limit: int = 5) -> tuple[list[dict], set[int]]:
+        """核心槽：i5 保底（冗余过滤 + 轮转）+ eff 填充。返回 (选中, 被抑制id)。
 
-    def query_recent(self, hours: int = 24, limit: int = 3) -> list[dict]:
+        保底对象为 importance=5 的记忆（L1/L2 均有；L3 的 importance 上限为 4，
+        天然不入选），与 _promote_by_tool_hits 的晋升目标保持一致——
+        被反复主动检索的记忆同样享有"必被想起"语义。
+        独立 SQL 直接取全集，不受 top-N 候选池容量限制；
+        互为近重复（sim≥_CORE_DUP_THRESHOLD）的保底候选只占一个座位，
+        保证单位座位信息密度。
+        """
+        picked: list[dict] = []
+        suppressed: set[int] = set()
+
+        def is_redundant(content: str) -> bool:
+            return any(
+                self._deduplicator.compute_similarity(content, p["content"])
+                >= self._CORE_DUP_THRESHOLD
+                for p in picked
+            )
+
+        # 阶段 1：i5 保底。独立 SQL，不依赖 top-N 候选池，
+        # 避免 i5 数量增长后老 i5 先掉出池。
+        # 顺序：last_accessed_at ASC（轮转——刚被召回的排到队尾，
+        #       保证保底数量超过 limit 时不会永久饿死尾部记忆）
+        #       + 内容长度降序（单位座位信息量代理）
+        #       + created_at ASC（原创建优先于副本）
+        with self._lock:
+            perm_rows = self._conn.execute(
+                "SELECT * FROM memories WHERE importance=5 AND level IN ('L1','L2') "
+                "ORDER BY COALESCE(last_accessed_at, created_at) ASC, "
+                "LENGTH(content) DESC, created_at ASC"
+            ).fetchall()
+        for r in perm_rows:
+            if len(picked) >= limit:
+                break
+            row = dict(r)
+            if is_redundant(row["content"]):
+                suppressed.add(row["id"])
+                logger.debug(f"[{self.__class__.__name__}] 保底冗余抑制: memory#{row['id']}")
+                continue
+            picked.append(row)
+
+        # 阶段 2：eff 填充剩余席位。
+        # 剔除（已选 ∪ 被抑制）下推到 SQL：保底记忆全是 i5 必然占据池子头部，
+        # 若在 Python 端剔除会让候选池实际只剩 limit*5 - N 行、无法向下延伸
+        if len(picked) < limit:
+            skip_ids = {m["id"] for m in picked} | suppressed
+            where, params = "", []
+            if skip_ids:
+                where = "WHERE id NOT IN (%s)" % ",".join(["?"] * len(skip_ids))
+                params = list(skip_ids)
+            with self._lock:
+                rows = self._conn.execute(
+                    f"SELECT * FROM memories {where} "
+                    f"ORDER BY importance DESC, created_at DESC LIMIT ?",
+                    params + [limit * 5]
+                ).fetchall()
+            fill = [dict(r) for r in rows]
+            # 按 effective_importance 过滤和排序
+            # L3 不再被排除，靠 effective_importance 自然降权——
+            # 新鲜 L3（recency_factor 高）有机会进入，老 L3（衰减大）自然落选
+            fill = [r for r in fill if self._effective_importance(r) >= 3.5]
+            fill.sort(key=lambda r: self._effective_importance(r), reverse=True)
+            for r in fill:
+                if len(picked) >= limit:
+                    break
+                # 同样应用冗余检查：防止非 L1 的重复内容从填充溜进来
+                if is_redundant(r["content"]):
+                    suppressed.add(r["id"])
+                    continue
+                picked.append(r)
+
+        # 被抑制者未被召回，不 touch（顺带减少自动召回的自我强化循环）
+        self.touch(picked)
+        return picked, suppressed
+
+    def query_recent(self, hours: int = 24, limit: int = 3,
+                     exclude_ids: Optional[set] = None) -> list[dict]:
+        """最近 N 小时的新记忆。exclude_ids 在 SQL 层剔除，
+        避免被排除的记忆仍被 touch（保持"未召回不计访问"的一致性）。"""
         since = (datetime.now() - timedelta(hours=hours)).isoformat()
+        where, params = "created_at >= ?", [since]
+        if exclude_ids:
+            where += " AND id NOT IN (%s)" % ",".join(["?"] * len(exclude_ids))
+            params.extend(exclude_ids)
         with self._lock:
             rows = self._conn.execute(
-                "SELECT * FROM memories WHERE created_at >= ? ORDER BY created_at DESC LIMIT ?",
-                (since, limit)
+                f"SELECT * FROM memories WHERE {where} ORDER BY created_at DESC LIMIT ?",
+                params + [limit]
             ).fetchall()
         self.touch(rows)
         return [dict(r) for r in rows]
@@ -424,21 +499,24 @@ class _MemoryRetriever(ABC):
         seen_ids = set()
         results = []
 
-        # 1. 核心槽：effective_importance 最高的 N 条
-        for m in self.query_core(core_n):
+        # 1. 核心槽：L1+i5 保底 + eff 填充（返回被抑制集合，向下传递）
+        core_picked, suppressed = self.query_core(core_n)
+        for m in core_picked:
             if m["id"] not in seen_ids:
                 seen_ids.add(m["id"])
                 results.append(m)
 
-        # 2. 新鲜槽：最近 24h 的 N 条
-        for m in self.query_recent(24, recent_n):
+        # 2. 新鲜槽：剔除已选与被抑制。剔除下推到 SQL，
+        #    使被抑制的记忆不会被 touch（否则"未召回却计访问"与核心槽语义矛盾）
+        for m in self.query_recent(24, recent_n, seen_ids | suppressed):
             if m["id"] not in seen_ids:
                 seen_ids.add(m["id"])
                 results.append(m)
 
-        # 3. MMR 多样性槽：从文本匹配候选中选 N 条（λ=0.7 偏相关，0.3 给多样性）
+        # 3. MMR 多样性槽：候选剔除被抑制，防止重复内容从其它槽绕回来
         candidates = self.query_by_text(user_message, mmr_candidates)
-        candidates = [c for c in candidates if c["id"] not in seen_ids]
+        candidates = [c for c in candidates
+                      if c["id"] not in seen_ids and c["id"] not in suppressed]
         mmr_picked = self._mmr_select(candidates, results, n=mmr_n, lam=0.7)
         for m in mmr_picked:
             if m["id"] not in seen_ids:
@@ -703,8 +781,11 @@ class _MemoryRetriever(ABC):
                 demote_l2_ids.append(r["id"])
         if demote_l2_ids:
             placeholders = ",".join(["?"] * len(demote_l2_ids))
+            # importance 一并钳到 4：维持"L3 最高 4"的不变量，
+            # 避免被工具检索晋升到 5 的 L2 记忆降级后仍以 i5 身份命中核心槽保底
             self._conn.execute(
-                f"UPDATE memories SET level='L3' WHERE id IN ({placeholders})",
+                f"UPDATE memories SET level='L3', importance=MIN(importance, 4) "
+                f"WHERE id IN ({placeholders})",
                 demote_l2_ids
             )
         if demote_l1_ids:
@@ -719,6 +800,43 @@ class _MemoryRetriever(ABC):
                 f"[{self.__class__.__name__}] 降级: "
                 f"L1→L2 {len(demote_l1_ids)} 条, L2→L3 {len(demote_l2_ids)} 条 "
                 f"(effective < {self._L2_DEMOTE_THRESHOLD})"
+            )
+
+    def _promote_by_tool_hits(self):
+        """recall 工具主动检索反哺重要性（仅 L1/L2；L3 走既有 L3→L2 通道）。
+
+        两步保证晋升是"持续被需要"的信号，而不是一次性累积的既成事实：
+        1. 周期衰减：tool_hits 先按 _TOOL_HIT_DECAY 打折，偶发高频会衰减掉；
+        2. 逐档晋升：按目标 importance 升序处理，命中即清零计数，
+           一条记忆必须先攒够 4 的门槛、再重新累积才可能到 5（不允许跳级）。
+        """
+        conn = self._conn
+        conn.execute(
+            "UPDATE memories SET tool_hits = CAST(tool_hits * ? AS INTEGER) "
+            "WHERE tool_hits > 0",
+            (self._TOOL_HIT_DECAY,)
+        )
+        promoted = []
+        for threshold, target in (
+            (self._TOOL_HIT_PROMOTE_I4, 4),
+            (self._TOOL_HIT_PROMOTE_I5, 5),
+        ):
+            rows = conn.execute(
+                "SELECT id, importance FROM memories "
+                "WHERE level IN ('L1','L2') AND tool_hits >= ? AND importance < ?",
+                (threshold, target)
+            ).fetchall()
+            for r in rows:
+                conn.execute(
+                    "UPDATE memories SET importance=?, tool_hits=0 WHERE id=?",
+                    (target, r["id"])
+                )
+                promoted.append((r["id"], r["importance"], target))
+        conn.commit()
+        for mid, old, new in promoted:
+            logger.info(
+                f"[{self.__class__.__name__}] 工具检索晋升: memory#{mid} "
+                f"importance {old}→{new} (tool_hits 阈值)"
             )
 
     def enforce_capacity(self):
@@ -1158,6 +1276,9 @@ class MemoryStore:
                 self._conn.execute("ALTER TABLE memories ADD COLUMN last_accessed_at TEXT")
                 # 回填已有数据
                 self._conn.execute("UPDATE memories SET last_accessed_at = created_at WHERE last_accessed_at IS NULL")
+            if "tool_hits" not in cols:
+                # recall 工具主动检索独立计数（不被自动召回 touch 污染），存量行默认 0
+                self._conn.execute("ALTER TABLE memories ADD COLUMN tool_hits INTEGER DEFAULT 0")
             # 复合索引：覆盖 query_core 的 ORDER BY importance DESC
             self._conn.execute("CREATE INDEX IF NOT EXISTS idx_level_importance ON memories(importance DESC)")
             # 部分索引：仅索引 L3 行，加速 enforce_capacity 的过期清理
@@ -1214,10 +1335,23 @@ class MemoryStore:
         return self._retriever.retrieve_context(user_message)
 
     def search_memories(self, query: str, limit: int = 5) -> list[dict]:
-        """语义/关键词检索记忆并计入召回冷却（recall 工具入口）。"""
+        """语义/关键词检索记忆并计入召回冷却（recall 工具入口）。
+        命中同时累计 tool_hits，作为主动检索的重要性晋升信号。
+        """
         results = self._retriever.query_by_text(query, limit=limit)
         if results:
-            self._retriever.mark_recalled([r["id"] for r in results])
+            ids = [r["id"] for r in results]
+            with self._retriever._lock:
+                placeholders = ",".join(["?"] * len(ids))
+                # 仅 L1/L2 计数：L3 的检索次数不计入晋升池，
+                # 否则 L3 期间累积的历史计数会在其升 L2 后被一次性兑现（跳级）
+                self._retriever._conn.execute(
+                    f"UPDATE memories SET tool_hits = tool_hits + 1 "
+                    f"WHERE id IN ({placeholders}) AND level IN ('L1','L2')",
+                    ids
+                )
+                self._retriever._conn.commit()
+            self._retriever.mark_recalled(ids)
         return results
 
     def maintenance(self):
@@ -1243,6 +1377,7 @@ class MemoryStore:
             if self._maintenance_skip >= self._HEAVY_INTERVAL:
                 self._maintenance_skip = 0
                 self._retriever._demote_l2_to_l3()
+                self._retriever._promote_by_tool_hits()  # recall 工具检索反哺 importance
                 count = self._retriever._conn.execute("SELECT COUNT(*) FROM memories").fetchall()[0][0]
                 if count > self._retriever.MAX_MEMORIES:
                     self._retriever.enforce_capacity()
