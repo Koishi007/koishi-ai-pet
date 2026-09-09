@@ -799,7 +799,7 @@ class Behavior(BrainMixin):
                 if tool_aside:
                     from pet.tools.context import TOOL_CTX
                     logger.info(f"[Behavior] tool_call aside: {tool_aside}")
-                    TOOL_CTX.speech(str(tool_aside))
+                    TOOL_CTX.speech(str(tool_aside), duration=2000)
                     TOOL_CTX.push_model_aside_pending()
                 try:
                     call = ToolCall(name=tc["name"], args=args)

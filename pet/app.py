@@ -199,7 +199,7 @@ def main():
         lambda: window.particles.spawn("hearts") if window.isVisible() else None
     )
     agent.speak_requested.connect(
-        lambda text: speech_bubble.show_text(text) if window.isVisible() else None
+        lambda text, duration=5000: speech_bubble.show_text(text, duration) if window.isVisible() else None
     )
     agent.speak_stream_start.connect(
         lambda: speech_bubble.start_stream() if window.isVisible() else None
