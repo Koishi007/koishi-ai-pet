@@ -105,10 +105,10 @@ def _autonomous_task() -> list[str]:
         f"  Action: stretch\n"
         f"  Action: walk left 600\n"
         f"  Action: look_around\n"
-        f"  Action: thinking duration={think_dur}\n"
+        f"  Action: thinking {think_dur}\n"
         f"  Action: drive right 400\n"
         f"  Action: shake_arms\n"
-        f"  Action: sit duration={sit_dur}\n"
+        f"  Action: sit {sit_dur}\n"
         f"  Memory: user_fact 用户名为xxx，住在xx | keywords:[具体姓名],[居住地点] | importance:5 | level:L1\n"
         f"  Mood: joy+1 affection-1 sanity-1\n"
         f"\n"
@@ -133,6 +133,8 @@ def _autonomous_task() -> list[str]:
 
 
 def _chat_task() -> list[str]:
+    think_dur = default_duration("thinking")
+
     format_guide = (
         f"[输出格式]\n"
         f"严格按此顺序输出：Summary → Emotion(可选) → Speech → Action(≥3个) → Memory(可选) → Mood(可选)：\n"
@@ -141,7 +143,7 @@ def _chat_task() -> list[str]:
         f"  Speech: 跳过去嘛。。好的\n"
         f"  Speech: 会有奖励嘛。。。\n"
         f"  Action: walk left 600\n"
-        f"  Action: thinking duration=15\n"
+        f"  Action: thinking {think_dur}\n"
         f"  Memory: user_fact 用户名为xxx，住在xx | keywords:[具体姓名],[居住地点] | importance:5 | level:L1\n"
         f"  Mood: affection+1 joy+1 sanity-1\n"
         f"\n"
