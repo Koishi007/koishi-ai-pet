@@ -54,9 +54,9 @@ satiety(饱食度,0~100): 被投喂或自己觅食增加; 移动/跳跃消耗
 energy(精力,0~100): 睡眠/坐恢复; 移动/跳跃/活跃动作消耗"""
 
 _FOOD_GUIDE = """[觅食]
-- food__spawn 会在桌面随机位置生成食物，返回坐标和偏移 dx/dy；食物一段时间后会过期；
-- 通过返回的坐标和偏移，规划和输出Action，走到/跳到食物附近，自动开吃，不用再做别的；没吃到就继续，可以多试几次
-- 吃到了用 Vitals: satiety+N 反映饱食度变化"""
+- food__spawn 在桌面随机位置生成食物，返回需要移动的水平距离 dx、方向 direction 和建议跳高 bounce_height；食物会过期
+- 先走过去再原地跳：Action: walk right <dx> → Action: bounce right 0 <bounce_height>（direction 为 left 时方向相应改成 left）
+- 走到食物附近自动开吃；没吃到就继续，可以多试几次；吃到了用 Vitals: satiety+N 反映饱食度变化"""
 
 _TOOL_ASIDE_GUIDE = ("调用工具时，可以配合 aside 字段表现地言行统一；"
                      "aside 是你行动时的自言自语，内容要贴合你的人格与口吻（用词、语气、习惯都和你平时说话一致），"
