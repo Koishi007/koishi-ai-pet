@@ -446,7 +446,6 @@ class SettingsWindow(QWidget):
         # 模型名称 + 获取按钮
         model_row = QHBoxLayout()
         self._model_edit = QLineEdit()
-        self._model_edit.setPlaceholderText("mimo-v2.5")
         self._model_edit.setStyleSheet(INPUT_HIGHLIGHT_QSS)
         self._fields["LLM_MODEL"] = self._model_edit
         model_row.addWidget(self._model_edit)
