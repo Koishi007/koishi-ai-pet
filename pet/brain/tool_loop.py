@@ -1,14 +1,13 @@
 """工具轮次：执行 LLM 请求的工具并循环，直到模型不再请求工具。
 
-留在 brain 内不上提 agent（architecture.md §4.5）：轮次预算、分组激活与
-最终行为解析都属于「一次决策」的编排，会话能力通过 ToolSession 注入。
+留在 brain 内不上提 agent：轮次预算、分组激活与最终行为解析都属于「一次决策」的编排，
+会话能力通过 ToolSession 注入。
 """
 
 import concurrent.futures
 import json
 import logging
-import time
-from typing import Callable, Optional, Protocol
+from typing import Optional, Protocol
 
 from pet.config import config
 from pet.brain.output import BehaviorOutput
@@ -17,24 +16,22 @@ from pet.tools.executor import ToolCall, ToolExecutor
 
 logger = logging.getLogger(__name__)
 
-# 元工具（工具发现/觅食/游戏类）不消耗实际工具调用轮次
-META_TOOL_NAMES = frozenset({
-    "tool_search__search", "tool_search__list_groups",
-    "food__spawn", "food__status",
-    "game__list", "game__init", "game__play", "game__stop",
-    "recall__search", "recall__browse",
-})
-META_TOOL_MAX_ROUNDS = 99  # 元工具调用安全上限
-
-# 只读回忆类工具：结果本就在记忆库里，无需再写 Memory 行
-RECALL_TOOL_NAMES = frozenset({"recall__search", "recall__browse"})
-
 
 class ToolSession(Protocol):
-    """工具轮次需要的会话能力：工具开关、分组激活、取消检查与流式回传。
+    """工具轮次需要的会话能力：轮次策略、工具开关、分组激活与流式回传。
 
+    三个策略常量由会话提供，测试与将来的多策略实现都改这里，不改轮次实现。
     `executor` 返回 `ToolResult`，`stream` 返回 (原始输出文本, tool_calls 表)。
     """
+
+    # 元工具（工具发现/觅食/游戏类）不消耗实际工具调用轮次
+    meta_tool_names: frozenset
+
+    # 元工具调用安全上限：元工具不占配额，需要独立上限防死循环
+    meta_tool_max_rounds: int
+
+    # 只读回忆类工具：结果本就在记忆库里，无需再写 Memory 行
+    recall_tool_names: frozenset
 
     def tools_param(self, enable_tools: Optional[bool]) -> Optional[list]: ...
 
@@ -88,8 +85,8 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
         session.note_progress()  # 每轮工具调用都算进展，长流程不被看门狗误杀
         meta_round += 1
         display_round += 1
-        if meta_round > META_TOOL_MAX_ROUNDS:
-            logger.warning(f"[Behavior] reached META_MAX_ROUNDS={META_TOOL_MAX_ROUNDS}, force terminate")
+        if meta_round > session.meta_tool_max_rounds:
+            logger.warning(f"[Behavior] reached META_MAX_ROUNDS={session.meta_tool_max_rounds}, force terminate")
             break
 
         openai_tool_calls = []
@@ -116,7 +113,7 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
 
         # 判断本轮是否全为元工具调用（不消耗实际轮次配额）
         all_meta = all(
-            tool_calls_map[idx]["name"] in META_TOOL_NAMES
+            tool_calls_map[idx]["name"] in session.meta_tool_names
             for idx in sorted_indices
         )
 
@@ -141,7 +138,7 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
                 arguments = {}
             session.activate_groups(tc["name"], result, arguments)
 
-            if tc["name"] in RECALL_TOOL_NAMES:
+            if tc["name"] in session.recall_tool_names:
                 used_recall = True
 
         # 非元工具轮次才计数
