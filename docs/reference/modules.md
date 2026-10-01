@@ -26,7 +26,7 @@
 | `pet/auto_start.py` | 开机自启管理 — 跨平台支持 Windows / macOS / Linux。 | `set_auto_start()` |
 | `pet/brain/__init__.py` | Brain 层 — Behavior 自主/对话决策，LLMClient LLM封装，prompts 模板， |  |
 | `pet/brain/base.py` | 一条结构化的上下文记录。 | `ContextEntry` `BrainMixin` |
-| `pet/brain/behavior.py` | 与 AI 通信，解析响应为动作序列。 | `CancelledError` `ActionStep` `BehaviorOutput` `Behavior` |
+| `pet/brain/behavior.py` | 与 AI 通信，解析响应为动作序列。 | `Behavior` |
 | `pet/brain/context_builder.py` | LLM 请求上下文的构建 | `ContextBuilder` |
 | `pet/brain/conversation_store.py` | 对话历史持久化存储 — 记录所有 speech 输出和用户 chat 输入，按天切分，至多保存 7 天。 | `ConversationStore` |
 | `pet/brain/embedding_client.py` | OpenAI 兼容的嵌入向量客户端。 | `EmbeddingError` `EmbeddingClient` |
@@ -36,6 +36,7 @@
 | `pet/brain/llm_stats.py` | LLM 调用计数器 | `LlmStats` |
 | `pet/brain/mac_detector.py` | macOS 窗口枚举 —— 基于 Quartz CGWindow API，与 Win32 版保持相同接口。 | `is_window_alive()` `get_window_rect()` `is_window_occluded()` `get_visible_windows()` |
 | `pet/brain/memory.py` | SQLite 持久化记忆存储 | `LightweightDeduplicator` `_MemoryRetriever` `KeywordRetriever` `VectorRetriever` `MemoryStore` `get_memory_store()` |
+| `pet/brain/output.py` | LLM 决策的输出契约：行为输出与取消信号，供解析、工具轮次与编排共同引用。 | `CancelledError` `ActionStep` `BehaviorOutput` |
 | `pet/brain/prompts.py` | 系统提示词分层组装 | `_Lazy` `invalidate_action_section()` `build_attention_hint()` `build_system_prompt()` `autonomous_vision_user_prompt()` `autonomous_non_vision_user_prompt()` |
 | `pet/brain/win_detector.py` | Win32 窗口枚举 | `is_window_alive()` `get_window_rect()` `is_window_occluded()` `get_visible_windows()` |
 | `pet/brain/window_detector.py` | 窗口枚举 — 根据平台分发到 Win32 / Quartz / X11 后端 |  |
@@ -113,4 +114,4 @@
 | `pet/voice/voice_session.py` | 语音会话编排：麦克风采集 → 讯飞识别 | `VoiceSession` |
 | `pet/voice/xunfei_stt.py` | 讯飞语音听写 (iat) WebSocket API 封装 | `XunfeiSTT` |
 
-共 105 个模块。
+共 106 个模块。

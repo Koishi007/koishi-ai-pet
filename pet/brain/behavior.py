@@ -7,8 +7,6 @@ import time
 from datetime import datetime
 import logging
 import threading
-from dataclasses import dataclass, field
-from typing import Optional
 
 from openai import BadRequestError
 
@@ -16,6 +14,7 @@ from pet.brain.base import BrainMixin
 from pet.brain.context_builder import ContextBuilder
 from pet.brain.llm_client import LLMClient
 from pet.brain.llm_stats import LlmStats
+from pet.brain.output import ActionStep, BehaviorOutput, CancelledError
 from pet.action.registry import ACTION_NAMES
 from pet.config import config
 from pet.brain.llm_retry import llm_retry
@@ -25,30 +24,6 @@ logger = logging.getLogger(__name__)
 
 # 服务商是否不支持 thinking 参数（首次 400 后自动降级，后续请求不再携带）
 _thinking_unsupported = False
-
-
-class CancelledError(Exception):
-    """流式调用被新请求协作式取消。"""
-
-
-@dataclass
-class ActionStep:
-    name: str
-    args: tuple = ()
-    kwargs: dict = field(default_factory=dict)
-
-
-@dataclass
-class BehaviorOutput:
-    actions: list = field(default_factory=list)
-    speech: Optional[str] = None
-    speech_parts: list = field(default_factory=list)
-    speech_streamed: bool = False
-    summary: Optional[str] = None
-    memory_line: Optional[str] = None
-    emotion: Optional[str] = None
-    mood_deltas: Optional[dict] = None  # {"affection": ±值, "joy": ±值, "sanity": ±值}
-    vitals_deltas: Optional[dict] = None  # {"satiety": ±值, "energy": ±值}
 
 
 class Behavior(BrainMixin):
