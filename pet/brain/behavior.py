@@ -14,6 +14,7 @@ from pet.brain.llm_stats import LlmStats
 from pet.brain.local_fallback import chat_decide_local, decide_local, interact_decide_local
 from pet.brain.output import ActionStep, BehaviorOutput, CancelledError
 from pet.brain.parsing import BehaviorParser, parse_behavior, parse_stream_chunks
+from pet.brain.summary import SummaryHooks, flush_summaries, summarize_with_llm
 from pet.brain.tool_loop import run_tool_loop
 from pet.tools.executor import ToolExecutor
 from pet.config import config
@@ -450,41 +451,22 @@ class Behavior(BrainMixin):
         )
 
     def flush_summaries(self):
-        """将上下文淘汰产生的待摘要条目队列统一处理。
-        有 LLM 就用 LLM 总结，不可用时兜底拼接。
-        """
-        items = self.drain_pending_summaries()
-        if not items:
-            return
+        """把上下文淘汰产生的待摘要条目统一处理（实现见 pet/brain/summary.py）。"""
+        flush_summaries(SummaryHooks(
+            drain=self.drain_pending_summaries,
+            summarize=self._llm_summarize,
+            add_context=self.add_context,
+            fallback=self._build_fallback_summary,
+        ))
 
-        logger.info(f"[Behavior] flushing pending summaries: {len(items)} items")
-        summary = None
-        if self._llm:
-            try:
-                summary = self._llm_summarize(items)
-            except Exception:
-                logger.warning("[Behavior] LLM summarization failed, using fallback")
-
-        if not summary:
-            summary = self._build_fallback_summary(items)
-
-        if summary:
-            self.add_context(role="system", content=f"[历史摘要] {summary}", is_summary=True)
-            logger.info(f"[Behavior] flushed pending summaries: {len(items)} items → {summary[:50]}...")
-
-    def _llm_summarize(self, items: list[str]) -> str | None:
-        """用 LLM 将多条历史上下文压缩为一句简洁摘要。"""
+    def _llm_summarize(self, items: list) -> str | None:
+        """用 LLM 把多条历史上下文压成一句简洁摘要。"""
         self._llm.reset_effective()  # 独立请求，不继承上一条链的备选回退状态
         messages = self.ctx.build_summary_messages(items)
-        resp = self._llm_call(messages, max_tokens=config.LLM_MAX_TOKENS_SUMMARY,
-                              _on_retry=self._on_llm_retry)
-        raw = resp.choices[0].message.content
-        result = (raw or "").strip()
-        if not result:
-            logger.warning(f"[Behavior] LLM summarize returned empty content, raw={raw!r}, finish_reason={resp.choices[0].finish_reason}")
-            return None
-        logger.info(f"[Behavior] LLM summarized {len(items)} items → {result}")
-        return result
+        return summarize_with_llm(
+            messages, len(items),
+            lambda msgs, max_tokens: self._llm_call(msgs, max_tokens=max_tokens, _on_retry=self._on_llm_retry),
+        )
 
     def _apply_cache_control(self, messages: list):
         """为 system prompt 添加缓存标记（Anthropic 兼容 API 使用）。
