@@ -1,15 +1,16 @@
-"""与 AI 通信，解析响应为动作序列。"""
+"""与 AI 通信的一次决策编排：三条管线（自主/对话/交互）的入口、锁与降级。
 
-import time
+输出解析、工具轮次、本地兜底与摘要执行端已拆到 pet/brain/ 下的同级模块。
+"""
+
 from datetime import datetime
 import logging
 import threading
 
-from openai import BadRequestError
-
 from pet.brain.base import BrainMixin
 from pet.brain.context_builder import ContextBuilder
 from pet.brain.llm_client import LLMClient
+from pet.brain.llm_gateway import LlmGateway
 from pet.brain.llm_stats import LlmStats
 from pet.brain.local_fallback import chat_decide_local, decide_local, interact_decide_local
 from pet.brain.output import ActionStep, BehaviorOutput, CancelledError
@@ -18,13 +19,9 @@ from pet.brain.summary import SummaryHooks, flush_summaries, summarize_with_llm
 from pet.brain.tool_loop import run_tool_loop
 from pet.tools.executor import ToolExecutor
 from pet.config import config
-from pet.brain.llm_retry import llm_retry
 from pet.tools.registry import TOOL_REGISTRY
 
 logger = logging.getLogger(__name__)
-
-# 服务商是否不支持 thinking 参数（首次 400 后自动降级，后续请求不再携带）
-_thinking_unsupported = False
 
 
 class Behavior(BrainMixin):
@@ -48,6 +45,8 @@ class Behavior(BrainMixin):
             recent_events_fn=recent_events_fn, once_events_fn=once_events_fn,
         )
         self.llm_stats = LlmStats()
+        self.gateway = LlmGateway(self._llm, self.llm_stats,
+                                  on_retry=self._on_llm_retry, note_progress=self.note_progress)
 
         self._active_tool_groups: set[str] = {"default"}
 
@@ -242,107 +241,6 @@ class Behavior(BrainMixin):
             result = fn(*args, **kwargs)
         return result
 
-    @staticmethod
-    def _apply_thinking_param(kwargs: dict, thinking: bool | None = None):
-        """按配置注入思考模式参数；thinking 非 None 时覆盖全局开关。"""
-        if _thinking_unsupported:
-            return
-        if thinking is None:
-            state = "disabled" if config.LLM_THINKING_DISABLED else "enabled"
-        else:
-            state = "enabled" if thinking else "disabled"
-        kwargs.setdefault("extra_body", {})["thinking"] = {"type": state}
-
-    def _create_completion(self, kwargs: dict):
-        """发起补全请求；若服务商不支持 thinking 参数（400），自动移除后重试一次。"""
-        global _thinking_unsupported
-        try:
-            return self._llm.client.chat.completions.create(**kwargs)
-        except BadRequestError:
-            if "extra_body" not in kwargs:
-                raise
-            logger.warning("[Behavior] 请求被拒绝(400)，可能不支持 thinking 参数，自动降级重试")
-            kwargs.pop("extra_body", None)
-            resp = self._llm.client.chat.completions.create(**kwargs)
-            _thinking_unsupported = True
-            return resp
-
-    @llm_retry(tag="Behavior")
-    def _llm_call(self, messages: list, max_tokens: int = 4000, tools: list = None,
-                  thinking: bool | None = None):
-        self.llm_stats.increment()
-        t0 = time.perf_counter()
-        kwargs = {"model": self._llm.model, "messages": messages, "max_tokens": max_tokens, "temperature": config.LLM_TEMPERATURE}
-        if tools:
-            kwargs["tools"] = tools
-        self._apply_thinking_param(kwargs, thinking)
-        resp = self._create_completion(kwargs)
-        self.note_progress()
-        elapsed = time.perf_counter() - t0
-        usage = resp.usage
-        if usage:
-            logger.info(f"[Behavior] LLM call completed in {elapsed:.2f}s, "
-                        f"tokens: prompt={usage.prompt_tokens}, completion={usage.completion_tokens}, total={usage.total_tokens}")
-        else:
-            logger.info(f"[Behavior] LLM call completed in {elapsed:.2f}s")
-        return resp
-
-    def _llm_call_stream(self, messages: list, max_tokens: int = 4000, tools: list = None,
-                         thinking: bool | None = None):
-        from pet.brain.llm_retry import llm_stream_with_retry
-
-        def _build_kwargs() -> dict:
-            # 每次尝试都按当前生效方案重建参数，回退到备选后模型名随之更新
-            kwargs = {"model": self._llm.model, "messages": messages, "max_tokens": max_tokens,
-                      "temperature": config.LLM_TEMPERATURE, "stream": True,
-                      "stream_options": {"include_usage": True}}
-            if tools:
-                kwargs["tools"] = tools
-            self._apply_thinking_param(kwargs, thinking)
-            return kwargs
-
-        def _create():
-            return self._create_completion(_build_kwargs())
-
-        self.llm_stats.increment()
-        return llm_stream_with_retry(
-            _create,
-            tag="Behavior.stream",
-            create_timeout=config.LLM_CREATE_TIMEOUT,
-            on_retry=self._on_llm_retry,
-        )
-
-    def _log_prompt_size(self, messages: list, tag: str):
-        """计算并打印 prompt 规模：文本字符数 + 图片 base64 大小。"""
-        text_chars = 0
-        image_count = 0
-        image_bytes = 0
-        image_fmt = ""
-        for m in messages:
-            content = m["content"]
-            if isinstance(content, str):
-                text_chars += len(content)
-            elif isinstance(content, list):
-                for part in content:
-                    if isinstance(part, dict) and part.get("type") == "text":
-                        text_chars += len(part.get("text", ""))
-                    elif isinstance(part, dict) and part.get("type") == "image_url":
-                        image_count += 1
-                        url = part.get("image_url", {}).get("url", "")
-                        if "," in url:
-                            image_bytes += len(url.split(",", 1)[1])
-                            # 从 data:image/jpeg;base64,... 中提取格式
-                            if not image_fmt and "data:image/" in url:
-                                fmt_start = url.find("data:image/") + len("data:image/")
-                                fmt_end = url.find(";", fmt_start)
-                                if fmt_end > fmt_start:
-                                    image_fmt = url[fmt_start:fmt_end]
-        t = datetime.now().strftime("%H:%M:%S")
-        parts = [f"prompt_chars: {text_chars}"]
-        if image_count:
-            parts.append(f"images: {image_count}{' (' + image_fmt + ')' if image_fmt else ''} ({image_bytes // 1024}KB base64)")
-        logger.info(f"[{t}] [Behavior]   {', '.join(parts)} ({tag})")
-
     def _call_llm_and_parse(self, messages: list, system_content: str, tag: str,
                             max_tokens: int = 4000, thinking: bool | None = None,
                             enable_tools: bool | None = None) -> BehaviorOutput:
@@ -350,11 +248,11 @@ class Behavior(BrainMixin):
         self._llm.reset_effective()  # 新请求链从首选方案开始
         self._apply_cache_control(messages)
         self._dump_context(tag, messages)
-        self._log_prompt_size(messages, tag)
+        self.gateway.log_prompt_size(messages, tag)
         try:
             tools_param = self._build_tools_param(enable_tools)
-            resp = self._llm_call(messages, max_tokens=max_tokens, tools=tools_param,
-                                  thinking=thinking, _on_retry=self._on_llm_retry)
+            resp = self.gateway.completion(messages, max_tokens=max_tokens,
+                                           tools=tools_param, thinking=thinking)
             msg = resp.choices[0].message
             content = msg.content or ""
             logger.info(f"[{t}] [Behavior] === LLM RESPONSE ({tag}) ===")
@@ -392,10 +290,10 @@ class Behavior(BrainMixin):
         self._llm.reset_effective()  # 新请求链从首选方案开始
         self._apply_cache_control(messages)
         self._dump_context(tag, messages)
-        self._log_prompt_size(messages, tag)
+        self.gateway.log_prompt_size(messages, tag)
         try:
             tools_param = self._build_tools_param(enable_tools)
-            stream = self._llm_call_stream(messages, max_tokens=max_tokens, tools=tools_param, thinking=thinking)
+            stream = self.gateway.stream_chat(messages, max_tokens=max_tokens, tools=tools_param, thinking=thinking)
             chunk_sent = [False]
 
             def _spy_chunk(delta: str):
@@ -465,7 +363,7 @@ class Behavior(BrainMixin):
         messages = self.ctx.build_summary_messages(items)
         return summarize_with_llm(
             messages, len(items),
-            lambda msgs, max_tokens: self._llm_call(msgs, max_tokens=max_tokens, _on_retry=self._on_llm_retry),
+            lambda msgs, max_tokens: self.gateway.completion(msgs, max_tokens=max_tokens),
         )
 
     def _apply_cache_control(self, messages: list):
@@ -541,7 +439,7 @@ class _BehaviorToolSession:
         return ToolExecutor()
 
     def stream(self, messages, max_tokens, tools, thinking, *, tag, on_chunk=None, on_stream_end=None):
-        stream = self._behavior._llm_call_stream(
+        stream = self._behavior.gateway.stream_chat(
             messages, max_tokens=max_tokens, tools=tools, thinking=thinking)
         return parse_stream_chunks(
             stream, config.LLM_STREAM_TIMEOUT, self._behavior,

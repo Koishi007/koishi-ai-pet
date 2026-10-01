@@ -906,8 +906,6 @@ ALLOWLIST: dict[str, list[Debt]] = {
              "stop() 内延迟 import GAME；既不打断环也不推迟重依赖", f"{ARCH_DOC} §11.15"),
         Debt(("pet/app.py", "pet.self_update"),
              "main() 内延迟 import 更新脚本应用；非环非重依赖", f"{ARCH_DOC} §11.15"),
-        Debt(("pet/brain/behavior.py", "pet.brain.llm_retry"),
-             "文件头已导入 llm_retry，流式路径再延迟导入一次", f"{ARCH_DOC} §11.15"),
         Debt(("pet/brain/behavior.py", "pet.tools.context"),
              "_BehaviorToolSession 内延迟 import TOOL_CTX；非环非重依赖", f"{ARCH_DOC} §11.15"),
         Debt(("pet/brain/memory.py", "pet.config"),
@@ -1008,7 +1006,7 @@ ALLOWLIST: dict[str, list[Debt]] = {
                "Behavior 直读 memory_store 的库路径", f"{ARCH_DOC} §14")
         + _sym("pet/brain/behavior.py", "self._behavior",
                ["_build_tools_param", "_activate_tool_groups_from_search",
-                "_activate_groups_from_keyword", "_llm_call_stream"],
+                "_activate_groups_from_keyword"],
                "_BehaviorToolSession 是 Behavior 的同文件适配器，把私有能力按 ToolSession 协议转出",
                f"{ARCH_DOC} §14")
         + _sym("pet/brain/context_builder.py", "BrainMixin",

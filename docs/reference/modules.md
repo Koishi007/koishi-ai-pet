@@ -26,12 +26,13 @@
 | `pet/auto_start.py` | 开机自启管理 — 跨平台支持 Windows / macOS / Linux。 | `set_auto_start()` |
 | `pet/brain/__init__.py` | Brain 层 — Behavior 自主/对话决策，LLMClient LLM封装，prompts 模板， |  |
 | `pet/brain/base.py` | 一条结构化的上下文记录。 | `ContextEntry` `BrainMixin` |
-| `pet/brain/behavior.py` | 与 AI 通信，解析响应为动作序列。 | `Behavior` `_BehaviorToolSession` |
+| `pet/brain/behavior.py` | 与 AI 通信的一次决策编排：三条管线（自主/对话/交互）的入口、锁与降级。 | `Behavior` `_BehaviorToolSession` |
 | `pet/brain/context_builder.py` | LLM 请求上下文的构建 | `ContextBuilder` |
 | `pet/brain/conversation_store.py` | 对话历史持久化存储 — 记录所有 speech 输出和用户 chat 输入，按天切分，至多保存 7 天。 | `ConversationStore` |
 | `pet/brain/embedding_client.py` | OpenAI 兼容的嵌入向量客户端。 | `EmbeddingError` `EmbeddingClient` |
 | `pet/brain/linux_detector.py` | Linux X11 窗口枚举 —— 基于 python-xlib + EWMH，与 Win32/macOS 版保持相同接口。 | `is_window_alive()` `get_window_rect()` `is_window_occluded()` `get_visible_windows()` |
 | `pet/brain/llm_client.py` | OpenAI-compatible LLM client（支持首选/备选两套模型方案） | `normalize_profile()` `active_llm_profile()` `other_profile()` `resolve_llm_profile()` `LLMClient` |
+| `pet/brain/llm_gateway.py` | LLM 调用封装：补全请求、流式建流与重试参数，供决策编排直接调用。 | `LlmGateway` |
 | `pet/brain/llm_retry.py` | LLM 调用重试与异常分类。 | `is_retryable()` `llm_retry()` `CreateStreamTimeout` `llm_stream_with_retry()` |
 | `pet/brain/llm_stats.py` | LLM 调用计数器 | `LlmStats` |
 | `pet/brain/local_fallback.py` | 本地兜底决策：LLM 不可用或抢锁失败时的降级产出。 | `decide_local()` `interact_decide_local()` `chat_decide_local()` |
@@ -118,4 +119,4 @@
 | `pet/voice/voice_session.py` | 语音会话编排：麦克风采集 → 讯飞识别 | `VoiceSession` |
 | `pet/voice/xunfei_stt.py` | 讯飞语音听写 (iat) WebSocket API 封装 | `XunfeiSTT` |
 
-共 110 个模块。
+共 111 个模块。
