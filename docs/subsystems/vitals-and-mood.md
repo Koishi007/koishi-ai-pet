@@ -23,7 +23,8 @@
 ### (a) LLM 输出行（主来源）
 
 格式：`Mood: affection±值 joy±值 sanity±值`、`Vitals: satiety±值 energy±值`（`_MOOD_GUIDE` / `_VITALS_GUIDE`）。
-解析在 `Behavior._parse_mood_line` / `_parse_vitals_line`，**只取第一条**，键名白名单外的忽略，数字必须带符号。
+解析在 `pet/brain/parsing.py` 的 `parse_mood_line` / `parse_vitals_line`（流式与非流式共用），
+**只取第一条**，键名白名单外的忽略，数字必须带符号。
 每个任务轮次结束后由 `PetAgent._on_brain_result` 逐键调用 `modify_*` 落地。
 
 **幅度限制**：`affection` / `joy` 单次最多 ±5；`sanity` **不截断**（一行 `Mood: sanity-80` 可以直接生效）；

@@ -8,8 +8,8 @@
 
 | 步骤 | 位置 |
 |---|---|
-| 行识别（流式 / 非流式） | `Behavior._finish_line` / `_parse_behavior` |
-| 动作名与参数校验 | `Behavior._parse_action_line`：名字不在 `ACTION_NAMES` 里直接丢弃并告警；`k=v` 与位置参数会尝试转 int |
+| 行识别（流式 / 非流式） | `pet/brain/parsing.py`：流式走 `BehaviorParser.collect_stream`，非流式走 `parse_behavior`，共用同一套行标签 |
+| 动作名与参数校验 | `parse_action_line`：名字不在 `ACTION_NAMES` 里直接丢弃并告警；`k=v` 与位置参数会尝试转 int |
 | 无动作兜底 | 非流式解析器会在一条 `Action` 都没有时补 `sit 5s`；流式路径没有这个兜底 |
 | 批量下发 | `PetAgent._on_brain_result`：先发 `action_batch_started`（重置本轮产出去重），再逐条 `_emit_action` |
 | 时长注入 | `PetAgent._emit_action`：`has_duration()` 为真且没给秒数时用 `default_duration()` |

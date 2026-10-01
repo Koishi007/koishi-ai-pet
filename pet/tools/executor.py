@@ -1,4 +1,4 @@
-﻿"""工具执行器 — 解析 LLM 输出中的 Tool JSON，路由执行，返回结果。"""
+"""工具执行器 — 解析 LLM 输出中的 Tool JSON，路由执行，返回结果。"""
 
 import json
 import logging
@@ -67,6 +67,15 @@ class ToolExecutor:
         for call in calls:
             results.append(self._execute_one(call))
         return results
+
+    def execute_one(self, call: ToolCall) -> ToolResult:
+        """执行单个工具调用（带超时与参数校验）。"""
+        return self._execute_one(call)
+
+    @classmethod
+    def normalize(cls, data: Any) -> str:
+        """把工具返回的数据整理成给模型看的文本。"""
+        return cls._normalize(data)
 
     def _execute_one(self, call: ToolCall) -> ToolResult:
         method = self._lookup_method(call.name)

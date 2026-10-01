@@ -44,7 +44,8 @@
 
 ## 2. 写入：从 `Memory:` 行到落库
 
-1. **行识别**：流式在 `Behavior._finish_line`，非流式在 `_parse_behavior`；**非流式只保留第一条**记忆行。
+1. **行识别**：`pet/brain/parsing.py` 的 `BehaviorParser.collect_stream`（流式）与 `parse_behavior`
+   （非流式）共用同一套行标签；**非流式只保留第一条**记忆行。
 2. **后台线程**：`PetAgent` 把保存丢进 daemon 线程（保存含 embedding 网络调用，不能卡 UI）。
 3. **解析**（内联在 `save_from_line` 里，没有独立函数）：
    - 类别写 `[类别] 内容` 或 `类别 内容`，都不匹配则告警丢弃；`|` 之后是可选字段
@@ -114,8 +115,8 @@ slow tick 触发（默认每 5 分钟）：
 
 两条边界：
 
-- **记忆系统不做摘要压缩**。摘要属于上下文系统（`context_entries` / `context_meta` + `_llm_summarize`），
-  与 `memories` 表没有数据交集。
+- **记忆系统不做摘要压缩**。摘要属于上下文系统（`context_entries` / `context_meta` +
+  `pet/brain/summary.py`），与 `memories` 表没有数据交集。
 - 维护本身没有网络 I/O、也没有单独的耗时保护，靠「容量上限 200」这个前提保持轻量。
 
 ## 5. 开关与可见性

@@ -6,7 +6,8 @@ import time
 from datetime import datetime
 from PySide6.QtCore import QObject, QThread, QThreadPool, QTimer, Signal
 
-from pet.brain.behavior import Behavior, BehaviorOutput
+from pet.brain.behavior import Behavior
+from pet.brain.output import BehaviorOutput
 from pet.agent.scheduler import Scheduler
 from pet.agent.scheduled_tasks import ScheduledTasks
 from pet.agent.state import StateMachine, PetState
