@@ -5,12 +5,16 @@
 """
 
 import logging
+import threading
+import time
 from types import SimpleNamespace
 
 import pytest
 
+import pet.brain.behavior as behavior_module
 from pet.brain.behavior import Behavior, retry_if_empty
 from pet.brain.output import ActionStep, BehaviorOutput, CancelledError
+from pet.brain.parsing import BehaviorParser
 from pet.brain.summary import SummaryHooks, flush_summaries
 from pet.brain.tool_loop import run_tool_loop
 from pet.config import config
@@ -276,41 +280,130 @@ class _FakeStreamLlm:
         pass
 
 
+def _stream_behavior(monkeypatch, texts, stream_factory=None):
+    """装配一个只依赖假 LLM 的 Behavior：修改流式出口复用它。"""
+    monkeypatch.setattr(config, "BRAIN", "api")
+    monkeypatch.setattr(config, "LLM_KEY", "k")
+    monkeypatch.setattr(config, "LLM_URL", "http://127.0.0.1:1/v1")
+    monkeypatch.setattr(config, "LLM_MODEL", "m")
+    behavior = Behavior()
+    fake = _FakeStreamLlm(texts)
+    behavior._llm = fake
+    behavior.gateway._llm = fake
+
+    def fake_stream_chat(messages, max_tokens=4000, tools=None, thinking=None):
+        fake.tags.append("stream")
+        return (stream_factory or _StreamStub)(fake.texts.pop(0))
+
+    behavior.gateway.stream_chat = fake_stream_chat
+    return behavior, fake
+
+
 class TestEntrypointRetry:
     """决策入口的空响应重试：整轮既无动作也无台词时再跑一次。"""
 
-    def _behavior(self, monkeypatch, texts):
-        monkeypatch.setattr(config, "BRAIN", "api")
-        monkeypatch.setattr(config, "LLM_KEY", "k")
-        monkeypatch.setattr(config, "LLM_URL", "http://127.0.0.1:1/v1")
-        monkeypatch.setattr(config, "LLM_MODEL", "m")
-        behavior = Behavior()
-        fake = _FakeStreamLlm(texts)
-        behavior._llm = fake
-        behavior.gateway._llm = fake
-
-        def fake_stream_chat(messages, max_tokens=4000, tools=None, thinking=None):
-            fake.tags.append("stream")
-            return _StreamStub(fake.texts.pop(0))
-
-        behavior.gateway.stream_chat = fake_stream_chat
-        return behavior, fake
-
     def test_only_summary_response_is_retried(self, monkeypatch):
         # 只回一行 Summary：没有动作也没有台词，属于空响应
-        behavior, fake = self._behavior(monkeypatch, ["Summary: 发呆\n", "Speech: 回来了\n"])
+        behavior, fake = _stream_behavior(monkeypatch, ["Summary: 发呆\n", "Speech: 回来了\n"])
         out = behavior.chat_decide_stream("在吗", "")
         assert len(fake.tags) == 2
         assert out.speech == "回来了"
 
     def test_speech_response_is_not_retried(self, monkeypatch):
-        behavior, fake = self._behavior(monkeypatch, ["Speech: 一次就好\n"])
+        behavior, fake = _stream_behavior(monkeypatch, ["Speech: 一次就好\n"])
         out = behavior.chat_decide_stream("在吗", "")
         assert len(fake.tags) == 1
         assert out.speech == "一次就好"
 
     def test_still_empty_after_retry_is_returned(self, monkeypatch):
-        behavior, fake = self._behavior(monkeypatch, ["Summary: 一\n", "Summary: 二\n"])
+        behavior, fake = _stream_behavior(monkeypatch, ["Summary: 一\n", "Summary: 二\n"])
         out = behavior.chat_decide_stream("在吗", "")
         assert len(fake.tags) == 2
         assert out.actions == [] and out.speech is None
+
+
+class _ToolCallStream:
+    """首轮流只产出一条 tool_calls，把编排推进工具轮次。"""
+
+    def __init__(self, _text=None):
+        function = SimpleNamespace(name="timer__set", arguments="{}")
+        delta = SimpleNamespace(content=None,
+                                tool_calls=[SimpleNamespace(index=0, id="call_1", function=function)])
+        self._chunks = [SimpleNamespace(choices=[SimpleNamespace(delta=delta, finish_reason=None)],
+                                        usage=None)]
+
+    def __iter__(self):
+        return iter(self._chunks)
+
+
+class _HangingStream:
+    """close() 之前一直吊着不产数据，模拟服务端占着连接不发内容。"""
+
+    def __init__(self):
+        self.released = threading.Event()
+        self.closed = False
+
+    def __iter__(self):
+        self.released.wait(30)
+        return iter(())
+
+    def close(self):
+        self.closed = True
+        self.released.set()
+
+
+class _ProgressSink:
+    """解析器只依赖进展上报。"""
+
+    def note_progress(self):
+        pass
+
+
+def _iter_thread_alive() -> bool:
+    return any(t.name == "stream-iter" for t in threading.enumerate())
+
+
+class TestStreamCancellation:
+    """协作式取消：作废的流要被关闭，线程与决策锁要能归还。"""
+
+    def test_cancel_closes_stream_and_reclaims_iter_thread(self):
+        stream = _HangingStream()
+
+        with pytest.raises(CancelledError):
+            BehaviorParser(_ProgressSink()).collect_stream(
+                stream, 60.0, tag="t", cancel_check=lambda: True)
+
+        assert stream.closed  # 关闭连接才能打断挂住的 HTTP 读
+        deadline = time.monotonic() + 5
+        while _iter_thread_alive() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert not _iter_thread_alive()
+
+    def test_tool_round_stream_receives_cancel_check(self, monkeypatch):
+        # 工具轮次内的流也要能被抢占，取消检查必须在这一跳上传递到位
+        behavior, _fake = _stream_behavior(monkeypatch, ["Summary: 占位\n"])
+        seen = {}
+
+        def fake_parse(stream, timeout, sink, tag="", cancel_check=None, on_chunk=None,
+                       on_stream_end=None, action_fallback=True):
+            seen["cancel_check"] = cancel_check
+            return "", {}
+
+        monkeypatch.setattr(behavior_module, "parse_stream_chunks", fake_parse)
+
+        def cancel_check():
+            return False
+
+        behavior.tool_session(cancel_check).stream([], 100, None, None, tag="t_round_1")
+        assert seen["cancel_check"] is cancel_check
+
+    def test_cancel_inside_tool_round_releases_lock(self, monkeypatch):
+        behavior, _fake = _stream_behavior(monkeypatch, [""], stream_factory=_ToolCallStream)
+        session = _FakeSession([], raise_on_stream=CancelledError("被新请求取消"))
+        monkeypatch.setattr(behavior, "tool_session", lambda cancel_check=None: session)
+
+        with pytest.raises(CancelledError):
+            behavior.chat_decide_stream("在吗", "")
+
+        assert behavior._lock.acquire(timeout=0)  # 取消不能把决策锁带走
+        behavior._lock.release()
