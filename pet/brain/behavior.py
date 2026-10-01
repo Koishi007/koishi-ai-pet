@@ -1,6 +1,5 @@
 """与 AI 通信，解析响应为动作序列。"""
 
-import random
 import time
 from datetime import datetime
 import logging
@@ -12,11 +11,11 @@ from pet.brain.base import BrainMixin
 from pet.brain.context_builder import ContextBuilder
 from pet.brain.llm_client import LLMClient
 from pet.brain.llm_stats import LlmStats
+from pet.brain.local_fallback import chat_decide_local, decide_local, interact_decide_local
 from pet.brain.output import ActionStep, BehaviorOutput, CancelledError
 from pet.brain.parsing import BehaviorParser, parse_behavior, parse_stream_chunks
 from pet.brain.tool_loop import run_tool_loop
 from pet.tools.executor import ToolExecutor
-from pet.action.registry import ACTION_NAMES
 from pet.config import config
 from pet.brain.llm_retry import llm_retry
 from pet.tools.registry import TOOL_REGISTRY
@@ -144,7 +143,7 @@ class Behavior(BrainMixin):
     def autonomous_decide(self, context: str = "", screenshot: bool = True) -> BehaviorOutput:
         t = datetime.now().strftime("%H:%M:%S")
         if not self._llm:
-            return self._decide_local()
+            return decide_local()
 
         messages = self.ctx.build_autonomous_decide(context, screenshot=screenshot)
         is_vision = isinstance(messages[1]["content"], list)
@@ -160,10 +159,10 @@ class Behavior(BrainMixin):
                       on_chunk=None, on_stream_end=None,
                       cancel_check: callable = None) -> BehaviorOutput:
         if not self._llm:
-            return self._decide_local()
+            return decide_local()
         if not self._lock.acquire(timeout=0.5):
             logger.warning("[Behavior] autonomous_decide_stream: busy, skip")
-            return self._decide_local()
+            return decide_local()
         try:
             messages = self.ctx.build_autonomous_decide(context, screenshot=screenshot)
             is_vision = isinstance(messages[1]["content"], list)
@@ -174,7 +173,7 @@ class Behavior(BrainMixin):
 
     def interact_decide(self, event_hint: str) -> BehaviorOutput:
         if not self._llm:
-            return self._interact_decide_local(event_hint)
+            return interact_decide_local(event_hint)
         messages = self.ctx.build_interact(event_hint)
         return self._retry_if_empty(self._call_llm_and_parse, messages, messages[0]["content"], tag="interact", max_tokens=config.LLM_MAX_TOKENS_INTERACT)
 
@@ -184,10 +183,10 @@ class Behavior(BrainMixin):
                                enable_tools: bool | None = None,
                                cancel_check: callable = None) -> BehaviorOutput:
         if not self._llm:
-            return self._interact_decide_local(event_hint)
+            return interact_decide_local(event_hint)
         if not self._lock.acquire(timeout=2):
             logger.warning("[Behavior] interact_decide_stream: busy, skip")
-            return self._interact_decide_local(event_hint)
+            return interact_decide_local(event_hint)
         try:
             messages = self.ctx.build_interact(event_hint)
             return self._retry_if_empty(self._stream_and_build_output, messages, tag="interact", on_chunk=on_chunk, on_stream_end=on_stream_end, max_tokens=config.LLM_MAX_TOKENS_INTERACT, thinking=thinking, enable_tools=enable_tools, cancel_check=cancel_check)
@@ -201,7 +200,7 @@ class Behavior(BrainMixin):
         logger.info(f"[{t}] [Behavior] chat_decide(msg={user_message[:50]}, ctx={context[:30]})")
 
         if not self._llm:
-            return self._chat_decide_local(user_message)
+            return chat_decide_local(user_message)
 
         messages = self.ctx.build_chat_decide(user_message, context, screenshot=screenshot)
         is_vision = isinstance(messages[1]["content"], list)
@@ -218,7 +217,7 @@ class Behavior(BrainMixin):
                            enable_tools: bool | None = None,
                            cancel_check: callable = None) -> BehaviorOutput:
         if not self._llm:
-            return self._chat_decide_local(user_message)
+            return chat_decide_local(user_message)
         if not self._lock.acquire(timeout=5):
             logger.warning("[Behavior] chat_decide_stream: busy, timeout")
             return BehaviorOutput(
@@ -382,7 +381,7 @@ class Behavior(BrainMixin):
         except Exception as e:
             logger.exception(f"[{t}] [Behavior]   {tag} LLM call failed: {type(e).__name__}: {e}")
             logger.warning(f"[{t}] [Behavior]   falling back to local")
-            return self._decide_local()
+            return decide_local()
 
     def _stream_and_build_output(self, messages: list, on_chunk=None, on_stream_end=None,
                                  tag: str = "", max_tokens: int = 4000,
@@ -428,7 +427,7 @@ class Behavior(BrainMixin):
             raise
         except Exception as e:
             logger.exception(f"[{tag}] stream failed: {type(e).__name__}: {e}")
-            return self._decide_local()
+            return decide_local()
 
     def tool_session(self, cancel_check=None) -> "_BehaviorToolSession":
         """工具轮次需要的能力：按当前管线参数注入取消检查。"""
@@ -486,109 +485,6 @@ class Behavior(BrainMixin):
             return None
         logger.info(f"[Behavior] LLM summarized {len(items)} items → {result}")
         return result
-
-    _LOCAL_ACTIONS = [
-        ("sit", "歇一会儿～"),
-        ("drive", "骑上我心爱的小摩托～"),
-        ("walk", "蹦蹦跳跳真开心！"),
-        ("shake_arms", "耶！太好啦！"),
-        ("look_around", "那边有什么好玩的？"),
-        ("stretch", "唔…伸个懒腰舒服多了～"),
-        ("sleep", "呼…呼… zzz…"),
-        ("thinking", "让我想想…"),
-        ("bathing", "洗个澡清爽一下～"),
-    ]
-
-    def _decide_local(self) -> BehaviorOutput:
-        action, speech = random.choice(self._LOCAL_ACTIONS)
-        t = datetime.now().strftime("%H:%M:%S")
-        logger.info(f"[{t}] [Behavior] _decide_local → {action} / {speech}")
-
-        # walk 类动作需要方向和距离参数
-        if action in ("drive", "walk"):
-            direction = random.choice(["left", "right"])
-            distance = random.randint(300, 800)
-            step = ActionStep(action, args=(direction, distance))
-        else:
-            step = ActionStep(action)
-
-        return BehaviorOutput(
-            actions=[step],
-            speech=speech,
-            emotion="happy" if action == "shake_arms" else None,
-        )
-
-    def _interact_decide_local(self, event_hint: str) -> BehaviorOutput:
-        """本地模式下根据交互提示词生成响应。"""
-        t = datetime.now().strftime("%H:%M:%S")
-
-        # 检测投喂事件并提取食物名
-        if "投喂" in event_hint:
-            food_match = re.search(r"投喂了(.+)[。，,]", event_hint)
-            food = food_match.group(1) if food_match else "好吃的"
-
-            speeches = [
-                f"嗷呜～{food}真好吃！谢谢！",
-                f"嗯嗯，{food}好香呀～",
-                f"嘿嘿，{food}太棒啦！",
-                f"哇，{food}！好开心！",
-                f"嚼嚼嚼…{food}美味！",
-            ]
-            speech = random.choice(speeches)
-            logger.info(f"[{t}] [Behavior] _interact_decide_local(feed {food}) → {speech}")
-
-            return BehaviorOutput(
-                actions=[ActionStep("shake_arms", kwargs={"duration": 3})],
-                speech=speech,
-                emotion="love",
-                vitals_deltas={"satiety": 1.5, "energy": 0.5},
-                mood_deltas={"joy": 1.5, "affection": 1.0},
-            )
-
-        # 检测抓取事件
-        if "抓起" in event_hint or "抓住" in event_hint:
-            speech = random.choice([
-                "哎哎？快放我下来～",
-                "呜哇，被抓住了！",
-                "诶诶诶？！",
-            ])
-            logger.info(f"[{t}] [Behavior] _interact_decide_local(grab) → {speech}")
-            return BehaviorOutput(
-                actions=[ActionStep("shake_arms", kwargs={"duration": 3})],
-                speech=speech,
-                emotion="grim",
-            )
-
-        # 检测释放事件
-        if "放下" in event_hint or "释放" in event_hint:
-            speech = random.choice([
-                "呼…终于落地了。",
-                "踏实的感觉真好～",
-                "嗯哼，还是地上舒服。",
-            ])
-            logger.info(f"[{t}] [Behavior] _interact_decide_local(release) → {speech}")
-            return BehaviorOutput(
-                actions=[ActionStep("stretch", kwargs={"duration": 4})],
-                speech=speech,
-            )
-
-        # 其他交互事件：通用兜底
-        action, speech = random.choice(self._LOCAL_ACTIONS)
-        logger.info(f"[{t}] [Behavior] _interact_decide_local(generic) → {action} / {speech}")
-        step = ActionStep(action, args=(random.choice(["left", "right"]), random.randint(300, 800))) \
-            if action in ("drive", "walk") else ActionStep(action)
-
-        return BehaviorOutput(
-            actions=[step],
-            speech=speech,
-            emotion="happy" if action == "shake_arms" else None,
-        )
-
-    def _chat_decide_local(self, user_message: str) -> BehaviorOutput:
-        return BehaviorOutput(
-            actions=[ActionStep("look_around", kwargs={"duration": 5})],
-            speech=f"（听到了：{user_message[:10]}...但我还不会回应）",
-        )
 
     def _apply_cache_control(self, messages: list):
         """为 system prompt 添加缓存标记（Anthropic 兼容 API 使用）。

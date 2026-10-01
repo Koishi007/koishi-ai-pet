@@ -34,6 +34,7 @@
 | `pet/brain/llm_client.py` | OpenAI-compatible LLM client（支持首选/备选两套模型方案） | `normalize_profile()` `active_llm_profile()` `other_profile()` `resolve_llm_profile()` `LLMClient` |
 | `pet/brain/llm_retry.py` | LLM 调用重试与异常分类。 | `is_retryable()` `llm_retry()` `CreateStreamTimeout` `llm_stream_with_retry()` |
 | `pet/brain/llm_stats.py` | LLM 调用计数器 | `LlmStats` |
+| `pet/brain/local_fallback.py` | 本地兜底决策：LLM 不可用或抢锁失败时的降级产出。 | `decide_local()` `interact_decide_local()` `chat_decide_local()` |
 | `pet/brain/mac_detector.py` | macOS 窗口枚举 —— 基于 Quartz CGWindow API，与 Win32 版保持相同接口。 | `is_window_alive()` `get_window_rect()` `is_window_occluded()` `get_visible_windows()` |
 | `pet/brain/memory.py` | SQLite 持久化记忆存储 | `LightweightDeduplicator` `_MemoryRetriever` `KeywordRetriever` `VectorRetriever` `MemoryStore` `get_memory_store()` |
 | `pet/brain/output.py` | LLM 决策的输出契约：行为输出与取消信号，供解析、工具轮次与编排共同引用。 | `CancelledError` `ActionStep` `BehaviorOutput` |
@@ -116,4 +117,4 @@
 | `pet/voice/voice_session.py` | 语音会话编排：麦克风采集 → 讯飞识别 | `VoiceSession` |
 | `pet/voice/xunfei_stt.py` | 讯飞语音听写 (iat) WebSocket API 封装 | `XunfeiSTT` |
 
-共 108 个模块。
+共 109 个模块。
