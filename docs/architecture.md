@@ -342,15 +342,11 @@ system prompt 由三段拼起来：
 
 ### 依赖环
 
-依赖环已全部清偿，当前无登记项：`pet.brain` 的真实顶层环随 Issue #19 改为子模块直导后断开
-（`context_builder.py` 由 `from pet.brain import prompts` 改为 `from pet.brain.prompts import ...`）；
-`pet.tools.todo` ↔ `panel` 的设计回绕随 Issue #21 改为实例持有模块（`todo/store.py`）与面板
-构造注入（`TodoPanel(core)`）后消除。模块 import 图由 `ARCH008` 静态扫描，导入顺序由
+当前无登记项。模块 import 图由 `ARCH008` 静态扫描，导入顺序由
 `tests/test_import_smoke.py` 的冷启动子进程覆盖。冻结清单与全部既有债见
 `tests/test_architecture_contracts.py` 的 allowlist（§11「哪些红线已经由测试守住」）。
 
-其余函数内 import 大多正当（见 §11 第 15 条）；无理由的（如 `pet_agent` 里 7 处重复
-import `PetState`）已随 Issue #19 清理，同类新增会由 `ARCH002` 报出违规。
+函数内 import 大多正当（见 §11 第 15 条）；无理由的由 `ARCH002` 报出违规。
 
 ### `Behavior` 的职责
 
