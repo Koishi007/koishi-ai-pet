@@ -1,7 +1,7 @@
 from pet.tools.file_ops.core import FileOpsTool
 from pet.tools.context import TOOL_CTX
 
-TOOL_NAME = "file"
+TOOL_NAME = "file_ops"
 TOOL_DESCRIPTION = "文件操作（读写、列目录，限桌面/文档）"
 TOOL_GROUP = "file"
 

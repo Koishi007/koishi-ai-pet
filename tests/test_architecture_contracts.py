@@ -932,12 +932,7 @@ ALLOWLIST: dict[str, list[Debt]] = {
         Debt(("pet/ui/settings_window.py", "pet.brain.prompts"),
              "保存配置后延迟 import invalidate_action_section；非环非重依赖", f"{ARCH_DOC} §11.15"),
     ],
-    "ARCH003": [
-        Debt(("pet/tools/file_ops/__init__.py", "contract"),
-             "TOOL_NAME 为 file，与目录名 file_ops 不一致；修法是改 TOOL_NAME 对齐目录名，不要改目录名——"
-             "更新脚本只覆盖不删除，老用户机器上残留的旧目录会与新目录争抢工具注册",
-             f"{ARCH_DOC} §11.8"),
-    ],
+    "ARCH003": [],
     "ARCH004": [],
     "ARCH005": [
         Debt(("pet/action/action.py", "PySide6"),

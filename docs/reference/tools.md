@@ -10,7 +10,7 @@
 | 分组 | 工具 |
 |---|---|
 | `default` | `tool_search`、`food`、`game`、`recall` |
-| `file` | `file` |
+| `file` | `file_ops` |
 | `info` | `system_monitor`、`weather` |
 | `knowledge` | `knowledge` |
 | `productivity` | `timer`、`todo` |
@@ -31,7 +31,7 @@
 | `screenshot_url` | `url`（str, 必需） 要截图的网页地址（包含 http/https）<br>`width`（int, 默认 1280） 视口宽度(px)<br>`height`（int, 默认 800） 视口高度(px)<br>`wait_seconds`（float, 默认 3.0） 页面加载等待时间(秒)<br>`full_page`（bool, 默认 False） 是否截取整页（默认仅可视区域） | 用无头浏览器打开URL并截图，可以'看到'网页外观 |
 | `close` | 无参数 | 关闭浏览器，释放内存（所有网页操作完成后调用） |
 
-### `file`
+### `file_ops`
 
 - 目录：`pet/tools/file_ops/`
 - 分组：`file`
