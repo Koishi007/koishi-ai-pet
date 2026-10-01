@@ -14,10 +14,13 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class SummaryHooks:
-    """摘要流水线需要的能力：队列、LLM 调用与写回，都由编排方注入。"""
+    """摘要流水线需要的能力：队列、LLM 调用与写回，都由编排方注入。
+
+    `summarize` 为 None 表示 LLM 不可用（未配 API key 等），直接走 `fallback`。
+    """
 
     drain: Callable[[], List[str]]
-    summarize: Callable[[List[str]], Optional[str]]
+    summarize: Optional[Callable[[List[str]], Optional[str]]]
     add_context: Callable[..., None]
     fallback: Callable[[List[str]], str]
 
@@ -30,10 +33,11 @@ def flush_summaries(hooks: SummaryHooks) -> None:
 
     logger.info(f"[Behavior] flushing pending summaries: {len(items)} items")
     summary = None
-    try:
-        summary = hooks.summarize(items)
-    except Exception:
-        logger.warning("[Behavior] LLM summarization failed, using fallback")
+    if hooks.summarize is not None:
+        try:
+            summary = hooks.summarize(items)
+        except Exception:
+            logger.warning("[Behavior] LLM summarization failed, using fallback")
 
     if not summary:
         summary = hooks.fallback(items)

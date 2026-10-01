@@ -118,7 +118,8 @@ flowchart TB
    重试与降级策略在 `pet/brain/llm_retry.py`。
 4. **输出解析**：按行前缀分派 - `Summary` / `Speech` / `Action` / `Memory` / `Emotion` / `Mood` / `Vitals`
    （`pet/brain/parsing.py`，流式与非流式共用一套行标签，聚合为 `BehaviorOutput`）。
-   非流式解析器在没有 Action 时兜底 `sit 5s`，流式路径没有这个兜底。
+   同一字段出现多行时，`Summary` / `Memory` / `Mood` / `Vitals` 只取第一条，`Speech` 全部保留并拼接。
+   非流式解析器在没有 Action 时兜底 `sit 5s`，流式收尾不补（空响应由 `retry_if_empty` 重试一次）。
 5. **工具轮次**：`pet/brain/tool_loop.py` 循环执行 LLM 请求的工具，最多 `LLM_TOOL_MAX_ROUNDS` 轮；
    元工具（`tool_search`、`recall` 等）不占配额。单个工具在 `pet/tools/executor.py` 里带超时执行。
 6. **动作执行**：`BehaviorOutput` 里的动作交给 `ActionQueue`（`pet/action/action_queue.py`）串行播放，
