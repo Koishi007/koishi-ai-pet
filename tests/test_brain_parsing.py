@@ -153,6 +153,25 @@ class TestParseBehavior:
         assert out.speech == "缩进行"
         assert out.actions[0].name == "sit"
 
+    def test_compact_tags_without_space_are_recognized(self):
+        out = parse_behavior(
+            "Speech:你好\nAction:sit 3\nEmotion:happy\nMood:joy+3\nVitals:satiety-2\n"
+        )
+        assert out.speech == "你好"
+        assert out.actions[0].name == "sit"
+        assert out.emotion == "happy"
+        assert out.mood_deltas == {"joy": 3.0}
+        assert out.vitals_deltas == {"satiety": -2.0}
+
+    def test_extra_spaces_after_tag_survive(self):
+        out = parse_behavior("Speech:  两个空格\n")
+        assert out.speech == " 两个空格"
+
+    def test_action_fallback_can_be_disabled(self):
+        out = parse_behavior("Summary: 只有摘要\n", action_fallback=False)
+        assert out.actions == []
+        assert out.summary == "只有摘要"
+
 
 class TestParseActionLine:
     def test_positional_and_keyword_args(self):
@@ -216,6 +235,16 @@ class TestLineTagger:
         assert tagger.finish("没有标签的一行") is None
         assert tagger.raw_value("没有标签的一行") == ""
 
+    def test_feed_returns_text_only_for_speech(self):
+        tagger = LineTagger()
+        pieces = [tagger.feed(ch) for ch in "Summary: 摘要\n"]
+        assert "".join(pieces) == ""
+
+    def test_feed_splits_separator_space(self):
+        tagger = LineTagger()
+        pieces = [tagger.feed(ch) for ch in "Speech: 你好"]
+        assert "".join(pieces) == "你好"
+
 
 class TestStreamPath:
     CONTENT = (
@@ -235,6 +264,32 @@ class TestStreamPath:
     def test_speech_streamed_to_on_chunk(self):
         _, _, chunks, _ = _collect("Speech: 你好呀\n")
         assert "".join(chunks) == "你好呀"
+
+    def test_chunks_are_emitted_at_chunk_boundaries(self):
+        # 整行在一个 chunk 内到达时只回调一次，不逐字符放大
+        _, _, chunks, _ = _collect("Speech: 你好呀\n", stream=_chunks("Speech: 你好呀\n"))
+        assert chunks == ["你好呀"]
+
+    def test_multiline_speech_keeps_order_across_chunks(self):
+        stream = _chunks("Speech: 第一句\n", "Speech: 第二句\n")
+        _, _, chunks, ends = _collect("", stream=stream)
+        assert chunks == ["第一句", "第二句"]
+        assert len(ends) == 1
+
+    def test_compact_tags_are_recognized_char_by_char(self):
+        parser = BehaviorParser(_Sink())
+        raw, _ = parser.collect_stream(_stream_text("Speech:你好\nAction:sit 3\n"), 5.0, tag="test")
+        out = parser.parse_behavior(raw)
+        assert out.speech == "你好"
+        assert out.actions[0].name == "sit"
+
+    def test_action_fallback_disabled_leaves_actions_empty(self):
+        parser = BehaviorParser(_Sink())
+        raw, _ = parser.collect_stream(_stream_text("Summary: 只有摘要\n"), 5.0, tag="test",
+                                       action_fallback=False)
+        out = parser.parse_behavior(raw, action_fallback=False)
+        assert out.actions == []
+        assert out.summary == "只有摘要"
 
     def test_second_speech_line_ends_stream(self):
         _, _, chunks, ends = _collect("Speech: 第一句\nSpeech: 第二句\n")

@@ -16,16 +16,16 @@ from pet.brain.output import ActionStep, BehaviorOutput, CancelledError
 
 logger = logging.getLogger(__name__)
 
-# 行首标签真源：标签 -> 正则。断言式匹配（不吃分隔空白），
-# 这样流式路径把标签后的首个空格当内容转发、整行路径取值时再统一去掉一个空格
+# 行首标签真源：标签 -> 正则。匹配到冒号为止、不吃分隔空白，
+# 分隔空白由取值处各去掉一个，紧凑写法与常规写法都兼容
 _TAGS: dict[str, re.Pattern] = {
-    "speech": re.compile(r"^\s*Speech:(?=\s|$)", re.IGNORECASE),
-    "action": re.compile(r"^\s*Action:(?=\s|$)", re.IGNORECASE),
-    "summary": re.compile(r"^\s*Summary:(?=\s|$)", re.IGNORECASE),
-    "memory": re.compile(r"^\s*Memory:(?=\s|$)", re.IGNORECASE),
-    "emotion": re.compile(r"^\s*Emotion:(?=\s|$)", re.IGNORECASE),
-    "mood": re.compile(r"^\s*Mood:(?=\s|$)", re.IGNORECASE),
-    "vitals": re.compile(r"^\s*Vitals:(?=\s|$)", re.IGNORECASE),
+    "speech": re.compile(r"^\s*Speech:", re.IGNORECASE),
+    "action": re.compile(r"^\s*Action:", re.IGNORECASE),
+    "summary": re.compile(r"^\s*Summary:", re.IGNORECASE),
+    "memory": re.compile(r"^\s*Memory:", re.IGNORECASE),
+    "emotion": re.compile(r"^\s*Emotion:", re.IGNORECASE),
+    "mood": re.compile(r"^\s*Mood:", re.IGNORECASE),
+    "vitals": re.compile(r"^\s*Vitals:", re.IGNORECASE),
 }
 
 # 行首最多缓冲多少字符：超过仍未命中标签就按未知行处理，不再等标签
@@ -102,12 +102,11 @@ def parse_action_line(raw: str, resolve=ACTION_NAMES.__contains__) -> Optional[A
 class LineTagger:
     """行标签状态机，两种用法共用同一套标签规则。
 
-    - `feed()` 逐字符判行首（流式实时），命中 `Speech:` 时把该行语音交给 on_chunk；
+    - `feed()` 逐字符判行首（流式实时），返回的文字增量由调用方按 chunk 合并回调；
     - `finish()` 判整行（非流式与流式收尾），再由 `raw_value()` 取值。
     """
 
-    def __init__(self, on_chunk=None, on_stream_end=None):
-        self._on_chunk = on_chunk
+    def __init__(self, on_stream_end=None):
         self._on_stream_end = on_stream_end
         self._speech_started = False  # 本轮已发过 Speech，再遇 Speech 即分行
         self.reset()
@@ -128,19 +127,22 @@ class LineTagger:
         """当前行已缓冲的内容。"""
         return self._buffer
 
-    def feed(self, char: str) -> bool:
-        """喂入一个字符；正在流式播报语音时返回 False，由调用方停止转发。"""
+    def feed(self, char: str) -> str:
+        """喂入一个字符，返回本字符产出的语音增量（无产出返回空串）。
+
+        调用方把同一 chunk 内的增量合并后回调一次，气泡的流式回调与 chunk 对齐。
+        """
         self._buffer += char
         if self._tag is None:
             return self._scan()
         if self._tag == "speech":
-            # 标签命中时若还没见到分隔空格，它会在这一字符位到达
+            # 标签命中处若还没见到分隔空格，它会在这一字符位到达
             if self._eat_sep:
                 self._eat_sep = False
                 if char in (" ", "\t"):
-                    return False
-            self._emit(char)
-        return False
+                    return ""
+            return char
+        return ""
 
     def finish(self, line: str) -> Optional[str]:
         """整行判定：命中标签返回标签名，未命中返回 None。"""
@@ -168,8 +170,8 @@ class LineTagger:
             return ""
         return parts[1][1:] if parts[1].startswith((" ", "\t")) else parts[1]
 
-    def _scan(self) -> bool:
-        """行首识别标签；返回是否已接管（True 表示调用方不用再转发字符）。"""
+    def _scan(self) -> str:
+        """行首识别标签；返回标签后的剩余文本（非语音标签恒返回空串）。"""
         stripped = self._buffer.lstrip()
         for tag, pattern in _TAGS.items():
             match = pattern.match(stripped)
@@ -188,23 +190,13 @@ class LineTagger:
                     self._eat_sep = False
                 else:
                     self._eat_sep = not piece
-                self._emit(piece)
-                return False
+                return piece
             # 其余字段不转发内容，只吃掉标签本身与紧跟的一个分隔空格
-            if piece[:1] in (" ", "\t"):
-                piece = piece[1:]
-            return not piece
+            return ""
         # 长到该作罢就按未知行处理，不再等标签
         if len(stripped) >= _TAG_SCAN_LIMIT:
             self._tag = "other"
-        return True
-
-    def _emit(self, text: str) -> None:
-        """把语音片段交给 on_chunk。"""
-        if not text:
-            return
-        if self._tag == "speech" and self._on_chunk:
-            self._on_chunk(text)
+        return ""
 
 
 class BehaviorParser:
@@ -214,8 +206,11 @@ class BehaviorParser:
         self._sink = sink
         self._resolve = resolve
 
-    def parse_behavior(self, content: str) -> BehaviorOutput:
-        """整段解析（非流式路径）。"""
+    def parse_behavior(self, content: str, action_fallback: bool = True) -> BehaviorOutput:
+        """整段解析。
+
+        action_fallback 为真时，没有任何动作就补 sit 5s；流式收尾由调用方决定是否补。
+        """
         acc = _new_acc()
         tagger = LineTagger()
         for line in content.split("\n"):
@@ -224,9 +219,20 @@ class BehaviorParser:
             tagger.finish(line)
             self.consume_line(tagger, line, acc)
 
-        if not acc["actions"]:
+        if action_fallback and not acc["actions"]:
             acc["actions"].append(ActionStep("sit", kwargs={"duration": 5}))
         return _build_output(acc, speech_streamed=False)
+
+    @staticmethod
+    def _emit_speech(tagger: LineTagger, pending: list, on_chunk) -> None:
+        """把攒下的语音增量合并后回调一次。"""
+        if not pending or tagger.tag != "speech":
+            pending.clear()
+            return
+        text = "".join(pending)
+        pending.clear()
+        if on_chunk:
+            on_chunk(text)
 
     def consume_line(self, tagger: LineTagger, line: str, acc: dict):
         """收下一整行：按标签把值写进累加器。"""
@@ -248,14 +254,15 @@ class BehaviorParser:
 
     def collect_stream(self, stream, total_timeout: float, tag: str = "",
                        cancel_check: Optional[Callable[[], bool]] = None,
-                       on_chunk=None, on_stream_end=None) -> tuple[str, dict]:
+                       on_chunk=None, on_stream_end=None,
+                       action_fallback: bool = True) -> tuple[str, dict]:
         """消费流，返回 (还原后的原始输出文本, tool_calls 表)。
 
-        语音片段在识别到 `Speech:` 时立刻转给 on_chunk，
-        同一轮里再次出现 `Speech:` 时触发 on_stream_end（让气泡分行显示）。
+        语音片段按 chunk 合并后交给 on_chunk；同一轮里再次出现 `Speech:` 时
+        触发 on_stream_end（让气泡分行显示）。action_fallback=False 时不补 sit。
         """
         t0 = time.perf_counter()
-        tagger = LineTagger(on_chunk=on_chunk, on_stream_end=on_stream_end)
+        tagger = LineTagger(on_stream_end=on_stream_end)
         acc = _new_acc()
         tool_calls_map: dict = {}
         finish_reason = None
@@ -273,12 +280,18 @@ class BehaviorParser:
             delta = choice.delta
 
             if delta.content:
+                # 同一 chunk 内的语音增量合并成一次回调，不逐字符发信号
+                pending: list = []
                 for char in delta.content:
                     if char in ("\n", "\r"):
+                        self._emit_speech(tagger, pending, on_chunk)
                         self.consume_line(tagger, tagger.line, acc)
                         tagger.reset()
                     else:
-                        tagger.feed(char)
+                        piece = tagger.feed(char)
+                        if piece:
+                            pending.append(piece)
+                self._emit_speech(tagger, pending, on_chunk)
 
             if delta.tool_calls:
                 for tc_delta in delta.tool_calls:
@@ -377,18 +390,20 @@ class _NullSink:
         pass
 
 
-def parse_behavior(content: str, resolve=ACTION_NAMES.__contains__) -> BehaviorOutput:
+def parse_behavior(content: str, resolve=ACTION_NAMES.__contains__,
+                   action_fallback: bool = True) -> BehaviorOutput:
     """整段解析一次 LLM 输出（非流式路径）。"""
-    return BehaviorParser(_NullSink(), resolve).parse_behavior(content)
+    return BehaviorParser(_NullSink(), resolve).parse_behavior(content, action_fallback=action_fallback)
 
 
 def parse_stream_chunks(stream, total_timeout: float, sink: BehaviorSink, tag: str = "",
                         cancel_check: Optional[Callable[[], bool]] = None,
-                        on_chunk=None, on_stream_end=None) -> tuple[str, dict]:
+                        on_chunk=None, on_stream_end=None,
+                        action_fallback: bool = True) -> tuple[str, dict]:
     """消费一条流式响应（流式路径），返回 (原始输出文本, tool_calls 表)。"""
     return BehaviorParser(sink).collect_stream(
         stream, total_timeout, tag=tag, cancel_check=cancel_check,
-        on_chunk=on_chunk, on_stream_end=on_stream_end)
+        on_chunk=on_chunk, on_stream_end=on_stream_end, action_fallback=action_fallback)
 
 
 def _build_output(acc: dict, speech_streamed: bool) -> BehaviorOutput:
