@@ -355,9 +355,9 @@ import `PetState`）已随 Issue #19 清理，同类新增会由 `ARCH002` 报�
 ### `Behavior` 的职责
 
 `pet/brain/behavior.py` 447 行，`Behavior` 只做编排：六个决策入口（3 条管线 × 流式/非流式）、
-抢锁与降级、上下文与工具会话装配、轮次计数与进展上报。原先混在同一个类里的职责各自成模块：
+抢锁与降级、上下文与工具会话装配、轮次计数与进展上报。其余职责在下列模块：
 
-| 已拆出的职责 | 去处 |
+| 职责 | 模块 |
 |---|---|
 | 数据契约（`BehaviorOutput` / `ActionStep` / `CancelledError`） | `pet/brain/output.py` |
 | 流式与非流式输出解析 | `pet/brain/parsing.py`（两条路径共用一套行标签与字段规则） |
@@ -366,9 +366,8 @@ import `PetState`）已随 Issue #19 清理，同类新增会由 `ARCH002` 报�
 | 摘要与上下文压缩 | `pet/brain/summary.py` |
 | LLM 调用封装与重试参数 | `pet/brain/llm_gateway.py` |
 
-`Behavior` 与 `_BehaviorToolSession` 仍是同类文件里的适配器（后者把私有能力按 `ToolSession`
-协议转给工具轮次）。仍待拆分的是同量级的大文件 `memory.py` 1554 行、`settings_window.py` 1464 行，
-它们不在本节的切分范围内。
+`Behavior` 与 `_BehaviorToolSession` 是同类文件里的适配器（后者把私有能力按 `ToolSession`
+协议转给工具轮次）。同量级的大文件 `memory.py` 1554 行、`settings_window.py` 1464 行不在本节范围内。
 
 ### 跨对象的私有访问
 
