@@ -7,7 +7,7 @@ from datetime import datetime
 from openai import BadRequestError
 
 from pet.config import config
-from pet.brain.llm_retry import llm_retry, llm_stream_with_retry
+from pet.brain.llm_retry import llm_stream_with_retry, retryer_for
 
 logger = logging.getLogger(__name__)
 
@@ -63,10 +63,14 @@ class LlmGateway:
             _thinking_unsupported = True
             return resp
 
-    @llm_retry(tag="Behavior")
     def completion(self, messages: list, max_tokens: int = 4000, tools: list = None,
                    thinking: bool | None = None):
-        """非流式补全。"""
+        """非流式补全（含重试与备选方案切换）。"""
+        return retryer_for(tag="Behavior", on_retry=self._retry_hook)(self._completion_once)(
+            messages, max_tokens=max_tokens, tools=tools, thinking=thinking)
+
+    def _completion_once(self, messages: list, max_tokens: int = 4000, tools: list = None,
+                         thinking: bool | None = None):
         self._stats.increment()
         t0 = time.perf_counter()
         kwargs = {"model": self._llm.model, "messages": messages,
