@@ -14,6 +14,8 @@ from pet.brain.llm_client import LLMClient
 from pet.brain.llm_stats import LlmStats
 from pet.brain.output import ActionStep, BehaviorOutput, CancelledError
 from pet.brain.parsing import BehaviorParser, parse_behavior, parse_stream_chunks
+from pet.brain.tool_loop import run_tool_loop
+from pet.tools.executor import ToolExecutor
 from pet.action.registry import ACTION_NAMES
 from pet.config import config
 from pet.brain.llm_retry import llm_retry
@@ -416,7 +418,7 @@ class Behavior(BrainMixin):
                     on_chunk=on_chunk, on_stream_end=on_stream_end, tag=tag,
                     max_tokens=max_tokens, max_rounds=config.LLM_TOOL_MAX_ROUNDS,
                     speech_streamed=speech_streamed, enable_tools=enable_tools,
-                    thinking=thinking,
+                    thinking=thinking, cancel_check=cancel_check,
                 )
 
             return self.parser.parse_behavior(raw)
@@ -428,213 +430,25 @@ class Behavior(BrainMixin):
             logger.exception(f"[{tag}] stream failed: {type(e).__name__}: {e}")
             return self._decide_local()
 
-    _META_TOOL_NAMES = frozenset({
-        "tool_search__search", "tool_search__list_groups",
-        "food__spawn", "food__status",
-        "game__list", "game__init", "game__play", "game__stop",
-        "recall__search", "recall__browse",
-    })
-    _META_TOOL_MAX_ROUNDS = 99  # 元工具调用安全上限
-
-    # 只读回忆类工具：结果本就在记忆库里，无需再写 Memory 行
-    _RECALL_TOOL_NAMES = frozenset({"recall__search", "recall__browse"})
+    def tool_session(self, cancel_check=None) -> "_BehaviorToolSession":
+        """工具轮次需要的能力：按当前管线参数注入取消检查。"""
+        return _BehaviorToolSession(self, cancel_check)
 
     def _handle_tool_calls(self, messages, tool_calls_map, first_content,
-                            on_chunk=None, on_stream_end=None, tag="",
-                            max_rounds=5, max_tokens: int = 4000,
-                            speech_streamed: bool = False,
-                            enable_tools: bool | None = None,
-                            thinking: bool | None = None) -> BehaviorOutput:
-        """执行 tool_calls 并循环直到 LLM 不再请求工具。
-
-        tool_search / list_groups 等元工具不消耗 max_rounds 配额，
-        仅当至少执行了一个非元工具时，才计入一轮。
-        """
-        import json as _json
-        from pet.tools.executor import ToolExecutor, ToolCall
-
-        executor = ToolExecutor()
-        current_messages = list(messages)
-        tool_log = []  # 记录工具调用摘要，用于写入上下文
-        final_instruction_added = False  # 最终轮精简指令是否已追加
-
-        # 仅当 Speech 被实际流式发送时才标记 speech_streamed=True
-        _chunk_invoked = [False]
-        _wrapped_chunk = None
-        if on_chunk:
-            def _wrapped_chunk(delta: str):
-                _chunk_invoked[0] = True
-                on_chunk(delta)
-
-        real_round = 0  # 实际（非元工具）调用轮次计数
-        meta_round = 0  # 元工具调用总轮次（安全防护）
-        display_round = 0  # 仅用于日志展示
-        used_recall = False  # 整次工具循环里是否用过回忆类工具
-        recall_instruction_added = False
-
-        while real_round < max_rounds:
-            self.note_progress()  # 每轮工具调用都算进展，长流程不被看门狗误杀
-            meta_round += 1
-            display_round += 1
-            if meta_round > self._META_TOOL_MAX_ROUNDS:
-                logger.warning(f"[Behavior] reached META_MAX_ROUNDS={self._META_TOOL_MAX_ROUNDS}, force terminate")
-                break
-
-            openai_tool_calls = []
-            for idx in sorted(tool_calls_map.keys()):
-                tc = tool_calls_map[idx]
-                # 清洗 arguments：解析后重新序列化，避免流式拼接残留导致 400
-                try:
-                    clean_args = _json.dumps(_json.loads(tc["arguments"] or "{}"), ensure_ascii=False)
-                except _json.JSONDecodeError:
-                    clean_args = "{}"
-                tc["arguments"] = clean_args
-                openai_tool_calls.append({
-                    "id": tc["id"],
-                    "type": "function",
-                    "function": {"name": tc["name"], "arguments": clean_args},
-                })
-            assistant_msg = {"role": "assistant", "tool_calls": openai_tool_calls}
-            if first_content.strip():
-                assistant_msg["content"] = first_content
-            current_messages.append(assistant_msg)
-
-            sorted_indices = sorted(tool_calls_map.keys())
-
-            def _exec_tool(idx):
-                """执行单个工具调用，返回 (idx, tc, result, tool_brief, result_text, tool_aside)。"""
-                tc = tool_calls_map[idx]
-                try:
-                    args = _json.loads(tc["arguments"] or "{}")
-                except _json.JSONDecodeError:
-                    args = {}
-                # 通用 aside 参数：模型调用工具时可带自言自语，播出后不传给 handler
-                tool_aside = args.pop("aside", None)
-                if tool_aside:
-                    from pet.tools.context import TOOL_CTX
-                    logger.info(f"[Behavior] tool_call aside: {tool_aside}")
-                    TOOL_CTX.speech(str(tool_aside), duration=2000)
-                    TOOL_CTX.push_model_aside_pending()
-                try:
-                    call = ToolCall(name=tc["name"], args=args)
-                    result = executor._execute_one(call)
-                finally:
-                    if tool_aside:
-                        from pet.tools.context import TOOL_CTX
-                        TOOL_CTX.pop_model_aside_pending()
-                # 在 _normalize 之前提取摘要（_normalize 会 pop summary）
-                tool_brief = ""
-                if result.success and isinstance(result.data, dict):
-                    tool_brief = result.data.get("summary", "")
-                result_text = executor._normalize(result.data) if result.success else result.error
-                return idx, tc, result, tool_brief, result_text, tool_aside
-
-            tool_results = {}
-            # 游戏工具（game__*）有跨调用会话依赖（如 start 必须先于 play），
-            # 同轮并行会打乱执行顺序导致未开始/错乱，退化为串行按声明顺序执行
-            has_game_tool = any(
-                tool_calls_map[idx]["name"].startswith("game__")
-                for idx in sorted_indices
-            )
-            use_parallel = config.LLM_TOOL_PARALLEL and len(sorted_indices) > 1 and not has_game_tool
-            if use_parallel:
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor(max_workers=len(sorted_indices)) as pool:
-                    futures = {pool.submit(_exec_tool, idx): idx for idx in sorted_indices}
-                    for future in concurrent.futures.as_completed(futures):
-                        res = future.result()
-                        tool_results[res[0]] = res
-            else:
-                for idx in sorted_indices:
-                    res = _exec_tool(idx)
-                    tool_results[res[0]] = res
-
-            # 判断本轮是否全为元工具调用（不消耗实际轮次配额）
-            all_meta = all(
-                tool_calls_map[idx]["name"] in self._META_TOOL_NAMES
-                for idx in sorted_indices
-            )
-
-            # 按 index 排序后依次 append（保持顺序一致性）
-            for idx in sorted_indices:
-                _, tc, result, tool_brief, result_text, tool_aside = tool_results[idx]
-                current_messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc["id"],
-                    "content": result_text,
-                })
-                logger.info(f"[Behavior] tool_round_{display_round} {tc['name']} -> {'OK' if result.success else 'FAIL'}")
-                log_entry = f"{tc['name']} → {result.context_brief or tool_brief or result_text[:200]}"
-                if tool_aside:
-                    log_entry = f"（自言自语：{tool_aside}）{log_entry}"
-                tool_log.append(log_entry)
-
-                # 搜索工具执行后自动激活匹配的分组
-                if tc["name"] == "tool_search__search":
-                    try:
-                        args = _json.loads(tc["arguments"] or "{}")
-                        keyword = args.get("keyword", "")
-                        if result.success and isinstance(result.data, dict):
-                            self._activate_tool_groups_from_search(result.data.get("matches", []))
-                        # 兜底：keyword 直接匹配组名
-                        self._activate_groups_from_keyword(keyword)
-                    except Exception:
-                        pass
-
-                if tc["name"] in self._RECALL_TOOL_NAMES:
-                    used_recall = True
-
-            # 非元工具轮次才计数
-            if not all_meta:
-                real_round += 1
-
-            # 回忆结果衔接：想起的内容已在库里，避免模型再写一遍 Memory 行
-            if used_recall and not recall_instruction_added:
-                recall_instruction_added = True
-                current_messages.append({
-                    "role": "user",
-                    "content": "这些是你想起来的记忆，本来就在库里，自然说出来即可，不必再输出 Memory 行"
-                })
-
-            # 最终轮精简指令：仅在至少执行过一个非元工具后追加
-            if not all_meta and not final_instruction_added:
-                remaining = max_rounds - real_round
-                low_threshold = -(-max_rounds // 10)  # 10% 向上取整
-                low = "，轮次不多了请尽快输出" if remaining <= low_threshold else ""
-                current_messages.append({
-                    "role": "user",
-                    "content": f"工具已执行，可直接输出最终行为（Summary+Speech+Action），无需重复分析；有值得记忆的信息才输出 Memory（剩余工具轮次：{remaining}/{max_rounds}{low}）"
-                })
-                final_instruction_added = True
-
-            # 再次调用 LLM（每轮重建 tools_param，包含新激活的分组）
-            tools_param = self._build_tools_param(enable_tools)
-            stream = self._llm_call_stream(current_messages, max_tokens=max_tokens, tools=tools_param, thinking=thinking)
-            _chunk_invoked[0] = False
-            content, new_tool_calls = self.parser.collect_stream(
-                stream, config.LLM_STREAM_TIMEOUT, tag=f"{tag}_round_{display_round}",
-                on_chunk=_wrapped_chunk, on_stream_end=on_stream_end,
-            )
-            if _chunk_invoked[0]:
-                speech_streamed = True
-
-            if not new_tool_calls:
-                # LLM 不再请求工具，解析最终行为
-                result = parse_behavior(content)
-                result.speech_streamed = speech_streamed
-                if tool_log:
-                    self.add_context(role="assistant", content=f"[工具调用] {' | '.join(tool_log)}")
-                return result
-
-            first_content = content
-            tool_calls_map = new_tool_calls
-
-        logger.warning(f"[Behavior] reached MAX_ROUNDS={max_rounds} (real_rounds={real_round}, meta_rounds={meta_round}), force terminate tool loop")
-        result = parse_behavior(first_content)
-        result.speech_streamed = speech_streamed
-        if tool_log:
-            self.add_context(role="assistant", content=f"[工具调用] {' | '.join(tool_log)}")
-        return result
+                           on_chunk=None, on_stream_end=None, tag="",
+                           max_rounds=5, max_tokens: int = 4000,
+                           speech_streamed: bool = False,
+                           enable_tools: bool | None = None,
+                           thinking: bool | None = None,
+                           cancel_check: callable = None) -> BehaviorOutput:
+        """执行 tool_calls 并循环直到 LLM 不再请求工具（实现见 pet/brain/tool_loop.py）。"""
+        return run_tool_loop(
+            messages, tool_calls_map, first_content, self.tool_session(cancel_check),
+            on_chunk=on_chunk, on_stream_end=on_stream_end, tag=tag,
+            max_rounds=max_rounds, max_tokens=max_tokens,
+            speech_streamed=speech_streamed, enable_tools=enable_tools,
+            thinking=thinking,
+        )
 
     def flush_summaries(self):
         """将上下文淘汰产生的待摘要条目队列统一处理。
@@ -807,3 +621,51 @@ class Behavior(BrainMixin):
                     else:
                         logger.debug(f"[{t}] [Behavior] --- msg[{i}] role={m['role']} part[{j}] {part['type']} len={len(str(part))} --- (binary omitted)")
         logger.debug(f"[{t}] [Behavior] ====== END CONTEXT ({tag}) ======")
+
+class _BehaviorToolSession:
+    """把 Behavior 的工具会话能力暴露给 run_tool_loop（协议见 pet/brain/tool_loop.py）。"""
+
+    def __init__(self, behavior: Behavior, cancel_check=None):
+        self._behavior = behavior
+        self._cancel_check = cancel_check
+
+    def tools_param(self, enable_tools):
+        return self._behavior._build_tools_param(enable_tools)
+
+    def activate_groups(self, name, result, arguments: dict):
+        if name != "tool_search__search":
+            return
+        try:
+            keyword = arguments.get("keyword", "")
+            if result.success and isinstance(result.data, dict):
+                self._behavior._activate_tool_groups_from_search(result.data.get("matches", []))
+            # 兜底：keyword 直接匹配组名
+            self._behavior._activate_groups_from_keyword(keyword)
+        except Exception:
+            pass
+
+    def note_progress(self):
+        self._behavior.note_progress()
+
+    def speak_aside(self, text: str):
+        from pet.tools.context import TOOL_CTX
+        TOOL_CTX.speech(text, duration=2000)
+        TOOL_CTX.push_model_aside_pending()
+
+    def end_aside(self):
+        from pet.tools.context import TOOL_CTX
+        TOOL_CTX.pop_model_aside_pending()
+
+    def add_context(self, role: str, content: str, is_summary: bool = False):
+        self._behavior.add_context(role=role, content=content, is_summary=is_summary)
+
+    def executor(self):
+        return ToolExecutor()
+
+    def stream(self, messages, max_tokens, tools, thinking, *, tag, on_chunk=None, on_stream_end=None):
+        stream = self._behavior._llm_call_stream(
+            messages, max_tokens=max_tokens, tools=tools, thinking=thinking)
+        return parse_stream_chunks(
+            stream, config.LLM_STREAM_TIMEOUT, self._behavior,
+            tag=tag, cancel_check=self._cancel_check,
+            on_chunk=on_chunk, on_stream_end=on_stream_end)

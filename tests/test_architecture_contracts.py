@@ -908,10 +908,8 @@ ALLOWLIST: dict[str, list[Debt]] = {
              "main() 内延迟 import 更新脚本应用；非环非重依赖", f"{ARCH_DOC} §11.15"),
         Debt(("pet/brain/behavior.py", "pet.brain.llm_retry"),
              "文件头已导入 llm_retry，流式路径再延迟导入一次", f"{ARCH_DOC} §11.15"),
-        Debt(("pet/brain/behavior.py", "pet.tools.executor"),
-             "_handle_tool_calls 内延迟 import 执行器；非环非重依赖", f"{ARCH_DOC} §11.15"),
         Debt(("pet/brain/behavior.py", "pet.tools.context"),
-             "_handle_tool_calls 内延迟 import TOOL_CTX；非环非重依赖", f"{ARCH_DOC} §11.15"),
+             "_BehaviorToolSession 内延迟 import TOOL_CTX；非环非重依赖", f"{ARCH_DOC} §11.15"),
         Debt(("pet/brain/memory.py", "pet.config"),
              "文件头已导入 config，函数内 5 处重复 import", f"{ARCH_DOC} §11.15"),
         Debt(("pet/brain/memory.py", "pet.brain.embedding_client"),
@@ -1007,9 +1005,12 @@ ALLOWLIST: dict[str, list[Debt]] = {
         + _sym("pet/app.py", "_w", ["_force_close"],
                "退出与提交路径直呼窗口私有方法与槽", f"{ARCH_DOC} §11.14")
         + _sym("pet/brain/behavior.py", "memory_store", ["_db_path"],
-               "Behavior 直驱 executor 与 memory_store 内部", f"{ARCH_DOC} §14")
-        + _sym("pet/brain/behavior.py", "executor", ["_execute_one", "_normalize"],
-               "Behavior 直驱 executor 与 memory_store 内部", f"{ARCH_DOC} §14")
+               "Behavior 直读 memory_store 的库路径", f"{ARCH_DOC} §14")
+        + _sym("pet/brain/behavior.py", "self._behavior",
+               ["_build_tools_param", "_activate_tool_groups_from_search",
+                "_activate_groups_from_keyword", "_llm_call_stream"],
+               "_BehaviorToolSession 是 Behavior 的同文件适配器，把私有能力按 ToolSession 协议转出",
+               f"{ARCH_DOC} §14")
         + _sym("pet/brain/context_builder.py", "BrainMixin",
                ["_format_context_time", "_format_duration"],
                "父类 BrainMixin（pet/brain/base.py）的私有静态工具被子类模块直呼",
