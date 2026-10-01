@@ -83,7 +83,7 @@ flowchart TB
 - **脑线程单例**：`PetAgent._async_brain()` 在启动新线程前会取消并「退休」旧线程；`_retire()`
   绝不析构仍在运行的 QThread，只是持引用等它自己结束，避免 Qt 崩溃。
 - **抢锁失败即降级**：流式决策要抢 `Behavior` 内部的一把 `RLock`，同一时刻只允许一条管线真正
-  跑 LLM。autonomous / interact 抢不到锁就降级本地兜底（`_decide_local`），chat 抢不到直接
+  跑 LLM。autonomous / interact 抢不到锁就降级本地兜底（`pet/brain/local_fallback.py`），chat 抢不到直接
   回一句固定台词加 `look_around`，都不排队；非流式路径不抢锁。
 - **数值只在主线程改**：`vitals`/`mood` 的修改与落库都发生在主线程（定时器回调或 `_on_brain_result`），
   脑线程只回传 delta。
@@ -113,12 +113,13 @@ flowchart TB
    过滤遮挡后取前若干个窗口，输出中文文本）；截图 `pet/agent/screen_reader.py`（受 `VISION_ENABLED` 控制）。
 2. **上下文组装**：`pet/brain/context_builder.py`。三个入口 `build_autonomous_decide` / `build_chat_decide` /
    `build_interact`，内部按「静态块 + 运行时块 + 记忆」拼装，详见第 5 节。
-3. **LLM 调用**：`pet/brain/behavior.py` 的流式路径 `*_decide_stream`（首选）与非流式 `*_decide`（回退）。
-   客户端 `pet/brain/llm_client.py` 维护首选/备选两套方案，重试与降级策略在 `pet/brain/llm_retry.py`。
+3. **LLM 调用**：`pet/brain/behavior.py` 的流式路径 `*_decide_stream`（首选）与非流式 `*_decide`（回退），
+   请求本身经 `pet/brain/llm_gateway.py` 发出。客户端 `pet/brain/llm_client.py` 维护首选/备选两套方案，
+   重试与降级策略在 `pet/brain/llm_retry.py`。
 4. **输出解析**：按行前缀分派 - `Summary` / `Speech` / `Action` / `Memory` / `Emotion` / `Mood` / `Vitals`
-   （流式与非流式两套解析器，聚合为 `BehaviorOutput`）。非流式解析器在没有 Action 时兜底
-   `sit 5s`，流式路径没有这个兜底。
-5. **工具轮次**：`_handle_tool_calls()` 循环执行 LLM 请求的工具，最多 `LLM_TOOL_MAX_ROUNDS` 轮；
+   （`pet/brain/parsing.py`，流式与非流式共用一套行标签，聚合为 `BehaviorOutput`）。
+   非流式解析器在没有 Action 时兜底 `sit 5s`，流式路径没有这个兜底。
+5. **工具轮次**：`pet/brain/tool_loop.py` 循环执行 LLM 请求的工具，最多 `LLM_TOOL_MAX_ROUNDS` 轮；
    元工具（`tool_search`、`recall` 等）不占配额。单个工具在 `pet/tools/executor.py` 里带超时执行。
 6. **动作执行**：`BehaviorOutput` 里的动作交给 `ActionQueue`（`pet/action/action_queue.py`）串行播放，
    实际动作方法在 `pet/action/action.py`；重力与「站在窗口上」由 `pet/action/gravity.py` 负责。
@@ -170,7 +171,7 @@ system prompt 由三段拼起来：
 
 - 只在 `AUTONOMOUS`/`INTERACTING` 下检查，阈值 `BRAIN_STUCK_TIMEOUT`（默认 300 秒无进展）；
 - 有进行中的游戏对局时视为有进展，避免等玩家落子的正常等待被误判；
-- 「进展」由 `Behavior` 在收到 chunk、执行工具轮次等时机上报（`_note_progress`）；
+- 「进展」由 `Behavior` 在收到 chunk、执行工具轮次等时机上报（`Behavior.note_progress`）；
 - 判定挂死后：取消脑线程（退休延迟到下一次 `_async_brain` 或 `stop()` 再做）→ 强制回 `IDLE`
   → 关闭加载态 → 托盘提示。
 
@@ -208,6 +209,18 @@ system prompt 由三段拼起来：
 | `pet/voice/` | 语音输入：热键、麦克风采集、讯飞听写 | `voice_session.py` |
 | `assets/` | 素材：每个动作一个目录（`<name>.json` + 帧 webp） | `assets/actions/` |
 | `tests/` | pytest 用例（CI 在 ubuntu + windows 上跑） | 见 `CONTRIBUTING.md`；结构红线见 [test_architecture_contracts.py](../tests/test_architecture_contracts.py) |
+
+`pet/brain/` 内一次决策的分工（各模块的公开入口见 [reference/modules.md](reference/modules.md)）：
+
+| 模块 | 职责 |
+|---|---|
+| `behavior.py` | 编排中枢：六个决策入口、抢锁与降级、上下文与工具会话装配 |
+| `llm_gateway.py` | LLM 请求：非流式补全、流式建流、thinking 参数降级、prompt 规模统计 |
+| `parsing.py` | 输出解析：行标签、字段取值、流式消费（流式与非流式共用一套规则） |
+| `tool_loop.py` | 工具轮次：执行、分组激活、轮次预算与最终行为解析 |
+| `local_fallback.py` | 本地兜底：LLM 不可用或抢锁失败时的降级产出 |
+| `summary.py` | 摘要执行端：待摘要队列 → LLM 压缩或拼接 → 写回上下文 |
+| `output.py` | 输出契约：`BehaviorOutput` / `ActionStep` / `CancelledError` |
 
 顶层模块（`pet/*.py`）：
 
@@ -341,13 +354,21 @@ import `PetState`）已随 Issue #19 清理，同类新增会由 `ARCH002` 报�
 
 ### `Behavior` 的职责
 
-`pet/brain/behavior.py` 1217 行，其中 `Behavior` 一个类占 1164 行、41 个方法，同时扮演：
-LLM 客户端与重试管理、流式与非流式调用、两套输出解析、工具轮次与分组激活、摘要与上下文压缩、
-本地兜底决策、进展上报与轮次计数。最大的两个方法 `_handle_tool_calls()` 196 行、
-`_stream_and_build_output()` 166 行。它是有意的编排中枢，但体量已经到了该拆的地方
-（同量级的还有 `memory.py` 1554 行、`settings_window.py` 1456 行）。
+`pet/brain/behavior.py` 447 行，`Behavior` 只做编排：六个决策入口（3 条管线 × 流式/非流式）、
+抢锁与降级、上下文与工具会话装配、轮次计数与进展上报。原先混在同一个类里的职责各自成模块：
 
-候选切法：输出解析、工具轮次、本地兜底、摘要压缩各自成模块，`Behavior` 只留编排。
+| 已拆出的职责 | 去处 |
+|---|---|
+| 数据契约（`BehaviorOutput` / `ActionStep` / `CancelledError`） | `pet/brain/output.py` |
+| 流式与非流式输出解析 | `pet/brain/parsing.py`（两条路径共用一套行标签与字段规则） |
+| 工具轮次与分组激活 | `pet/brain/tool_loop.py` |
+| 本地兜底决策 | `pet/brain/local_fallback.py` |
+| 摘要与上下文压缩 | `pet/brain/summary.py` |
+| LLM 调用封装与重试参数 | `pet/brain/llm_gateway.py` |
+
+`Behavior` 与 `_BehaviorToolSession` 仍是同类文件里的适配器（后者把私有能力按 `ToolSession`
+协议转给工具轮次）。仍待拆分的是同量级的大文件 `memory.py` 1554 行、`settings_window.py` 1464 行，
+它们不在本节的切分范围内。
 
 ### 跨对象的私有访问
 
@@ -355,7 +376,7 @@ LLM 客户端与重试管理、流式与非流式调用、两套输出解析、�
 |---|---|
 | `pet/action/action.py`（46 处、8 个符号） | `gravity._vy` / `_clamp_pos()` / `_cached_effective_bottom` / `_standing_hwnd` 等 - 行走与 drive 直接读重力内部状态，是最大的一处耦合 |
 | `pet/app.py` | `agent._voice_session`、`agent.behavior._save_context()`、`window._quit_fn`、`tray._quit_fn` |
-| `pet/brain/behavior.py` | `executor._execute_one()`、`executor._normalize()`、`memory_store._db_path` |
+| `pet/brain/behavior.py` | `memory_store._db_path`；`_BehaviorToolSession` 读同文件 `Behavior` 的 `_build_tools_param` 与分组激活方法 |
 | `pet/brain/context_builder.py` | `brain._MAX_POOL_ENTRIES`：注入条数上限由池子的拥有者决定，只读派生值，不涉及可变状态 |
 | `pet/ui/debug_window.py` | `agent.behavior._context`、`_score_entry` |
 | `pet/ui/music_bubble.py` | `speech_bubble._speech_queue`、`_is_active` |

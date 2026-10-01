@@ -11,11 +11,11 @@
 | **mode（模式）** | 提示词里的感知组合：`autonomous_vision` / `autonomous_non_vision` / `chat_vision` / `chat_non_vision` / `interact` | `pet/brain/prompts.py` 的 `_PERCEPTION_SECTIONS` |
 | **task（任务）** | 决策类型：`autonomous`（自主）/ `chat`（对话）/ `interact`（即时交互） | `pet/brain/prompts.py` 的 `_TASK_SECTIONS` |
 | **脑线程 / 管线（pipeline）** | 一次决策的完整执行体：组上下文 → 调 LLM → 解析 → 工具轮次 | `pet/agent/pet_agent.py`、`pet/brain/behavior.py` |
-| **工具轮次（tool round）** | LLM 一次「请求工具 → 拿到结果 → 继续说话」的往返，受 `LLM_TOOL_MAX_ROUNDS` 限制 | `behavior.py` 的 `_handle_tool_calls` |
+| **工具轮次（tool round）** | LLM 一次「请求工具 → 拿到结果 → 继续说话」的往返，受 `LLM_TOOL_MAX_ROUNDS` 限制 | `pet/brain/tool_loop.py` 的 `run_tool_loop` |
 | **元工具（meta tool）** | 系统内置、不可禁用、**不占工具轮次配额**的工具：`tool_search`、`food`、`game`、`recall` | `pet/tools/registry.py` |
 | **aside** | 工具调用的附带参数：让桌宠在动手的同时说一句话，保证言行一致 | `pet/tools/registry.py` 自动追加 |
 | **看门狗（watchdog）** | 检测脑线程「长时间无进展」并在超时后强制恢复的机制 | `pet/agent/scheduled_tasks.py` 的 `_brain_watchdog` |
-| **进展（progress）** | 脑线程的心跳：收到流式 chunk、完成工具轮次等都会上报，用于喂看门狗 | `Behavior._note_progress` |
+| **进展（progress）** | 脑线程的心跳：收到流式 chunk、完成工具轮次等都会上报，用于喂看门狗 | `Behavior.note_progress` |
 
 ## 数值与需求
 
