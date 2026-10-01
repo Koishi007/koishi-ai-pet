@@ -290,7 +290,7 @@ system prompt 由三段拼起来：
 15. **函数内延迟 import 只在两种情况下写**：打断循环依赖、推迟重依赖（Qt / 平台后端 / playwright）。
     没有理由就不要延迟，写了就在旁边注明原因。
 
-### 哪些红线已经由测试守住
+### ARCH 规则清单
 
 `tests/test_architecture_contracts.py` 用 AST 与文件系统扫描静态检查下表的红线
 （不 import 业务模块、不需要 Qt、不联网），失败消息按
@@ -345,26 +345,9 @@ system prompt 由三段拼起来：
 
 当前无登记项。模块 import 图由 `ARCH008` 静态扫描，导入顺序由
 `tests/test_import_smoke.py` 的冷启动子进程覆盖。冻结清单与全部既有债见
-`tests/test_architecture_contracts.py` 的 allowlist（§11「哪些红线已经由测试守住」）。
+`tests/test_architecture_contracts.py` 的 allowlist（§11「ARCH 规则清单」）。
 
 函数内 import 大多正当（见 §11 第 15 条）；无理由的由 `ARCH002` 报出违规。
-
-### `Behavior` 的职责
-
-`pet/brain/behavior.py` 447 行，`Behavior` 只做编排：六个决策入口（3 条管线 × 流式/非流式）、
-抢锁与降级、上下文与工具会话装配、轮次计数与进展上报。其余职责在下列模块：
-
-| 职责 | 模块 |
-|---|---|
-| 数据契约（`BehaviorOutput` / `ActionStep` / `CancelledError`） | `pet/brain/output.py` |
-| 流式与非流式输出解析 | `pet/brain/parsing.py`（两条路径共用一套行标签与字段规则） |
-| 工具轮次与分组激活 | `pet/brain/tool_loop.py` |
-| 本地兜底决策 | `pet/brain/local_fallback.py` |
-| 摘要与上下文压缩 | `pet/brain/summary.py` |
-| LLM 调用封装与重试参数 | `pet/brain/llm_gateway.py` |
-
-`Behavior` 与 `_BehaviorToolSession` 是同类文件里的适配器（后者把私有能力按 `ToolSession`
-协议转给工具轮次）。同量级的大文件 `memory.py` 1554 行、`settings_window.py` 1464 行不在本节范围内。
 
 ### 跨对象的私有访问
 
