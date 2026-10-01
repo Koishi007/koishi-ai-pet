@@ -1,8 +1,6 @@
 """与 AI 通信，解析响应为动作序列。"""
 
-import queue
 import random
-import re
 import time
 from datetime import datetime
 import logging
@@ -15,6 +13,7 @@ from pet.brain.context_builder import ContextBuilder
 from pet.brain.llm_client import LLMClient
 from pet.brain.llm_stats import LlmStats
 from pet.brain.output import ActionStep, BehaviorOutput, CancelledError
+from pet.brain.parsing import BehaviorParser, parse_behavior, parse_stream_chunks
 from pet.action.registry import ACTION_NAMES
 from pet.config import config
 from pet.brain.llm_retry import llm_retry
@@ -40,7 +39,7 @@ class Behavior(BrainMixin):
         self._counter_lock = threading.Lock()  # 仅保护 _rounds_without_user，避免主线程等待 LLM 长锁
         self._rounds_without_user = 0
 
-        self._actions = ACTION_NAMES
+        self.parser = BehaviorParser(self)
         self.ctx = ContextBuilder(
             memory_store=memory_store, screen_reader=screen_reader,
             vitals=vitals, mood=mood, brain_mixin=self,
@@ -52,7 +51,7 @@ class Behavior(BrainMixin):
 
         t = datetime.now().strftime("%H:%M:%S")
         client_type = "None (local)" if not self._llm else f"{type(self._llm.client).__name__}(model={self._llm.model})"
-        logger.info(f"[{t}] [Behavior] init: {len(self._actions)} actions, client={client_type}")
+        logger.info(f"[{t}] [Behavior] init: client={client_type}")
 
     def rebuild_client(self):
         """运行时重建 LLM 客户端（设置界面修改连接配置后调用）。"""
@@ -82,7 +81,7 @@ class Behavior(BrainMixin):
     def has_vision(self) -> bool:
         return self._llm.has_vision
 
-    def _note_progress(self):
+    def note_progress(self):
         """上报一次管线进展（best-effort，回调异常不影响主流程）。"""
         if not self._progress_fn:
             return
@@ -276,7 +275,7 @@ class Behavior(BrainMixin):
             kwargs["tools"] = tools
         self._apply_thinking_param(kwargs, thinking)
         resp = self._create_completion(kwargs)
-        self._note_progress()
+        self.note_progress()
         elapsed = time.perf_counter() - t0
         usage = resp.usage
         if usage:
@@ -375,70 +374,13 @@ class Behavior(BrainMixin):
                     speech_streamed=False, enable_tools=enable_tools,
                 )
 
-            result = self._parse_behavior(content)
+            result = parse_behavior(content)
             logger.info(f"[{t}] [Behavior]   parsed -> {result}")
             return result
         except Exception as e:
             logger.exception(f"[{t}] [Behavior]   {tag} LLM call failed: {type(e).__name__}: {e}")
             logger.warning(f"[{t}] [Behavior]   falling back to local")
             return self._decide_local()
-
-    def _iterate_stream_with_timeout(self, stream, total_timeout: float,
-                                     cancel_check: callable = None):
-        chunk_queue: queue.Queue = queue.Queue()
-        stop_event = threading.Event()
-        exception_holder: list = [None]
-
-        def _iter_thread():
-            try:
-                for chunk in stream:
-                    if stop_event.is_set():
-                        return
-                    chunk_queue.put(('chunk', chunk))
-                chunk_queue.put(('done', None))
-            except Exception as e:
-                exception_holder[0] = e
-                try:
-                    chunk_queue.put(('error', None))
-                except Exception:
-                    pass
-
-        t = threading.Thread(target=_iter_thread, daemon=True, name="stream-iter")
-        t.start()
-
-        deadline = time.monotonic() + total_timeout
-        try:
-            while True:
-                # 协作式取消：被新请求抢占时尽快退出，释放资源
-                if cancel_check and cancel_check():
-                    stop_event.set()
-                    raise CancelledError("流式调用被新请求取消")
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    stop_event.set()
-                    raise TimeoutError(f"流式调用总超时 ({total_timeout}s)，已放弃等待")
-                try:
-                    kind, value = chunk_queue.get(timeout=min(remaining, 1.0))
-                except queue.Empty:
-                    continue
-                if kind == 'done':
-                    break
-                if kind == 'error':
-                    if exception_holder[0]:
-                        raise exception_holder[0]
-                    break
-                self._note_progress()
-                yield value
-        finally:
-            stop_event.set()
-            t.join(timeout=3)
-            # 关闭被放弃的流式响应，中断挂住的 HTTP 读，释放连接
-            close = getattr(stream, "close", None)
-            if close is not None:
-                try:
-                    close()
-                except Exception:
-                    pass
 
     def _stream_and_build_output(self, messages: list, on_chunk=None, on_stream_end=None,
                                  tag: str = "", max_tokens: int = 4000,
@@ -449,156 +391,35 @@ class Behavior(BrainMixin):
         self._apply_cache_control(messages)
         self._dump_context(tag, messages)
         self._log_prompt_size(messages, tag)
-        t0 = time.perf_counter()
         try:
             tools_param = self._build_tools_param(enable_tools)
             stream = self._llm_call_stream(messages, max_tokens=max_tokens, tools=tools_param, thinking=thinking)
+            chunk_sent = [False]
 
-            buffer = ""
-            actions = []
-            speech_parts = []
-            summary_holder = []
-            memory_holder = []
-            emotion_holder = []
-            mood_holder = []
-            vitals_holder = []
-            speech_streamed = False
-            line_type = None
-            speech_prefix_consumed = False
-            accumulated_tool_calls = {}  # {index: {"id":..., "name":..., "arguments":...}}
+            def _spy_chunk(delta: str):
+                chunk_sent[0] = True
+                if on_chunk:
+                    on_chunk(delta)
 
-            finish_reason = None
-            stream_usage = None
+            raw, tool_calls_map = parse_stream_chunks(
+                stream, config.LLM_STREAM_TIMEOUT, sink=self, tag=tag,
+                cancel_check=cancel_check, on_chunk=_spy_chunk, on_stream_end=on_stream_end,
+            )
+            speech_streamed = chunk_sent[0]
 
-            for chunk in self._iterate_stream_with_timeout(stream, config.LLM_STREAM_TIMEOUT,
-                                                           cancel_check=cancel_check):
-                # usage-only chunk（choices 为空，仅含 usage）
-                if not chunk.choices:
-                    if hasattr(chunk, "usage") and chunk.usage:
-                        stream_usage = chunk.usage
-                    continue
-                choice = chunk.choices[0]
-                if choice.finish_reason:
-                    finish_reason = choice.finish_reason
-                delta = choice.delta
-
-                if delta.content:
-                    delta_speech = ""
-                    for char in delta.content:
-                        if char in ("\n", "\r"):
-                            if delta_speech and on_chunk:
-                                on_chunk(delta_speech)
-                                speech_streamed = True
-                            delta_speech = ""
-                            self._finish_line(buffer, actions, speech_parts, summary_holder, memory_holder, emotion_holder, mood_holder, vitals_holder)
-                            buffer = ""
-                            line_type = None
-                            speech_prefix_consumed = False
-                        else:
-                            buffer += char
-                            if line_type is None:
-                                stripped = buffer.lstrip()
-                                lower = stripped.lower()
-                                if lower.startswith("speech:"):
-                                    line_type = "speech"
-                                    if speech_parts and on_stream_end:
-                                        on_stream_end()
-                                elif lower.startswith("action:"):
-                                    line_type = "action"
-                                elif lower.startswith("summary:"):
-                                    line_type = "summary"
-                                elif lower.startswith("memory:"):
-                                    line_type = "memory"
-                                elif lower.startswith("emotion:"):
-                                    line_type = "emotion"
-                                elif lower.startswith("mood:"):
-                                    line_type = "mood"
-                                elif lower.startswith("vitals:"):
-                                    line_type = "vitals"
-                                elif len(stripped) >= 8:
-                                    line_type = "other"
-                            if line_type == "speech":
-                                stripped = buffer.lstrip()
-                                if not speech_prefix_consumed:
-                                    prefix = "Speech: "
-                                    if len(stripped) > len(prefix):
-                                        speech_prefix_consumed = True
-                                        delta_speech += stripped[len(prefix):]
-                                else:
-                                    delta_speech += char
-                    if delta_speech and on_chunk:
-                        on_chunk(delta_speech)
-                        speech_streamed = True
-
-                if delta.tool_calls:
-                    for tc_delta in delta.tool_calls:
-                        idx = tc_delta.index
-                        if idx not in accumulated_tool_calls:
-                            accumulated_tool_calls[idx] = {"id": "", "name": "", "arguments": ""}
-                        if tc_delta.id:
-                            accumulated_tool_calls[idx]["id"] = tc_delta.id
-                        if tc_delta.function and tc_delta.function.name:
-                            accumulated_tool_calls[idx]["name"] = tc_delta.function.name
-                        if tc_delta.function and tc_delta.function.arguments:
-                            accumulated_tool_calls[idx]["arguments"] += tc_delta.function.arguments
-
-            if buffer.strip():
-                self._finish_line(buffer, actions, speech_parts, summary_holder, memory_holder, emotion_holder, mood_holder, vitals_holder)
-
-            elapsed = time.perf_counter() - t0
-            usage_log = f", finish_reason: {finish_reason}"
-            if stream_usage:
-                usage_log += (f", tokens: prompt={stream_usage.prompt_tokens}, "
-                              f"completion={stream_usage.completion_tokens}, total={stream_usage.total_tokens}")
-            logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] [Behavior] stream completed in {elapsed:.2f}s ({tag}){usage_log}")
-
-            if accumulated_tool_calls:
-                first_content = "\n".join(
-                    ([f"Summary: {summary_holder[0]}"] if summary_holder else []) +
-                    ([f"Emotion: {', '.join(emotion_holder)}"] if emotion_holder else []) +
-                    [f"Speech: {s}" for s in speech_parts] +
-                    [f"Action: {a.name} {' '.join(map(str, a.args))} {' '.join(f'{k}={v}' for k, v in a.kwargs.items())}".strip() for a in actions] +
-                    ([f"Memory: {memory_holder[0]}"] if memory_holder else []) +
-                    ([f"Mood: {mood_holder[0]}"] if mood_holder else []) +
-                    ([f"Vitals: {vitals_holder[0]}"] if vitals_holder else [])
-                )
-                logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] [Behavior]   tool_calls: {len(accumulated_tool_calls)}")
+            if tool_calls_map:
                 # 不在此处调用 on_stream_end：保持气泡流不中断，
                 # on_stream_end 仅用于 speech 中断（多行 Speech 分开显示），
-                # 不在轮次间调用（_collect_stream_raw 末尾不再调 on_stream_end）。
+                # 不在轮次间调用（流式轮次收尾不再调 on_stream_end）。
                 return self._handle_tool_calls(
-                    messages, accumulated_tool_calls, first_content,
+                    messages, tool_calls_map, raw,
                     on_chunk=on_chunk, on_stream_end=on_stream_end, tag=tag,
                     max_tokens=max_tokens, max_rounds=config.LLM_TOOL_MAX_ROUNDS,
                     speech_streamed=speech_streamed, enable_tools=enable_tools,
                     thinking=thinking,
                 )
 
-            raw = "\n".join(
-                ([f"Summary: {summary_holder[0]}"] if summary_holder else []) +
-                ([f"Emotion: {', '.join(emotion_holder)}"] if emotion_holder else []) +
-                [f"Speech: {s}" for s in speech_parts] +
-                [f"Action: {a.name} {' '.join(map(str, a.args))} {' '.join(f'{k}={v}' for k, v in a.kwargs.items())}".strip() for a in actions] +
-                ([f"Memory: {memory_holder[0]}"] if memory_holder else []) +
-                ([f"Mood: {mood_holder[0]}"] if mood_holder else []) +
-                ([f"Vitals: {vitals_holder[0]}"] if vitals_holder else [])
-            )
-            logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] [Behavior] === LLM RESPONSE ({tag}) ===")
-            logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] [Behavior]   raw: {raw}")
-
-            mood_deltas = self._parse_mood_line(mood_holder[0]) if mood_holder else None
-            vitals_deltas = self._parse_vitals_line(vitals_holder[0]) if vitals_holder else None
-            return BehaviorOutput(
-                actions=actions,
-                speech=" ".join(speech_parts),
-                speech_parts=list(speech_parts),
-                speech_streamed=speech_streamed,
-                summary=summary_holder[0] if summary_holder else None,
-                memory_line=memory_holder[0] if memory_holder else None,
-                emotion=", ".join(emotion_holder) if emotion_holder else None,
-                mood_deltas=mood_deltas,
-                vitals_deltas=vitals_deltas,
-            )
+            return self.parser.parse_behavior(raw)
 
         except CancelledError:
             logger.info(f"[{tag}] stream cancelled")
@@ -607,129 +428,6 @@ class Behavior(BrainMixin):
             logger.exception(f"[{tag}] stream failed: {type(e).__name__}: {e}")
             return self._decide_local()
 
-    def _parse_behavior(self, content: str) -> BehaviorOutput:
-        actions: list = []
-        speech_parts = []
-        summary = None
-        memory_line = None
-        emotion_parts = []
-        mood_line = None
-        vitals_line = None
-        for line in content.split("\n"):
-            line = line.strip()
-            if not line:
-                continue
-            lower = line.lower()
-            if lower.startswith("action:"):
-                raw = line.split(":", 1)[1].strip()
-                step = self._parse_action_line(raw)
-                if step:
-                    actions.append(step)
-            elif lower.startswith("speech:"):
-                raw = line.split(":", 1)[1].strip()
-                if raw.lower() not in ("none", "", "null", "无"):
-                    speech_parts.append(raw)
-            elif lower.startswith("summary:"):
-                summary = line.split(":", 1)[1].strip()
-            elif lower.startswith("memory:") and memory_line is None:
-                memory_line = line.split(":", 1)[1].strip()
-            elif lower.startswith("emotion:"):
-                emotion_parts.append(line.split(":", 1)[1].strip())
-            elif lower.startswith("mood:") and mood_line is None:
-                mood_line = line.split(":", 1)[1].strip()
-            elif lower.startswith("vitals:") and vitals_line is None:
-                vitals_line = line.split(":", 1)[1].strip()
-        if not actions:
-            actions.append(ActionStep("sit", kwargs={"duration": 5}))
-        mood_deltas = self._parse_mood_line(mood_line) if mood_line else None
-        vitals_deltas = self._parse_vitals_line(vitals_line) if vitals_line else None
-        speech = " ".join(speech_parts) if speech_parts else None
-        return BehaviorOutput(actions=actions, speech=speech, speech_parts=speech_parts, summary=summary, memory_line=memory_line, emotion=", ".join(emotion_parts) if emotion_parts else None, mood_deltas=mood_deltas, vitals_deltas=vitals_deltas)
-
-    def _finish_line(self, buffer, actions, speech_parts,
-                      summary_holder=None, memory_holder=None, emotion_holder=None,
-                      mood_holder=None, vitals_holder=None):
-        line = buffer.strip()
-        if not line:
-            return
-        lower = line.lower()
-        if lower.startswith("speech:"):
-            raw = line.split(":", 1)[1].strip()
-            if raw.lower() not in ("none", "", "null", "无"):
-                speech_parts.append(raw)
-        elif lower.startswith("action:"):
-            raw = line.split(":", 1)[1].strip()
-            step = self._parse_action_line(raw)
-            if step:
-                actions.append(step)
-        elif lower.startswith("summary:"):
-            if summary_holder is not None:
-                summary_holder.append(line.split(":", 1)[1].strip())
-        elif lower.startswith("memory:"):
-            if memory_holder is not None:
-                memory_holder.append(line.split(":", 1)[1].strip())
-        elif lower.startswith("emotion:"):
-            if emotion_holder is not None:
-                emotion_holder.append(line.split(":", 1)[1].strip())
-        elif lower.startswith("mood:"):
-            if mood_holder is not None:
-                mood_holder.append(line.split(":", 1)[1].strip())
-        elif lower.startswith("vitals:"):
-            if vitals_holder is not None:
-                vitals_holder.append(line.split(":", 1)[1].strip())
-
-    @staticmethod
-    def _parse_mood_line(raw: str) -> dict | None:
-        """解析 Mood 行，格式: affection+5 joy+3 sanity-2"""
-        import re
-        deltas = {}
-        pattern = re.compile(r'(affection|joy|sanity)\s*([+-]\s*\d+)', re.IGNORECASE)
-        for match in pattern.finditer(raw):
-            key = match.group(1).lower()
-            value = float(match.group(2).replace(" ", ""))
-            deltas[key] = value
-        return deltas if deltas else None
-
-    @staticmethod
-    def _parse_vitals_line(raw: str) -> dict | None:
-        """解析 Vitals 行，格式: satiety+15 energy-3（仅生理参数）"""
-        import re
-        deltas = {}
-        pattern = re.compile(r'(satiety|energy)\s*([+-]\s*\d+)', re.IGNORECASE)
-        for match in pattern.finditer(raw):
-            key = match.group(1).lower()
-            value = float(match.group(2).replace(" ", ""))
-            deltas[key] = value
-        return deltas if deltas else None
-
-    def _parse_action_line(self, raw: str) -> ActionStep | None:
-        parts = raw.split()
-        if not parts:
-            return None
-        name = parts[0].lower()
-        if name not in self._actions:
-            t = datetime.now().strftime("%H:%M:%S")
-            logger.warning(f"[{t}] [Behavior]   ⚠ unknown action: {name!r}, skipped")
-            return None
-        args: list = []
-        kwargs: dict = {}
-        for token in parts[1:]:
-            if "=" in token:
-                k, v = token.split("=", 1)
-                try:
-                    v = int(v)
-                except ValueError:
-                    pass
-                kwargs[k] = v
-            else:
-                try:
-                    token = int(token)
-                except ValueError:
-                    pass
-                args.append(token)
-        return ActionStep(name, tuple(args), kwargs)
-
-    # 元工具（工具发现/觅食/游戏类）不消耗实际工具调用轮次
     _META_TOOL_NAMES = frozenset({
         "tool_search__search", "tool_search__list_groups",
         "food__spawn", "food__status",
@@ -760,9 +458,7 @@ class Behavior(BrainMixin):
         tool_log = []  # 记录工具调用摘要，用于写入上下文
         final_instruction_added = False  # 最终轮精简指令是否已追加
 
-        # 追踪 on_chunk 是否在 _collect_stream_raw 中被真正调用（即检测到 Speech 内容）
-        # 仅当 Speech 被实际流式发送时才标记 speech_streamed=True，
-        # 避免非 Speech 文本（如 Summary/Action）导致误判
+        # 仅当 Speech 被实际流式发送时才标记 speech_streamed=True
         _chunk_invoked = [False]
         _wrapped_chunk = None
         if on_chunk:
@@ -777,7 +473,7 @@ class Behavior(BrainMixin):
         recall_instruction_added = False
 
         while real_round < max_rounds:
-            self._note_progress()  # 每轮工具调用都算进展，长流程不被看门狗误杀
+            self.note_progress()  # 每轮工具调用都算进展，长流程不被看门狗误杀
             meta_round += 1
             display_round += 1
             if meta_round > self._META_TOOL_MAX_ROUNDS:
@@ -912,17 +608,19 @@ class Behavior(BrainMixin):
                 final_instruction_added = True
 
             # 再次调用 LLM（每轮重建 tools_param，包含新激活的分组）
-            t0 = time.perf_counter()
             tools_param = self._build_tools_param(enable_tools)
             stream = self._llm_call_stream(current_messages, max_tokens=max_tokens, tools=tools_param, thinking=thinking)
             _chunk_invoked[0] = False
-            content, new_tool_calls = self._collect_stream_raw(stream, on_chunk=_wrapped_chunk, on_stream_end=on_stream_end, tag=f"{tag}_round_{display_round}", t0=t0)
+            content, new_tool_calls = self.parser.collect_stream(
+                stream, config.LLM_STREAM_TIMEOUT, tag=f"{tag}_round_{display_round}",
+                on_chunk=_wrapped_chunk, on_stream_end=on_stream_end,
+            )
             if _chunk_invoked[0]:
                 speech_streamed = True
 
             if not new_tool_calls:
                 # LLM 不再请求工具，解析最终行为
-                result = self._parse_behavior(content)
+                result = parse_behavior(content)
                 result.speech_streamed = speech_streamed
                 if tool_log:
                     self.add_context(role="assistant", content=f"[工具调用] {' | '.join(tool_log)}")
@@ -932,92 +630,11 @@ class Behavior(BrainMixin):
             tool_calls_map = new_tool_calls
 
         logger.warning(f"[Behavior] reached MAX_ROUNDS={max_rounds} (real_rounds={real_round}, meta_rounds={meta_round}), force terminate tool loop")
-        result = self._parse_behavior(first_content)
+        result = parse_behavior(first_content)
         result.speech_streamed = speech_streamed
         if tool_log:
             self.add_context(role="assistant", content=f"[工具调用] {' | '.join(tool_log)}")
         return result
-
-    def _collect_stream_raw(self, stream, on_chunk=None, on_stream_end=None, tag="", t0=None):
-        """消费流，返回 (content_text, tool_calls_map)。"""
-        content = ""
-        tool_calls_map = {}
-        line_buffer = ""
-        in_speech = False
-        speech_count = 0
-        prefix_consumed = False
-        finish_reason = None
-        stream_usage = None
-
-        for chunk in self._iterate_stream_with_timeout(stream, config.LLM_STREAM_TIMEOUT):
-            if not chunk.choices:
-                if hasattr(chunk, "usage") and chunk.usage:
-                    stream_usage = chunk.usage
-                continue
-            choice = chunk.choices[0]
-            if choice.finish_reason:
-                finish_reason = choice.finish_reason
-            delta = choice.delta
-
-            if delta.content:
-                content += delta.content
-                delta_speech = ""
-                for char in delta.content:
-                    if char in ("\n", "\r"):
-                        if delta_speech and on_chunk:
-                            on_chunk(delta_speech)
-                        delta_speech = ""
-                        line_buffer = ""
-                        in_speech = False
-                        prefix_consumed = False
-                    else:
-                        line_buffer += char
-                        if not in_speech:
-                            stripped = line_buffer.lstrip()
-                            if stripped.lower().startswith("speech:"):
-                                in_speech = True
-                                speech_count += 1
-                                if speech_count > 1 and on_stream_end:
-                                    on_stream_end()
-                                prefix = "Speech: "
-                                if len(stripped) > len(prefix):
-                                    prefix_consumed = True
-                                    delta_speech += stripped[len(prefix):]
-                        else:
-                            if not prefix_consumed:
-                                stripped = line_buffer.lstrip()
-                                prefix = "Speech: "
-                                if len(stripped) > len(prefix):
-                                    prefix_consumed = True
-                                    delta_speech += stripped[len(prefix):]
-                            else:
-                                delta_speech += char
-                if delta_speech and on_chunk:
-                    on_chunk(delta_speech)
-
-            if delta.tool_calls:
-                for tc_delta in delta.tool_calls:
-                    idx = tc_delta.index
-                    if idx not in tool_calls_map:
-                        tool_calls_map[idx] = {"id": "", "name": "", "arguments": ""}
-                    if tc_delta.id:
-                        tool_calls_map[idx]["id"] = tc_delta.id
-                    if tc_delta.function and tc_delta.function.name:
-                        tool_calls_map[idx]["name"] = tc_delta.function.name
-                    if tc_delta.function and tc_delta.function.arguments:
-                        tool_calls_map[idx]["arguments"] += tc_delta.function.arguments
-
-        if t0:
-            elapsed = time.perf_counter() - t0
-            usage_log = f", finish_reason: {finish_reason}"
-            if stream_usage:
-                usage_log += (f", tokens: prompt={stream_usage.prompt_tokens}, "
-                              f"completion={stream_usage.completion_tokens}, total={stream_usage.total_tokens}")
-            logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] [Behavior] stream completed in {elapsed:.2f}s ({tag}){usage_log}")
-        logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] [Behavior] === LLM RESPONSE ({tag}) ===")
-        logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] [Behavior]   raw: {content}")
-        return content, tool_calls_map
-
 
     def flush_summaries(self):
         """将上下文淘汰产生的待摘要条目队列统一处理。
