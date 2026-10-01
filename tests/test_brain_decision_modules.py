@@ -1,19 +1,19 @@
-"""抽出的决策模块测试：工具轮次预算与取消、摘要流水线分支、空响应重试。
+"""决策模块测试：工具轮次预算与取消、摘要流水线分支、空响应重试、流式入口接线。
 
-这三处原先内嵌在 `Behavior` 里，靠端到端跑桌宠间接覆盖；拆出来之后各自的
-失败模式（轮次耗尽后丢产出、空响应不重试、摘要退回拼接）需要单独守住。
+这些失败模式（轮次耗尽后丢产出、空响应不重试、摘要退回拼接）不看界面也能判定，
+因此单独守住，不依赖端到端跑桌宠。
 """
 
-import io
 import logging
+from types import SimpleNamespace
 
 import pytest
 
-from pet.brain.behavior import retry_if_empty
+from pet.brain.behavior import Behavior, retry_if_empty
 from pet.brain.output import ActionStep, BehaviorOutput, CancelledError
 from pet.brain.summary import SummaryHooks, flush_summaries
 from pet.brain.tool_loop import run_tool_loop
-from pet.tools.executor import ToolResult
+from pet.config import config
 
 
 def _empty() -> BehaviorOutput:
@@ -238,3 +238,79 @@ class TestFlushSummaries:
         rec = _Recorder(["[user] 甲"], summary=None)
         flush_summaries(self._hooks(rec))
         assert rec.added == [("system", "[历史摘要] 拼接摘要", True)]
+
+
+class _Usage:
+    prompt_tokens = 1
+    completion_tokens = 1
+    total_tokens = 2
+
+
+class _StreamStub:
+    """消费侧只用到 choices / delta.content / usage / finish_reason。"""
+
+    def __init__(self, text, with_usage=True):
+        delta = SimpleNamespace(content=text, tool_calls=None)
+        choice = SimpleNamespace(delta=delta, finish_reason=None)
+        self._chunks = [SimpleNamespace(choices=[choice], usage=None)]
+        if with_usage:
+            self._chunks.append(SimpleNamespace(choices=[], usage=_Usage()))
+
+    def __iter__(self):
+        return iter(self._chunks)
+
+
+class _FakeStreamLlm:
+    """流式建流：按调用次数返回预置文本，记录每次的 tag。"""
+
+    def __init__(self, texts):
+        self.texts = list(texts)
+        self.tags = []
+        self.model = "fake-model"
+        self.client = None  # stream_chat 被替换，不经过真实 client
+
+    def __bool__(self):
+        return True
+
+    def reset_effective(self):
+        pass
+
+
+class TestEntrypointRetry:
+    """决策入口的空响应重试：整轮既无动作也无台词时再跑一次。"""
+
+    def _behavior(self, monkeypatch, texts):
+        monkeypatch.setattr(config, "BRAIN", "api")
+        monkeypatch.setattr(config, "LLM_KEY", "k")
+        monkeypatch.setattr(config, "LLM_URL", "http://127.0.0.1:1/v1")
+        monkeypatch.setattr(config, "LLM_MODEL", "m")
+        behavior = Behavior()
+        fake = _FakeStreamLlm(texts)
+        behavior._llm = fake
+        behavior.gateway._llm = fake
+
+        def fake_stream_chat(messages, max_tokens=4000, tools=None, thinking=None):
+            fake.tags.append("stream")
+            return _StreamStub(fake.texts.pop(0))
+
+        behavior.gateway.stream_chat = fake_stream_chat
+        return behavior, fake
+
+    def test_only_summary_response_is_retried(self, monkeypatch):
+        # 只回一行 Summary：没有动作也没有台词，属于空响应
+        behavior, fake = self._behavior(monkeypatch, ["Summary: 发呆\n", "Speech: 回来了\n"])
+        out = behavior.chat_decide_stream("在吗", "")
+        assert len(fake.tags) == 2
+        assert out.speech == "回来了"
+
+    def test_speech_response_is_not_retried(self, monkeypatch):
+        behavior, fake = self._behavior(monkeypatch, ["Speech: 一次就好\n"])
+        out = behavior.chat_decide_stream("在吗", "")
+        assert len(fake.tags) == 1
+        assert out.speech == "一次就好"
+
+    def test_still_empty_after_retry_is_returned(self, monkeypatch):
+        behavior, fake = self._behavior(monkeypatch, ["Summary: 一\n", "Summary: 二\n"])
+        out = behavior.chat_decide_stream("在吗", "")
+        assert len(fake.tags) == 2
+        assert out.actions == [] and out.speech is None
