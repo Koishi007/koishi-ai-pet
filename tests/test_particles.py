@@ -123,3 +123,37 @@ class TestActionParticleMap:
         # 名字写错时 spawn 只会 warning，桌面看不到任何特效
         missing = [effect for effect, _ in _ACTION_PARTICLES.values() if effect not in _SPAWNERS]
         assert missing == []
+
+
+class TestParticleWidgetCleanup:
+    """特效播完隐藏前的清理：先擦净再隐藏，否则下次 show() 会闪出上一帧残影。"""
+
+    @pytest.fixture
+    def widget(self, qapp):
+        from PySide6.QtWidgets import QWidget
+        from pet.ui.particle import ParticleWidget
+
+        pet = QWidget()
+        widget = ParticleWidget(pet)
+        yield widget
+        # 不摘掉事件过滤器：widget 被回收后 Qt 仍会向已死的 Python 对象派发事件
+        pet.removeEventFilter(widget)
+
+    def test_tick_erases_before_hiding(self, widget, monkeypatch):
+        order = []
+        monkeypatch.setattr(widget, "repaint", lambda: order.append("repaint"))
+        monkeypatch.setattr(widget, "hide", lambda: order.append("hide"))
+        widget._tick()
+        assert order == ["repaint", "hide"]
+
+    def test_clear_leaves_transparent_not_white(self, widget):
+        from PySide6.QtGui import QColor, QImage
+
+        widget.resize(80, 80)
+        canvas = QImage(widget.size(), QImage.Format.Format_ARGB32)
+        canvas.fill(QColor(255, 0, 0))
+        widget.render(canvas)
+        # eraseRect 填的是不透明白，隐藏后会闪出一块白；清屏结果必须是真透明
+        alphas = {canvas.pixelColor(x, y).alpha()
+                  for x in range(0, 80, 8) for y in range(0, 80, 8)}
+        assert alphas == {0}
