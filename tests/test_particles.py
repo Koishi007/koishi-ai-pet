@@ -145,3 +145,15 @@ class TestParticleWidgetCleanup:
         monkeypatch.setattr(widget, "hide", lambda: order.append("hide"))
         widget._tick()
         assert order == ["repaint", "hide"]
+
+    def test_clear_leaves_transparent_not_white(self, widget):
+        from PySide6.QtGui import QColor, QImage
+
+        widget.resize(80, 80)
+        canvas = QImage(widget.size(), QImage.Format.Format_ARGB32)
+        canvas.fill(QColor(255, 0, 0))
+        widget.render(canvas)
+        # eraseRect 填的是不透明白，隐藏后会闪出一块白；清屏结果必须是真透明
+        alphas = {canvas.pixelColor(x, y).alpha()
+                  for x in range(0, 80, 8) for y in range(0, 80, 8)}
+        assert alphas == {0}
