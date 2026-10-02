@@ -606,11 +606,7 @@ class ParticleWidget(QWidget):
             self.hide()
 
     def _clear(self, painter: QPainter) -> None:
-        """把画布擦成透明。
-
-        `eraseRect` 填的是背景刷（默认不透明的白），在这层半透明窗口上会闪出一块
-        白；只有 Clear 合成模式能真的把像素连同 alpha 一起清掉。
-        """
+        """把画布擦成透明。"""
         painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Clear)
         painter.fillRect(self.rect(), Qt.GlobalColor.transparent)
         painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
