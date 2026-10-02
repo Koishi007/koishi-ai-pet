@@ -98,8 +98,11 @@ class TestBreathPose:
         assert sy == pytest.approx(0.98)
 
     def test_single_pixel_amplitude_still_moves(self):
-        offsets = {PetAnimator._breath_pose(t, 1, 1.0, 1.0, 30)[0] for t in range(30)}
-        assert offsets == {0, -1}
+        # 浮点连续位移：1px 振幅不再取整成 0/−1 两级方波，而是平滑起伏
+        offsets = [PetAnimator._breath_pose(t, 1, 1.0, 1.0, 30)[0] for t in range(30)]
+        assert max(offsets) == pytest.approx(0.0, abs=1e-9)
+        assert min(offsets) == pytest.approx(-1.0)
+        assert any(0 > o > -1 for o in offsets)  # 存在中间值，证明连续而非两级跳变
 
     def test_disabled_returns_rest(self):
         assert PetAnimator._breath_pose(15, 2, 1.01, 0.99, 0) == (0, 1.0, 1.0)

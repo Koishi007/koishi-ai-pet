@@ -39,7 +39,7 @@ class PetAnimator(QObject):
     animation_finished = Signal(str)
     animation_interrupted = Signal(str)
     frame_changed = Signal(QPixmap)
-    pose_changed = Signal(int, float, float)  # 呼吸姿态（纵向偏移px, 横向缩放, 纵向缩放）
+    pose_changed = Signal(float, float, float)  # 呼吸姿态（纵向偏移px浮点, 横向缩放, 纵向缩放）
 
     def __init__(self, pet_dir: str | None = None, parent=None):
         super().__init__(parent)
@@ -58,7 +58,7 @@ class PetAnimator(QObject):
         self._breath_scale_x: float = 1.0
         self._breath_scale_y: float = 1.0
         self._breath_period: int = 0
-        self._pose_now: tuple[int, float, float] = (0, 1.0, 1.0)
+        self._pose_now: tuple[float, float, float] = (0, 1.0, 1.0)
 
         self._frame_timer = QTimer(self)
         self._frame_timer.timeout.connect(self._next_frame)
@@ -320,16 +320,18 @@ class PetAnimator(QObject):
 
     @staticmethod
     def _breath_pose(tick: int, amplitude: int, scale_x: float, scale_y: float,
-                     period: int) -> tuple[int, float, float]:
+                     period: int) -> tuple[float, float, float]:
         """呼吸姿态：sin² 曲线，位移只向上抬（负值）、缩放随吸气张开。
 
+        位移输出浮点连续值，由绘制方按亚像素渲染，避免整数取整
+        在低振幅下退化成 0/−1 方波（表现为站立时上下闪动）；
         缩放锚点在脚底（绘制方保证），Y < 1 只让头顶下降，不会沉出画面；
         scale_x * scale_y ≈ 1 时体积不变，看起来是呼吸而不是整体放大。
         """
         if period <= 0:
             return 0, 1.0, 1.0
         phase = math.sin(math.pi * (tick % period) / period) ** 2
-        return (-int(amplitude * phase + 0.5),
+        return (-amplitude * phase,
                 1.0 + (scale_x - 1.0) * phase,
                 1.0 + (scale_y - 1.0) * phase)
 
