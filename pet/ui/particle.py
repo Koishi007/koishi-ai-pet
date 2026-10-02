@@ -600,13 +600,18 @@ class ParticleWidget(QWidget):
         if not self._particles and not self._loading_active:
             self._tick_timer.stop()
             self._follow_timer.stop()
+            # 隐藏前同步擦净：挂起的 update() 会随 hide() 一起作废，
+            # 上一层特效的最后一帧会留在窗口缓冲里，下次 show() 先闪出它
+            self.repaint()
             self.hide()
 
     def paintEvent(self, event):
-        if not self._particles and not self._loading_active:
-            return
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        if not self._particles and not self._loading_active:
+            painter.eraseRect(self.rect())  # 无内容也要擦净，不留残影
+            painter.end()
+            return
         for p in self._particles:
             _draw_particle(painter, p)
         if self._loading_active:
