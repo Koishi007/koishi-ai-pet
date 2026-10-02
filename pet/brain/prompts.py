@@ -340,7 +340,8 @@ def autonomous_vision_user_prompt(context: str) -> str:
         f"   • 无窗口 → 巡视桌面或找地方坐下\n"
         f"5. 理智不正常时话语可以混乱，但行为必须无害——不做破坏性操作，不主动写/覆盖文件、打开未知网页或改动用户环境；多个独立工具可一次并行调用\n"
         f"6. 画面没什么变化时不要硬找新话题、不要给画面加戏或堆砌修辞；可以说当下的感受，也可以用很短的句子\n"
-        f"7. 按顺序写出完整输出（Summary → Emotion → Speech(可选) → Actions → Mood）"
+        f"7. 记忆：本轮是否出现了值得记住的新信息（环境里暴露的稳定事实、明确的偏好或安排）？有就写一行 Memory，没有就省略\n"
+        f"8. 按顺序写出完整输出（Summary → Emotion → Speech(可选) → Actions → Memory(可选) → Mood）"
     )
 
 
@@ -361,7 +362,8 @@ def autonomous_non_vision_user_prompt(context: str) -> str:
         f"   • 移动方向可随机\n"
         f"4. 理智不正常时话语可以混乱，但行为必须无害——不做破坏性操作，不主动写/覆盖文件、打开未知网页或改动用户环境；多个独立工具可一次并行调用\n"
         f"5. 避免与近期台词重复；没什么想说就简短表达当下的感觉\n"
-        f"6. 按顺序写出完整输出（Summary → Emotion → Speech(可选) → Actions → Mood）"
+        f"6. 记忆：本轮是否出现了值得记住的新信息（窗口标题、记忆段里没有的稳定事实或偏好）？有就写一行 Memory，没有就省略\n"
+        f"7. 按顺序写出完整输出（Summary → Emotion → Speech(可选) → Actions → Memory(可选) → Mood）"
     )
 
 
@@ -375,7 +377,8 @@ def chat_vision_user_prompt(user_message: str, context: str) -> str:
         "2. 分析截图，识别窗口内容——结合画面理解语境\n"
         "3. 结合「你现在的状态」和截图内容，说一句符合人格和当下心境的话；「你惦记着的事」里有未满足的需求，可以顺口带一句，禁止和工具调用时说的话重复，需要保持连续性\n"
         "4. 规划配合对话的动作序列，按输出格式要求凑满时长\n"
-        "5. 按顺序写出完整输出（Summary → Emotion → Speech → Actions → Mood）"
+        "5. 记忆：用户本轮是否说出了值得记住的新信息（姓名、住址、偏好、确定的安排、刚发生的事）？有就写一行 Memory，没有就省略\n"
+        "6. 按顺序写出完整输出（Summary → Emotion → Speech → Actions → Memory(可选) → Mood）"
     )
 
 
@@ -387,7 +390,8 @@ def chat_non_vision_user_prompt(user_message: str, context: str) -> str:
         "1. 理解用户说了什么，判断意图\n"
         "2. 结合「你现在的状态」和用户消息内容，说一句符合人格和当下心境的话；「你惦记着的事」里有未满足的需求，可以顺口带一句，禁止和工具调用时说的话重复，需要保持连续性\n"
         "3. 规划配合对话的动作序列，按输出格式要求凑满时长\n"
-        "4. 按顺序写出完整输出（Summary → Emotion → Speech → Actions → Mood）"
+        "4. 记忆：用户本轮是否说出了值得记住的新信息（姓名、住址、偏好、确定的安排、刚发生的事）？有就写一行 Memory，没有就省略\n"
+        "5. 按顺序写出完整输出（Summary → Emotion → Speech → Actions → Memory(可选) → Mood）"
     )
 
 
