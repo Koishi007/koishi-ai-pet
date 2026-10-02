@@ -177,7 +177,7 @@ chmod +x update.sh && ./update.sh
 | `web` | `web_search` | `search` / `deep_search` | SearXNG / Bing API 搜索，深度搜索自动抓取全文 |
 | `info` | `weather` | `get_current` / `get_forecast` | 基于 Open-Meteo 的免费天气查询 |
 | `info` | `system_monitor` | `get_overview` / `get_top_processes` / `get_memory_detail` / `get_network` | CPU、内存、磁盘、电池、进程 |
-| `file` | `file` | `list_dir` / `read_file` / `write_note` / `write_file` | 列目录、读写文件（限桌面/文档） |
+| `file` | `file_ops` | `list_dir` / `read_file` / `write_note` / `write_file` | 列目录、读写文件（限桌面/文档） |
 | `productivity` | `timer` | `set` / `list` / `cancel` / `cancel_all` | 倒计时定时器，到时宠物主动提醒 |
 | `productivity` | `todo` | `add` / `list` / `toggle` / `delete` / `update` | 待办事项管理 |
 | `knowledge` | `knowledge` | `search` / `list` | RAG 知识库：语义检索、知识条目管理 |
@@ -285,7 +285,7 @@ RAG 知识库，支持语义检索。可配置向量嵌入以启用语义搜索�
 
 无需额外配置。
 
-### file
+### file_ops
 
 所有文件操作限定在桌面和文档目录内，保证安全。
 
