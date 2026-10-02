@@ -48,28 +48,34 @@ def _notify_retry(on_retry, tag: str, exc: BaseException | None):
         logger.exception(f"[{tag}] on_retry callback failed")
 
 
+def retryer_for(tag: str = "LLM", on_retry=None):
+    """构造非流式重试器；每次重试前用 on_retry 通知调用方。
+
+    直接调用（不经过装饰器）的路径用这个显式传回调。
+    """
+    def _before_sleep(retry_state):
+        before_sleep_log(logger, logging.WARNING)(retry_state)
+        exc = retry_state.outcome.exception() if retry_state.outcome else None
+        _notify_retry(on_retry, tag, exc)
+
+    return retry(
+        stop=stop_after_attempt(config.LLM_MAX_RETRIES),
+        wait=wait_exponential(
+            multiplier=config.LLM_RETRY_DELAY,
+            max=config.LLM_RETRY_MAX_DELAY,
+        ),
+        retry=retry_if_exception(is_retryable),
+        before_sleep=_before_sleep,
+        reraise=True,
+    )
+
+
 def llm_retry(tag: str = "LLM"):
-    """非流式 LLM 调用的重试装饰器"""
+    """非流式 LLM 调用的重试装饰器；调用方可通过 `_on_retry` 关键字传入重试回调。"""
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
-            on_retry = kwargs.pop("_on_retry", None)
-
-            def _before_sleep(retry_state):
-                before_sleep_log(logger, logging.WARNING)(retry_state)
-                exc = retry_state.outcome.exception() if retry_state.outcome else None
-                _notify_retry(on_retry, tag, exc)
-
-            retryer = retry(
-                stop=stop_after_attempt(config.LLM_MAX_RETRIES),
-                wait=wait_exponential(
-                    multiplier=config.LLM_RETRY_DELAY,
-                    max=config.LLM_RETRY_MAX_DELAY,
-                ),
-                retry=retry_if_exception(is_retryable),
-                before_sleep=_before_sleep,
-                reraise=True,
-            )
+            retryer = retryer_for(tag, kwargs.pop("_on_retry", None))
             try:
                 return retryer(func)(*args, **kwargs)
             except RetryError as e:

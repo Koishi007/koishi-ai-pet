@@ -10,6 +10,8 @@ from pet.brain import llm_client as llm_client_mod
 from pet.brain.llm_client import (
     LLMClient, normalize_profile, other_profile, resolve_llm_profile,
 )
+from pet.brain.llm_gateway import LlmGateway
+from pet.brain.llm_stats import LlmStats
 from pet.brain.llm_retry import (
     CreateStreamTimeout, _create_with_watchdog, is_retryable,
     llm_retry, llm_stream_with_retry,
@@ -187,6 +189,67 @@ class TestStreamWithRetry:
             release.set()
         assert result == "stream"
         assert len(calls) == 2
+
+
+class TestGatewayCompletionRetry:
+    """非流式补全的重试契约：重试前必须通知调用方切换备选方案。"""
+
+    class _Completions:
+        def __init__(self, owner):
+            self._owner = owner
+
+        def create(self, **kwargs):
+            self._owner.calls.append(kwargs)
+            if len(self._owner.calls) <= self._owner.fail_times:
+                raise ConnectionError("flaky")
+            return self._owner.response
+
+    class _Chat:
+        def __init__(self, owner):
+            self.completions = TestGatewayCompletionRetry._Completions(owner)
+
+    class _Client:
+        def __init__(self, owner):
+            self.chat = TestGatewayCompletionRetry._Chat(owner)
+
+    class _Llm:
+        def __init__(self, owner):
+            self.model = "m1"
+            self.client = TestGatewayCompletionRetry._Client(owner)
+
+    def _gateway(self, fail_times: int, on_retry):
+        owner = type("Owner", (), {})()
+        owner.calls, owner.fail_times = [], fail_times
+        owner.response = type("Resp", (), {"choices": [], "usage": None})()
+        gateway = LlmGateway(self._Llm(owner), LlmStats(), on_retry=on_retry)
+        return gateway, owner
+
+    def test_retry_notifies_on_retry_hook(self, fast_retry):
+        notified = []
+        gateway, owner = self._gateway(1, lambda exc: notified.append(exc) or True)
+        gateway.completion([{"role": "user", "content": "hi"}])
+        assert len(owner.calls) == 2
+        assert len(notified) == 1
+
+    def test_retry_continues_when_hook_returns_false(self, fast_retry):
+        gateway, owner = self._gateway(1, lambda _exc: False)
+        gateway.completion([{"role": "user", "content": "hi"}])
+        assert len(owner.calls) == 2
+
+    def test_hook_exception_does_not_break_retry(self, fast_retry):
+        def boom(_exc):
+            raise RuntimeError("hook 挂了")
+
+        gateway, owner = self._gateway(1, boom)
+        gateway.completion([{"role": "user", "content": "hi"}])
+        assert len(owner.calls) == 2
+
+    def test_no_retry_on_success(self, fast_retry):
+        notified = []
+        gateway, owner = self._gateway(0, lambda exc: notified.append(exc) or True)
+        gateway.completion([{"role": "user", "content": "hi"}])
+        assert len(owner.calls) == 1
+        assert notified == []
 
 
 class TestProfileResolution:

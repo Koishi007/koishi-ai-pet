@@ -522,7 +522,7 @@ def render_actions(data: dict) -> str:
         "# 动作参考",
         "",
         "动作定义在 `pet/action/registry.py`，是 LLM 可输出动作的唯一真源；",
-        "`pet/brain/behavior.py` 用它校验 LLM 输出里的动作名。本文件由注册表机械展开。",
+        "`pet/brain/parsing.py` 用它校验 LLM 输出里的动作名。本文件由注册表机械展开。",
         "",
         "## 时长与数量（随调度间隔变化）",
         "",
