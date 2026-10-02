@@ -313,6 +313,26 @@ class TestStreamPath:
             "id": "call_1", "name": "tool_search__search", "arguments": '{"keyword": "todo"}',
         }
 
+    def test_tool_call_without_function_name_is_dropped(self):
+        # 分片的 delta 里可能始终没有 name：这类调用执行不了，
+        # 拼进 assistant.tool_calls 会被服务商以「missing a function name」拒绝
+        stream = [
+            _Chunk([_Choice(_Delta(tool_calls=[
+                _ToolCallDelta(0, id="call_1", arguments='{"path": "~/Desktop"}')]))]),
+        ]
+        _, tool_calls, _, _ = _collect("", stream=stream)
+        assert tool_calls == {}
+
+    def test_named_call_survives_alongside_unnamed(self):
+        stream = [
+            _Chunk([_Choice(_Delta(tool_calls=[
+                _ToolCallDelta(0, id="call_1", arguments="{}"),
+                _ToolCallDelta(1, id="call_2", name="timer__set", arguments="{}")]))]),
+        ]
+        _, tool_calls, _, _ = _collect("", stream=stream)
+        assert list(tool_calls) == [1]
+        assert tool_calls[1]["name"] == "timer__set"
+
 
 class TestStreamMatchesNonStreamPath:
     CONTENT = TestStreamPath.CONTENT

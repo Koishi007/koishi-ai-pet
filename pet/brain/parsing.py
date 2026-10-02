@@ -309,10 +309,16 @@ class BehaviorParser:
             self.consume_line(tagger, tagger.line, acc)
 
         _log_stream_done(tag, time.perf_counter() - t0, finish_reason, stream_usage)
+        # 缺 function name 的调用既执行不了，也拼不出合法的 assistant.tool_calls，
+        # 放行只会让下一轮请求被服务商以「missing a function name」拒绝
+        usable = {idx: tc for idx, tc in tool_calls_map.items() if tc["name"]}
+        if len(usable) != len(tool_calls_map):
+            logger.warning(f"[Behavior] dropped {len(tool_calls_map) - len(usable)} tool call(s) "
+                           f"without function name ({tag})")
         raw = build_raw_text(acc)
         logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] [Behavior] === LLM RESPONSE ({tag}) ===")
         logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] [Behavior]   raw: {raw}")
-        return raw, tool_calls_map
+        return raw, usable
 
     def iter_stream_with_timeout(self, stream, total_timeout: float,
                                  cancel_check: Optional[Callable[[], bool]] = None):
