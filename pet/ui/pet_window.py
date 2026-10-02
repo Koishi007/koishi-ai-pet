@@ -3,7 +3,7 @@ import logging
 import sys
 
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QMenu
-from PySide6.QtCore import Qt, QPoint, QDateTime, QTimer, QSize
+from PySide6.QtCore import Qt, QPoint, QPointF, QDateTime, QTimer, QSize
 from PySide6.QtGui import QMouseEvent, QAction, QPainter, QPainterPath, QColor, QPen
 from pet.ui.base_window import TransparentWindow
 from pet.ui.pet_animations import PetAnimator
@@ -70,9 +70,9 @@ class _SpriteLabel(QLabel):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._pose: tuple[int, float, float] = (0, 1.0, 1.0)
+        self._pose: tuple[float, float, float] = (0, 1.0, 1.0)
 
-    def set_pose(self, dy: int, scale_x: float, scale_y: float):
+    def set_pose(self, dy: float, scale_x: float, scale_y: float):
         pose = (dy, scale_x, scale_y)
         if pose != self._pose:
             self._pose = pose
@@ -85,17 +85,23 @@ class _SpriteLabel(QLabel):
             return
 
         dy, scale_x, scale_y = self._pose
+        # Qt6 的 QPixmap.width()/height() 返回设备像素，帧贴图带 DPR（高DPI适配），
+        # 需除回逻辑像素再计算，否则 dpr>1 时贴图会画偏（站立呼吸时左右闪动）
+        dpr = pixmap.devicePixelRatio() or 1.0
+        pm_w = pixmap.width() / dpr
+        pm_h = pixmap.height() / dpr
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-        left = (self.width() - pixmap.width()) // 2
+        left = round((self.width() - pm_w) / 2)
         top = dy
         # 以脚底中点为锚点缩放：横向居中、纵向站在原处，不会沉下去
-        anchor_x = left + pixmap.width() / 2
-        anchor_y = top + pixmap.height()
+        anchor_x = left + pm_w / 2
+        anchor_y = top + pm_h
         painter.translate(anchor_x, anchor_y)
         painter.scale(scale_x, scale_y)
         painter.translate(-anchor_x, -anchor_y)
-        painter.drawPixmap(left, top, pixmap)
+        # QPointF 重载支持亚像素定位：浮点呼吸位移平滑渲染，不取整成方波
+        painter.drawPixmap(QPointF(left, top), pixmap)
         painter.end()
 
 
