@@ -1,12 +1,14 @@
 """模型容灾测试：异常分类、重试、建流看门狗与首选/备选切换。"""
 
 import threading
+from types import SimpleNamespace
 
 import httpx
 import pytest
 from openai import AuthenticationError, BadRequestError, RateLimitError
 
 from pet.brain import llm_client as llm_client_mod
+from pet.brain import llm_gateway as llm_gateway_mod
 from pet.brain.llm_client import (
     LLMClient, normalize_profile, other_profile, resolve_llm_profile,
 )
@@ -250,6 +252,60 @@ class TestGatewayCompletionRetry:
         gateway.completion([{"role": "user", "content": "hi"}])
         assert len(owner.calls) == 1
         assert notified == []
+
+
+def _bad_request(message: str, param: str = ""):
+    request = httpx.Request("POST", "https://api.example.com/v1/chat/completions")
+    response = httpx.Response(400, request=request)
+    body = {"error": {"code": "400", "message": message, "param": param, "type": ""}}
+    return BadRequestError(message, response=response, body=body)
+
+
+class TestGatewayBadRequestDowngrade:
+    """400 的降级范围：只有指向 thinking 的才摘掉 extra_body 重试一次。"""
+
+    class _Completions:
+        def __init__(self, owner):
+            self._owner = owner
+
+        def create(self, **kwargs):
+            self._owner.calls.append(kwargs)
+            if len(self._owner.calls) <= self._owner.fail_times:
+                raise self._owner.error
+            return self._owner.response
+
+    def _gateway(self, error, fail_times=1):
+        owner = SimpleNamespace(
+            calls=[], fail_times=fail_times, error=error,
+            response=SimpleNamespace(choices=[], usage=None),
+        )
+        client = SimpleNamespace(chat=SimpleNamespace(completions=self._Completions(owner)))
+        return LlmGateway(SimpleNamespace(model="m1", client=client), LlmStats()), owner
+
+    def test_message_structure_400_is_not_retried(self, monkeypatch):
+        # 400 指向请求体结构：重试是同样结果，不该伪装成 thinking 不支持
+        monkeypatch.setattr(llm_gateway_mod, "_thinking_unsupported", False)
+        gateway, owner = self._gateway(
+            _bad_request("Param Incorrect", "messages[17].tool_calls[0] is missing a function name"))
+        with pytest.raises(BadRequestError):
+            gateway.completion([{"role": "user", "content": "hi"}])
+        assert len(owner.calls) == 1
+        assert "extra_body" in owner.calls[0]
+
+    def test_thinking_400_drops_extra_body_and_retries(self, monkeypatch):
+        monkeypatch.setattr(llm_gateway_mod, "_thinking_unsupported", False)
+        gateway, owner = self._gateway(_bad_request("Param Incorrect", "thinking"))
+        gateway.completion([{"role": "user", "content": "hi"}])
+        assert len(owner.calls) == 2
+        assert "extra_body" in owner.calls[0]
+        assert "extra_body" not in owner.calls[1]
+
+    def test_400_without_detail_still_downgrades(self, monkeypatch):
+        # 拿不到拒绝原因时无从判断，保持原有的降级重试
+        monkeypatch.setattr(llm_gateway_mod, "_thinking_unsupported", False)
+        gateway, owner = self._gateway(_http_error(BadRequestError, 400))
+        gateway.completion([{"role": "user", "content": "hi"}])
+        assert len(owner.calls) == 2
 
 
 class TestProfileResolution:
