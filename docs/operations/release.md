@@ -60,10 +60,11 @@
 1. `python -m pytest` 全绿（CI 也会在 push 后跑一遍：ubuntu + windows）。
 2. `python scripts/gen_docs.py --check` 通过；手写文档（`docs/architecture.md`、
    `docs/glossary.md`、README）与本版本改动同步。
-3. 改 `pyproject.toml` 的 `version`，提交。
-4. 打 tag：`git tag vX.Y.Z && git push origin master --tags`（在哪个分支发版就推哪个分支）。
-5. **打完 tag 再刷新**变更记录：`python scripts/gen_changelog.py`（脚本按 tag 切小节，
-   tag 不存在时新版本的提交还留在「未发布」里），刷新后把这次生成结果一起提交。
+3. 改 `pyproject.toml` 的 `version`。
+4. **打 tag 之前**刷新变更记录：`python scripts/gen_changelog.py`（第 4 节）。版本号与
+   刷新结果一起提交。
+5. 打 tag：`git tag vX.Y.Z && git push origin master --tags`（在哪个分支发版就推哪个分支，
+   tag 指向上一步那个提交，源码包里的 `CHANGELOG.md` 才带当前版本的小节）。
 6. 在 GitHub 上基于该 tag 建 Release，正文直接粘贴 `CHANGELOG.md` 里对应小节。
 7. 发布后自查一次：`update.sh` / `update.bat` 能拉到新 tag、版本比较能识别。
 
@@ -78,11 +79,12 @@ python scripts/gen_changelog.py --check    # 只校验，不写入
 
 - 提交信息遵循 Conventional Commits（见 [CONTRIBUTING.md](../../CONTRIBUTING.md)），
   脚本按 `feat` / `fix` / `tune` / `perf` / `refactor` / `style` / `test` / `chore` / `docs` 分组；
-- 每个 tag 一个小节，另有「未发布」小节收录最新 tag 之后的提交；
-- 小节是按 tag 切出来的，所以**必须在打完 tag 之后刷新**（第 3 节第 5 步）；
-  生成时间早于打 tag，新版本的提交就还躺在「未发布」里；
-- 不接 CI：每次提交都会改动「未发布」小节，若放进 CI 检查，每个 PR 都得重新生成一次变更记录。
-  它的正确用法是发布时刷新（第 3 节第 5 步）。
+- 每个 tag 一个小节，最新 tag 之后的提交归到待发布那一节；
+- 待发布那一节的标题取 `pyproject.toml` 的 `version`：版本号还没有同名 tag 时渲染成
+  `## vX.Y.Z — 日期`，  已有同名 tag 时恢复成「未发布」。所以**必须在打 tag 之前刷新**
+  （第 3 节第 4 步） - 源码包由 tag 生成，打完 tag 再刷新的内容进不了本版本的包；
+- 不接 CI：每次提交都会改动待发布小节，若放进 CI 检查，每个 PR 都得重新生成一次变更记录。
+  它的正确用法是发布时刷新（第 3 节第 4 步）。
 
 ## 5. 发布禁区
 

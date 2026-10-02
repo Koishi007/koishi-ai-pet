@@ -6,8 +6,12 @@
     python scripts/gen_changelog.py --since v1.4.0  # 换起点 tag
     python scripts/gen_changelog.py --check         # 只校验，不写入（不一致时退出码 1）
 
-为什么**不接进 CI**：最新 tag 之后的提交随时在变，「未发布」小节每次提交都会不同，
+为什么**不接进 CI**：最新 tag 之后的提交随时在变，待发布小节每次提交都会不同，
 放进 CI 会逼着每个 PR 重新生成一遍变更记录。正确用法是发布时刷新，见 docs/operations/release.md。
+
+待发布那一节用 `pyproject.toml` 的 `version` 命名（版本号是唯一真源）：版本还没打 tag 时
+渲染成 `## vX.Y.Z — 日期`，这样 GitHub 按 tag 生成的源码包里，CHANGELOG 也带着当前版本的小节；
+版本号已存在同名 tag 时恢复成「未发布」。
 
 更早的历史（默认起点之前）没有规范化的提交信息，不回溯——那些版本的说明见 GitHub Releases。
 """
@@ -52,6 +56,15 @@ def _git(*args: str) -> list[str]:
 
 def _tags() -> list[str]:
     return _git("tag", "--sort=creatordate")
+
+
+def _pending_version() -> str:
+    """`pyproject.toml` 里的版本号（`vX.Y.Z`），即下一个待发布的版本。"""
+    text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    match = re.search(r"^\s*version\s*=\s*[\"']([^\"']+)", text, re.IGNORECASE | re.MULTILINE)
+    if not match:
+        raise SystemExit("pyproject.toml 里找不到 version")
+    return "v" + match.group(1).lstrip("vV")
 
 
 def _commits(rev_range: str) -> list[tuple[str, str]]:
@@ -118,7 +131,12 @@ def render(since: str, line_cap: int) -> str:
         "[docs/operations/release.md](https://github.com/Koishi007/koishi-ai-pet/blob/master/docs/operations/release.md)。",
         "",
     ]
-    lines += _render_section("未发布", _commits(f"{newest}..HEAD"), line_cap)
+    # 版本号已打过 tag 就还是「未发布」；否则提前挂上版本号，让发布包里的
+    # CHANGELOG 也带着当前版本的小节
+    pending = _pending_version()
+    pending_title = "未发布" if pending in tags else \
+        f"{pending} — {_git('log', '-1', '--format=%cs', 'HEAD')[0]}"
+    lines += _render_section(pending_title, _commits(f"{newest}..HEAD"), line_cap)
 
     for position in range(len(selected) - 1, -1, -1):
         tag = selected[position]
