@@ -48,7 +48,9 @@
 兜底时长 = `max(最小秒数, 目标 × 比例)`，区间 = `(最小, max(最小+5, 兜底×2))`。
 `duration` **只对 `loop: true` 的动画生效**；其它动作即使模型写了数字也只能当 kwargs 传下去。
 
-**队列与重力联动**：下落中队列 `pause()`，落地 `resume()` 并喷 `dust`；动作结束时先手动跑一次重力 tick，
+**队列与重力联动**：下落中队列 `pause()`，落地 `resume()` 并喷 `dust`；
+下落超过 `FALL_DOWN_SECONDS`（默认 1.5s）时，落地先播 `fall_down`，播完再 `resume()`；
+动作结束时先手动跑一次重力 tick，
 若恰好进入下落则「先结算、再挂起」；拖拽时 `pause + clear + grabbed()`，松手 `resume()`，
 速度超过 80px/s 会以 `apply_impulse()` 抛出。
 

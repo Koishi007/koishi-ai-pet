@@ -1,6 +1,7 @@
 import ctypes
 import logging
 import sys
+import time
 
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QMenu
 from PySide6.QtCore import Qt, QPoint, QPointF, QDateTime, QTimer, QSize
@@ -125,6 +126,8 @@ class PetWindow(TransparentWindow):
         self._event_reaction = False
         self._mouse_penetration = False  # 鼠标穿透开关，默认关
         self._outcomes_done: set[str] = set()  # 本轮已结算过产出的动作（每轮每个动作最多一条事件）
+        self._fall_started_at: float | None = None  # 本次下落起点（monotonic），落地时结算
+        self._await_fall_down = False               # 落地跌倒播放中，等它播完再恢复队列
         self._drag_history: list = []  # [(坐标点, 时间戳毫秒), ...]
         self._press_pos: QPoint | None = None  # 按下时的全局坐标
         self._click_timer = QTimer(self)       # 单击检测定时器
@@ -203,6 +206,7 @@ class PetWindow(TransparentWindow):
 
         self.pet_actions.gravity.falling_started.connect(self._on_falling_started)
         self.pet_actions.gravity.landed.connect(self._on_landed)
+        self.pet_anim.animation_finished.connect(self._on_anim_finished)
         self.action_queue.action_finished.connect(self._on_action_finished)
         self.pet_actions.gravity.standing_lost.connect(self._on_standing_lost)
 
@@ -446,11 +450,26 @@ class PetWindow(TransparentWindow):
         self._memory_window.raise_()
 
     def _on_falling_started(self):
+        self._fall_started_at = time.monotonic()
+        self._await_fall_down = False  # 上一次的等待随新一次下落作废
         self.action_queue.pause()
 
     def _on_landed(self):
-        self.action_queue.resume()
         self.particles.spawn("dust")
+        fall_seconds = time.monotonic() - self._fall_started_at if self._fall_started_at else 0.0
+        self._fall_started_at = None
+        self._await_fall_down = False
+        # 长时间下落先播跌倒动作，播完再恢复队列
+        if fall_seconds >= config.FALL_DOWN_SECONDS and self.pet_actions.fall_down():
+            self._await_fall_down = True
+            return
+        self.action_queue.resume()
+
+    def _on_anim_finished(self, action: str):
+        if action == "fall_down" and self._await_fall_down:
+            self._await_fall_down = False
+            logger.info("[PetWindow] fall_down 播放完成，恢复动作队列")
+            self.action_queue.resume()
 
     def on_action_batch_started(self):
         """agent 一轮动作即将入队：清空产出标记。
