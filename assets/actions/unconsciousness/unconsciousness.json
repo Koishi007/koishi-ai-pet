@@ -1,6 +1,6 @@
 {
   "desc": "无意识化",
-  "tick_counts": 90,
+  "tick_counts": 60,
   "frame_ratios": [0.1667, 0.1667, 0.1667, 0.1667, 0.1666, 0.1666],
   "loop": false,
   "note": ""
