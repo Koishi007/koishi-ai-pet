@@ -1,6 +1,7 @@
 """定时任务注册与回调"""
 
 import logging
+import time
 from datetime import datetime
 
 from pet.agent.state import PetState
@@ -29,6 +30,7 @@ class ScheduledTasks:
         self._agent = agent
         self._dark_heart_tick: int = 0
         self._particle_ticks: dict[str, int] = {}  # 粒子名 → 累计 tick
+        self._idle_since: float | None = None      # 连续 idle 的起点（monotonic），非 idle 时置 None
 
 
     def register_all(self, scheduler):
@@ -36,6 +38,7 @@ class ScheduledTasks:
         scheduler.register("fast", self._brain_watchdog)
         scheduler.register("fast", self._vitals_tick)
         scheduler.register("fast", self._update_idle_anim)
+        scheduler.register("fast", self._unconsciousness)
         scheduler.register("fast", self._spawn_particles)
         scheduler.register("slow", self._vitals_save)
         scheduler.register("slow", self._vitals_check)
@@ -110,6 +113,29 @@ class ScheduledTasks:
             win.pet_anim.play("grim")
         elif sanity >= config.SANITY_CRITICAL_THRESHOLD and cur == "grim":
             win.pet_anim.play("idle")
+
+    def _unconsciousness(self):
+        """连续 idle 超过 UNCONSCIOUS_IDLE_SECONDS 秒 → 播放无意识化动作。
+
+        `unconsciousness` 是 loop: false，播完停在最后一帧；
+        其它 fast 任务与重力只切换 idle/grim，不会覆盖它。
+        """
+        win = self._agent._pet_window
+        if not win:
+            return
+        if (win.action_queue.current_action_name() is not None
+                or win.pet_actions.gravity.falling
+                or win.pet_anim.current_action != "idle"):
+            self._idle_since = None
+            return
+        now = time.monotonic()
+        if self._idle_since is None:
+            self._idle_since = now
+            return
+        if now - self._idle_since >= config.UNCONSCIOUS_IDLE_SECONDS:
+            self._idle_since = None
+            logger.info("[ScheduledTasks] idle 超时，播放 unconsciousness")
+            win.pet_actions.unconsciousness()
 
     def _spawn_particles(self):
         """fast_tick 定期粒子特效："""

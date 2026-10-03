@@ -122,6 +122,7 @@
 | `SCHEDULER_FAST_MS` | int | 1000 | 是 |  | fast_tick 间隔(毫秒) |
 | `SCHEDULER_IDLE_TIMEOUT_MS` | int | 900000 | 是 |  | 空闲超时(毫秒)，超过后进入休眠 |
 | `SCHEDULER_SLOW_MS` | int | 300000 | 是 |  | slow_tick 间隔(毫秒) |
+| `UNCONSCIOUS_IDLE_SECONDS` | int | 15 | 是 |  | 连续待机秒数，超过后自动播放无意识化动作 |
 
 ### category = `connection`
 
@@ -154,4 +155,4 @@
 - `hidden`：`true` 表示不在界面显示，只能直接编辑 `settings.json`
 - `enum` / `minimum` / `maximum`：取值约束，会写进 `settings-schema.json`
 
-共 90 项（其中 37 项未在界面列出）。
+共 91 项（其中 38 项未在界面列出）。

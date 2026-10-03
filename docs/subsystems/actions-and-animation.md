@@ -66,6 +66,9 @@
   队列打 warning 后跳过该动作；启动时若连 `idle` 都没有，会退化成 emoji 占位。
 - 动作配置**有缓存且没有失效入口**：换素材或改 json 之后需要重启才生效。
 - 呼吸姿态的位移只向上抬、缩放锚点由绘制方保证在脚底。
+- **无意识化**：连续 `idle` 达到 `UNCONSCIOUS_IDLE_SECONDS` 秒（默认 15，高级设置）后，
+  `scheduled_tasks._unconsciousness` 播放 `unconsciousness`；该动画 `loop: false`，播完停在最后一帧，
+  `_update_idle_anim` 与重力只切换 `idle` / `grim`，不会覆盖它。
 
 ## 4. 粒子
 
@@ -102,5 +105,5 @@
 
 1. **属性动画路径没有超时保护**，只靠 `finished`；新增位移动作时需自行保证结束时机。
 2. **动作名 ≠ 素材目录名**：`walk` → `walk_left/right`、`drive` → `driving_left/right`；
-   `fade_in/fade_out` 没有素材；`idle` / `falling` / `grim` / `grabbed` 是系统动画，不在动作注册表里。
+   `fade_in/fade_out` 没有素材；`idle` / `falling` / `grim` / `grabbed` / `unconsciousness` 是系统动画，不在动作注册表里。
 3. **`grim` 不是模型能输出的动作**，由理智驱动切换。
