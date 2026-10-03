@@ -66,6 +66,7 @@ class PetAgent(QObject):
         self._recent_events: list[tuple[str, float, str]] = []  # 供上下文注入的最近事件（wall-clock 时间戳）
         self._once_events: list[tuple[str, float, str]] = []  # 只注入一轮的事件（如钓鱼收获），被消费后即消失
         self._brain_busy_since: float | None = None  # 进入脑线程占用状态（autonomous/interacting）的时刻（monotonic）
+        self._llm_loading: bool = False  # LLM 交互进行中（与 llm_loading 信号同源，供内部查询）
         self._brain_progress_ts: float | None = None  # 最近一次管线进展的时刻（monotonic）
         self.memory_store = get_memory_store()
         self.conversation_store = ConversationStore()
@@ -431,7 +432,7 @@ class PetAgent(QObject):
         ts = datetime.now().strftime("%H:%M:%S")
         self._cancel_running_thread(ts)
         self.state_machine.force(PetState.IDLE)
-        self.llm_loading.emit(False)
+        self._set_llm_loading(False)
         self.notify_requested.emit("状态恢复", "LLM调用疑似挂死，已强制恢复", 5000)
 
     def _cancel_running_thread(self, ts: str = ""):
@@ -464,7 +465,7 @@ class PetAgent(QObject):
         self._cancel_running_thread(ts)
         self._retire(old_thread, old_worker)
         self._cancel_flag = False
-        self.llm_loading.emit(True)  # 开始 LLM 加载粒子
+        self._set_llm_loading(True)  # 开始 LLM 加载粒子
         self._worker = BrainWorker(fn, *args)
         self._thread = QThread()
         self._worker.moveToThread(self._thread)
@@ -475,9 +476,19 @@ class PetAgent(QObject):
         self._thread.finished.connect(self._cleanup_thread)
         self._thread.start()
 
+    def _set_llm_loading(self, loading: bool):
+        """更新 LLM 交互状态，同时广播给 UI。"""
+        self._llm_loading = loading
+        self.llm_loading.emit(loading)
+
+    @property
+    def is_llm_loading(self) -> bool:
+        """LLM 交互（脑线程）是否进行中。"""
+        return self._llm_loading
+
     def _stop_loading(self):
         """停止 LLM 加载粒子（流式开始或调用结束时调用）。"""
-        self.llm_loading.emit(False)
+        self._set_llm_loading(False)
 
     def _cleanup_thread(self):
         sender = self.sender()

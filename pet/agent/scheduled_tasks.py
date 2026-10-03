@@ -115,17 +115,14 @@ class ScheduledTasks:
             win.pet_anim.play("idle")
 
     def _unconsciousness(self):
-        """连续 idle 超过 UNCONSCIOUS_IDLE_SECONDS 秒 → 播放无意识化动作。
-
-        `unconsciousness` 是 loop: false，播完停在最后一帧；
-        其它 fast 任务与重力只切换 idle/grim，不会覆盖它。
-        """
+        """连续 idle 超过 UNCONSCIOUS_IDLE_SECONDS 秒 → 播放无意识化动作"""
         win = self._agent._pet_window
         if not win:
             return
         if (win.action_queue.current_action_name() is not None
                 or win.pet_actions.gravity.falling
-                or win.pet_anim.current_action != "idle"):
+                or win.pet_anim.current_action != "idle"
+                or self._agent.is_llm_loading):
             self._idle_since = None
             return
         now = time.monotonic()

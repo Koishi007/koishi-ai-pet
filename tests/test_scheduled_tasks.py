@@ -38,6 +38,8 @@ class _Win:
 
 
 class _Agent:
+    is_llm_loading = False
+
     def __init__(self, win):
         self._pet_window = win
 
@@ -79,6 +81,13 @@ class TestUnconsciousness:
         tasks, win = _make_tasks()
         tasks._unconsciousness()
         win.pet_actions.gravity.falling = True
+        tasks._unconsciousness()
+        assert tasks._idle_since is None
+
+    def test_timer_resets_during_llm_call(self):
+        tasks, win = _make_tasks()
+        tasks._unconsciousness()
+        tasks._agent.is_llm_loading = True
         tasks._unconsciousness()
         assert tasks._idle_since is None
 

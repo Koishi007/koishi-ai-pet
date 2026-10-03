@@ -69,6 +69,7 @@
 - **无意识化**：连续 `idle` 达到 `UNCONSCIOUS_IDLE_SECONDS` 秒（默认 60，高级设置）后，
   `scheduled_tasks._unconsciousness` 播放 `unconsciousness`；该动画 `loop: false`，播完停在最后一帧，
   `_update_idle_anim` 与重力只切换 `idle` / `grim`，不会覆盖它。
+  有队列动作、下落中、非 `idle`、LLM 交互（`is_llm_loading`）期间，计时复位。
 
 ## 4. 粒子
 
