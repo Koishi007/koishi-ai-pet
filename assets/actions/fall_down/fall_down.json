@@ -1,6 +1,6 @@
 {
   "desc": "跌倒",
-  "tick_counts": 60,
+  "tick_counts": 90,
   "frame_ratios": [0.3, 0.20, 0.20, 0.3],
   "loop": false,
   "note": ""
