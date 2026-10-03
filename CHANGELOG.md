@@ -7,9 +7,10 @@
 发布前刷新一次：`python scripts/gen_changelog.py`，流程见
 [docs/operations/release.md](https://github.com/Koishi007/koishi-ai-pet/blob/master/docs/operations/release.md)。
 
-## 未发布
+## v1.6.0 — 2026-10-02
 
 **新功能**
+- **scripts**: 变更记录的待发布小节按 pyproject 版本号渲染（eb377ca）
 - **action**: 动作产出机制与钓鱼玩法（a8477f7）
 - **anim**: 新增失落动作与紫黑螺旋粒子（fde0ffd）
 - **anim**: 呼吸加上等体积缩放，位移与缩放可分别配置（0e1c233）
@@ -18,6 +19,22 @@
 - **context**: 新增「你惦记着的事」章节，统一需求、作息与旧事记忆注入（25918c1）
 
 **修复**
+- **ui**: 粒子清屏改用 Clear 合成模式，eraseRect 填的是不透明白（b7914cc）
+- **ui**: 粒子播完先擦净再隐藏，消除下次 show 时的残影闪现（ec89f42）
+- **brain**: 400 只在指向 thinking 时降级重试，其余原样抛出（b7b4f7c）
+- **brain**: 流式收尾丢弃缺 function name 的工具调用（14fe2a4）
+- **ui**: 呼吸位移改为浮点连续值，消除站立时 1px 方波式上下闪动（b7356d8）
+- **ui**: 呼吸自绘路径按 DPR 换算贴图尺寸，修复站立时向左闪动（a5b90a4）
+- **tools**: file_ops 工具名对齐目录名，摘掉 ARCH003 登记的设计债（83aad26）
+- **brain**: 摘要无 LLM 时不打误导日志，轮次策略改由会话提供（b9a36f3）
+- **brain**: 兼容冒号后不带空格的紧凑标签写法（b956dc0）
+- **brain**: 流式收尾不补 sit，空响应重试恢复生效（3e79628）
+- **brain**: 非流式补全重试时恢复备选方案切换（0aa8da2）
+- **prompt**: 感受锚点后移到静态块末尾，需求做法去重（f6bdd98）
+- **context**: 每轮注入按池子常态上界取条数，清零震荡区间的注入缺口（352c4fb）
+- **context**: _evict_context 的 base_limit 加下界，避免负数切片误保留待淘汰对话（ac52560）
+- **context**: 合并候选池容量上限到每轮注入上限，消除历史不可见的死区（e3debcf）
+- **scripts**: 生成脚本输出强制 UTF-8，修 Windows 上的 UnicodeEncodeError（773f9e9）
 - **action**: 产出结算移至动作正常结束（26f0c7d）
 - **file_ops**: 路径校验解析 symlink/junction 逃逸并补测试（d48b3c0）
 - **timer**: 修正离线恢复时已到点/未到点定时器的处理（d36501d）
@@ -26,22 +43,55 @@
 - **timer**: 离线到期定时器恢复时锁内补发导致自死锁，改为锁外补发（59e805b）
 
 **调优**
+- **prompt**: 记忆输出写进本轮流程，user_prompt 显式提示 Memory 行（256b597）
+- **food**: food__status 按状态给出明确行动引导（b7a4a53）
 - **vitals**: 动作精力消耗减半，缓解精力下降过快（f4d2b3c）
 
 **重构**
+- **brain**: LLM 调用封装抽 pet/brain/llm_gateway.py（7882857）
+- **brain**: 摘要执行端抽 pet/brain/summary.py（2890be7）
+- **brain**: 本地兜底决策抽 pet/brain/local_fallback.py（1445b72）
+- **brain**: 工具轮次抽 pet/brain/tool_loop.py（796dc88）
+- **brain**: 输出解析收敛到 pet/brain/parsing.py（27536f2）
+- **brain**: 输出契约下沉 pet/brain/output.py（1a35d28）
+- **arch**: food 层改注入窗口工厂，消除对 UI 的反向依赖（58c8747）
+- **arch**: 清偿 recall/pet_agent 的跨对象私有访问（ac6b0d8）
+- **arch**: 断开 todo 面板环并删除面板注册死通道（6c910ff）
+- **arch**: 断开 brain 包内导入环并清理重复延迟 import（83edfa4）
 - 分离纯版本逻辑并延迟 pet.action 的 Qt 导入（4661e9a）
 - **agent**: 清理历史遗留的 SLEEPING 状态与死方法（ad3116d）
 
 **样式**
+- **tools**: knowledge 面板入口补 storage 类型标注（8831af6）
 - **idle**: 待机呼吸幅度与节奏对齐思考动画（fa489e5）
 
 **文档**
+- **release**: 发布顺序改为打 tag 前刷新变更记录（d26676f）
+- **readme**: 工具表与小节同步 file_ops 更名（00f5ccd）
+- **arch**: §11 小节改名 ARCH 规则清单，删 §14 已还清的 Behavior 拆分说明（9c1c6d2）
+- **agents**: 补「不写变更史」并清理注释与文档里的同一类叙述（df5eafd）
+- **arch**: 去掉 Behavior 拆分段落里的过程叙述（4befaf5）
+- **arch**: 同步 Behavior 拆分后的模块归属（4c74b2c）
+- **governance**: 统一手写文档文风并新增文风检查（17bc56b）
+- **arch**: 登记由测试守住的红线与设计债冻结清单（4f81871）
+- **arch**: 新增架构契约测试设计，补齐规则依据（799691a）
+- **context**: 补充 Task 3 设计补记与文档同步，修正池子上界的表述（333b729）
+- **context**: 同步候选池上限合并的文档，登记 specs 目录（2592d96）
+- 刷新 CHANGELOG（生成头改用在线链接）（b368d2a）
 - 发布包内文档改用在线链接（95600fe）
 - 收敛重复内容并标注文档角色（0f2a8c9）
 - 建立文档工程并补充分层设计标准（e9f67b3）
 - README 同步代码现状，mimo 推荐模型更新至 v2.6-flash（0618568）
 
 **测试**
+- **anim**: 呼吸位移浮点化后同步更新 1px 振幅用例（a13d4c3）
+- **brain**: 补流式取消的关流、线程回收与锁归还用例（ef5d00c）
+- **brain**: 补流式入口的空响应重试用例（0e212be）
+- **arch**: test_pure_utils 超时失败信息与冒烟测试对齐（0dd66c4）
+- **arch**: test_pure_utils 子进程顶替崩溃钩子并加超时（02f2099）
+- **arch**: 冒烟测试顶替崩溃钩子、加超时并补环当事模块入口（7c96321）
+- **arch**: 修复契约测试六处审查问题（8b625e9）
+- **arch**: 新增架构契约测试，把结构红线变成可执行的 pytest（99d1663）
 - **context_notes**: 消除 TestNeedsNote 对运行时段的依赖（80eba6b）
 - 补测试运行说明与 CI，清理临时目录与真实 sleep（fc38184）
 - **scripts**: 安装/更新脚本测试迁移到 pytest 并合并参数化（cda2c98）
@@ -52,6 +102,7 @@
 - 测试目录改用 export-ignore 排除，移除 .gitignore 中的 test 规则（c3df1b0）
 
 **其他**
+- Update particle.py（808e3a9）
 - 降低鱼粒子上浮高度避免顶部被裁切（de37ba9）
 - 修复鱼粒子水平居中，并将调试面板粒子特效改为扫描注册表（f0a7d08）
 - 钓鱼判定增加命中日志（f48405f）

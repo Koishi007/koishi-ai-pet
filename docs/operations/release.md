@@ -6,7 +6,7 @@
 
 - **版本号唯一真源是 `pyproject.toml` 的 `version`**；桌面端显示的版本、启动时的更新检查都读它
   （`pet/version_check.py` 会退回包元数据读取）。
-- tag 形式是 `vX.Y.Z`（仓库现存 26 个，从 `v1.0.0` 到 `v1.5.4`），与 `pyproject.toml` 的 `version` 对应。
+- tag 形式是 `vX.Y.Z`（仓库现存 27 个，从 `v1.0.0` 到 `v1.6.0`），与 `pyproject.toml` 的 `version` 对应。
 - 版本号不出现在生成文档里（`docs/reference/*` 不含版本号，否则每次发版文档检查都会判定为不一致）。
 
 ## 2. 用户侧获取新版本的过程
