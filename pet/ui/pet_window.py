@@ -461,6 +461,8 @@ class PetWindow(TransparentWindow):
         self._await_fall_down = False
         # 长时间下落先播跌倒动作，播完再恢复队列
         if fall_seconds >= config.FALL_DOWN_SECONDS and self.pet_actions.fall_down():
+            if self._agent:
+                self._agent.note_event("fall_down")
             self._await_fall_down = True
             return
         self.action_queue.resume()
