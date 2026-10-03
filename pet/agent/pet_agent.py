@@ -109,8 +109,11 @@ class PetAgent(QObject):
         """返回最近事件快照（脑线程构造上下文时读取）。"""
         return list(self._recent_events)
 
-    def note_once_event(self, kind: str, text: str):
-        """记录一个只注入一轮的事件，被上下文消费一次后即消失"""
+    def note_once_event(self, kind: str, text: str = ""):
+        """记录一个只注入一轮的事件，被上下文消费一次后即消失。
+
+        text 留空则由 ContextBuilder 查内置文案表。
+        """
         self._once_events.append((kind, time.time(), text))
         if len(self._once_events) > self._ONCE_EVENT_MAX:
             del self._once_events[: len(self._once_events) - self._ONCE_EVENT_MAX]
