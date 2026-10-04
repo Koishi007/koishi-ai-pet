@@ -48,7 +48,9 @@
 兜底时长 = `max(最小秒数, 目标 × 比例)`，区间 = `(最小, max(最小+5, 兜底×2))`。
 `duration` **只对 `loop: true` 的动画生效**；其它动作即使模型写了数字也只能当 kwargs 传下去。
 
-**队列与重力联动**：下落中队列 `pause()`，落地 `resume()` 并喷 `dust`；动作结束时先手动跑一次重力 tick，
+**队列与重力联动**：下落中队列 `pause()`，落地 `resume()` 并喷 `dust`；
+下落超过 `FALL_DOWN_SECONDS`（默认 1.5s）时，落地先播 `fall_down`，播完再 `resume()`；
+动作结束时先手动跑一次重力 tick，
 若恰好进入下落则「先结算、再挂起」；拖拽时 `pause + clear + grabbed()`，松手 `resume()`，
 速度超过 80px/s 会以 `apply_impulse()` 抛出。
 
@@ -66,6 +68,10 @@
   队列打 warning 后跳过该动作；启动时若连 `idle` 都没有，会退化成 emoji 占位。
 - 动作配置**有缓存且没有失效入口**：换素材或改 json 之后需要重启才生效。
 - 呼吸姿态的位移只向上抬、缩放锚点由绘制方保证在脚底。
+- **无意识化**：连续 `idle` 达到 `UNCONSCIOUS_IDLE_SECONDS` 秒（默认 60，高级设置）后，
+  `scheduled_tasks._unconsciousness` 播放 `unconsciousness`；该动画 `loop: false`，播完停在最后一帧，
+  `_update_idle_anim` 与重力只切换 `idle` / `grim`，不会覆盖它。
+  有队列动作、下落中、非 `idle`、LLM 交互（`is_llm_loading`）期间，计时复位。
 
 ## 4. 粒子
 
@@ -102,5 +108,5 @@
 
 1. **属性动画路径没有超时保护**，只靠 `finished`；新增位移动作时需自行保证结束时机。
 2. **动作名 ≠ 素材目录名**：`walk` → `walk_left/right`、`drive` → `driving_left/right`；
-   `fade_in/fade_out` 没有素材；`idle` / `falling` / `grim` / `grabbed` 是系统动画，不在动作注册表里。
+   `fade_in/fade_out` 没有素材；`idle` / `falling` / `grim` / `grabbed` / `unconsciousness` 是系统动画，不在动作注册表里。
 3. **`grim` 不是模型能输出的动作**，由理智驱动切换。

@@ -1,9 +1,10 @@
 import ctypes
 import logging
 import sys
+import time
 
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QMenu
-from PySide6.QtCore import Qt, QPoint, QPointF, QDateTime, QTimer, QSize
+from PySide6.QtCore import Qt, QPoint, QPointF, QDateTime, QTimer, QSize, Property, QPropertyAnimation
 from PySide6.QtGui import QMouseEvent, QAction, QPainter, QPainterPath, QColor, QPen
 from pet.ui.base_window import TransparentWindow
 from pet.ui.pet_animations import PetAnimator
@@ -68,9 +69,16 @@ class StickyMenu(_FlatMenuBase):
 class _SpriteLabel(QLabel):
     """宠物贴图：按呼吸姿态绘制（上抬 + 缩放），不动窗口以免干扰重力判定。"""
 
+    # 点击 Q 弹的形变幅度
+    _TAP_SQUASH = 0.9
+    _TAP_OVERSHOOT = 1.03
+    _TAP_DURATION_MS = 450
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._pose: tuple[float, float, float] = (0, 1.0, 1.0)
+        self._tap_scale: float = 1.0
+        self._tap_anim: QPropertyAnimation | None = None
 
     def set_pose(self, dy: float, scale_x: float, scale_y: float):
         pose = (dy, scale_x, scale_y)
@@ -78,13 +86,39 @@ class _SpriteLabel(QLabel):
             self._pose = pose
             self.update()
 
+    def play_tap_bounce(self):
+        """单击（摸头）的 Q 弹：瞬时压扁后衰减回弹，与呼吸姿态相乘。"""
+        anim = QPropertyAnimation(self, b"tap_scale", self)
+        anim.setDuration(self._TAP_DURATION_MS)
+        anim.setKeyValueAt(0.0, self._TAP_SQUASH)
+        anim.setKeyValueAt(0.30, self._TAP_OVERSHOOT)
+        anim.setKeyValueAt(0.60, 0.97)
+        anim.setKeyValueAt(0.80, 1.02)
+        anim.setKeyValueAt(1.0, 1.0)
+        self._tap_scale = self._TAP_SQUASH  # 起手立即压扁，不等动画首帧
+        self.update()
+        anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
+        self._tap_anim = anim
+
+    def _get_tap_scale(self) -> float:
+        return self._tap_scale
+
+    def _set_tap_scale(self, value: float):
+        if value != self._tap_scale:
+            self._tap_scale = value
+            self.update()
+
+    tap_scale = Property(float, _get_tap_scale, _set_tap_scale)
+
     def paintEvent(self, event):
         pixmap = self.pixmap()
-        if self._pose == (0, 1.0, 1.0) or pixmap is None:
+        if pixmap is None or (self._pose == (0, 1.0, 1.0) and self._tap_scale == 1.0):
             super().paintEvent(event)
             return
 
         dy, scale_x, scale_y = self._pose
+        scale_x *= self._tap_scale
+        scale_y *= self._tap_scale
         # Qt6 的 QPixmap.width()/height() 返回设备像素，帧贴图带 DPR（高DPI适配），
         # 需除回逻辑像素再计算，否则 dpr>1 时贴图会画偏（站立呼吸时左右闪动）
         dpr = pixmap.devicePixelRatio() or 1.0
@@ -125,6 +159,8 @@ class PetWindow(TransparentWindow):
         self._event_reaction = False
         self._mouse_penetration = False  # 鼠标穿透开关，默认关
         self._outcomes_done: set[str] = set()  # 本轮已结算过产出的动作（每轮每个动作最多一条事件）
+        self._fall_started_at: float | None = None  # 本次下落起点（monotonic），落地时结算
+        self._await_fall_down = False               # 落地跌倒播放中，等它播完再恢复队列
         self._drag_history: list = []  # [(坐标点, 时间戳毫秒), ...]
         self._press_pos: QPoint | None = None  # 按下时的全局坐标
         self._click_timer = QTimer(self)       # 单击检测定时器
@@ -203,6 +239,7 @@ class PetWindow(TransparentWindow):
 
         self.pet_actions.gravity.falling_started.connect(self._on_falling_started)
         self.pet_actions.gravity.landed.connect(self._on_landed)
+        self.pet_anim.animation_finished.connect(self._on_anim_finished)
         self.action_queue.action_finished.connect(self._on_action_finished)
         self.pet_actions.gravity.standing_lost.connect(self._on_standing_lost)
 
@@ -255,6 +292,7 @@ class PetWindow(TransparentWindow):
     def _on_click_confirmed(self):
         """200ms 内无移动，判定为单击（摸头），并提升心理状态。"""
         self._press_pos = None
+        self.pet_label.play_tap_bounce()
         self.particles.spawn("hearts")
         if self._agent is not None:
             self._agent.note_head_pat()
@@ -446,11 +484,28 @@ class PetWindow(TransparentWindow):
         self._memory_window.raise_()
 
     def _on_falling_started(self):
+        self._fall_started_at = time.monotonic()
+        self._await_fall_down = False  # 上一次的等待随新一次下落作废
         self.action_queue.pause()
 
     def _on_landed(self):
-        self.action_queue.resume()
         self.particles.spawn("dust")
+        fall_seconds = time.monotonic() - self._fall_started_at if self._fall_started_at else 0.0
+        self._fall_started_at = None
+        self._await_fall_down = False
+        # 长时间下落先播跌倒动作，播完再恢复队列
+        if fall_seconds >= config.FALL_DOWN_SECONDS and self.pet_actions.fall_down():
+            if self._agent:
+                self._agent.note_once_event("fall_down")
+            self._await_fall_down = True
+            return
+        self.action_queue.resume()
+
+    def _on_anim_finished(self, action: str):
+        if action == "fall_down" and self._await_fall_down:
+            self._await_fall_down = False
+            logger.info("[PetWindow] fall_down 播放完成，恢复动作队列")
+            self.action_queue.resume()
 
     def on_action_batch_started(self):
         """agent 一轮动作即将入队：清空产出标记。

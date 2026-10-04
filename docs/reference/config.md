@@ -107,6 +107,7 @@
 | `CONTEXT_HALF_LIFE_S` | int | 1800 | 是 |  | 上下文评分半衰期(秒) |
 | `CONTEXT_PERSIST_ENABLED` | bool | true | 是 |  | 启用上下文持久化 |
 | `CONTEXT_TOKEN_BUDGET` | int | 8192 | 是 |  | 上下文token预算上限 |
+| `FALL_DOWN_SECONDS` | float | 1.5 | 是 |  | 下落超过该秒数，落地先播放 fall_down 动作再恢复队列 |
 | `FOOD_ENABLED` | bool | true |  | 是 | 觅食总开关（桌宠自主生成食物并吃掉），修改后需重启生效 |
 | `FOOD_TTL_SECONDS` | int | 300 |  |  | 觅食食物存活秒数，超时未吃自动消失 |
 | `INTERACT_FED_PROMPT` | str | `""` | 是 |  | 喂食交互的自定义 prompt 模板 |
@@ -122,6 +123,7 @@
 | `SCHEDULER_FAST_MS` | int | 1000 | 是 |  | fast_tick 间隔(毫秒) |
 | `SCHEDULER_IDLE_TIMEOUT_MS` | int | 900000 | 是 |  | 空闲超时(毫秒)，超过后进入休眠 |
 | `SCHEDULER_SLOW_MS` | int | 300000 | 是 |  | slow_tick 间隔(毫秒) |
+| `UNCONSCIOUS_IDLE_SECONDS` | int | 60 | 是 |  | 连续待机秒数，超过后自动播放无意识化动作 |
 
 ### category = `connection`
 
@@ -154,4 +156,4 @@
 - `hidden`：`true` 表示不在界面显示，只能直接编辑 `settings.json`
 - `enum` / `minimum` / `maximum`：取值约束，会写进 `settings-schema.json`
 
-共 90 项（其中 37 项未在界面列出）。
+共 92 项（其中 39 项未在界面列出）。

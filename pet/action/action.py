@@ -455,6 +455,14 @@ class PetActions(QObject):
     def dejected(self, *_, **_kw):
         self._anim.play("dejected")
 
+    def unconsciousness(self, *_, **_kw):
+        """无意识化，动作名 `unconsciousness`（系统动画，不进 registry）。"""
+        self._anim.play("unconsciousness")
+
+    def fall_down(self, *_, **_kw):
+        """跌倒；返回是否播放成功，素材缺失时调用方不应等待它结束。"""
+        return self._anim.play("fall_down")
+
     def _fade_in_safety_check(self):
         try:
             if self._window.windowOpacity() < 0.1:

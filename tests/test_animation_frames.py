@@ -186,3 +186,25 @@ class TestBreathWiring:
 
         animator.stop()
         assert seen[-1] == (0, 1.0, 1.0)
+
+
+class TestUnconsciousness:
+    """无意识化素材：6 帧 one-shot，播完停在最后一帧。"""
+
+    def test_loads_as_six_frame_one_shot(self, animator):
+        data = animator._load_action("unconsciousness")
+        assert data is not None
+        assert data["loop"] is False
+        assert len(data["frames"]) == 6
+        assert len(data["tick_plan"]) == 6
+
+    def test_holds_last_frame_after_finish(self, animator):
+        shown = []
+        animator.frame_changed.connect(shown.append)
+        assert animator.play("unconsciousness")
+        for _ in range(sum(animator._tick_plan)):
+            animator._next_frame()
+        assert animator.is_playing is False
+        # 信号传值会重建 python 包装，用 cacheKey 判定是同一份像素
+        assert shown[-1].cacheKey() == animator._frames[-1].cacheKey()
+        animator.stop()

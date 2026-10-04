@@ -54,6 +54,8 @@ _KEY_META = {
     "ACTION_TIMEOUT_MS":         {"type": "int",      "default": 90000,         "category": "behavior",   "needs_restart": False, "hidden": True,  "description": "单个动作超时(毫秒)"},
     "BRAIN_STUCK_TIMEOUT":       {"type": "int",      "default": 300,           "category": "behavior",   "needs_restart": False, "hidden": True,  "description": "脑线程无进展超时(秒)：autonomous/interacting 状态下持续无输出、无工具进展超过该时长才判定挂死（进行中的游戏对局不计时）"},
     "SANITY_CRITICAL_THRESHOLD": {"type": "int",      "default": 20,            "category": "behavior",   "needs_restart": False, "hidden": False, "description": "理智临界值，低于该值导致异常行为"},
+    "UNCONSCIOUS_IDLE_SECONDS":  {"type": "int",      "default": 60,            "category": "behavior",   "needs_restart": False, "hidden": True,  "description": "连续待机秒数，超过后自动播放无意识化动作"},
+    "FALL_DOWN_SECONDS":         {"type": "float",    "default": 1.5,           "category": "behavior",   "needs_restart": False, "hidden": True,  "description": "下落超过该秒数，落地先播放 fall_down 动作再恢复队列"},
     "MOOD_DECAY_ENABLED":        {"type": "bool",     "default": True,          "category": "behavior",   "needs_restart": False, "hidden": False, "description": "心理数值自然衰减总开关（愉悦/好感随时间回落）"},
     "MOOD_JOY_BASELINE":         {"type": "float",    "default": 50.0,          "category": "behavior",   "needs_restart": False, "hidden": False, "description": "愉悦度回归基线，长期不互动会缓慢回落到此值"},
     "MOOD_JOY_DECAY_PER_TICK":   {"type": "float",    "default": 2.0,           "category": "behavior",   "needs_restart": False, "hidden": False, "description": "愉悦度每 tick 回归速率(点/300秒)"},
