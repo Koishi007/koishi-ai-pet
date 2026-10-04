@@ -4,7 +4,7 @@ import sys
 import time
 
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QMenu
-from PySide6.QtCore import Qt, QPoint, QPointF, QDateTime, QTimer, QSize
+from PySide6.QtCore import Qt, QPoint, QPointF, QDateTime, QTimer, QSize, Property, QPropertyAnimation
 from PySide6.QtGui import QMouseEvent, QAction, QPainter, QPainterPath, QColor, QPen
 from pet.ui.base_window import TransparentWindow
 from pet.ui.pet_animations import PetAnimator
@@ -69,9 +69,16 @@ class StickyMenu(_FlatMenuBase):
 class _SpriteLabel(QLabel):
     """宠物贴图：按呼吸姿态绘制（上抬 + 缩放），不动窗口以免干扰重力判定。"""
 
+    # 点击 Q 弹的形变幅度
+    _TAP_SQUASH = 0.9
+    _TAP_OVERSHOOT = 1.03
+    _TAP_DURATION_MS = 450
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._pose: tuple[float, float, float] = (0, 1.0, 1.0)
+        self._tap_scale: float = 1.0
+        self._tap_anim: QPropertyAnimation | None = None
 
     def set_pose(self, dy: float, scale_x: float, scale_y: float):
         pose = (dy, scale_x, scale_y)
@@ -79,13 +86,39 @@ class _SpriteLabel(QLabel):
             self._pose = pose
             self.update()
 
+    def play_tap_bounce(self):
+        """单击（摸头）的 Q 弹：瞬时压扁后衰减回弹，与呼吸姿态相乘。"""
+        anim = QPropertyAnimation(self, b"tap_scale", self)
+        anim.setDuration(self._TAP_DURATION_MS)
+        anim.setKeyValueAt(0.0, self._TAP_SQUASH)
+        anim.setKeyValueAt(0.30, self._TAP_OVERSHOOT)
+        anim.setKeyValueAt(0.60, 0.97)
+        anim.setKeyValueAt(0.80, 1.02)
+        anim.setKeyValueAt(1.0, 1.0)
+        self._tap_scale = self._TAP_SQUASH  # 起手立即压扁，不等动画首帧
+        self.update()
+        anim.start(QPropertyAnimation.DeletionPolicy.DeleteWhenStopped)
+        self._tap_anim = anim
+
+    def _get_tap_scale(self) -> float:
+        return self._tap_scale
+
+    def _set_tap_scale(self, value: float):
+        if value != self._tap_scale:
+            self._tap_scale = value
+            self.update()
+
+    tap_scale = Property(float, _get_tap_scale, _set_tap_scale)
+
     def paintEvent(self, event):
         pixmap = self.pixmap()
-        if self._pose == (0, 1.0, 1.0) or pixmap is None:
+        if pixmap is None or (self._pose == (0, 1.0, 1.0) and self._tap_scale == 1.0):
             super().paintEvent(event)
             return
 
         dy, scale_x, scale_y = self._pose
+        scale_x *= self._tap_scale
+        scale_y *= self._tap_scale
         # Qt6 的 QPixmap.width()/height() 返回设备像素，帧贴图带 DPR（高DPI适配），
         # 需除回逻辑像素再计算，否则 dpr>1 时贴图会画偏（站立呼吸时左右闪动）
         dpr = pixmap.devicePixelRatio() or 1.0
@@ -259,6 +292,7 @@ class PetWindow(TransparentWindow):
     def _on_click_confirmed(self):
         """200ms 内无移动，判定为单击（摸头），并提升心理状态。"""
         self._press_pos = None
+        self.pet_label.play_tap_bounce()
         self.particles.spawn("hearts")
         if self._agent is not None:
             self._agent.note_head_pat()
