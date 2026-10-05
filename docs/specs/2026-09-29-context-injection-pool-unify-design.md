@@ -90,10 +90,6 @@
 
 ## §3 不改动：`get_multi_turn_messages` 的条数裁剪保持原样
 
-**这一节是自我纠错记录**：设计确认阶段曾判断"合并上限后池子不变式保证
-`len(self._context) <= CONTEXT_HISTORY_ENTRIES` 恒成立，条数裁剪分支变成死代码"，这个判断是错的，
-写实施计划时核对代码发现了问题，记录在这里避免以后重复遇到同一问题。
-
 `_evict_context()` 并不是"超过上限立刻裁到上限"，它有一个**批量淘汰的软上限**：
 
 ```python
@@ -106,29 +102,23 @@ if len(normal_chats) > soft_limit:      # 只有超过 base_limit+6 才会触发
 ```
 
 也就是说池子大小实际在 `_MAX_ENTRIES` 到 `_MAX_ENTRIES + 6` 之间震荡，不是硬顶在 `_MAX_ENTRIES`。
-这是有意为之的批处理（避免每加一条普通对话就触发一次 LLM 摘要），跟 §2 的合并方案无关，
-合并前后都存在。
+这是有意为之的批处理（避免每加一条普通对话就触发一次 LLM 摘要）。
 
-**修正后的结论**：合并上限后，`get_multi_turn_messages` 的"条数超限"分支**不是死代码**，
-在池子处于震荡区间（`_MAX_ENTRIES` 到 `+6` 之间，一个淘汰周期里大部分时间都在这个区间）时
-会被真实触发，"优先淘汰普通对话、按分数保护摘要/系统消息"这段兜底逻辑一直在被使用，
-不应该删除。**本次改动不修改这个方法**，保持现状。
+**结论**：`get_multi_turn_messages` 的"条数超限"分支**不是死代码**，在池子处于震荡区间
+（`_MAX_ENTRIES` 到 `+6` 之间，一个淘汰周期里大部分时间都在这个区间）时会被真实触发，
+"优先淘汰普通对话、按分数保护摘要/系统消息"这段兜底逻辑一直在被使用，**不修改**。
 
-核心修复的结论不受影响：合并前，这个"选不进"的缺口最多 21 条（池子上限 30 减注入上限 15 的
-上界附近），要等池子长到 30 触发一次批量淘汰才清空一批；合并后，缺口收窄到最多 6 条
-（`_EVICT_BATCH_SIZE`），且必定在最多 6 轮之内被下一次批量淘汰扫进摘要队列。
-"缺口无限期存在"变成了"缺口有界且很快自愈"，反逻辑的根源（永久不可见、没有摘要通道）被解决，
-只是没有做到缺口严格等于 0 - 而严格等于 0 本来就不是必要目标（见 §2 表格）。
+只合并上限时，"选不进"的缺口最多 6 条（`_EVICT_BATCH_SIZE`），且必定在最多 6 轮之内被下一次
+批量淘汰扫进摘要队列：缺口有界且很快自愈，永久不可见、没有摘要通道的根源被解决。缺口严格等于 0
+不是必要目标（见 §2 表格），清零见 §3 补记。
 
-### §3 补记（Task 3）：把注入的条数上限提到池子常态上界，缺口清零
+### §3 补记：把注入的条数上限提到池子常态上界，缺口清零
 
-上面"缺口收窄到最多 6 条、最多 6 轮自愈"只是把问题变小，没有清零。清零的落点在**调用方**：
-`context_builder.py` 的两处多轮构建入口原本传 `max_entries=config.CONTEXT_HISTORY_ENTRIES`（15），
-而池子允许长到 15+6=21 - 池子明明能装 21 条，注入却始终卡在 15，震荡区间里最旧的最多 6 条
-每轮都被排除、最多要等 6 轮才被下一次批量淘汰扫进摘要队列。改成传
-`BrainMixin._MAX_POOL_ENTRIES`（= `_MAX_ENTRIES + _EVICT_BATCH_SIZE`，本设计新增的只读属性）后，
-常态下池子不会超过这个上界，池内条目全部入选本轮，缺口清零。`get_multi_turn_messages` 内部
-一行未动（本节结论不变：那段裁剪逻辑留着当安全网）。
+清零的落点在**调用方**：`context_builder.py` 的两处多轮构建入口传
+`max_entries=BrainMixin._MAX_POOL_ENTRIES`（= `_MAX_ENTRIES + _EVICT_BATCH_SIZE` 的只读属性）。
+池子能装到 21 条，注入上限若卡在 15，震荡区间里最旧的最多 6 条每轮都被排除、最多要等 6 轮才被
+下一次批量淘汰扫进摘要队列；传池子上界后，常态下池内条目全部入选本轮，缺口清零。
+`get_multi_turn_messages` 内部一行未动（本节结论不变：那段裁剪逻辑留着当安全网）。
 
 **关键细节**：`_MAX_ENTRIES + _EVICT_BATCH_SIZE` **不是池子的硬上界**，它是"普通对话"
 配额的软上限。`_evict_context` 里 `base_limit = max(0, _MAX_ENTRIES - len(summaries) - len(tool_calls))`，
@@ -153,8 +143,8 @@ if len(normal_chats) > soft_limit:      # 只有超过 base_limit+6 才会触发
 `normal_chats[:base_limit]`（取保留项）在 `base_limit` 为负时是 Python 的负数切片语义
 （"从倒数第 N 个开始"），不等于"淘汰全部普通对话"的意图，会导致淘汰了不该淘汰的那一批。
 
-这个问题合并前就存在（今天要 27+ 条工具调用/30 分钟才会触发），合并后触发门槛降到约 12 条/30
-分钟，更容易碰到，因此一并修复，只加一处 `max(0, ...)`：
+触发门槛约 12 条工具调用/30 分钟（摘要数 + 近期工具调用数超过统一上限 15），因此一并修复，
+只加一处 `max(0, ...)`：
 
 ```diff
 -        base_limit = self._MAX_ENTRIES - len(summaries) - len(tool_calls)
@@ -175,8 +165,6 @@ if len(normal_chats) > soft_limit:      # 只有超过 base_limit+6 才会触发
 | `tests/test_context_pipeline.py` | 见 §6 |
 
 不涉及 `pet/brain/behavior.py`（`_llm_summarize`/`_flush_pending_summaries` 逻辑不变）。
-`pet/brain/context_builder.py` 原判为"调用代码本身不用改"，被 §3 补记推翻：只把
-`CONTEXT_HISTORY_ENTRIES` 当注入上限仍会留下最多 6 条的缺口，两处调用要改传 `_MAX_POOL_ENTRIES`。
 
 ## §6 测试改动
 
@@ -198,14 +186,6 @@ if len(normal_chats) > soft_limit:      # 只有超过 base_limit+6 才会触发
 
 ## §7 不在本次范围内
 
-- **`docs/architecture` 分支**上 `docs/subsystems/context-and-prompts.md`、
-  `docs/reference/config.md`（`scripts/gen_docs.py` 生成物）里关于"候选池 30 / 注入 15"的描述，
-  需要在该分支同步更新，但这是独立的文档工作流，本次不动，只在这里记一句提醒。
-  > **落地后补记**：文档同步已在执行分支 `fix/context-pool-unify` 一并完成。
-  > 核对时发现上面这句判断有偏差 - `docs/subsystems/context-and-prompts.md` §2 原本**只字未提**
-  > 候选池容量与淘汰/摘要链路（`grep 候选池|CONTEXT_MAX` 在 `docs/` 下零命中），所以不是"改数字"，
-  > 而是补了一条新描述（池子容量 = 每轮注入上限、淘汰必进摘要队列、池子在 15～21 之间震荡）；
-  > `docs/reference/config.md` 用 `scripts/gen_docs.py` 重生成，删除两个 key 所在行，条目数 92 → 90。
 - token 预算（`CONTEXT_TOKEN_BUDGET`）触发的单轮裁剪：条目仍留在池内、下一轮可能重新入选，
   不属于本次要解决的"永久不可见"问题，不新增摘要通道。
 - `_score_entry` 的打分权重、`CONTEXT_HALF_LIFE_S`、`_EVICT_BATCH_SIZE`、摘要去重阈值
@@ -214,9 +194,9 @@ if len(normal_chats) > soft_limit:      # 只有超过 base_limit+6 才会触发
 
 ## §8 风险与验证
 
-- **行为变化**：普通对话进入摘要的节奏会变快（池子从 30 缩到 15，装满更快），符合"淘汰=摘要"
-  这个不变式被严格执行后的自然结果；工具调用密集时段这个效应更明显（§4 已同步修复负数切片问题，
-  不会出现"该淘汰的没淘汰"）。
+- **行为变化**：普通对话进入摘要的节奏变快（池子装满更快），是"淘汰=摘要"这个不变式被严格执行
+  后的自然结果；工具调用密集时段这个效应更明显（§4 已同步修复负数切片问题，不会出现"该淘汰的
+  没淘汰"）。
 - **验证方式**：`pytest tests/test_context_pipeline.py` 全绿；手动跑一轮长对话（触发至少一次
   `_evict_context` 淘汰 + 一次 `_llm_summarize`），检查 `logs/koishiai.log` 里
   `[BrainMixin] evicted` 与 `[Behavior] flushed pending summaries` 的时序衔接是否符合预期

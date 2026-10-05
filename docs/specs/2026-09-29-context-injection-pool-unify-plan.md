@@ -4,11 +4,7 @@
 
 **Goal:** 合并候选池容量上限（`CONTEXT_MAX_ENTRIES`）与每轮注入上限（`CONTEXT_HISTORY_ENTRIES`）为同一个值，消除"淘汰出候选池的历史反而能被摘要看到、留在池子里选不进本轮的历史却永远看不到"的反逻辑现象，把"选不进本轮"的缺口清零，并修复一个被这次合并放大了触发概率的相邻负数切片 bug。
 
-**Architecture:** 不引入新文件、不改变任何调用方签名。改 `pet/brain/base.py::BrainMixin` 的属性定义（合并两个上限、新增池子常态上界 `_MAX_POOL_ENTRIES`）、`_evict_context()` 里的一行防御性 clamp、`pet/brain/context_builder.py` 两处多轮构建入口传的 `max_entries`，以及配置/UI 里两个已经没有代码路径读取（或即将变得多余）的 key。
-
-> **Task 3 是后追加的**（见下方 Task 3 与 spec §3 补记）：Task 1/2 只把缺口从"最多 21 条、无限期"
-> 缩到"最多 6 条、最多 6 轮自愈"，Task 3 才把它清零。上面 Goal/Architecture 一段原本只描述前两个
-> 任务、并写着"不修改 `context_builder.py`"，已按 Task 3 的实际改动修正。
+**Architecture:** 不引入新文件、不改变任何调用方签名。改 `pet/brain/base.py::BrainMixin` 的属性定义（合并两个上限、新增池子常态上界 `_MAX_POOL_ENTRIES`）、`_evict_context()` 里的一行防御性 clamp、`pet/brain/context_builder.py` 两处多轮构建入口传的 `max_entries`，以及配置/UI 里两个无代码路径读取的 key。
 
 **Tech Stack:** Python 3.11+、pytest。沿用 `tests/test_context_pipeline.py` 里已有的 `_brain()` / `_entry()` 测试辅助函数，以及本仓库统一使用的 `monkeypatch.setattr(config, "KEY", value)` 惯例（参见 `tests/test_llm_resilience.py`）。
 
@@ -17,10 +13,10 @@
 ## Global Constraints
 
 - 合并后的统一上限沿用 `CONTEXT_HISTORY_ENTRIES` 现有默认值 **15**，不改变默认的每轮上下文体验（spec §2）。
-- `pet/brain/base.py::get_multi_turn_messages` 方法体本次**不改动** - 它的条数裁剪逻辑不是死代码，仍在被真实触发，删掉会丢失"优先保护摘要/系统消息"的行为（spec §3，这一节记录了一次自我纠错，务必先读）。
+- `pet/brain/base.py::get_multi_turn_messages` 方法体本次**不改动** - 它的条数裁剪逻辑不是死代码，仍在被真实触发，删掉会丢失"优先保护摘要/系统消息"的行为（spec §3）。
 - 不修改 `pet/brain/behavior.py`（`_llm_summarize` / `_flush_pending_summaries` 逻辑不变）。
-- `pet/brain/context_builder.py` 原判为"调用参数不变"，被 Task 3 推翻：两处多轮构建入口的
-  `max_entries` 改为 `self._brain._MAX_POOL_ENTRIES`（其余一行不动）。
+- `pet/brain/context_builder.py` 两处多轮构建入口的 `max_entries` 传
+  `self._brain._MAX_POOL_ENTRIES`（其余一行不动）。
 - 不修改 `docs/architecture` 分支上的子系统文档、`_score_entry` 打分权重、`CONTEXT_HALF_LIFE_S`、`_EVICT_BATCH_SIZE`、摘要去重阈值 `_DEDUP_THRESHOLD`、长期记忆系统 `pet/brain/memory.py`（spec §7 明确排除，不在本计划范围内）。
 
 ---
@@ -43,7 +39,7 @@
 
 ```python
 class TestPoolCapUnified:
-    """CONTEXT_MAX_ENTRIES 已合并进 CONTEXT_HISTORY_ENTRIES，不再是独立上限。"""
+    """池子容量与每轮注入上限同源：都取 CONTEXT_HISTORY_ENTRIES。"""
 
     def test_max_entries_follows_history_entries_config(self, monkeypatch):
         monkeypatch.setattr(config, "CONTEXT_HISTORY_ENTRIES", 5)
@@ -55,9 +51,9 @@ class TestPoolCapUnified:
         brain = _brain([])
         for i in range(20):
             brain.add_context(role="assistant", content=f"消息{i}")
-        # 池子在 _MAX_ENTRIES 到 _MAX_ENTRIES+_EVICT_BATCH_SIZE 之间震荡（见 spec §3），
-        # 不会再无限增长到旧的 CONTEXT_MAX_ENTRIES=30
-        assert brain.context_count() <= brain._MAX_ENTRIES + BrainMixin._EVICT_BATCH_SIZE
+        # 池子上界 = 配置值 + 批量淘汰软上限（见 spec §3）；
+        # 断言直接对照配置值而非 brain._MAX_ENTRIES，避免用被测实现自证其行为。
+        assert brain.context_count() <= config.CONTEXT_HISTORY_ENTRIES + BrainMixin._EVICT_BATCH_SIZE
 
     def test_orphan_config_keys_removed(self):
         with pytest.raises(AttributeError):
@@ -251,10 +247,9 @@ git commit -m "fix(context): _evict_context 的 base_limit 加下界，避免负
 
 ## Task 3: 每轮注入覆盖池子常态上界，把残留缺口清零
 
-> 追加任务，执行前补写。动机见 spec §3 补记：Task 1/2 之后池子在 `_MAX_ENTRIES` 到
-> `_MAX_ENTRIES + _EVICT_BATCH_SIZE` 之间震荡，而 `context_builder.py` 两处调用仍固定传
-> `CONTEXT_HISTORY_ENTRIES`，震荡区间里最旧的最多 6 条每轮都被条数裁剪排除，要等下一次
-> 批量淘汰才进摘要队列。既然池子本身就是一个有界容器，注入的条数上限就该取池子的常态上界。
+> 动机见 spec §3 补记：池子在 `_MAX_ENTRIES` 到 `_MAX_ENTRIES + _EVICT_BATCH_SIZE` 之间震荡，
+> `context_builder.py` 两处调用若固定传 `CONTEXT_HISTORY_ENTRIES`，震荡区间里最旧的最多 6 条
+> 每轮都被条数裁剪排除。既然池子本身就是一个有界容器，注入的条数上限就该取池子的常态上界。
 
 **Files:**
 - Modify: `pet/brain/base.py`（新增只读属性 `_MAX_POOL_ENTRIES`）
@@ -334,39 +329,4 @@ git commit -m "fix(context): 每轮注入按池子常态上界取条数，清零
 
 ---
 
-## 执行记录
 
-分支 `fix/context-pool-unify`，三个 Task 各自一个提交（`e3debcf` / `ac52560` / `352c4fb`）。
-
-**与计划的偏差 1**：Task 1 Step 1 的 `test_pool_size_stays_bounded_by_history_entries` 原文断言
-`brain.context_count() <= brain._MAX_ENTRIES + _EVICT_BATCH_SIZE`。旧实现下 `_MAX_ENTRIES` 读的是
-`CONTEXT_MAX_ENTRIES=30`，上界 36，20 条写入恒成立 - 这个断言用被测实现自证其行为，**改动前就是绿的**，
-没有起到 TDD 的失败验证作用（Step 2 预期里写的 `assert 20 <= 11` 与代码实际行为不符）。已改为对照
-`config.CONTEXT_HISTORY_ENTRIES + BrainMixin._EVICT_BATCH_SIZE`，改动前稳定失败、改动后通过。
-
-**与计划的偏差 2**：`CONTEXT_HISTORY_ENTRIES` 的 description 由「每轮注入上下文数量上限」改为
-「每轮注入上下文数量上限(同时也是候选池容量)」 - 它现在实际承担两个职责，字段说明若不提一句，
-读 `settings-schema.json` 的人不会知道它还是池子容量。计划 Step 3 给的替换文本里没包含这一处，
-属于执行时的补充。
-
-**与计划的偏差 3（Task 3，重要）**：Task 3 的动因里有一句推断是错的 - "池子本身已经是一个最多到
-`_MAX_ENTRIES + _EVICT_BATCH_SIZE` 的有界容器，传这个上界后条数裁剪分支会**数值上必然闲置**"。
-实测推翻：工具调用没有独立条数配额，`base_limit = max(0, _MAX_ENTRIES - len(summaries) - len(tool_calls))`
-算的是**普通对话**的配额，摘要 + 近期工具调用占满 `_MAX_ENTRIES` 之后普通对话配额归零、工具调用条数不受该配额约束：
-
-```
-连写 25 条 [工具调用] → 池子 = 25 条（上界 21）
-```
-
-准确的不变式是"`摘要数 + 近期工具调用数 ≤ _MAX_ENTRIES` 时池子 ≤ `_MAX_ENTRIES + _EVICT_BATCH_SIZE`"。
-所以 Task 3 的收益是**常态下缺口清零**（S+T ≤ 15，实测 20 条普通对话跑到 `pool=6`、注入 6 条，
-`_MAX_ENTRIES = 5`，确实处在震荡区间内），工具调用密集时条数裁剪仍会真实触发、继续当安全网。
-`_MAX_POOL_ENTRIES` 的 docstring 与 spec §3 补记都按这个修正后的口径写，没留下"池子必然不超过它"
-的错误断言。
-
-**Step 7 的验证**：`grep "CONTEXT_MAX_ENTRIES\|CONTEXT_MAX_SUMMARIES" pet/ tests/` 只剩
-`tests/test_context_pipeline.py` 里刻意断言这两个 key 已不存在的用例。
-
-**全量测试**：Task 2 完成后 `pytest tests/` → 401 passed / 3 skipped，另有两个 `tests/test_docs.py`
-用例因「新增 `docs/specs/` 未登记 + `docs/reference/config.md` 未重生成」而红，已在随后的文档提交里修掉；
-Task 3 完成后 → `tests/test_context_pipeline.py` 26 passed，全量 406 passed / 3 skipped。

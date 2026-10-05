@@ -1,4 +1,4 @@
-"""game 层 游戏注册"""
+"""游戏层 — 四个回合制小游戏的注册与导出。"""
 
 from pet.game.gamebase import GAME, Game, GameBase
 

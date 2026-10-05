@@ -50,8 +50,8 @@
 | `pet/db.py` | 数据库路径管理 — 集中管理 pet.db 路径与统一连接配置。 | `get_db_path()` `get_conn()` |
 | `pet/food/__init__.py` | food 层 — 需求驱动的本能行为（觅食）。 |  |
 | `pet/food/food.py` | 觅食本能 — 需求驱动的自主觅食行为（satiety 低时触发）。 | `pick_emoji()` `name_of()` `FoodManager` |
-| `pet/game/__init__.py` | game 层 游戏注册 |  |
-| `pet/game/gamebase.py` | Game 基类 | `Game` `GameBase` |
+| `pet/game/__init__.py` | 游戏层 — 四个回合制小游戏的注册与导出。 |  |
+| `pet/game/gamebase.py` | 游戏对局基类与全局对局容器 GAME。 | `Game` `GameBase` |
 | `pet/game/guess_number.py` | 猜数字游戏 — 1-100 随机目标，7 次内猜中算赢。 | `GuessNumberGame` |
 | `pet/game/rps.py` | 猜拳游戏 — 石头剪刀布，三局两胜。 | `RockPaperScissorsGame` |
 | `pet/game/tic_tac_toe.py` | 井字棋游戏 — 3x3 棋盘，开局随机决定先后手（X 先手）。 | `TicTacToeGame` |
@@ -113,7 +113,7 @@
 | `pet/ui/twenty_questions_panel.py` | 二十问面板 — 桌宠提问猜东西，用户在面板点击"是/否/不确定"作答， | `TwentyQuestionsPanel` |
 | `pet/version_check.py` | 启动时版本检查 | `get_local_version()` `_CheckWorker` `UpdateChecker` |
 | `pet/version_utils.py` | 版本号解析与比较的纯逻辑。 | `strip_v()` `ver_newer()` |
-| `pet/voice/__init__.py` | 语音输入模块 |  |
+| `pet/voice/__init__.py` | 语音层 — 全局热键、麦克风采集与讯飞听写编排。 |  |
 | `pet/voice/hotkey_manager.py` | 全局热键管理器，使用 pynput 监听按键。 | `HotkeyManager` |
 | `pet/voice/mic_capture.py` | 麦克风 PCM 采集模块 | `MicCapture` |
 | `pet/voice/voice_session.py` | 语音会话编排：麦克风采集 → 讯飞识别 | `VoiceSession` |
