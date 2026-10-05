@@ -64,7 +64,8 @@ class ScheduledTasks:
         if win:
             pet_x = win.x()
             pet_y = win.y()
-        self._agent._async_brain(self._agent._autonomous_pipeline, pet_x, pet_y)
+        snap = self._agent.window_snapshot()  # 回调由 QTimer 在主线程触发，在此取快照
+        self._agent._async_brain(self._agent._autonomous_pipeline, pet_x, pet_y, snap)
 
     def _brain_watchdog(self):
         """检测脑线程占用状态挂死（autonomous/interacting 无进展超时）并强制恢复"""

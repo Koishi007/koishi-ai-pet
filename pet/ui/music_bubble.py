@@ -6,6 +6,7 @@ from pathlib import Path
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QBoxLayout, QProgressBar
 from PySide6.QtCore import Qt, QSize, QTimer, QPoint, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup
 from PySide6.QtGui import QIcon
+from pet.ui.styles import BUBBLE_ROW_MUSIC, bubble_column_y
 
 try:
     from pynput.keyboard import Key, Controller as KeyboardController
@@ -434,14 +435,13 @@ class MusicBubble(QWidget):
 
     def _update_position(self):
         pet_geo = self._pet_window.geometry()
-        screen = self.screen()
-        if screen:
-            screen_right = screen.availableGeometry().right()
-        else:
-            screen_right = 9999
+        # 取宠物所在屏
+        screen = self._pet_window.screen() or self.screen()
+        geo = screen.availableGeometry() if screen else None
+        screen_right = geo.right() if geo else 9999
 
         bw = self.width()
-        y = pet_geo.top() + 85  # Chat(+5) → Feed(+45) → Music(+85)
+        y = bubble_column_y(pet_geo.top(), BUBBLE_ROW_MUSIC, self.height(), geo)
 
         if pet_geo.right() + bw + 10 > screen_right:
             x = pet_geo.left() - bw + 20
@@ -449,6 +449,9 @@ class MusicBubble(QWidget):
         else:
             x = pet_geo.right() - 20
             self._layout.setDirection(QBoxLayout.Direction.LeftToRight)
+        if geo:
+            x = max(geo.left(), min(x, geo.right() - bw))
+            y = max(geo.top(), min(y, geo.bottom() - self.height()))
         self.move(x, y)
 
     def enterEvent(self, event):

@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QGroupBox, QTextEdit, QLabel, QLineEdit,
     QFormLayout, QCheckBox, QFrame, QComboBox, QListWidget,
-    QGridLayout,
+    QGridLayout, QScrollArea, QApplication,
 )
 from datetime import datetime
 
@@ -14,7 +14,7 @@ from pet.ui.styles import (
     ICON_PATH, WINDOW_QSS, PANEL_QSS, BUTTON_QSS, BUTTON_PRIMARY_QSS,
     BUTTON_DANGER_QSS, INPUT_HIGHLIGHT_QSS, COMBOBOX_QSS, TEXTEDIT_QSS,
     LIST_QSS, CHECKBOX_QSS, LABEL_SECONDARY_QSS, LABEL_MONO_QSS,
-    SCROLLBAR_QSS,
+    SCROLLBAR_QSS, SCROLL_AREA_TRANSPARENT_QSS,
     _COLOR_BG, _COLOR_BORDER_DARK, _COLOR_TEXT_TITLE, _COLOR_TEXT_MUTED, _COLOR_DANGER,
     make_minimize_button, make_close_button, ensure_taskbar_icon,
 )
@@ -47,9 +47,16 @@ class DebugWindow(QWidget):
 
         self.setWindowTitle("调试面板")
         self.setObjectName("FlatWindow")
-        self.setMinimumSize(1000, 850)
-        self.setMaximumSize(1000, 850)
-        self.resize(1000, 850)
+        # 可用区可能小于 1000×850（高缩放、小屏），尺寸按可用区收敛，超出内容由滚动区承载
+        avail = QApplication.primaryScreen().availableGeometry()
+        w = min(1000, max(360, avail.width() - 40))
+        h = min(850, max(320, avail.height() - 40))
+        # 下限可能高于可用区，尺寸再按可用区封顶
+        w, h = min(w, avail.width()), min(h, avail.height())
+        self.setMinimumSize(w, h)
+        self.setMaximumSize(w, h)
+        self.resize(w, h)
+        self.move(avail.center() - self.rect().center())
 
         # 无边框 + 圆角
         self.setWindowFlags(
@@ -67,7 +74,7 @@ class DebugWindow(QWidget):
         self.setStyleSheet(
             PANEL_QSS + BUTTON_QSS + BUTTON_PRIMARY_QSS +
             INPUT_HIGHLIGHT_QSS + COMBOBOX_QSS + TEXTEDIT_QSS + LIST_QSS +
-            CHECKBOX_QSS
+            CHECKBOX_QSS + SCROLL_AREA_TRANSPARENT_QSS
         )
 
         self._pos_timer = QTimer(self)
@@ -130,12 +137,20 @@ class DebugWindow(QWidget):
         header.mouseMoveEvent = self._header_move
         self._drag_pos: QPoint | None = None
 
-        body = QHBoxLayout()
+        # 窗口收敛后主体会超出可视区
+        body_host = QWidget()
+        body = QHBoxLayout(body_host)
+        body.setContentsMargins(0, 0, 0, 0)
         left = QVBoxLayout()
         right = QVBoxLayout()
         body.addLayout(left, 1)
         body.addLayout(right, 1)
-        root.addLayout(body, 1)
+
+        body_scroll = QScrollArea()
+        body_scroll.setWidgetResizable(True)
+        body_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        body_scroll.setWidget(body_host)
+        root.addWidget(body_scroll, 1)
 
 
         anim_group = QGroupBox("动画测试")
@@ -362,7 +377,6 @@ class DebugWindow(QWidget):
         particle_group = QGroupBox("粒子特效测试")
         particle_layout = QVBoxLayout(particle_group)
 
-        # 扫描 ParticleWidget 注册的全部特效，新增特效无需改这里
         PARTICLE_COLS = 4
         pbtn_grid = QGridLayout()
         for i, fx in enumerate(ParticleWidget.effect_names()):

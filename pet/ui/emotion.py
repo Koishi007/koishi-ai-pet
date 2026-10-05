@@ -146,8 +146,10 @@ class EmotionBubble(QLabel):
         else:
             x = target_pos.x() + config.PET_WIDTH // 2 - 16
             y = target_pos.y() - config.PET_HEIGHT // 2 - 8
-        from PySide6.QtWidgets import QApplication
-        screen = QApplication.primaryScreen()
+        screen = pet.screen() if isinstance(pet, QWidget) else None
+        if screen is None:
+            from PySide6.QtWidgets import QApplication
+            screen = QApplication.primaryScreen()
         if screen:
             geo = screen.availableGeometry()
             x = max(geo.left(), min(x, geo.right() - self.width()))

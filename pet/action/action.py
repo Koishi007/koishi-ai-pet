@@ -10,6 +10,13 @@ from pet.action.gravity import GravitySystem
 logger = logging.getLogger(__name__)
 
 
+def _target_screen(window: QWidget):
+    """窗口所在屏幕；未挂到屏幕时退回主屏。"""
+    from PySide6.QtWidgets import QApplication
+    screen = window.screen()
+    return screen if screen is not None else QApplication.primaryScreen()
+
+
 class PetActions(QObject):
     """桌宠行为控制器 —— 管理复合动作。"""
 
@@ -34,8 +41,7 @@ class PetActions(QObject):
 
     def _clamp_pos(self, pos: QPoint) -> QPoint:
         """将坐标限制在屏幕可用范围内。"""
-        from PySide6.QtWidgets import QApplication
-        screen = QApplication.primaryScreen()
+        screen = _target_screen(self._window)
         if not screen:
             return pos
         geo = screen.availableGeometry()
@@ -196,7 +202,6 @@ class PetActions(QObject):
 
     def _driving_tick(self):
         """开车行驶 tick"""
-        from PySide6.QtWidgets import QApplication
         from pet.brain.window_detector import get_visible_windows, get_window_rect, is_window_occluded
 
         g = self.gravity
@@ -212,7 +217,7 @@ class PetActions(QObject):
             (self._walk_sign > 0 and new_x >= self._walk_target_x) or
             (self._walk_sign < 0 and new_x <= self._walk_target_x)
         )
-        screen = QApplication.primaryScreen()
+        screen = _target_screen(self._window)
         if screen:
             geo = screen.availableGeometry()
             hit_edge = (new_x <= geo.left()) or (new_x >= geo.right() - w)
@@ -382,8 +387,7 @@ class PetActions(QObject):
         dx = sign * distance
 
         # 限制不让弹跳弧线最高点超出屏幕上边界
-        from PySide6.QtWidgets import QApplication
-        screen = QApplication.primaryScreen()
+        screen = _target_screen(self._window)
         if screen:
             max_height = original_pos.y() - screen.availableGeometry().top()
             if height > max_height:

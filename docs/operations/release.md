@@ -57,7 +57,7 @@
 
 ## 3. 发布检查清单
 
-1. `python -m pytest` 全绿（CI 也会在 push 后跑一遍：ubuntu + windows）。
+1. `python -m pytest` 全量测试通过（CI 也会在 push 后跑一遍：ubuntu + windows）。
 2. `python scripts/gen_docs.py --check` 通过；手写文档（`docs/architecture.md`、
    `docs/glossary.md`、README）与本版本改动同步。
 3. 改 `pyproject.toml` 的 `version`。

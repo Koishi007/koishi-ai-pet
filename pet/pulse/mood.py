@@ -71,8 +71,6 @@ class Mood(QObject):
         self._last_activity_ts: float = 0.0  # 最近一次互动时间（防抖）
 
         # SQLite 持久化
-        # 构造期用充足 timeout 保证建表/加载不被并发写打断；
-        # 完成后收短 busy_timeout，save 在主线程 slow_tick 执行时最长只等 0.5s
         self._db_path = db_path or _DB_PATH
         self._conn = get_conn(self._db_path, timeout=5.0)
         self._lock = threading.Lock()

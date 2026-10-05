@@ -12,7 +12,7 @@
 
 ## 自检
 
-- [ ] `python -m pytest` 全绿
+- [ ] `python -m pytest` 全量测试通过
 - [ ] 改了配置项 / 动作 / 工具 / 粒子特效 / 提示词块？已运行 `python scripts/gen_docs.py`，且 `--check` 通过
 - [ ] 手写文档（`docs/architecture.md`、`docs/glossary.md`、`README.md`）随代码更新
 - [ ] 新增包已加进 `docs/architecture.md` 的模块职责表

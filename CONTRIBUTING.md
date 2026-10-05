@@ -78,9 +78,9 @@ python scripts/gen_docs.py --check  # 只校验
 ## 5. 分支与 PR
 
 - 分支命名：`feat/xxx`、`fix/xxx`、`docs/xxx`
-- 推送前：`python -m pytest` 全绿 + `python scripts/gen_docs.py --check` 通过
+- 推送前：`python -m pytest` 全量测试通过 + `python scripts/gen_docs.py --check` 通过
 - 本地落后远端时先用 merge/rebase 同步到最新 `dev` 再推，避免把冲突留给 review
-- PR 描述按模板填；CI 绿后再请求 review
+- PR 描述按模板填；CI 通过后再请求 review
 
 ## 6. 代码约定
 

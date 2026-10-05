@@ -5,6 +5,7 @@ from pathlib import Path
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLineEdit, QBoxLayout
 from PySide6.QtCore import Qt, QSize, QTimer, QPoint, Signal, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup, QEvent
 from PySide6.QtGui import QFont, QIcon
+from pet.ui.styles import BUBBLE_ROW_CHAT, bubble_column_y
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -303,14 +304,13 @@ class ChatBubble(QWidget):
 
     def _update_position(self):
         pet_geo = self._pet_window.geometry()
-        screen = self.screen()
-        if screen:
-            screen_right = screen.availableGeometry().right()
-        else:
-            screen_right = 9999
+        # 取宠物所在屏
+        screen = self._pet_window.screen() or self.screen()
+        geo = screen.availableGeometry() if screen else None
+        screen_right = geo.right() if geo else 9999
 
         bw = self.width()
-        y = pet_geo.top() + 5
+        y = bubble_column_y(pet_geo.top(), BUBBLE_ROW_CHAT, self.height(), geo)
 
         if pet_geo.right() + bw + 10 > screen_right:
             x = pet_geo.left() - bw + 20  # 左侧
@@ -318,6 +318,8 @@ class ChatBubble(QWidget):
         else:
             x = pet_geo.right() - 20      # 右侧
             self._layout.setDirection(QBoxLayout.Direction.LeftToRight)
+        if geo:
+            x = max(geo.left(), min(x, geo.right() - bw))
         self.move(x, y)
 
 

@@ -437,7 +437,6 @@ class Behavior(BrainMixin):
 class _BehaviorToolSession:
     """把 Behavior 的工具会话能力暴露给 run_tool_loop（协议见 pet/brain/tool_loop.py）。"""
 
-    # 元工具（工具发现/觅食/游戏类）不消耗实际工具调用轮次
     meta_tool_names = frozenset({
         "tool_search__search", "tool_search__list_groups",
         "food__spawn", "food__status",

@@ -105,8 +105,24 @@ class GravitySystem(QObject):
             self._last_anim_played = name
             self._anim.play(name)
 
+    def _screen(self):
+        """桌宠所在屏幕；窗口未挂到屏幕时退回主屏。
+
+        用主屏边界会把副屏的桌宠夹回主屏。
+        """
+        screen = self._window.screen()
+        return screen if screen is not None else QApplication.primaryScreen()
+
+    def _dpr(self) -> float:
+        """桌宠所在屏幕的 DPR。
+
+        Win32 窗口检测返回物理像素，换算须用同一块屏的 DPR。
+        """
+        screen = self._screen()
+        return screen.devicePixelRatio() if screen is not None else 1.0
+
     def _clamp_pos(self, pos):
-        screen = QApplication.primaryScreen()
+        screen = self._screen()
         if not screen:
             return pos
         geo = screen.availableGeometry()
@@ -116,13 +132,11 @@ class GravitySystem(QObject):
 
     def _to_logical(self, physical_val: float) -> float:
         """将 Win32 物理坐标转换为 Qt 逻辑坐标。"""
-        dpr = QApplication.primaryScreen().devicePixelRatio() if QApplication.primaryScreen() else 1.0
-        return physical_val / dpr
+        return physical_val / self._dpr()
 
     def _to_logical_rect(self, rect: tuple) -> tuple:
         """将 Win32 物理矩形转换为 Qt 逻辑矩形。"""
-        dpr = QApplication.primaryScreen().devicePixelRatio() if QApplication.primaryScreen() else 1.0
-        return tuple(v / dpr for v in rect)
+        return tuple(v / self._dpr() for v in rect)
 
     def _tick(self):
         if not self._enabled:
@@ -140,7 +154,7 @@ class GravitySystem(QObject):
         new_y = old_y + self._vy
 
         try:
-            screen = QApplication.primaryScreen()
+            screen = self._screen()
             if screen is None:
                 return
 
@@ -233,7 +247,7 @@ class GravitySystem(QObject):
         except Exception:
             logger.exception("[Gravity] _tick scan failed")
             if self._cached_effective_bottom is None:
-                s = QApplication.primaryScreen()
+                s = self._screen()
                 fb = s.availableGeometry().bottom() - self._window.height() if s else new_y
                 self._cached_effective_bottom = fb
                 effective_bottom = fb
@@ -271,7 +285,7 @@ class GravitySystem(QObject):
             self._timer.start(self._interval)
 
     def _tick_flick(self):
-        screen = QApplication.primaryScreen()
+        screen = self._screen()
         if screen is None:
             return
         geo = screen.availableGeometry()
