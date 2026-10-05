@@ -1,4 +1,4 @@
-"""Game 基类"""
+"""游戏对局基类与全局对局容器 GAME。"""
 
 import logging
 import time

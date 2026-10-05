@@ -434,9 +434,7 @@ class _MemoryRetriever(ABC):
                     params + [limit * 5]
                 ).fetchall()
             fill = [dict(r) for r in rows]
-            # 按 effective_importance 过滤和排序
-            # L3 不再被排除，靠 effective_importance 自然降权——
-            # 新鲜 L3（recency_factor 高）有机会进入，老 L3（衰减大）自然落选
+            # L3 不排除：靠 effective_importance 自然降权，新鲜 L3 有机会进入、老 L3 自然落选
             fill = [r for r in fill if self._effective_importance(r) >= 3.5]
             fill.sort(key=lambda r: self._effective_importance(r), reverse=True)
             for r in fill:
@@ -1187,8 +1185,7 @@ class VectorRetriever(_MemoryRetriever):
 
             id_to_row = {r["id"]: dict(r) for r in rows}
             ordered = [id_to_row[mid] for mid in memory_ids if mid in id_to_row]
-            # L3 不再被排除：靠 rerank_score 中的 effective_importance 自然降权，
-            # 但若语义高度相似（sim 高），L3 仍可逆袭进入结果
+            # L3 不排除：靠 rerank_score 中的 effective_importance 自然降权，语义高度相似时仍可进入结果
 
             # 加权重排序：相似度为主（0.7），effective_importance 归一化加权（0.2），时效性加权（0.1）
             now = datetime.now()

@@ -344,7 +344,7 @@ class Behavior(BrainMixin):
             if tool_calls_map:
                 # 不在此处调用 on_stream_end：保持气泡流不中断，
                 # on_stream_end 仅用于 speech 中断（多行 Speech 分开显示），
-                # 不在轮次间调用（流式轮次收尾不再调 on_stream_end）。
+                # 不在轮次间调用。
                 return self._handle_tool_calls(
                     messages, tool_calls_map, raw,
                     on_chunk=on_chunk, on_stream_end=on_stream_end, tag=tag,
@@ -375,7 +375,7 @@ class Behavior(BrainMixin):
                            enable_tools: bool | None = None,
                            thinking: bool | None = None,
                            cancel_check: callable = None) -> BehaviorOutput:
-        """执行 tool_calls 并循环直到 LLM 不再请求工具（实现见 pet/brain/tool_loop.py）。"""
+        """转发到 pet/brain/tool_loop.py 的 run_tool_loop。"""
         return run_tool_loop(
             messages, tool_calls_map, first_content, self.tool_session(cancel_check),
             on_chunk=on_chunk, on_stream_end=on_stream_end, tag=tag,

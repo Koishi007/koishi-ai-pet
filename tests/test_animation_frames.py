@@ -87,7 +87,7 @@ class TestBreathPose:
         assert max(scales) == pytest.approx(1.01)
 
     def test_volume_roughly_kept(self):
-        # 1.01 × 0.99 ≈ 1：像呼吸，而不是整体放大
+        # 1.01 × 0.99 ≈ 1：呼吸的缩放近似保体积
         _, sx, sy = PetAnimator._breath_pose(15, 2, 1.01, 0.99, 30)
         assert sx * sy == pytest.approx(1.0, abs=0.001)
 
@@ -98,7 +98,7 @@ class TestBreathPose:
         assert sy == pytest.approx(0.98)
 
     def test_single_pixel_amplitude_still_moves(self):
-        # 浮点连续位移：1px 振幅不再取整成 0/−1 两级方波，而是平滑起伏
+        # 浮点连续位移：1px 振幅下仍有 0 与 −1 之间的中间值
         offsets = [PetAnimator._breath_pose(t, 1, 1.0, 1.0, 30)[0] for t in range(30)]
         assert max(offsets) == pytest.approx(0.0, abs=1e-9)
         assert min(offsets) == pytest.approx(-1.0)

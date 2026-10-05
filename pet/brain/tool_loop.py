@@ -57,9 +57,7 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
                   speech_streamed: bool = False,
                   enable_tools: Optional[bool] = None,
                   thinking: Optional[bool] = None) -> BehaviorOutput:
-    """执行 tool_calls 并循环直到 LLM 不再请求工具。
-
-    tool_search / list_groups 等元工具不消耗 max_rounds 配额，
+    """tool_search / list_groups 等元工具不消耗 max_rounds 配额，
     仅当至少执行了一个非元工具时，才计入一轮。
     """
     executor = session.executor()

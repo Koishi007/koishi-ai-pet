@@ -42,7 +42,7 @@ class ContextBuilder:
         self._active_needs: dict[str, float] = {}  # 未满足需求: key → 起始时间戳
         self._recent_event_ids: set[int] = set()   # 上一轮注入的旧事 id，避免连续复读
 
-    # public API
+    # 公开接口
 
     def build_autonomous_decide(self, window_context: str, screenshot: bool = True) -> list[dict]:
         """自主决策模式的 messages（视觉／非视觉自动选择）"""
@@ -440,7 +440,7 @@ class ContextBuilder:
         return ("（你忽然想起来的旧事，可以顺着说一句，不必特意去做什么）\n"
                 + "\n".join(lines))
 
-    # internal
+    # 内部实现
 
     def _build_system(self, mode: str, task: str, user_message: str = "") -> str:
         """拼装 system prompt：感受描述 + 静态模板 + 记忆。"""

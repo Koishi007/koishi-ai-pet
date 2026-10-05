@@ -41,7 +41,7 @@ _local_version_cache: str | None = None
 
 
 def get_local_version() -> str:
-    """获取本地版本号"""
+    """读取本地版本号：优先 pyproject.toml，带进程内缓存。"""
     global _local_version_cache
     if _local_version_cache is not None:
         return _local_version_cache

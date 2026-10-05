@@ -191,7 +191,7 @@ class ToolRegistry:
         return FOOD.spawn(food_type)
 
     def _food_status(self) -> dict:
-        """food__status 工具实现（懒 import，避免注册表依赖行为层）。"""
+        """food__status 工具实现。"""
         from pet.food.food import FOOD
         return FOOD.status()
 

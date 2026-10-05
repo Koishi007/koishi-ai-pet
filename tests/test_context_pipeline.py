@@ -128,7 +128,7 @@ class TestMergeSystemHistory:
 
 
 class TestPoolCapUnified:
-    """CONTEXT_MAX_ENTRIES 已合并进 CONTEXT_HISTORY_ENTRIES，不再是独立上限。"""
+    """池子容量与每轮注入上限同源：都取 CONTEXT_HISTORY_ENTRIES。"""
 
     def test_max_entries_follows_history_entries_config(self, monkeypatch):
         monkeypatch.setattr(config, "CONTEXT_HISTORY_ENTRIES", 5)
@@ -140,8 +140,7 @@ class TestPoolCapUnified:
         brain = _brain([])
         for i in range(20):
             brain.add_context(role="assistant", content=f"消息{i}")
-        # 池子在 CONTEXT_HISTORY_ENTRIES 到 CONTEXT_HISTORY_ENTRIES+_EVICT_BATCH_SIZE 之间震荡
-        # （见 spec §3），不会再无限增长到旧的 CONTEXT_MAX_ENTRIES=30。
+        # 池子上界 = 配置值 + 批量淘汰软上限（见 spec §3）；
         # 断言直接对照配置值而非 brain._MAX_ENTRIES，避免用被测实现自证其行为。
         assert brain.context_count() <= config.CONTEXT_HISTORY_ENTRIES + BrainMixin._EVICT_BATCH_SIZE
 
@@ -199,7 +198,7 @@ class TestInjectionCoversWholePool:
         assert len(messages) == brain.context_count()
 
     def test_builders_request_whole_pool(self, monkeypatch):
-        """两个多轮构建入口传的必须是池子上界，而不是 CONTEXT_HISTORY_ENTRIES。"""
+        """两个多轮构建入口传的必须是池子上界 _MAX_POOL_ENTRIES。"""
         monkeypatch.setattr(config, "CONTEXT_HISTORY_ENTRIES", 5)
         brain = _brain([])
         seen: list[int] = []

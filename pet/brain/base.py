@@ -28,16 +28,15 @@ class BrainMixin:
     @property
     def _MAX_ENTRIES(self) -> int:
         # 候选池容量与每轮注入上限是同一个值：池内条目一定有机会入选本轮，
-        # 被淘汰的条目一定进摘要队列，不再存在"留在池里却永远选不进"的死区。
+        # 被淘汰的条目一定进摘要队列，不存在"留在池里却永远选不进"的死区。
         return config.CONTEXT_HISTORY_ENTRIES
 
     @property
     def _MAX_POOL_ENTRIES(self) -> int:
         """注入时该取多少条：池子在常态下的上界，即 `_evict_context` 的批量淘汰软上限。
 
-        传这个值而不是 `CONTEXT_HISTORY_ENTRIES`，池内条目才不会被一个比池子容量更小的数字
-        每轮排除——旧实现里池子允许长到 `_MAX_ENTRIES + _EVICT_BATCH_SIZE`，注入却只取
-        `_MAX_ENTRIES`，多出来的那几条既选不进本轮、又够不上淘汰，要等下一次批量淘汰才进摘要队列。
+        池子在 `_MAX_ENTRIES` 与 `_MAX_ENTRIES + _EVICT_BATCH_SIZE` 之间震荡，注入上限取
+        池子的常态上界，池内条目才不会被一个更小的数字每轮排除。
 
         注意这不是池子的硬上界：工具调用没有条数配额，最近 `CONTEXT_HALF_LIFE_S` 内的工具调用
         超过 `_MAX_ENTRIES` 减去摘要数时池子会突破它，此时 `get_multi_turn_messages` 的条数裁剪

@@ -12,7 +12,6 @@ class TodoListTool:
         self._storage = TodoStorage()
 
     def add(self, title: str) -> dict:
-        """添加待办事项。"""
         if not title or not title.strip():
             return {"error": "标题不能为空"}
         todo = self._storage.add(title=title.strip())
@@ -23,7 +22,6 @@ class TodoListTool:
         }
 
     def list_todos(self, status: str = "pending") -> dict:
-        """查询任务列表。"""
         items = self._storage.list(status=None if status == "all" else status)
         if not items:
             return {"summary": "没有待办事项。", "items": []}
@@ -48,14 +46,12 @@ class TodoListTool:
         }
 
     def delete(self, todo_id: int) -> dict:
-        """删除待办事项。"""
         ok = self._storage.delete(todo_id)
         if not ok:
             return {"error": f"未找到 id={todo_id} 的任务或删除失败"}
         return {"summary": f"已删除任务 #{todo_id}"}
 
     def update(self, todo_id: int, title: str = "") -> dict:
-        """修改待办标题。"""
         if not title or not title.strip():
             return {"error": "标题不能为空"}
         result = self._storage.update(todo_id, title.strip())
