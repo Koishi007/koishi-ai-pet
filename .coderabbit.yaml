@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: zh-CN
+
+reviews:
+  auto_review:
+    enabled: true
+    # base_branches 是追加集合，不替换默认分支；显式列出以避免默认分支判断不一致导致跳过
+    base_branches:
+      - "master"
+      - "dev"
