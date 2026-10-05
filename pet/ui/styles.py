@@ -436,6 +436,27 @@ QScrollArea > QWidget > QWidget {
 """
 
 
+# 宠物右侧按钮列的纵向偏移（相对宠物窗口顶部）
+BUBBLE_ROW_CHAT = 5
+BUBBLE_ROW_FEED = 45
+BUBBLE_ROW_MUSIC = 85
+
+
+def bubble_column_y(pet_top: int, row_offset: int, height: int, geo) -> int:
+    """按钮列中单个气泡的纵坐标。
+
+    列底按 BUBBLE_ROW_MUSIC + 本气泡高度估算：超出可用区时整列上移，
+    各自夹取会让三个气泡落到同一位置互相遮挡。
+    """
+    y = pet_top + row_offset
+    if geo is None:
+        return y
+    overflow = pet_top + BUBBLE_ROW_MUSIC + height - geo.bottom()
+    if overflow > 0:
+        y -= overflow
+    return max(geo.top(), y)
+
+
 def make_title_button(text: str, hover_color: str,
                       base_color: str = _COLOR_TEXT_MUTED,
                       text_color: str = "#fff",

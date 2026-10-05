@@ -6,6 +6,7 @@ from PySide6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLineEdit, QBox
 from PySide6.QtCore import Qt, QSize, QTimer, QPoint, Signal, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup, QEvent
 from PySide6.QtGui import QFont, QIcon
 from pet.config import config
+from pet.ui.styles import BUBBLE_ROW_FEED, bubble_column_y
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -255,7 +256,7 @@ class FeedBubble(QWidget):
         screen_right = geo.right() if geo else 9999
 
         bw = self.width()
-        y = pet_geo.top() + 45  # 位于 ChatBubble 下方，形成一列
+        y = bubble_column_y(pet_geo.top(), BUBBLE_ROW_FEED, self.height(), geo)
 
         if pet_geo.right() + bw + 10 > screen_right:
             x = pet_geo.left() - bw + 20  # 左侧
@@ -265,7 +266,6 @@ class FeedBubble(QWidget):
             self._layout.setDirection(QBoxLayout.Direction.LeftToRight)
         if geo:
             x = max(geo.left(), min(x, geo.right() - bw))
-            y = max(geo.top(), min(y, geo.bottom() - self.height()))
         self.move(x, y)
 
 

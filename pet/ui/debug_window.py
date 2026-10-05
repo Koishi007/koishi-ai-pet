@@ -51,6 +51,8 @@ class DebugWindow(QWidget):
         avail = QApplication.primaryScreen().availableGeometry()
         w = min(1000, max(360, avail.width() - 40))
         h = min(850, max(320, avail.height() - 40))
+        # 下限可能高于可用区，尺寸再按可用区封顶
+        w, h = min(w, avail.width()), min(h, avail.height())
         self.setMinimumSize(w, h)
         self.setMaximumSize(w, h)
         self.resize(w, h)

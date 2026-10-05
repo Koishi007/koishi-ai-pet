@@ -259,6 +259,8 @@ class SettingsWindow(QWidget):
         avail = QApplication.primaryScreen().availableGeometry()
         w = min(_W, max(360, avail.width() - 40))
         h = min(_H, max(320, avail.height() - 40))
+        # 下限可能高于可用区，尺寸再按可用区封顶
+        w, h = min(w, avail.width()), min(h, avail.height())
         self.resize(w, h)
         self.setFixedSize(w, h)
         pos = avail.center() - self.rect().center()

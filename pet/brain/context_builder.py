@@ -127,10 +127,12 @@ class ContextBuilder:
     _NEEDS_TASKS = frozenset({"autonomous", "chat"})
 
     @staticmethod
-    def build_window_context(pet_x: int, pet_y: int, pet_hwnd: int = 0, screen=None) -> str:
+    def build_window_context(pet_x: int, pet_y: int, pet_hwnd: int = 0,
+                             dpr: float = 1.0, screen_h: int = 1080) -> str:
         """探测屏幕窗口，生成供 LLM 使用的窗口上下文文本。
 
-        screen 传桌宠所在屏幕：Win32 窗口矩形是物理像素，换算与屏高阈值都依赖该屏的 DPR。
+        dpr 与 screen_h 由调用方在主线程从桌宠所在屏幕取好：Win32 窗口矩形是物理像素，
+        换算与跳跃阈值都依赖该屏，QScreen 不能跨线程访问。
         """
         try:
             from pet.brain.window_detector import get_visible_windows, is_window_occluded
@@ -138,17 +140,9 @@ class ContextBuilder:
         except Exception:
             return ""
 
-        if screen is None:
-            from PySide6.QtWidgets import QApplication
-            screen = QApplication.primaryScreen()
-            if screen is None:  # 无 GUI 时窗口坐标无从换算
-                return ""
-
         pet_w, pet_h = config.PET_WIDTH, config.PET_HEIGHT
-        dpr = screen.devicePixelRatio()
 
         # 跳跃阈值按屏幕可见高度比例计算（适配不同分辨率）
-        screen_h = screen.availableGeometry().height()
         _jump_ok = int(screen_h * 0.60)       # ≤60% 屏高 → 可跳
         _jump_hard = int(screen_h * 0.80)    # ≤80% 屏高 → 勉强可跳
 

@@ -149,14 +149,15 @@ class PetAgent(QObject):
                 return
 
             pet_x, pet_y = (self._pet_window.x(), self._pet_window.y()) if self._pet_window else (0, 0)
+            snap = self._window_snapshot()
 
             if stream:
-                self._async_brain(self._autonomous_pipeline, pet_x, pet_y)
+                self._async_brain(self._autonomous_pipeline, pet_x, pet_y, snap)
             else:
-                def _non_stream(px, py):
-                    wctx = self._window_context(px, py)
+                def _non_stream(px, py, snap):
+                    wctx = self._window_context(px, py, snap)
                     return self.behavior.autonomous_decide(wctx or "", screenshot=screenshot)
-                self._async_brain(_non_stream, pet_x, pet_y)
+                self._async_brain(_non_stream, pet_x, pet_y, snap)
 
         QTimer.singleShot(delay_ms, _execute)
 
@@ -213,16 +214,27 @@ class PetAgent(QObject):
             logger.debug(f"[PetAgent] duration for '{name}': {kw['duration']}s")
         self.action_requested.emit(name, tuple(arg_list), kw)
 
-    def _window_context(self, pet_x: int, pet_y: int) -> str:
-        """生成窗口上下文，句柄与屏幕取自桌宠窗口。"""
-        if not self._pet_window:
-            return self.behavior.ctx.build_window_context(pet_x, pet_y)
-        return self.behavior.ctx.build_window_context(
-            pet_x, pet_y, int(self._pet_window.winId()), self._pet_window.screen())
+    def _window_snapshot(self) -> tuple[int, float, int]:
+        """在主线程取桌宠窗口快照：(句柄, 所在屏 DPR, 屏可用高度)。
 
-    def _autonomous_pipeline(self, pet_x=0, pet_y=0):
+        QWidget 只能在 GUI 线程访问，脑线程要用的是纯数值。
+        """
+        if not self._pet_window:
+            return 0, 1.0, 1080
+        hwnd = int(self._pet_window.winId())
+        screen = self._pet_window.screen()
+        if screen is None:
+            return hwnd, 1.0, 1080
+        return hwnd, screen.devicePixelRatio(), screen.availableGeometry().height()
+
+    def _window_context(self, pet_x: int, pet_y: int, snap=None) -> str:
+        """用主线程取好的快照生成窗口上下文。"""
+        hwnd, dpr, screen_h = snap or (0, 1.0, 1080)
+        return self.behavior.ctx.build_window_context(pet_x, pet_y, hwnd, dpr, screen_h)
+
+    def _autonomous_pipeline(self, pet_x=0, pet_y=0, snap=None):
         self.behavior.note_autonomous_round()
-        window_context = self._window_context(pet_x, pet_y)
+        window_context = self._window_context(pet_x, pet_y, snap)
         context = window_context if window_context else ""
 
         stream_started = False
@@ -355,22 +367,23 @@ class PetAgent(QObject):
         if self._pet_window:
             pet_x = self._pet_window.x()
             pet_y = self._pet_window.y()
+        snap = self._window_snapshot()
 
         self._play_loading(is_play_loading)
 
-        self._async_brain(self._chat_pipeline, message, pet_x, pet_y, thinking, enable_tools)
+        self._async_brain(self._chat_pipeline, message, pet_x, pet_y, snap, thinking, enable_tools)
         logger.info(f"[PetAgent] user chat:{message}")
         try:
             self.conversation_store.add("user", message)
         except Exception:
             pass
 
-    def _chat_pipeline(self, message: str, pet_x: int, pet_y: int,
+    def _chat_pipeline(self, message: str, pet_x: int, pet_y: int, snap=None,
                        thinking: bool | None = None,
                        enable_tools: bool | None = None):
         self.behavior.add_context(role="user", content=message)
 
-        window_context = self._window_context(pet_x, pet_y)
+        window_context = self._window_context(pet_x, pet_y, snap)
         context = window_context if window_context else "当前无窗口信息"
 
         stream_started = False
