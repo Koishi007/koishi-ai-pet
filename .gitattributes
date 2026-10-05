@@ -22,5 +22,6 @@ CONTRIBUTING.md export-ignore
 # 仓库元数据
 /.gitignore export-ignore
 /.gitattributes export-ignore
+/.coderabbit.yaml export-ignore
 
 # CHANGELOG.md 保留：终端用户也看版本变更
