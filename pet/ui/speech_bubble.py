@@ -266,18 +266,29 @@ class SpeechBubble(QLabel):
         super().hide()
 
 
+    def _clamp_to_pet_screen(self, pos: QPoint) -> QPoint:
+        """夹到宠物所在屏幕：副屏原点不是 (0,0)，且可能为负坐标。"""
+        pet = self.parent()
+        screen = pet.screen() if isinstance(pet, QWidget) else None
+        if screen is None:
+            return pos
+        geo = screen.availableGeometry()
+        x = max(geo.left(), min(pos.x(), geo.right() - self.width()))
+        y = max(geo.top(), min(pos.y(), geo.bottom() - self.height()))
+        return QPoint(x, y)
+
     def _head_position(self, target_pos: QPoint) -> QPoint:
         pet_top = target_pos.y() - config.PET_HEIGHT // 2
         head_bottom = pet_top + config.PET_HEIGHT // 3
         x = target_pos.x() - self.width() // 2
         y = head_bottom - self.height()
-        return QPoint(max(0, x), max(0, y))
+        return self._clamp_to_pet_screen(QPoint(x, y))
 
     def _final_position(self, target_pos: QPoint) -> QPoint:
         x = target_pos.x() - self.width() // 2
         pet_top = target_pos.y() - config.PET_HEIGHT // 2
         y = pet_top - self.height() - 15
-        return QPoint(max(0, x), max(0, y))
+        return self._clamp_to_pet_screen(QPoint(x, y))
 
     def _on_anim_finished(self):
         self.setWindowOpacity(1.0)

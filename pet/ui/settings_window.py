@@ -255,9 +255,14 @@ class SettingsWindow(QWidget):
 
         self.setObjectName("settingsWindow")
         self.setWindowTitle("设置")
-        self.resize(_W, _H)
-        self.setFixedSize(_W, _H)
-        self.move(QApplication.primaryScreen().geometry().center() - self.rect().center())
+        # 可用高度可能不足 720（高缩放、小屏），尺寸按可用区收敛，超出内容由各页滚动区承载
+        avail = QApplication.primaryScreen().availableGeometry()
+        w = min(_W, max(360, avail.width() - 40))
+        h = min(_H, max(320, avail.height() - 40))
+        self.resize(w, h)
+        self.setFixedSize(w, h)
+        pos = avail.center() - self.rect().center()
+        self.move(max(avail.left(), pos.x()), max(avail.top(), pos.y()))
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.Window

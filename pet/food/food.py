@@ -69,7 +69,7 @@ class FoodManager(QObject):
         # 宠物位置快照
         self._pet_x = 0
         self._pet_y = 0
-        self._screen_geo = (0, 0, 1920, 1080)
+        self._screen_geo = (0, 0, 0, 0)  # 就绪前占位；_dy_info 只读 top，按屏幕原点处理
         self._snapshot_ready = False
 
         self._food: Optional[dict] = None
@@ -105,13 +105,14 @@ class FoodManager(QObject):
         if win is None:
             return
         try:
-            screen = QApplication.primaryScreen()
+            screen = win.screen() or QApplication.primaryScreen()
+            if screen is None:
+                return
+            geo = screen.availableGeometry()
             with self._lock:
                 self._pet_x = win.x()
                 self._pet_y = win.y()
-                if screen is not None:
-                    geo = screen.availableGeometry()
-                    self._screen_geo = (geo.left(), geo.top(), geo.right(), geo.bottom())
+                self._screen_geo = (geo.left(), geo.top(), geo.right(), geo.bottom())
                 self._snapshot_ready = True
         except RuntimeError:
             pass

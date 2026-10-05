@@ -249,11 +249,10 @@ class FeedBubble(QWidget):
 
     def _update_position(self):
         pet_geo = self._pet_window.geometry()
-        screen = self.screen()
-        if screen:
-            screen_right = screen.availableGeometry().right()
-        else:
-            screen_right = 9999
+        # 取宠物所在屏
+        screen = self._pet_window.screen() or self.screen()
+        geo = screen.availableGeometry() if screen else None
+        screen_right = geo.right() if geo else 9999
 
         bw = self.width()
         y = pet_geo.top() + 45  # 位于 ChatBubble 下方，形成一列
@@ -264,6 +263,9 @@ class FeedBubble(QWidget):
         else:
             x = pet_geo.right() - 20      # 右侧
             self._layout.setDirection(QBoxLayout.Direction.LeftToRight)
+        if geo:
+            x = max(geo.left(), min(x, geo.right() - bw))
+            y = max(geo.top(), min(y, geo.bottom() - self.height()))
         self.move(x, y)
 
 

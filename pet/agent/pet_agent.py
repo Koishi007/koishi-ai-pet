@@ -154,7 +154,7 @@ class PetAgent(QObject):
                 self._async_brain(self._autonomous_pipeline, pet_x, pet_y)
             else:
                 def _non_stream(px, py):
-                    wctx = self.behavior.ctx.build_window_context(px, py, int(self._pet_window.winId()) if self._pet_window else 0)
+                    wctx = self._window_context(px, py)
                     return self.behavior.autonomous_decide(wctx or "", screenshot=screenshot)
                 self._async_brain(_non_stream, pet_x, pet_y)
 
@@ -212,9 +212,17 @@ class PetAgent(QObject):
                 kw["duration"] = default_duration(name)
             logger.debug(f"[PetAgent] duration for '{name}': {kw['duration']}s")
         self.action_requested.emit(name, tuple(arg_list), kw)
+
+    def _window_context(self, pet_x: int, pet_y: int) -> str:
+        """生成窗口上下文，句柄与屏幕取自桌宠窗口。"""
+        if not self._pet_window:
+            return self.behavior.ctx.build_window_context(pet_x, pet_y)
+        return self.behavior.ctx.build_window_context(
+            pet_x, pet_y, int(self._pet_window.winId()), self._pet_window.screen())
+
     def _autonomous_pipeline(self, pet_x=0, pet_y=0):
         self.behavior.note_autonomous_round()
-        window_context = self.behavior.ctx.build_window_context(pet_x, pet_y, int(self._pet_window.winId()) if self._pet_window else 0)
+        window_context = self._window_context(pet_x, pet_y)
         context = window_context if window_context else ""
 
         stream_started = False
@@ -362,7 +370,7 @@ class PetAgent(QObject):
                        enable_tools: bool | None = None):
         self.behavior.add_context(role="user", content=message)
 
-        window_context = self.behavior.ctx.build_window_context(pet_x, pet_y, int(self._pet_window.winId()) if self._pet_window else 0)
+        window_context = self._window_context(pet_x, pet_y)
         context = window_context if window_context else "当前无窗口信息"
 
         stream_started = False

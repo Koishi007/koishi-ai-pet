@@ -4,7 +4,7 @@ import sys
 import time
 
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QMenu
-from PySide6.QtCore import Qt, QPoint, QPointF, QDateTime, QTimer, QSize, Property, QPropertyAnimation
+from PySide6.QtCore import Qt, QPoint, QPointF, QDateTime, QTimer, QSize, Property, QPropertyAnimation, Signal
 from PySide6.QtGui import QMouseEvent, QAction, QPainter, QPainterPath, QColor, QPen
 from pet.ui.base_window import TransparentWindow
 from pet.ui.pet_animations import PetAnimator
@@ -69,6 +69,8 @@ class StickyMenu(_FlatMenuBase):
 class _SpriteLabel(QLabel):
     """宠物贴图：按呼吸姿态绘制（上抬 + 缩放），不动窗口以免干扰重力判定。"""
 
+    dpr_outdated = Signal(float)  # 窗口 DPR 与帧贴图生成时不一致时发出
+
     # 点击 Q 弹的形变幅度
     _TAP_SQUASH = 0.9
     _TAP_OVERSHOOT = 1.03
@@ -112,6 +114,10 @@ class _SpriteLabel(QLabel):
 
     def paintEvent(self, event):
         pixmap = self.pixmap()
+        # 帧 DPR 与窗口不符时上报，由上层重建；本帧照常绘制，不等新帧
+        if pixmap is not None and not pixmap.isNull():
+            if abs(pixmap.devicePixelRatio() - self.devicePixelRatioF()) > 0.01:
+                self.dpr_outdated.emit(self.devicePixelRatioF())
         if pixmap is None or (self._pose == (0, 1.0, 1.0) and self._tap_scale == 1.0):
             super().paintEvent(event)
             return
@@ -140,6 +146,10 @@ class _SpriteLabel(QLabel):
 
 
 class PetWindow(TransparentWindow):
+    # 拖拽抓取点在窗口内的相对位置：水平居中、纵向 16%（头部）
+    _GRAB_RATIO_X = 0.5
+    _GRAB_RATIO_Y = 0.16
+
     def __init__(self):
         super().__init__()
         self._setup_ui()
@@ -163,6 +173,7 @@ class PetWindow(TransparentWindow):
         self._await_fall_down = False               # 落地跌倒播放中，等它播完再恢复队列
         self._drag_history: list = []  # [(坐标点, 时间戳毫秒), ...]
         self._press_pos: QPoint | None = None  # 按下时的全局坐标
+        self._frame_dpr_rebuild: float = 0.0  # 上一次按 DPR 重建帧时的窗口 DPR
         self._click_timer = QTimer(self)       # 单击检测定时器
         self._click_timer.setSingleShot(True)
         self._click_timer.setInterval(200)      # 200ms 内无移动 → 判定为单击
@@ -233,6 +244,7 @@ class PetWindow(TransparentWindow):
         self.pet_anim = PetAnimator(parent=self)
         self.pet_anim.frame_changed.connect(self.pet_label.setPixmap)
         self.pet_anim.pose_changed.connect(self.pet_label.set_pose)
+        self.pet_label.dpr_outdated.connect(self._on_frame_dpr_outdated)
         self.particles = ParticleWidget(self)
         self.pet_actions = PetActions(self, self.pet_anim, parent=self)
         self.action_queue = ActionQueue(self.pet_actions, parent=self)
@@ -261,6 +273,13 @@ class PetWindow(TransparentWindow):
         font.setPointSize(48)
         self.pet_label.setFont(font)
 
+    def _on_frame_dpr_outdated(self, dpr: float):
+        """帧贴图 DPR 与窗口不符时按新 DPR 重建。"""
+        if dpr == self._frame_dpr_rebuild:
+            return
+        self._frame_dpr_rebuild = dpr
+        self.pet_anim.rebuild_frames()
+
     def mousePressEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.LeftButton:
             self._press_pos = event.globalPosition().toPoint()
@@ -278,7 +297,10 @@ class PetWindow(TransparentWindow):
 
     def _start_drag(self):
         """确认为拖拽：激活抓取状态。"""
-        self._grab_local = QPoint(62, 20)
+        self._grab_local = QPoint(
+            round(config.PET_WIDTH * self._GRAB_RATIO_X),
+            round(config.PET_HEIGHT * self._GRAB_RATIO_Y),
+        )
         self.pet_actions.gravity.enable(False)
         self.action_queue.pause()
         self.action_queue.clear()

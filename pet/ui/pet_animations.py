@@ -24,7 +24,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, QObject, Signal
 from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QWidget
 
 from pet.config import config
 
@@ -68,6 +68,7 @@ class PetAnimator(QObject):
         self._duration_timer.timeout.connect(self._on_duration_end)
 
         self._cache: dict[str, dict] = {}      # action → {frames, tick_plan, loop, bob_*}
+        self._cache_dpr: dict[str, float] = {}  # action → 生成帧时所用 DPR
 
 
     def play(self, action: str, duration: float | None = None) -> bool:
@@ -147,8 +148,35 @@ class PetAnimator(QObject):
     def _calc_tick_interval(self) -> int:
         return max(1, round(1000 / config.PET_FPS))
 
+    def _frame_dpr(self) -> float:
+        """帧贴图按所属窗口所在屏幕的 DPR 生成；未挂到窗口时退回主屏。
+
+        帧物理尺寸须等于窗口物理尺寸，否则跨屏后被重采样。
+        """
+        parent = self.parent()
+        screen = parent.screen() if isinstance(parent, QWidget) else None
+        if screen is None:
+            screen = QApplication.primaryScreen()
+        return screen.devicePixelRatio() if screen is not None else 1.0
+
+    def rebuild_frames(self):
+        """按当前屏幕 DPR 重建当前动作的帧，保留播放位置；窗口跨屏或系统缩放改变后调用。"""
+        if not self._current_action:
+            return
+        self._cache.clear()
+        self._cache_dpr.clear()
+        data = self._load_action(self._current_action)
+        if not data:
+            return
+        self._frames = data["frames"]
+        self._tick_plan = data["tick_plan"]
+        self._current_frame = min(self._current_frame, len(self._frames) - 1)
+        self._tick_in_frame = 0
+        self.frame_changed.emit(self._frames[self._current_frame])
+
     def _load_action(self, action: str) -> dict | None:
-        if action in self._cache:
+        dpr = self._frame_dpr()
+        if action in self._cache and self._cache_dpr.get(action) == dpr:
             return self._cache[action]
 
         cfg = self._load_action_config(action)
@@ -169,10 +197,10 @@ class PetAnimator(QObject):
             if pixmap.isNull():
                 logger.warning(f"Failed to load image: {action}/{f}")
                 return None
-            dpr = QApplication.primaryScreen().devicePixelRatio() if QApplication.primaryScreen() else 1.0
+            # 非整数 DPR（125%/150%）下 int 截断会与窗口物理尺寸差 1 像素，帧被重采样后边缘发虚
             pixmap = pixmap.scaled(
-                int(config.PET_WIDTH * dpr),
-                int(config.PET_HEIGHT * dpr),
+                round(config.PET_WIDTH * dpr),
+                round(config.PET_HEIGHT * dpr),
                 Qt.AspectRatioMode.IgnoreAspectRatio,
                 Qt.TransformationMode.SmoothTransformation,
             )
@@ -188,6 +216,7 @@ class PetAnimator(QObject):
             "breath": self._parse_breath(cfg, action),
         }
         self._cache[action] = data
+        self._cache_dpr[action] = dpr
         return data
 
     @staticmethod
@@ -218,10 +247,9 @@ class PetAnimator(QObject):
 
     @staticmethod
     def _sanitize_config(cfg: dict, frame_count: int, action: str) -> dict:
-        """把不合法的时间配置就地修正成可用值。
+        """把不合法的时间配置修正成可用值：比例不合法则等分，tick 不够则抬到帧数。
 
-        以前这里非法就返回 False，会让整个动作静默失效、动作队列一路干等到超时。
-        改成能修就修：比例不合法则等分，tick 不够则抬到帧数。
+        返回新的 dict，不修改入参。
         """
         cfg = dict(cfg)
 
@@ -257,7 +285,7 @@ class PetAnimator(QObject):
     def _parse_breath(cfg: dict, action: str) -> dict:
         """读取 breath 配置：位移 px、横纵缩放、周期 tick。
 
-        位移上限 4px、缩放限制 0.5~2.0：贴图 1:1 撑满窗口，动作幅度过大就出去了。
+        位移上限 4px、缩放限制 0.5~2.0：贴图 1:1 撑满窗口，幅度更大就出界。
         """
         rest = {"amplitude": 0, "scale_x": 1.0, "scale_y": 1.0, "period_ticks": 0}
         breath = cfg.get("breath") or {}

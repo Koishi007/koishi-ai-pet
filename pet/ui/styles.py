@@ -392,7 +392,7 @@ QFrame[frameShape="4"] {
 }
 """
 
-# 标签栏（设置界面用）
+# 标签栏
 
 TAB_BAR_QSS = """
 QTabWidget::pane {
@@ -418,6 +418,20 @@ QTabBar::tab:selected {
 }
 QTabBar::tab:hover:!selected {
     background: #e8e8e8;
+}
+"""
+
+# 滚动容器透明：窗口自绘圆角背景
+SCROLL_AREA_TRANSPARENT_QSS = """
+QScrollArea {
+    background: transparent;
+    border: none;
+}
+QScrollArea > QWidget {
+    background: transparent;
+}
+QScrollArea > QWidget > QWidget {
+    background: transparent;
 }
 """
 
