@@ -56,9 +56,7 @@ class Vitals(QObject):
         super().__init__(parent)
         self._thresholds = thresholds or Thresholds()
 
-        # SQLite 持久化（与 MemoryStore 共用 pet.db，不同表）
-        # 构造期用充足 timeout 保证建表/加载不被并发写打断；
-        # 完成后收短 busy_timeout，save 在主线程 slow_tick 执行时最长只等 0.5s
+        # SQLite 持久化
         self._db_path = db_path or _DB_PATH
         self._conn = get_conn(self._db_path, timeout=5.0)
         self._lock = threading.Lock()

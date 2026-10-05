@@ -197,7 +197,7 @@ if len(normal_chats) > soft_limit:      # 只有超过 base_limit+6 才会触发
 - **行为变化**：普通对话进入摘要的节奏变快（池子装满更快），是"淘汰=摘要"这个不变式被严格执行
   后的自然结果；工具调用密集时段这个效应更明显（§4 已同步修复负数切片问题，不会出现"该淘汰的
   没淘汰"）。
-- **验证方式**：`pytest tests/test_context_pipeline.py` 全绿；手动跑一轮长对话（触发至少一次
+- **验证方式**：`pytest tests/test_context_pipeline.py` 通过；手动跑一轮长对话（触发至少一次
   `_evict_context` 淘汰 + 一次 `_llm_summarize`），检查 `logs/koishiai.log` 里
   `[BrainMixin] evicted` 与 `[Behavior] flushed pending summaries` 的时序衔接是否符合预期
   （淘汰即排队，排队后很快被摘要，不再有条目卡在"选不进也没被摘要"的中间态）。

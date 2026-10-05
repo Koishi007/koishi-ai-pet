@@ -163,7 +163,6 @@ def llm_stream_with_retry(create_stream_fn, tag: str = "LLM",
             return stream
         except CreateStreamTimeout as e:
             last_exception = e
-            # 已是最后一次尝试：直接放弃，不做无意义的备选切换
             switched = False
             if attempt + 1 < total_attempts and on_retry is not None:
                 try:
@@ -189,7 +188,7 @@ def llm_stream_with_retry(create_stream_fn, tag: str = "LLM",
             last_exception = e
             if not is_retryable(e):
                 raise
-            # 已是最后一次尝试：直接放弃，不做无意义的备选切换
+            # 最后一轮不再等待重试延迟，退出循环后统一抛出
             if attempt + 1 >= total_attempts:
                 break
             _notify_retry(on_retry, tag, e)
