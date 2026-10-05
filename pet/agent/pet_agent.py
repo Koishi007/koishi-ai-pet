@@ -149,7 +149,7 @@ class PetAgent(QObject):
                 return
 
             pet_x, pet_y = (self._pet_window.x(), self._pet_window.y()) if self._pet_window else (0, 0)
-            snap = self._window_snapshot()
+            snap = self.window_snapshot()
 
             if stream:
                 self._async_brain(self._autonomous_pipeline, pet_x, pet_y, snap)
@@ -214,8 +214,8 @@ class PetAgent(QObject):
             logger.debug(f"[PetAgent] duration for '{name}': {kw['duration']}s")
         self.action_requested.emit(name, tuple(arg_list), kw)
 
-    def _window_snapshot(self) -> tuple[int, float, int]:
-        """在主线程取桌宠窗口快照：(句柄, 所在屏 DPR, 屏可用高度)。
+    def window_snapshot(self) -> tuple[int, float, int]:
+        """在 GUI 线程取桌宠窗口快照：(句柄, 所在屏 DPR, 屏可用高度)。
 
         QWidget 只能在 GUI 线程访问，脑线程要用的是纯数值。
         """
@@ -367,7 +367,7 @@ class PetAgent(QObject):
         if self._pet_window:
             pet_x = self._pet_window.x()
             pet_y = self._pet_window.y()
-        snap = self._window_snapshot()
+        snap = self.window_snapshot()
 
         self._play_loading(is_play_loading)
 

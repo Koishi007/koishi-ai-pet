@@ -49,6 +49,61 @@ def _make_tasks():
     return ScheduledTasks(_Agent(win)), win
 
 
+class _PositionedWin:
+    """带坐标的桌宠窗口。"""
+
+    def __init__(self, x, y):
+        self._x, self._y = x, y
+
+    def x(self):
+        return self._x
+
+    def y(self):
+        return self._y
+
+
+class _StateMachine:
+    def try_transition(self, state):
+        return True
+
+
+class _MidAgent:
+    """mid 档回调所需的 agent 最小面。"""
+
+    SNAPSHOT = (0x1234, 1.5, 900)
+
+    def __init__(self, win):
+        self._pet_window = win
+        self._thread = None
+        self.state_machine = _StateMachine()
+        self.calls: list[tuple] = []
+
+    def window_snapshot(self):
+        return self.SNAPSHOT
+
+    def _autonomous_pipeline(self, pet_x, pet_y, snap):
+        return None
+
+    def _async_brain(self, fn, *args):
+        self.calls.append((fn, args))
+
+
+class TestAutonomousTick:
+    def test_passes_coords_and_window_snapshot(self):
+        agent = _MidAgent(_PositionedWin(320, 480))
+        ScheduledTasks(agent)._autonomous()
+        assert len(agent.calls) == 1
+        fn, args = agent.calls[0]
+        assert fn == agent._autonomous_pipeline
+        assert args == (320, 480, _MidAgent.SNAPSHOT)
+
+    def test_passes_snapshot_without_window(self):
+        agent = _MidAgent(None)
+        ScheduledTasks(agent)._autonomous()
+        _fn, args = agent.calls[0]
+        assert args == (0, 0, _MidAgent.SNAPSHOT)
+
+
 class TestUnconsciousness:
     def test_not_triggered_before_threshold(self):
         tasks, win = _make_tasks()
