@@ -283,7 +283,7 @@ git commit -m "feat(filedrop): 窗口接收拖放并转发到判定层"
 **Files:**
 - Modify: `pet/brain/prompts.py`（新增 `interact_file_prompt(...)`、`interact_file_reject_prompt(reason)` 与内置模板）
 - Modify: `pet/brain/context_builder.py`（`build_interact` 与 `build_chat_decide` 增加附件参数）
-- Modify: `pet/agent/pet_agent.py`（`_trigger_chat` / `_chat_pipeline` 透传附件，正文不进 `message`）
+- Modify: `pet/agent/pet_agent.py`（`trigger("analyze")` 与 chat 共用 `_trigger_dialogue` / `_dialogue_pipeline`，透传附件，正文不进 `message`）
 - Modify: `pet/app.py`（接线：`FileBubble.action_chosen` → 读取 → `agent.trigger(...)`）
 - Create: `tests/test_file_attachment.py`
 - Regenerate: `docs/reference/prompt-blocks.md`
@@ -291,11 +291,11 @@ git commit -m "feat(filedrop): 窗口接收拖放并转发到判定层"
 **Interfaces:**
 - Consumes: Task 3 的 `FileBubble.action_chosen`；Task 1 的 `load_text` / `load_image`。
 - Produces：
-  - `interact_file_prompt(refs, snippet) -> str`、`interact_file_reject_prompt(reason) -> str`
-  - `build_interact(event_hint, attachment_text=None, attachment_image=None)`、`build_chat_decide(user_message, window_context, screenshot=True, attachment_text=None, attachment_image=None)`
-  - `PetAgent.trigger("chat", message=..., attachment_text=None, attachment_image=None)` 与 `trigger("interact", hint=..., ...)` 的同类参数
+  - `file_read_prompt(meta) -> str`、`interact_file_prompt(names) -> str`、`interact_file_reject_prompt(reason, names=()) -> str`
+  - `build_interact(event_hint, attachment_text=None, attachment_image=None)`、`build_chat_decide(user_message, window_context, screenshot=True, attachment_text=None, attachment_image=None)`、`build_analyze_decide(user_message, window_context, screenshot=False, attachment_text=None, attachment_image=None)`
+  - `PetAgent.trigger("analyze", message=..., log_message=None, attachment_text=None, attachment_image=None)`、`trigger("chat", ...)` 与 `trigger("interact", hint=..., ...)` 的同类参数
 
-**约束：** 元信息（文件名、类型、大小）走 `message` 与 `context_hint`，正文只进附件参数；附件是 `PIL.Image` 时由 `ContextBuilder` 用 `self._screen_reader.prepare_image(image=...)` 编码，同一轮不再附截图。
+**约束：** 元信息（文件名、类型、大小）走 `message` 与 `context_hint`，正文只进附件参数；附件是 `PIL.Image` 时由 `ContextBuilder` 用 `self._screen_reader.prepare_image(image=...)` 编码，对话通道同一轮不再附截图，分析通道（看一看）不带截图。
 
 - [x] **Step 1: 写失败测试**
 
@@ -316,7 +316,7 @@ Expected: FAIL，`TypeError: build_chat_decide() got an unexpected keyword argum
 
 - [x] **Step 3: 实现参数与接线**
 
-`pet/app.py` 的接线按 spec §5：尝一口走 `trigger("interact", hint=interact_file_prompt(...), record_context=True, context_hint=<元信息>, thinking=False, enable_tools=False, is_play_loading=False, delay_ms=150)`；看一看走 `trigger("chat", message=<元信息请求>, attachment_text=<正文>)`；两者都不把正文写进 `message` / `context_hint`。读取在 daemon 线程执行，完成后回主线程调用 trigger（`PIL.Image` 对象在此移交所有权，UI 侧之后不再触碰）。
+`pet/app.py` 的接线按 spec §5：尝一口走 `trigger("interact", hint=interact_file_prompt(...), record_context=True, context_hint=<元信息>, thinking=False, enable_tools=False, is_play_loading=False, delay_ms=150)`；看一看走 `trigger("analyze", message=file_read_prompt(<元信息>), log_message=<元信息>, attachment_text=<正文>)`；两者都不把正文写进 `message` / `context_hint`。读取在 daemon 线程执行，完成后回主线程调用 trigger（`PIL.Image` 对象在此移交所有权，UI 侧之后不再触碰）。
 
 - [x] **Step 4: 运行测试，确认通过**
 
@@ -429,7 +429,7 @@ git commit -m "feat(filedrop): 工具文件动作扩展点与知识库入库"
 
 - [ ] **Step 1: 跑一遍手动清单**
 
-按 spec §9 的 19 条逐项检查，重点四条：第 6 条（冷却合并）、第 11 条（像素闸门降级 + 48 MP JPEG 走 draft）、第 12 条（目录只显示条目摘要）、第 18 条（忙态写一次性事件）。
+按 spec §9 的 19 条逐项检查，重点四条：第 6 条（重复拖入各触发 + 连击防抖）、第 11 条（像素闸门降级 + 48 MP JPEG 走 draft）、第 12 条（目录只显示条目摘要）、第 18 条（忙态写一次性事件）。
 
 - [x] **Step 2: 删除探针并更新设计文档**
 
@@ -463,7 +463,11 @@ git commit -m "chore(filedrop): 收尾清理探针脚本与文档"
 |---|---|
 | `python -m pytest tests/test_file_intake.py` | 嗅探、解码链、截断、额度、体积与数量上限、名单、图像闸门、目录分类 |
 | `python -m pytest tests/test_file_drop_handler.py` | 分层判定、回调序列、工具动作注册与查询 |
-| `python -m pytest tests/test_file_attachment.py` | 附件只进当轮、图片替代截图、模板内容与拒收数值规则 |
+| `python -m pytest tests/test_file_bubble.py` | 动作可用性（视觉/内容开关）、置灰文案、目录摘要回填 |
+| `python -m pytest tests/test_ui_debounce.py` | 防抖窗口与气泡按钮的连击保护 |
+| `python -m pytest tests/test_file_attachment.py` | 附件只进当轮、图片替代截图、模板内容与拒收数值规则、分析任务规则 |
+| `python -m pytest tests/test_app_file_actions.py` | 装配层两条动作分支、正文送达、工具返回值提示、message 与 log_message 分离 |
+| `python -m pytest tests/test_knowledge_file_action.py` | 知识库文件动作的 hint 名单与读不出内容时的降级 |
 | `python -m pytest tests/test_docs.py tests/test_architecture_contracts.py` | 文档索引与架构红线（不新增私有访问、纯逻辑包不拖入 Qt） |
 | `python scripts/gen_docs.py --check` | 配置、提示词、工具参考文档与代码一致 |
 

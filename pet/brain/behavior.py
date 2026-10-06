@@ -155,7 +155,7 @@ class Behavior(BrainMixin):
             return decide_local()
 
         messages = self.ctx.build_autonomous_decide(context, screenshot=screenshot)
-        is_vision = isinstance(messages[1]["content"], list)
+        is_vision = isinstance(messages[-1]["content"], list)
         tag = "autonomous_vision" if is_vision else "autonomous_non_vision"
         ctx_preview = context[:60] if context else "(empty)"
         logger.info(f"[{t}] [Behavior] === LLM REQUEST ({tag}) ===")
@@ -178,7 +178,7 @@ class Behavior(BrainMixin):
             return decide_local()
         try:
             messages = self.ctx.build_autonomous_decide(context, screenshot=screenshot)
-            is_vision = isinstance(messages[1]["content"], list)
+            is_vision = isinstance(messages[-1]["content"], list)
             tag = "autonomous_decide_vision_stream" if is_vision else "autonomous_decide_stream"
             return retry_if_empty(
                 lambda: self._stream_and_build_output(messages, tag=tag, on_chunk=on_chunk,
@@ -236,7 +236,7 @@ class Behavior(BrainMixin):
             return chat_decide_local(user_message)
 
         messages = self.ctx.build_chat_decide(user_message, context, screenshot=screenshot)
-        is_vision = isinstance(messages[1]["content"], list)
+        is_vision = isinstance(messages[-1]["content"], list)
         tag = "chat_vision" if is_vision else "chat_non_vision"
         logger.info(f"[{t}] [Behavior] === LLM REQUEST ({tag}) ===")
         logger.info(f"[{t}] [Behavior]   model: {self._llm.model}")
@@ -267,12 +267,44 @@ class Behavior(BrainMixin):
             messages = self.ctx.build_chat_decide(user_message, context, screenshot=screenshot,
                                                   attachment_text=attachment_text,
                                                   attachment_image=attachment_image)
-            is_vision = isinstance(messages[1]["content"], list)
+            is_vision = isinstance(messages[-1]["content"], list)
             tag = "chat_decide_vision_stream" if is_vision else "chat_decide_stream"
             return retry_if_empty(
                 lambda: self._stream_and_build_output(messages, tag=tag, on_chunk=on_chunk,
                                               on_stream_end=on_stream_end,
                                               max_tokens=config.LLM_MAX_TOKENS_CHAT,
+                                              thinking=thinking, enable_tools=enable_tools,
+                                              cancel_check=cancel_check),
+                tag,
+            )
+        finally:
+            self._lock.release()
+
+    def analyze_decide_stream(self, user_message: str, context: str, screenshot: bool = False,
+                              on_chunk=None, on_stream_end=None,
+                              thinking: bool | None = None,
+                              enable_tools: bool | None = None,
+                              cancel_check: callable = None,
+                              attachment_text: str | None = None,
+                              attachment_image=None) -> BehaviorOutput:
+        if not self._llm:
+            return chat_decide_local(user_message)
+        if not self._lock.acquire(timeout=5):
+            logger.warning("[Behavior] analyze_decide_stream: busy, timeout")
+            return BehaviorOutput(
+                actions=[ActionStep("look_around", kwargs={"duration": 5})],
+                speech="嚎……等一下，我还在想……",
+            )
+        try:
+            messages = self.ctx.build_analyze_decide(user_message, context, screenshot=screenshot,
+                                                     attachment_text=attachment_text,
+                                                     attachment_image=attachment_image)
+            is_vision = isinstance(messages[-1]["content"], list)
+            tag = "analyze_decide_vision_stream" if is_vision else "analyze_decide_stream"
+            return retry_if_empty(
+                lambda: self._stream_and_build_output(messages, tag=tag, on_chunk=on_chunk,
+                                              on_stream_end=on_stream_end,
+                                              max_tokens=config.LLM_MAX_TOKENS_ANALYZE,
                                               thinking=thinking, enable_tools=enable_tools,
                                               cancel_check=cancel_check),
                 tag,

@@ -19,8 +19,9 @@ class FileRef:
 
 @dataclass(frozen=True)
 class DropVerdict:
-    """放下阶段的判定结果。status 非 ok 时 refs 为空。"""
+    """放下阶段的判定结果。status 非 ok 时 refs 为空，names 是涉及的项名。"""
 
     status: str
     refs: tuple[FileRef, ...] = ()
     detail: str = ""
+    names: tuple[str, ...] = ()

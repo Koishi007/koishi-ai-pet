@@ -138,7 +138,7 @@ def alert() -> dict:
 | `add_context(text)` | 往上下文追加一条 system 备注 |
 | `note_event(kind, text)` | 上报事件，进入「最近发生了什么」章节 |
 | `notify(title, message, duration)` | 系统通知 |
-| `request_interact(hint, delay_ms, cooldown_ms)` | 请求一次即时交互（会占用脑线程） |
+| `request_interact(hint, delay_ms, cooldown_ms, thinking, enable_tools)` | 请求一次即时交互（会占用脑线程）；`cooldown_ms` 默认 15000，同一 hint 在窗口内会被合并，传 0 关闭 |
 | `register_tick(name, callback)` | 注册随调度器执行的周期回调 |
 | `register_alarm(timestamp_ms, callback, key=None)` | 注册一次性闹钟（只存内存，重启即丢；timer 工具能跨重启是它自己落库、启动时重新注册的） |
 

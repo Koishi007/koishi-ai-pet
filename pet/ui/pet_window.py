@@ -443,12 +443,13 @@ class PetWindow(TransparentWindow):
         if self._file_bubble:
             self._file_bubble.show_files(refs)
 
-    def _reject_file_drop(self, reason: str) -> None:
+    def _reject_file_drop(self, reason: str, names=()) -> None:
         """三类硬边界拒收：发一次快速交互请求，姿态与数值交给模型决定。"""
         if self._agent is None:
             return
-        self._agent.trigger("interact", hint=interact_file_reject_prompt(reason),
-                            delay_ms=150, is_play_loading=False,
+        # 文件动作不做冷却：同一个文件重复拖入各触发一次
+        self._agent.trigger("interact", hint=interact_file_reject_prompt(reason, names),
+                            delay_ms=150, cooldown_ms=0, is_play_loading=False,
                             thinking=False, enable_tools=False)
 
     def _note_file_drop_busy(self, text: str) -> None:

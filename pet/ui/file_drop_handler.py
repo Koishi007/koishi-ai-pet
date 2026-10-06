@@ -47,7 +47,7 @@ class FileDropHandler:
     def __init__(self, hover_state: Callable[[], tuple[bool, bool]],
                  is_busy: Callable[[], bool],
                  on_show_bubble: Callable[[tuple[FileRef, ...]], None],
-                 on_reject: Callable[[str], None],
+                 on_reject: Callable[[str, tuple[str, ...]], None],
                  on_busy_event: Callable[[str], None]):
         self._hover_state = hover_state
         self._is_busy = is_busy
@@ -82,4 +82,4 @@ class FileDropHandler:
             return
 
         logger.info(f"[FileDrop] rejected ({verdict.status}): {verdict.detail}")
-        self._on_reject(verdict.status)
+        self._on_reject(verdict.status, verdict.names)

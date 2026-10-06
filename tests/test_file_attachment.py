@@ -3,7 +3,7 @@
 import pytest
 
 from pet.brain.context_builder import ContextBuilder
-from pet.brain.prompts import interact_file_prompt, interact_file_reject_prompt
+from pet.brain.prompts import file_read_prompt, interact_file_prompt, interact_file_reject_prompt
 from pet.config import config
 
 
@@ -103,6 +103,50 @@ class TestPrompts:
         monkeypatch.setattr(config, "INTERACT_FILE_PROMPT", "只认「{names}」")
         assert interact_file_prompt("a.txt") == "只认「a.txt」"
 
+    def test_read_prompt_keeps_meta(self):
+        text = file_read_prompt("用户把文件交给了你：\n- a.txt（文本，10 字节）")
+        assert "a.txt" in text
+        assert "不要逐句摘录" in text
+
+    def test_read_template_override(self, monkeypatch):
+        monkeypatch.setattr(config, "ANALYZE_FILE_PROMPT", "看看{meta}")
+        assert file_read_prompt("a.txt") == "看看a.txt"
+
+
+class TestAnalyzeTask:
+    def test_system_uses_analyze_rules(self):
+        system = _builder().build_analyze_decide(
+            "用户把文件交给了你：\n- a.txt", "无窗口")[0]["content"]
+        assert "分析模式" in system
+        assert "Action 可选" in system
+        assert "至少 3 个 Action" not in system
+
+    def test_user_prompt_is_analyze_variant(self):
+        messages = _builder().build_analyze_decide(
+            "用户把文件交给了你：\n- a.txt", "无窗口")
+        text = _last_text(messages)
+        assert "=== 用户交给你看的东西 ===" in text
+        assert "a.txt" in text
+
+    def test_body_wrapped_as_material(self):
+        messages = _builder().build_analyze_decide("元信息", "无窗口", attachment_text="MARKER")
+        text = _last_text(messages)
+        assert "MARKER" in text
+        assert "观察资料" in text
+
+    def test_no_screenshot_with_vision(self, monkeypatch):
+        monkeypatch.setattr(config, "VISION_ENABLED", True)
+        messages = _builder().build_analyze_decide("元信息", "无窗口")
+        assert isinstance(messages[-1]["content"], str)
+        assert "SCREEN_B64" not in str(messages)
+
+    def test_attachment_image_goes_through(self, monkeypatch):
+        monkeypatch.setattr(config, "VISION_ENABLED", True)
+        messages = _builder().build_analyze_decide("元信息", "无窗口", attachment_image=object())
+        parts = messages[-1]["content"]
+        assert isinstance(parts, list)
+        assert "ATTACH_B64" in parts[1]["image_url"]["url"]
+
     def test_reject_prompt_differs_by_reason(self):
         replies = {reason: interact_file_reject_prompt(reason)
                    for reason in ("too_large", "too_many", "forbidden")}
@@ -111,9 +155,18 @@ class TestPrompts:
         assert "joy-0~2" in replies["forbidden"]
         assert "affection" in replies["forbidden"]
 
+    def test_reject_prompt_lists_names(self):
+        single = interact_file_reject_prompt("too_large", ("big.zip",))
+        assert "「big.zip」太大了" in single
+
+        batch = interact_file_reject_prompt("too_many", tuple(f"f{i}.txt" for i in range(6)))
+        assert "f0.txt" in batch and "f2.txt" in batch
+        assert "f3.txt" not in batch
+        assert "等 6 个" in batch
+
     def test_reject_prompt_unknown_reason_falls_back(self):
         assert "没有接住" in interact_file_reject_prompt("something_else")
 
     def test_reject_template_override(self, monkeypatch):
-        monkeypatch.setattr(config, "INTERACT_FILE_REJECT_PROMPT", "固定台词 {reason}")
-        assert interact_file_reject_prompt("too_large") == "固定台词 too_large"
+        monkeypatch.setattr(config, "INTERACT_FILE_REJECT_PROMPT", "固定台词 {reason} {names}")
+        assert interact_file_reject_prompt("too_large", ("big.zip",)) == "固定台词 too_large big.zip"

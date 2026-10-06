@@ -102,6 +102,7 @@
 | 键 | 类型 | 默认 | 高级 | 需重启 | 说明 |
 |---|---|---|---|---|---|
 | `ACTION_TIMEOUT_MS` | int | 90000 | 是 |  | 单个动作超时(毫秒) |
+| `ANALYZE_FILE_PROMPT` | str | `""` | 是 |  | 看一看（文件分析）的自定义 prompt 模板 |
 | `ATTENTION_THRESHOLDS` | str_list | ["10", "20", "30"] |  |  | 连续未互动轮次阈值，达到后向桌宠注入求关注提示（如10/20/30轮） |
 | `BRAIN_STUCK_TIMEOUT` | int | 300 | 是 |  | 脑线程无进展超时(秒)：autonomous/interacting 状态下持续无输出、无工具进展超过该时长才判定挂死（进行中的游戏对局不计时） |
 | `CONTEXT_HALF_LIFE_S` | int | 1800 | 是 |  | 上下文评分半衰期(秒) |
@@ -143,6 +144,7 @@
 | `LLM_ACTION_MIN_DIVISOR` | int | 25 | 是 |  | 动作权重最小除数 |
 | `LLM_ACTIVE_PROFILE` | str | `"primary"` |  |  | 当前启用的模型方案（可选：primary / alternative） |
 | `LLM_CREATE_TIMEOUT` | float | 30 |  |  | 建流超时(秒)：等待响应头超过该时长即放弃，避免服务端无响应时卡死 |
+| `LLM_MAX_TOKENS_ANALYZE` | int | 4096 |  |  | 分析模式LLM输出Token上限 |
 | `LLM_MAX_TOKENS_SUMMARY` | int | 1024 | 是 |  | 上下文摘要LLM输出Token上限 |
 | `LLM_STREAM_TIMEOUT` | float | 120 |  |  | 流式调用总超时(秒)，超过后降级到本地决策 |
 | `LLM_TOOL_PARALLEL` | bool | true | 是 |  | LLM 工具并行调用 |
@@ -167,4 +169,4 @@
 - `hidden`：`true` 表示不在界面显示，只能直接编辑 `settings.json`
 - `enum` / `minimum` / `maximum`：取值约束，会写进 `settings-schema.json`
 
-共 103 项（其中 50 项未在界面列出）。
+共 105 项（其中 52 项未在界面列出）。

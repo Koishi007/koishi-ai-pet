@@ -149,24 +149,24 @@ system prompt 由三段拼起来：
 「为什么这么切分」（system 稳定换 prompt 缓存、数值不直接进提示词、做法只写一处、交互不注入需求）
 的理由见 [decisions/](decisions/) 的 0001 / 0003 / 0004。
 
-## 6. 三条任务路径
+## 6. 四条任务路径
 
-| | autonomous | chat | interact |
-|---|---|---|---|
-| 触发 | mid tick；启动 5 秒后 | 用户发送消息 | 抓起/放下/站立窗口消失/投喂/工具请求 |
-| 入口 | `PetAgent._autonomous_pipeline` | `_trigger_chat` → `_chat_pipeline` | `_trigger_interact` → `_interact_pipeline` |
-| 提示词 | `autonomous_vision` / `autonomous_non_vision` | `chat_vision` / `chat_non_vision` | `interact` |
-| 状态 | 需 IDLE 才能进入 AUTONOMOUS | 进入 INTERACTING，交互中被忽略 | 进入 INTERACTING，有节流与冷却 |
-| 产出 | 气泡、动作、数值变化、记忆 | 同上 + 对话历史 | 通常只有一句话 |
+| | autonomous | chat | analyze | interact |
+|---|---|---|---|---|
+| 触发 | mid tick；启动 5 秒后 | 用户发送消息 | 文件气泡的看一看 | 抓起/放下/站立窗口消失/投喂/工具请求 |
+| 入口 | `PetAgent._autonomous_pipeline` | `_trigger_chat` → `_dialogue_pipeline` | `_trigger_analyze` → `_dialogue_pipeline` | `_trigger_interact` → `_interact_pipeline` |
+| 提示词 | `autonomous_vision` / `autonomous_non_vision` | `chat_vision` / `chat_non_vision` | `analyze` | `interact` |
+| 状态 | 需 IDLE 才能进入 AUTONOMOUS | 进入 INTERACTING，交互中被忽略 | 同 chat | 进入 INTERACTING，15 秒 hint 级冷却（文件动作、投喂、觅食、工具播报传 `cooldown_ms=0` 关闭） |
+| 产出 | 气泡、动作、数值变化、记忆 | 同上 + 对话历史 | 摘要与判断，动作可选 | 通常只有一句话 |
 
 补充：**鼠标悬停不发 LLM 请求**，只显示聊天气泡、喂食与音乐按钮；真正触发决策的是拖拽、放置、
-窗口消失、投喂等事件。三条路径共享同一个工具轮次预算与看门狗。
+窗口消失、投喂等事件。四条路径共享同一个工具轮次预算与看门狗。
 
 ## 7. 状态机与看门狗
 
 状态只有三个：`IDLE`、`AUTONOMOUS`、`INTERACTING`（`pet/agent/state.py`）。
-合法迁移是三者之间相互转换，`can_decide`（空闲）才允许发起自主决策；`chat` 与 `interact` 共用
-`INTERACTING`，因此二者互斥。`force()` 绕过校验，只给看门狗恢复用。
+合法迁移是三者之间相互转换，`can_decide`（空闲）才允许发起自主决策；`chat`、`analyze` 与 `interact`
+共用 `INTERACTING`，因此三者互斥。`force()` 绕过校验，只给看门狗恢复用。
 
 看门狗（fast tick `_brain_watchdog`）：
 

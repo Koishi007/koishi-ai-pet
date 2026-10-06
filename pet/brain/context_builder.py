@@ -9,6 +9,8 @@ from pet.brain.base import BrainMixin
 from pet.brain.prompts import (
     FEELING_MARKER,
     SUMMARY_SYSTEM_PROMPT,
+    analyze_non_vision_user_prompt,
+    analyze_vision_user_prompt,
     autonomous_non_vision_user_prompt,
     autonomous_vision_user_prompt,
     build_attention_hint,
@@ -26,6 +28,7 @@ class ContextBuilder:
     四个公开方法对应四种任务：
       build_autonomous_decide — 自主决策（视觉 / 非视觉自动选择）
       build_chat_decide          — 用户对话
+      build_analyze_decide       — 分析用户交付的文本或图片
       build_interact          — 即时交互（抓取、释放等）
       build_tool_result_message — 工具多轮调用中的结果消息（单条 dict）
     """
@@ -69,6 +72,22 @@ class ContextBuilder:
         system = self._build_system(mode, "chat", user_message=user_message)
         return self._build_multi_turn_chat(system, user_message, window_context, vision,
                                            base64_img, attachment_text=attachment_text)
+
+    def build_analyze_decide(self, user_message: str, window_context: str, screenshot: bool = False,
+                             attachment_text: str | None = None,
+                             attachment_image=None) -> list[dict]:
+        """分析模式的 messages：用户交付一份文本或图片，产出要点与判断。
+
+        默认不附屏幕截图：这一轮要看的是交付物本身；图片只在附件通道里进上下文。
+        """
+        base64_img = self._encode_attachment(attachment_image)
+        if base64_img is None:
+            base64_img = self._prepare_image() if screenshot else None
+        vision = base64_img is not None
+        system = self._build_system("analyze", "analyze", user_message=user_message)
+        return self._build_multi_turn_chat(system, user_message, window_context, vision,
+                                           base64_img, attachment_text=attachment_text,
+                                           task="analyze")
 
     def build_interact(self, event_hint: str, attachment_text: str | None = None,
                        attachment_image=None) -> list[dict]:
@@ -279,8 +298,9 @@ class ContextBuilder:
 
     def _build_multi_turn_chat(self, system: str, user_message: str, window_context: str,
                                vision: bool, base64_img: str | None,
-                               attachment_text: str | None = None) -> list[dict]:
-        """多轮消息模式：用户对话。"""
+                               attachment_text: str | None = None,
+                               task: str = "chat") -> list[dict]:
+        """多轮消息模式：用户对话或分析交付物，差别只在 user 段的步骤清单。"""
         token_budget = config.CONTEXT_TOKEN_BUDGET
         history_msgs = self._brain.get_multi_turn_messages(
             max_entries=self._brain._MAX_POOL_ENTRIES, skip_last=1, token_budget=token_budget,
@@ -291,7 +311,10 @@ class ContextBuilder:
         food_line = self._food_line()
         if food_line:
             ctx += "\n" + food_line
-        if vision:
+        if task == "analyze":
+            current_prompt = (analyze_vision_user_prompt(user_message, ctx) if vision
+                              else analyze_non_vision_user_prompt(user_message, ctx))
+        elif vision:
             current_prompt = chat_vision_user_prompt(user_message, ctx)
         else:
             current_prompt = chat_non_vision_user_prompt(user_message, ctx)

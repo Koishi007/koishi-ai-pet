@@ -129,8 +129,12 @@ def dir_summary(path: str, count_cap: int = COUNT_CAP,
     return count, names
 
 
+def _basename(path: str) -> str:
+    return os.path.basename(path.rstrip("\\/")) or path
+
+
 def make_ref(path: str) -> FileRef:
-    name = os.path.basename(path.rstrip("\\/")) or path
+    name = _basename(path)
     kind = sniff(path)
     if kind == "dir":
         return FileRef(path=path, name=name, suffix="", size=0, kind=kind)
@@ -147,14 +151,17 @@ def check_drop(paths: Sequence[str], *, max_files: int, max_bytes: int,
     """放下阶段的硬条件判定：数量、体积、拒绝名单。目录跳过体积闸门。"""
     candidates = [path for path in paths if path]
     if len(candidates) > max_files:
-        return DropVerdict("too_many", (), f"一次拖入了 {len(candidates)} 项，上限是 {max_files} 项")
+        names = tuple(_basename(path) for path in candidates)
+        return DropVerdict("too_many", (), f"一次拖入了 {len(candidates)} 项，上限是 {max_files} 项",
+                           names)
 
     refs: list[FileRef] = []
     for path in candidates:
         ref = make_ref(path)
         if ref.kind != "dir" and ref.size > max_bytes:
-            return DropVerdict("too_large", (), f"「{ref.name}」有 {ref.size / 1024 / 1024:.1f} MB，太重了")
+            return DropVerdict("too_large", (), f"「{ref.name}」有 {ref.size / 1024 / 1024:.1f} MB，太重了",
+                               (ref.name,))
         if match_deny(ref.name, deny_patterns):
-            return DropVerdict("forbidden", (), f"「{ref.name}」在拒收名单里")
+            return DropVerdict("forbidden", (), f"「{ref.name}」在拒收名单里", (ref.name,))
         refs.append(ref)
     return DropVerdict("ok", tuple(refs), "")

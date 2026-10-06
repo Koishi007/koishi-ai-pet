@@ -197,6 +197,7 @@ class PetAgent(QObject):
     def trigger(self, intent: str, **kwargs):
         handlers = {
             "chat":     self._trigger_chat,
+            "analyze":  self._trigger_analyze,
             "interact": self._trigger_interact,
         }
         handler = handlers.get(intent)
@@ -284,12 +285,13 @@ class PetAgent(QObject):
                           enable_tools: bool | None = None,
                           attachment_text: str | None = None,
                           attachment_image=None):
+        """cooldown_ms 为 0 表示不做冷却，同一 hint 也各触发一次（文件动作走这条）。"""
         if not hint:
             return
         from PySide6.QtCore import QDateTime
         now = QDateTime.currentMSecsSinceEpoch()
         last = self._last_interact_ms.get(hint, 0)
-        if now - last < cooldown_ms:
+        if cooldown_ms > 0 and now - last < cooldown_ms:
             logger.info(f"[PetAgent] interact skipped (cooldown, {cooldown_ms - (now - last)}ms remaining)")
             return
         self._last_interact_ms[hint] = now  # 提前占位防同 hint 重复入队，_execute 去重失败时回滚
@@ -356,13 +358,23 @@ class PetAgent(QObject):
             self.speak_stream_end.emit(4000)
         return result
 
-    def _trigger_chat(self, message: str = "", is_play_loading: bool = True,
-                      thinking: bool | None = None,
-                      enable_tools: bool | None = None,
-                      attachment_text: str | None = None,
-                      attachment_image=None):
+    def _trigger_chat(self, **kwargs):
+        """用户对话。"""
+        self._trigger_dialogue("chat", **kwargs)
+
+    def _trigger_analyze(self, **kwargs):
+        """分析用户交付的文件或图片（看一看）。"""
+        self._trigger_dialogue("analyze", **kwargs)
+
+    def _trigger_dialogue(self, kind: str, message: str = "", is_play_loading: bool = True,
+                          thinking: bool | None = None,
+                          enable_tools: bool | None = None,
+                          attachment_text: str | None = None,
+                          attachment_image=None,
+                          log_message: str | None = None):
+        """对话与分析共用入口：log_message 是进历史与上下文池的那一份，缺省用 message。"""
         if self.state_machine.state == PetState.INTERACTING:
-            logger.info("[PetAgent] chat request ignored (INTERACTING)")
+            logger.info(f"[PetAgent] {kind} request ignored (INTERACTING)")
             return
 
         self.behavior.reset_user_interaction()
@@ -379,20 +391,21 @@ class PetAgent(QObject):
 
         self._play_loading(is_play_loading)
 
-        self._async_brain(self._chat_pipeline, message, pet_x, pet_y, snap, thinking, enable_tools,
-                          attachment_text, attachment_image)
-        logger.info(f"[PetAgent] user chat:{message}")
+        self._async_brain(self._dialogue_pipeline, kind, message, pet_x, pet_y, snap, thinking,
+                          enable_tools, attachment_text, attachment_image, log_message)
+        logger.info(f"[PetAgent] user {kind}:{message}")
         try:
-            self.conversation_store.add("user", message)
+            self.conversation_store.add("user", log_message if log_message is not None else message)
         except Exception:
             pass
 
-    def _chat_pipeline(self, message: str, pet_x: int, pet_y: int, snap=None,
-                       thinking: bool | None = None,
-                       enable_tools: bool | None = None,
-                       attachment_text: str | None = None,
-                       attachment_image=None):
-        self.behavior.add_context(role="user", content=message)
+    def _dialogue_pipeline(self, kind: str, message: str, pet_x: int, pet_y: int, snap=None,
+                           thinking: bool | None = None,
+                           enable_tools: bool | None = None,
+                           attachment_text: str | None = None,
+                           attachment_image=None,
+                           log_message: str | None = None):
+        self.behavior.add_context(role="user", content=log_message if log_message is not None else message)
 
         window_context = self._window_context(pet_x, pet_y, snap)
         context = window_context if window_context else "当前无窗口信息"
@@ -421,8 +434,11 @@ class PetAgent(QObject):
                 self.speak_stream_end.emit(4000)
                 stream_started = False
 
-        result = self.behavior.chat_decide_stream(
-            message, context, screenshot=True,
+        decide = (self.behavior.analyze_decide_stream if kind == "analyze"
+                  else self.behavior.chat_decide_stream)
+        # 分析只看交付物，不附当前屏幕
+        result = decide(
+            message, context, screenshot=kind != "analyze",
             on_chunk=on_chunk, on_stream_end=on_stream_end,
             thinking=thinking, enable_tools=enable_tools,
             cancel_check=_is_stale,

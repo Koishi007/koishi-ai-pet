@@ -6,7 +6,8 @@ pet/app.py 只在进程入口被导入，此前没有测试覆盖；这里用桩
 
 import threading
 
-from pet.app import _file_meta_lines, _run_tool_file_action, _start_file_action
+from pet.app import (_FileActionDispatcher, _file_meta_lines, _run_tool_file_action,
+                     _start_file_action)
 from pet.file_intake import FileRef
 from pet.file_intake.sniff import make_ref
 from pet.tools.context import TOOL_CTX
@@ -115,6 +116,40 @@ def test_tool_exception_reports_generic_summary(monkeypatch, tmp_path):
     _run_tool_file_action("tool:probe:x", [ref])
     assert spy.done.wait(5), "异常未转成提示"
     assert "没能完成" in spy.calls[0]
+
+
+class _AgentStub:
+    """记录 trigger 参数，不启动任何管线。"""
+
+    def __init__(self):
+        self.calls = []
+
+    def trigger(self, intent, **kwargs):
+        self.calls.append((intent, kwargs))
+
+
+def test_taste_branch_disables_cooldown(tmp_path):
+    ref, _ = _text_ref(tmp_path)
+    agent = _AgentStub()
+    _FileActionDispatcher(agent)._dispatch("taste", [ref], None, "正文")
+
+    intent, kwargs = agent.calls[0]
+    assert intent == "interact"
+    assert kwargs["cooldown_ms"] == 0
+
+
+def test_read_branch_separates_prompt_and_log(tmp_path):
+    ref, _ = _text_ref(tmp_path)
+    agent = _AgentStub()
+    _FileActionDispatcher(agent)._dispatch("read", [ref], None, "正文")
+
+    intent, kwargs = agent.calls[0]
+    assert intent == "analyze"
+    assert "note.txt" in kwargs["message"]
+    assert kwargs["log_message"] == "用户把文件交给了你：\n- note.txt（文本，21 字节）"
+    assert "不要逐句摘录" in kwargs["message"]
+    assert "不要逐句摘录" not in kwargs["log_message"]
+    assert kwargs["attachment_text"] == "正文"
 
 
 def test_meta_lines_include_kind_and_size(tmp_path):

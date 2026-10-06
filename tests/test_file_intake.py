@@ -43,6 +43,7 @@ class TestCheckDrop:
         verdict = check_drop(paths, max_files=2, max_bytes=10 ** 6, deny_patterns=DENY)
         assert verdict.status == "too_many"
         assert verdict.refs == ()
+        assert verdict.names == ("f0.txt", "f1.txt", "f2.txt")
 
     def test_too_large(self, tmp_path):
         path = _file(tmp_path, "big.txt", b"x" * 2048)
@@ -50,6 +51,7 @@ class TestCheckDrop:
         assert verdict.status == "too_large"
         assert "big.txt" in verdict.detail
         assert verdict.refs == ()
+        assert verdict.names == ("big.txt",)
 
     def test_forbidden(self, tmp_path):
         path = _file(tmp_path, ".env", b"A=1")
@@ -57,6 +59,7 @@ class TestCheckDrop:
         assert verdict.status == "forbidden"
         assert ".env" in verdict.detail
         assert verdict.refs == ()
+        assert verdict.names == (".env",)
 
     def test_forbidden_by_dir_name(self, tmp_path):
         path = _dir(tmp_path, "secret.key", 1)

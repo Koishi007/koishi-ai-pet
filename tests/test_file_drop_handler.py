@@ -33,7 +33,7 @@ def make_handler(*, enabled: bool = True, penetration: bool = False, busy: bool 
         hover_state=lambda: (enabled, penetration),
         is_busy=lambda: busy,
         on_show_bubble=calls["bubble"].append,
-        on_reject=calls["reject"].append,
+        on_reject=lambda status, names: calls["reject"].append((status, names)),
         on_busy_event=calls["busy"].append,
     )
     return handler, calls
@@ -83,7 +83,7 @@ class TestDropLayer:
         monkeypatch.setattr("pet.config.config.FILE_DROP_MAX_FILES", 2)
         handler, calls = make_handler()
         handler.handle_drop([_file(tmp_path, f"f{i}.txt") for i in range(3)])
-        assert calls["reject"] == ["too_many"]
+        assert calls["reject"] == [("too_many", ("f0.txt", "f1.txt", "f2.txt"))]
         assert calls["bubble"] == []
         assert calls["busy"] == []
 
@@ -91,13 +91,13 @@ class TestDropLayer:
         monkeypatch.setattr("pet.config.config.FILE_DROP_MAX_FILE_MB", 0)
         handler, calls = make_handler()
         handler.handle_drop([_file(tmp_path, "big.txt", b"x" * 2048)])
-        assert calls["reject"] == ["too_large"]
+        assert calls["reject"] == [("too_large", ("big.txt",))]
         assert calls["bubble"] == []
 
     def test_forbidden(self, tmp_path):
         handler, calls = make_handler()
         handler.handle_drop([_file(tmp_path, ".env", b"A=1")])
-        assert calls["reject"] == ["forbidden"]
+        assert calls["reject"] == [("forbidden", (".env",))]
         assert calls["bubble"] == []
 
     def test_ok_shows_bubble_once(self, tmp_path):

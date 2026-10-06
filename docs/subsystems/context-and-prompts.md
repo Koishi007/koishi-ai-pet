@@ -10,7 +10,7 @@
 
 1. `prompts.build_system_prompt(mode, task)` 产出的静态块，顺序固定：
    身份 → 独立生活设定 → 输入可信度 → 你的人格 → 人格台词范例 →
-   称呼 → 表达底线 → 记忆格式（仅 `autonomous` / `chat`）→ **感知段**（按 `mode`，末尾是动作表）→ **任务段**（按 `task`）→ `<<FEELING>>` 锚点。
+   称呼 → 表达底线 → 记忆格式（`autonomous` / `chat` / `analyze`）→ **感知段**（按 `mode`，末尾是动作表）→ **任务段**（按 `task`）→ `<<FEELING>>` 锚点。
    人格与范例为空、记忆格式不适用时会跳过对应块。锚点排在所有静态块之后 - 运行时块接在它后面，
    静态前缀（锚点之前）逐轮不变才能命中 prompt 缓存。
 2. 运行时块，拼好后替换掉 `<<FEELING>>` 锚点：
@@ -20,7 +20,7 @@
    - `[最近发生了什么]`：`_recent_events_note()`（近期事件，含工具上报与动作产出）。
 3. 最后追加 `[你对用户的记忆]`：`memory_store.retrieve_context(user_message)` 的召回结果（可能为空）。
 
-`mode` 决定感知段（视觉 / 非视觉 / 对话 / 交互），`task` 决定任务段（自主 / 对话 / 交互），
+`mode` 决定感知段（视觉 / 非视觉 / 对话 / 交互 / 分析），`task` 决定任务段（自主 / 对话 / 分析 / 交互），
 合法组合是白名单，写错直接抛 `ValueError` - 新增模式或任务要**同时**改
 `_PERCEPTION_SECTIONS`、`_TASK_SECTIONS` 与 `build_system_prompt` 里的组合白名单三处。
 
@@ -55,19 +55,22 @@
 作息需求（`bedtime` / `drowsy`）不依赖数值、按钟点判定，钟点定义见
 [vitals-and-mood.md](vitals-and-mood.md) §4；文案里不出现具体时间 - `system` 里放钟点会让缓存每秒失效。
 
-## 4. 三条任务路径的差异
+## 4. 四条任务路径的差异
 
-| | autonomous | chat | interact |
-|---|---|---|---|
-| mode | `autonomous_vision` / `autonomous_non_vision` | `chat_vision` / `chat_non_vision` | `interact` |
-| 记忆格式块 | 有 | 有 | 无 |
-| `[你惦记着的事]` | 注入 | 注入 | **不注入** |
-| 求关注提示 | 有 | 无 | 无 |
-| 历史多轮 | 有 | 有 | 无 |
-| 感知段 | 视觉 / 窗口探测 | 视觉 / 窗口探测 | 只有动作表 |
+| | autonomous | chat | analyze | interact |
+|---|---|---|---|---|
+| mode | `autonomous_vision` / `autonomous_non_vision` | `chat_vision` / `chat_non_vision` | `analyze` | `interact` |
+| 记忆格式块 | 有 | 有 | 有 | 无 |
+| `[你惦记着的事]` | 注入 | 注入 | **不注入** | **不注入** |
+| 求关注提示 | 有 | 无 | 无 | 无 |
+| 历史多轮 | 有 | 有 | 有 | 无 |
+| 随轮截图 | 有 | 有 | **不带** | 无 |
+| 感知段 | 视觉 / 窗口探测 | 视觉 / 窗口探测 | 只有分析段与动作表 | 只有动作表 |
+| 动作要求 | 按耗时撞满 | ≥3 个 | 0-2 个，可选 | 1-2 个 |
 
 `interact` 是对单一事件的反射（被抓、放下、投喂、窗口消失），注入长上下文只会让台词偏离事件本身，
-所以它的 prompt 最薄。
+所以它的 prompt 最薄。`analyze` 走与 `chat` 相同的装配（历史、上下文池、记忆都保留），
+差别只在感知段、任务段与 user 段的步骤清单：它面向「看懂用户交付的东西」，不强制动作数量。
 
 ## 5. 设计取舍
 

@@ -23,7 +23,7 @@ from pet.ui.feed_bubble import FeedBubble
 from pet.ui.music_bubble import MusicBubble
 from pet.ui.file_bubble import FileBubble
 from pet.agent import PetAgent
-from pet.brain.prompts import interact_fed_prompt, interact_file_prompt
+from pet.brain.prompts import file_read_prompt, interact_fed_prompt, interact_file_prompt
 from pet.tools import load_tools
 from pet.tools.context import TOOL_CTX
 from pet.tools.registry import TOOL_REGISTRY
@@ -54,13 +54,14 @@ class _FileActionDispatcher(QObject):
         meta = _file_meta_text(refs)
         if action_id == "taste":
             names = "、".join(_file_meta_lines(refs))
+            # 文件动作不做冷却：同一个文件重复拖入各触发一次
             self._agent.trigger("interact", hint=interact_file_prompt(names),
                                 attachment_text=body, attachment_image=image,
                                 record_context=True, context_hint=meta,
-                                delay_ms=150, is_play_loading=False,
+                                delay_ms=150, cooldown_ms=0, is_play_loading=False,
                                 thinking=False, enable_tools=False)
         else:
-            self._agent.trigger("chat", message=meta,
+            self._agent.trigger("analyze", message=file_read_prompt(meta), log_message=meta,
                                 attachment_text=body, attachment_image=image)
 
 
@@ -272,9 +273,10 @@ def main():
     feed_bubble = FeedBubble(window)
     window.set_feed_bubble(feed_bubble)
     feed_bubble.feed_submitted.connect(
+        # 投喂不做冷却：同样的食物重复喂各触发一次
         lambda text: agent.trigger("interact", hint=interact_fed_prompt(text),
                                     record_context=True, context_hint=f"用户投喂了{text}",
-                                    enable_tools=False)
+                                    cooldown_ms=0, enable_tools=False)
     )
 
     music_bubble = MusicBubble(window)

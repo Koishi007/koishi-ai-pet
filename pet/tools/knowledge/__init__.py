@@ -16,6 +16,7 @@ TOOL_DESCRIPTION = "RAG 知识库。可语义检索用户手动录入的知识�
 TOOL_GROUP = "knowledge"
 
 _instance = None
+_HINT_NAMES_MAX = 5
 
 
 def _show_panel():
@@ -86,9 +87,11 @@ def _ingest_files(files) -> dict:
                                             tags="", source="file_drop"))
     if not added:
         return {"ok": False, "summary": "这些文件里没有能读出来的文字"}
+    names = "、".join(item["title"] for item in added[:_HINT_NAMES_MAX])
     TOOL_CTX.request_interact(
-        hint=f"用户把文件交给你收进知识库了，一共 {len(added)} 份，"
+        hint=f"用户把「{names}」交给你收进知识库了，一共 {len(added)} 份，"
              f"根据你的人格用一句话（≤15字）回应",
+        cooldown_ms=0,  # 不做冷却：入库多少次就回应多少次
         thinking=False, enable_tools=False)
     return {"ok": True, "summary": f"已收进知识库 {len(added)} 份"}
 
