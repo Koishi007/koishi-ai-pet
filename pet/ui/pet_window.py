@@ -157,6 +157,7 @@ class PetWindow(TransparentWindow):
         self._chat_bubble = None
         self._feed_bubble = None
         self._music_bubble = None
+        self._file_bubble = None
         self._speech_bubble = None
         self._emotion_bubble = None
         self._agent = None
@@ -194,6 +195,10 @@ class PetWindow(TransparentWindow):
         """注入 MusicBubble 引用。"""
         self._music_bubble = music_bubble
 
+    def set_file_bubble(self, file_bubble):
+        """注入 FileBubble 引用。"""
+        self._file_bubble = file_bubble
+
     def set_speech_bubble(self, speech_bubble):
         """注入 SpeechBubble 引用。"""
         self._speech_bubble = speech_bubble
@@ -211,8 +216,11 @@ class PetWindow(TransparentWindow):
         self._app = app
 
     def enterEvent(self, event):
-        """鼠标进入桌宠区域时显示聊天、喂食和音乐按钮。"""
-        if self._grab_local is None:
+        """鼠标进入桌宠区域时显示聊天、喂食和音乐按钮。
+
+        文件气泡显示期间让位：两者位置相邻，共存会互相遮挡并争抢鼠标。
+        """
+        if self._grab_local is None and not self._file_bubble_visible():
             if self._chat_bubble:
                 self._chat_bubble.show_bubble()
             if self._feed_bubble:
@@ -220,6 +228,9 @@ class PetWindow(TransparentWindow):
             if self._music_bubble:
                 self._music_bubble.show_bubble()
         super().enterEvent(event)
+
+    def _file_bubble_visible(self) -> bool:
+        return bool(self._file_bubble and self._file_bubble.isVisible())
 
     def leaveEvent(self, event):
         """鼠标离开桌宠区域时延迟隐藏。"""
@@ -290,6 +301,8 @@ class PetWindow(TransparentWindow):
                 self._feed_bubble.hide_bubble()
             if self._music_bubble:
                 self._music_bubble.hide_bubble()
+            if self._file_bubble:
+                self._file_bubble.hide_bubble()
             # 先启动单击检测定时器，等待判断是单击还是拖拽
             self._click_timer.start()
         elif event.button() == Qt.MouseButton.RightButton:
@@ -611,6 +624,8 @@ class PetWindow(TransparentWindow):
             self._feed_bubble.hide()
         if self._music_bubble:
             self._music_bubble.hide()
+        if self._file_bubble:
+            self._file_bubble.hide_bubble()
         if self._speech_bubble:
             self._speech_bubble.hide()
         if self._emotion_bubble:
