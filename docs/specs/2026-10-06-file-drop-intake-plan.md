@@ -89,13 +89,16 @@ Expected: 全部 FAIL，`ModuleNotFoundError: No module named 'pet.file_intake'`
 `pet/file_intake/sniff.py` 的判定规则：
 
 1. `os.path.isdir(path)` 为真先返回 `dir`，不进嗅探。
-2. 读文件头 8 KB；含 `\x00` 或控制字符占比超过 10% 判 `binary`。
-3. 后缀命中图片集（`.png .jpg .jpeg .webp .gif .bmp .tiff .ico`）判 `image`。
-4. 其余按解码链解码：BOM（`utf-8-sig` / `utf-16`）→ `utf-8` → `gb18030`；全部失败判 `binary`。
+2. 后缀命中图片集（`.png .jpg .jpeg .webp .gif .bmp .tiff .ico`）判 `image`；图片文件头含 `\x00`，先判 NUL 会把它们误判成二进制。
+3. 读文件头 8 KB；带 BOM 且能解码判 `text`。
+4. 无 BOM 时含 `\x00` 或控制字符占比超过 10% 判 `binary`。
+5. 其余按解码链：`utf-8` 与 `gb18030` 都尝试，按常见字符占比打分取高者、同分取 `utf-8`；全部失败判 `binary`。不要用 `utf-16` 解无 BOM 的数据，它会按本机字节序硬解成合法文本。
+
+前两步的顺序与第 5 步的打分规则见设计文档 §4.1 与 §4.2 的实测反例，实现时不要退化成「BOM → utf-8 → gb18030 先到先得」。
 
 `match_deny(name, patterns)`：取 `os.path.basename` 后 `casefold()`，逐个 `fnmatch.fnmatchcase`；不使用 `os.path.normcase`（POSIX 上是恒等操作）。
 
-`pet/file_intake/text.py` 的截断规则：`len(text) <= limit` 原样返回；否则返回首 1000 字符 + `……（已省略 N 字符）……` + 末 500 字符，`N = len(text) - 1500`，标记本身不计入配额。`load_text` 返回 `(片段, 说明)`，读不到内容时片段为空、说明写明原因（二进制、无读权限、被占用）。
+`pet/file_intake/text.py` 的截断规则：`len(text) <= limit` 原样返回；否则返回首 `limit * 2 // 3` 字符 + `……（已省略 N 字符）……` + 末 `limit - 首` 字符，`N = len(text) - limit`，标记本身不计入配额。默认额度 1500 即首 1000 与末 500。`load_text` 返回 `(片段, 说明)`，读不到内容时片段为空、说明写明原因（二进制、无读权限、被占用、目录、图片）。
 
 `pet/file_intake/image.py` 的顺序固定为 `Image.open`（只读文件头）→ `draft("RGB", (1024, 1024))` → 判 `size[0] * size[1] >= max_pixels` → 解码 → 缩到长边 1024。`DecompressionBombError` 与 `DecompressionBombWarning` 都按失败处理并返回 `None`；`DecompressionBombWarning` 用 `warnings.catch_warnings()` + `simplefilter("error")` 转成异常。
 
