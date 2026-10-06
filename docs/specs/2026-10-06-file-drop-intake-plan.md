@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 让桌宠窗口接收文件拖放，用户在文件气泡里从三条动作中选择（尝一口 / 读读看 / 收进知识库），由内容嗅探、体积与像素闸门、拒绝名单守住边界；文件正文只进当轮 prompt，属性与记忆沿用既有结算通道。
+**Goal:** 让桌宠窗口接收文件拖放，用户在文件气泡里从三条动作中选择（尝一口 / 看一看 / 收进知识库），由内容嗅探、体积与像素闸门、拒绝名单守住边界；文件正文只进当轮 prompt，属性与记忆沿用既有结算通道。
 
 **Architecture:** 三层落地。`pet/file_intake/` 是纯逻辑包（嗅探、解码链、截断、闸门、名单，不依赖 Qt）；`pet/ui/file_drop_handler.py` 承担判定与回调，依赖 Qt 类型但可脱离 `PetWindow` 单测；`pet/ui/pet_window.py` 的四个拖放事件只做转发。知识库经 `TOOL_REGISTRY.add_file_action` 扩展点接入，核心不 import 任何工具。
 
@@ -316,7 +316,7 @@ Expected: FAIL，`TypeError: build_chat_decide() got an unexpected keyword argum
 
 - [x] **Step 3: 实现参数与接线**
 
-`pet/app.py` 的接线按 spec §5：尝一口走 `trigger("interact", hint=interact_file_prompt(...), record_context=True, context_hint=<元信息>, thinking=False, enable_tools=False, is_play_loading=False, delay_ms=150)`；读读看走 `trigger("chat", message=<元信息请求>, attachment_text=<正文>)`；两者都不把正文写进 `message` / `context_hint`。读取在 daemon 线程执行，完成后回主线程调用 trigger（`PIL.Image` 对象在此移交所有权，UI 侧之后不再触碰）。
+`pet/app.py` 的接线按 spec §5：尝一口走 `trigger("interact", hint=interact_file_prompt(...), record_context=True, context_hint=<元信息>, thinking=False, enable_tools=False, is_play_loading=False, delay_ms=150)`；看一看走 `trigger("chat", message=<元信息请求>, attachment_text=<正文>)`；两者都不把正文写进 `message` / `context_hint`。读取在 daemon 线程执行，完成后回主线程调用 trigger（`PIL.Image` 对象在此移交所有权，UI 侧之后不再触碰）。
 
 - [x] **Step 4: 运行测试，确认通过**
 
@@ -333,7 +333,7 @@ python -m pytest -q
 
 - [ ] **Step 6: 手动验证正文不落盘**
 
-按 spec §9 手动清单第 14 条：造一个含唯一标记串的文本文件，读读看之后在聊天历史窗口与 `pet.db` 里搜索该标记，均无命中，而当轮日志能看到正文已装配。
+按 spec §9 手动清单第 14 条：造一个含唯一标记串的文本文件，看一看之后在聊天历史窗口与 `pet.db` 里搜索该标记，均无命中，而当轮日志能看到正文已装配。
 
 - [x] **Step 7: Commit**
 

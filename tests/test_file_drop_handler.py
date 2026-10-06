@@ -147,7 +147,8 @@ class TestFileActions:
         registry = ToolRegistry()
         registry.register("demo", "示例工具")
         registry.add_file_action("demo", "ingest", "收进去", lambda files: {})
-        assert set(registry.file_actions()[0]) == {"tool", "id", "label", "handler", "accepts"}
+        assert set(registry.file_actions()[0]) == {"tool", "id", "label", "handler",
+                                                   "accepts", "needs_content"}
 
     def test_disabled_tool_hides_action(self):
         registry = ToolRegistry()
@@ -161,6 +162,16 @@ class TestFileActions:
         registry.register("demo", "示例工具")
         registry.add_file_action("demo", "ingest", "收进去", lambda files: {})
         assert registry.file_actions()[0]["accepts"] == "any"
+
+    def test_needs_content_defaults_true_and_passes_through(self):
+        registry = ToolRegistry()
+        registry.register("demo", "示例工具")
+        registry.add_file_action("demo", "ingest", "收进去", lambda files: {})
+        registry.add_file_action("demo", "todo", "记进待办", lambda files: {},
+                                 needs_content=False)
+        by_id = {action["id"]: action for action in registry.file_actions()}
+        assert by_id["ingest"]["needs_content"] is True
+        assert by_id["todo"]["needs_content"] is False
 
 
 class TestBusyText:

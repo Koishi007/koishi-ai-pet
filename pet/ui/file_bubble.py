@@ -3,23 +3,24 @@
 from __future__ import annotations
 
 import logging
+import threading
 
 from PySide6.QtCore import (QEasingCurve, QParallelAnimationGroup, QPoint, QPropertyAnimation,
-                            Qt, QTimer, Signal)
+                            Qt, QTimer, Signal, Slot)
 from PySide6.QtWidgets import (QBoxLayout, QHBoxLayout, QLabel, QPushButton, QVBoxLayout,
                                QWidget)
 
 from pet.config import config
-from pet.file_intake import FileRef, dir_summary
+from pet.file_intake import KIND_LABELS, FileRef, dir_summary
 from pet.tools.registry import TOOL_REGISTRY
 from pet.ui.styles import BUBBLE_ROW_CHAT, bubble_column_y
 
 logger = logging.getLogger(__name__)
 
 # 核心动作固定显示，工具动作由注册表声明
-CORE_ACTIONS = (("taste", "尝一口"), ("read", "读读看"))
+CORE_ACTIONS = (("taste", "尝一口"), ("read", "看一看"))
 
-_KIND_LABELS = {"text": "文本", "image": "图片", "binary": "二进制", "dir": "文件夹"}
+
 _PANEL_QSS = (
     "QWidget#filePanel {"
     "  background: rgba(255,255,255,225);"
@@ -49,17 +50,28 @@ def _format_size(size: int) -> str:
     return f"{size} B"
 
 
-def describe_ref(ref: FileRef) -> str:
-    """一行摘要：名称 · 类型 · 大小；目录补一层条目名。"""
-    parts = [ref.name, _KIND_LABELS.get(ref.kind, ref.kind)]
+def describe_ref(ref: FileRef, dir_note: str = "") -> str:
+    """一行摘要：名称 · 类型 · 大小；目录的条目摘要由后台扫描后补上。"""
+    parts = [ref.name, KIND_LABELS.get(ref.kind, ref.kind)]
     if ref.kind == "dir":
-        count, names = dir_summary(ref.path)
-        parts.append(f"{count} 项")
-        if names:
-            parts.append("、".join(names))
+        parts.append(dir_note or "扫描中…")
     else:
         parts.append(_format_size(ref.size))
     return " · ".join(parts)
+
+
+def _dir_note(count: int, names: list[str]) -> str:
+    """目录摘要：条目数与前若干名字。"""
+    if not count:
+        return "空文件夹"
+    note = f"{count} 项"
+    if names:
+        note = f"{note}：{'、'.join(names)}"
+    return note
+
+
+def _button_label(text: str, reason: str) -> str:
+    return f"{text}（{reason}）" if reason else text
 
 
 class FileBubble(QWidget):
@@ -67,12 +79,15 @@ class FileBubble(QWidget):
 
     action_chosen = Signal(str, object)
     idle_timeout = Signal()
+    dir_scanned = Signal(int, str)
 
     def __init__(self, pet_window, parent=None):
         super().__init__(parent)
         self._pet_window = pet_window
         self._refs: tuple[FileRef, ...] = ()
+        self._rows: list[QLabel] = []
         self._action_ids: tuple[tuple[str, str, bool], ...] = ()
+        self._dir_token = 0
 
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -91,6 +106,7 @@ class FileBubble(QWidget):
         self._idle_timer.timeout.connect(self._on_idle)
         self._refresh_timer = QTimer(self)
         self._refresh_timer.timeout.connect(self._refresh_actions)
+        self.dir_scanned.connect(self._on_dir_scanned)
 
         self.hide()
 
@@ -156,26 +172,71 @@ class FileBubble(QWidget):
             widget = item.widget()
             if widget is not None:
                 widget.deleteLater()
+        self._rows = []
         for ref in self._refs:
             row = QLabel(describe_ref(ref))
             row.setStyleSheet(_ROW_QSS)
             row.setWordWrap(True)
             self._body.addWidget(row)
+            self._rows.append(row)
+        self._scan_dirs()
+
+    def _scan_dirs(self):
+        """目录条目摘要交给后台线程读，避免网络路径或无响应盘符卡住界面。"""
+        self._dir_token += 1
+        token = self._dir_token
+        targets = [(index, ref.path) for index, ref in enumerate(self._refs)
+                   if ref.kind == "dir"]
+        if not targets:
+            return
+
+        def worker() -> None:
+            for index, path in targets:
+                if token != self._dir_token:
+                    return
+                count, names = dir_summary(path)
+                self.dir_scanned.emit(index, _dir_note(count, names))
+
+        threading.Thread(target=worker, daemon=True, name="file-dir-scan").start()
+
+    @Slot(int, str)
+    def _on_dir_scanned(self, index: int, note: str):
+        if index < len(self._rows):
+            self._rows[index].setText(describe_ref(self._refs[index], note))
 
     def _available_actions(self) -> list[tuple[str, str, bool]]:
-        """返回（动作 id, 按钮文案, 是否可用）：核心两条在前，工具动作在后。"""
+        """返回（动作 id, 按钮文案, 是否可用）：核心两条在前，工具动作在后。
+
+        依赖图片的核心动作在视觉关闭时置灰并标注原因（设计文档 §4.4）；
+        `accepts` 与 kind 不匹配，或内容读取关闭且动作需要内容时，工具动作不出现（设计文档 §5.1）。
+        """
         kinds = {ref.kind for ref in self._refs}
+        has_text = "text" in kinds
+        has_image = "image" in kinds
         read_content = bool(config.FILE_DROP_READ_CONTENT)
+        vision = bool(config.VISION_ENABLED)
+
+        taste_usable = read_content and (vision or kinds != {"image"})
+        read_usable = read_content and (has_text or (has_image and vision))
+        if not read_content:
+            taste_reason = read_reason = "内容读取已关闭"
+        else:
+            taste_reason = "" if taste_usable else "视觉通道已关闭"
+            read_reason = "" if read_usable else (
+                "视觉通道已关闭" if has_image and not vision else "没有可读文本")
+
         actions: list[tuple[str, str, bool]] = [
-            ("taste", CORE_ACTIONS[0][1], ("text" in kinds or "image" in kinds) and read_content),
-            ("read", CORE_ACTIONS[1][1], "text" in kinds and read_content),
+            ("taste", _button_label(CORE_ACTIONS[0][1], taste_reason), taste_usable),
+            ("read", _button_label(CORE_ACTIONS[1][1], read_reason), read_usable),
         ]
         for action in TOOL_REGISTRY.file_actions():
             accepts = action.get("accepts", "any")
-            if accepts == "text":
-                usable = "text" in kinds and read_content
+            if not read_content and action.get("needs_content", True):
+                usable = False
+            elif accepts == "text":
+                usable = has_text
             elif accepts == "image":
-                usable = "image" in kinds and read_content
+                usable = has_image
             else:
                 usable = True
             if usable:
@@ -195,7 +256,7 @@ class FileBubble(QWidget):
             if widget is not None:
                 widget.deleteLater()
         for action_id, label, usable in actions:
-            button = QPushButton(label if usable else f"{label}（不可用）")
+            button = QPushButton(label)
             button.setStyleSheet(_ACTION_QSS)
             button.setEnabled(usable)
             button.clicked.connect(lambda _=False, aid=action_id: self._on_action(aid))

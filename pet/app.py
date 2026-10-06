@@ -27,7 +27,7 @@ from pet.brain.prompts import interact_fed_prompt, interact_file_prompt
 from pet.tools import load_tools
 from pet.tools.context import TOOL_CTX
 from pet.tools.registry import TOOL_REGISTRY
-from pet.file_intake import load_image, load_text
+from pet.file_intake import KIND_LABELS, load_image, load_text
 from pet.config import config
 from pet.auto_start import set_auto_start
 from pet.crash_reporter import get_guard
@@ -53,7 +53,7 @@ class _FileActionDispatcher(QObject):
     def _dispatch(self, action_id: str, refs, image, body: str) -> None:
         meta = _file_meta_text(refs)
         if action_id == "taste":
-            names = "、".join(ref.name for ref in refs[:_FILE_META_MAX_NAMES])
+            names = "、".join(_file_meta_lines(refs))
             self._agent.trigger("interact", hint=interact_file_prompt(names),
                                 attachment_text=body, attachment_image=image,
                                 record_context=True, context_hint=meta,
@@ -64,11 +64,19 @@ class _FileActionDispatcher(QObject):
                                 attachment_text=body, attachment_image=image)
 
 
+def _file_meta_lines(refs) -> list[str]:
+    """每条一项：名称、类型、大小；目录不带大小。"""
+    lines = []
+    for ref in refs[:_FILE_META_MAX_NAMES]:
+        label = KIND_LABELS.get(ref.kind, ref.kind)
+        size = "" if ref.kind == "dir" else f"，{ref.size} 字节"
+        lines.append(f"{ref.name}（{label}{size}）")
+    return lines
+
+
 def _file_meta_text(refs) -> str:
     """元信息：进 message 与 context_hint 落库的那一份，不含正文。"""
-    lines = [f"- {ref.name}（{ref.kind}，{ref.size} 字节）"
-             for ref in refs[:_FILE_META_MAX_NAMES]]
-    return "用户把文件交给了你：\n" + "\n".join(lines)
+    return "用户把文件交给了你：\n" + "\n".join(f"- {line}" for line in _file_meta_lines(refs))
 
 
 def _read_file_payload(refs, limit: int) -> tuple[str, object]:
@@ -84,7 +92,7 @@ def _read_file_payload(refs, limit: int) -> tuple[str, object]:
                 chunks.append(f"【{ref.name}】\n{text}")
             elif reason:
                 logger.info("[FileDrop] 读不出内容: %s %s", ref.name, reason)
-        elif ref.kind == "image" and image is None:
+        elif ref.kind == "image" and image is None and config.VISION_ENABLED:
             image = load_image(ref.path, config.FILE_DROP_MAX_PIXELS)
     return "\n\n".join(chunks), image
 
@@ -109,10 +117,31 @@ def _run_tool_file_action(action_id: str, refs) -> None:
     tool_name, _, action_key = rest.partition(":")
     for action in TOOL_REGISTRY.file_actions():
         if action["tool"] == tool_name and action["id"] == action_key:
-            threading.Thread(target=action["handler"], args=(list(refs),),
+            threading.Thread(target=_call_tool_handler,
+                             args=(action_id, action["handler"], list(refs)),
                              daemon=True, name="file-tool-action").start()
             return
     logger.warning("[FileDrop] 工具动作已不可用: %s", action_id)
+
+
+def _call_tool_handler(action_id: str, handler, files) -> None:
+    """执行工具动作；异常按失败处理，不让它冒到线程钩子。"""
+    try:
+        result = handler(files)
+    except Exception:
+        logger.exception(f"[FileDrop] 工具动作异常: {action_id}")
+        _report_tool_result({"ok": False, "summary": "这个动作没能完成（错误已记入日志）"})
+        return
+    _report_tool_result(result)
+
+
+def _report_tool_result(result) -> None:
+    """失败结果按 summary 提示；成功由工具自己播报，非 dict 的返回值忽略。"""
+    if not isinstance(result, dict) or result.get("ok"):
+        return
+    summary = str(result.get("summary") or "").strip()
+    if summary:
+        TOOL_CTX.speech(summary)
 
 
 def _warn_already_running() -> None:

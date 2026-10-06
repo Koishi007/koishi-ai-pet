@@ -63,15 +63,18 @@ class ToolRegistry:
         logger.info(f"[ToolRegistry] menu item added: {tool_name} > {label}")
 
     def add_file_action(self, tool_name: str, action_id: str, label: str,
-                        handler: Callable, accepts: str = "any"):
+                        handler: Callable, accepts: str = "any",
+                        needs_content: bool = True):
         """注册一个文件动作：拖入文件后由文件气泡渲染成按钮。
 
         accepts 取值：text（需要可读文本）、image（需要可解码图片）、any（只要有元信息）。
+        needs_content 为真时该动作跟随内容读取开关隐藏，只需文件名与路径的动作传 False。
         handler 签名 (files: list[FileRef]) -> {"ok": bool, "summary": str}，一次调用收到全部文件。
         """
         tool = self._tools[tool_name]
         tool.file_actions.append({"tool": tool_name, "id": action_id, "label": label,
-                                  "handler": handler, "accepts": accepts})
+                                  "handler": handler, "accepts": accepts,
+                                  "needs_content": bool(needs_content)})
         logger.info(f"[ToolRegistry] file action added: {tool_name} > {label}")
 
     def file_actions(self) -> list[dict]:

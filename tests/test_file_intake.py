@@ -6,6 +6,7 @@
 
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 from pet.file_intake import (
@@ -233,6 +234,14 @@ class TestImageGate:
         image = load_image(str(path), 10 ** 9)
         assert image is not None
         assert max(image.size) <= 1024
+
+    def test_pillow_bomb_band_rejected(self, tmp_path, monkeypatch):
+        # 2500 像素落在一倍到两倍阈值之间：Pillow 只发警告，闸门按同一上限自行拒绝
+        path = tmp_path / "band.png"
+        Image.new("RGB", (50, 50), (1, 2, 3)).save(path)
+        monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 2000)
+        with pytest.warns(Image.DecompressionBombWarning):
+            assert load_image(str(path), 10 ** 9) is None
 
     def test_broken_file_returns_none(self, tmp_path):
         assert load_image(_file(tmp_path, "broken.png", b"\x89PNG\r\n\x1a\n"), 10 ** 9) is None

@@ -408,7 +408,7 @@ class PetWindow(TransparentWindow):
         event.accept()
 
     def dragEnterEvent(self, event: QDragEnterEvent):
-        if not self._file_drop.accept_hover(bool(event.mimeData().urls())):
+        if not self._file_drop.accept_hover(bool(paths_from_mime(event.mimeData()))):
             event.ignore()
             return
         self._accept_copy(event)
@@ -436,6 +436,10 @@ class PetWindow(TransparentWindow):
         return agent.state_machine.state == PetState.INTERACTING
 
     def _show_file_bubble(self, refs) -> None:
+        """放下通过：先收起三个悬空气泡，再显示文件气泡（设计文档 §3.1）。"""
+        for bubble in (self._chat_bubble, self._feed_bubble, self._music_bubble):
+            if bubble:
+                bubble.hide_bubble()
         if self._file_bubble:
             self._file_bubble.show_files(refs)
 

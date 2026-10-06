@@ -2,6 +2,9 @@
 
 from dataclasses import dataclass
 
+# kind 到展示名的映射，界面与提示词共用
+KIND_LABELS = {"text": "文本", "image": "图片", "binary": "二进制", "dir": "文件夹"}
+
 
 @dataclass(frozen=True)
 class FileRef:

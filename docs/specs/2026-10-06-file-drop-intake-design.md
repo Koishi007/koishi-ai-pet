@@ -1,6 +1,6 @@
 # 拖入文件交互设计
 
-> 桌宠窗口接收拖入的文件，由用户在气泡中选择动作（尝一口 / 读读看 / 收进知识库）；可读内容以嗅探结果为准，解析失败一律降级为文件名与类型；属性变化沿用 LLM 输出的 `Mood:` / `Vitals:` 行，不新增数值写入路径；原文件只读，不移动、不删除、不改写。
+> 桌宠窗口接收拖入的文件，由用户在气泡中选择动作（尝一口 / 看一看 / 收进知识库）；可读内容以嗅探结果为准，解析失败一律降级为文件名与类型；属性变化沿用 LLM 输出的 `Mood:` / `Vitals:` 行，不新增数值写入路径；原文件只读，不移动、不删除、不改写。
 
 ## §0 背景与现状
 
@@ -183,11 +183,11 @@ if im.size[0] * im.size[1] >= config.FILE_DROP_MAX_PIXELS:
 
 三条结论：磁盘体积与解码内存无关，0.1 MB 的文件可以解出 153 MB，体积闸门挡不住压缩炸弹；Pillow 自带阈值只在超过 2 × `MAX_IMAGE_PIXELS`（178,956,970 像素）时抛错，89 MP 至 179 MP 区间仅发 `DecompressionBombWarning` 且照常解码，“解码失败即降级”覆盖不到该区间；`Image.open` 只读文件头，耗时毫秒级，可作为事前闸门。
 
-`Image.open` 有两种异常出口：像素数超过 2 × `MAX_IMAGE_PIXELS` 时抛 `DecompressionBombError`，`DecompressionBombWarning` 按异常处理。两者都发生在像素闸门之前，`im.size` 拿不到，降级产出只有文件名、后缀与体积；闸门命中时像素数已知，可以一并带出。
+`Image.open` 的异常出口只有一档：像素数超过 2 × `MAX_IMAGE_PIXELS` 时抛 `DecompressionBombError`，此时 `im.size` 拿不到，降级产出只有文件名、后缀与体积。`MAX_IMAGE_PIXELS` 到两倍之间 Pillow 只发警告并照常打开，像素闸门按同一上限自行拒绝，不改动进程级的 `warnings` 过滤器（解码在后台线程，`warnings.catch_warnings` 影响的是全局状态）；闸门命中时像素数已知，可以一并带出。
 
 `draft` 的收益实测：40 MP JPEG 的 RSS 峰值从约 150 MB 降到 10 MB（解码结果 2000×1250）。通过闸门的图片统一缩放到长边 1024，动图取首帧。
 
-编码交 `prepare_image(image=...)`（`pet/agent/screen_reader.py:60-87`）。`VISION_ENABLED` 关闭或模型不支持多模态时（`pet/brain/llm_client.py:169`），图片按 §4.5 处理，动作按钮置灰并标注原因。
+编码交 `prepare_image(image=...)`（`pet/agent/screen_reader.py:60-87`）。`VISION_ENABLED` 关闭或模型不支持多模态时（`pet/brain/llm_client.py:169`），图片按 §4.5 处理：附件不编码、后台也不解码；整批只有图片时核心动作置灰，文案为「视觉通道已关闭」，同批还有可读文本时动作照常，只是图片部分降级为元信息。
 
 ### §4.5 元信息
 
@@ -195,7 +195,7 @@ if im.size[0] * im.size[1] >= config.FILE_DROP_MAX_PIXELS:
 
 ### §4.6 目录
 
-`mimeData().urls()` 不区分文件与目录，两者同路径进入。目录的分类结果为 `kind = "dir"`，只读一层：条目计数上限 200，展示前 20 个名字，不递归、不计算体积，因此也不存在软链接成环与遍历耗时问题。
+`mimeData().urls()` 不区分文件与目录，两者同路径进入。目录的分类结果为 `kind = "dir"`，只读一层：条目计数上限 200，展示前 20 个名字，不递归、不计算体积，因此也不存在软链接成环与遍历耗时问题。条目摘要在气泡显示时由后台线程读取，网络路径或无响应盘符不阻塞界面。
 
 目录不进入解码链，核心动作按元信息演出，`accepts` 为 `"text"` 或 `"image"` 的工具动作不出现。分类与体积、名单判定同在 `pet/file_intake` 的判定层完成，UI 不做类型分支。
 
@@ -204,14 +204,14 @@ if im.size[0] * im.size[1] >= config.FILE_DROP_MAX_PIXELS:
 | 按钮 | 通道 | 读取 | 产出 |
 |---|---|---|---|
 | 尝一口 | `agent.trigger("interact", hint=interact_file_prompt(...), record_context=True, context_hint=...)` | 文本 `FILE_DROP_TASTE_CHARS`（默认 300）；图片走视觉 | 一句反应 + `Mood:` / `Vitals:` 增量 |
-| 读读看 | `agent.trigger("chat", message=...)` | 文本 `FILE_DROP_MAX_CHARS`（默认 1500）；图片走视觉 | 摘要或要点，`Memory:` 行按需产出 |
+| 看一看 | `agent.trigger("chat", message=...)` | 文本 `FILE_DROP_MAX_CHARS`（默认 1500）；图片走视觉 | 摘要或要点，`Memory:` 行按需产出 |
 | 工具动作 | 工具注册的处理函数，内容不进 LLM | 由工具决定 | 由工具自身播报 |
 
 前两项是核心动作，始终出现；第三项来自 §5.1 的扩展点，第一档由知识库工具声明一条“收进知识库”。
 
-核心动作不新增 LLM 调用路径：尝一口与投喂同构，读读看复用聊天管线。
+核心动作不新增 LLM 调用路径：尝一口与投喂同构，看一看复用聊天管线。
 
-一次拖入多个文件时，核心动作作用于全部文件，合成一次请求：提示词中每个文件一条元信息与片段，每个文件各自用满 §4.3 的额度；工具动作按 §5.1 的约定，一次调用传入全部文件。
+一次拖入多个文件时，核心动作作用于全部文件，合成一次请求：提示词中每个文件一条元信息与片段，每个文件各自用满 §4.3 的额度；工具动作按 §5.1 的约定，一次调用传入全部文件。附件通道一次只带一张图片：多张图里取第一张可解码的，其余图片只按元信息参与提示词。
 
 属性变化由 LLM 输出 `Mood:` / `Vitals:` 行，字段限于 `affection`、`joy`、`sanity`、`satiety`、`energy`（`pet/brain/parsing.py:37-39`）。模板 `INTERACT_FILE_PROMPT` 与 `INTERACT_FED_PROMPT` 形式一致，内含文件类型到数值增量的规则，不在 drop 处理代码中直写数值。
 
@@ -227,9 +227,9 @@ if im.size[0] * im.size[1] >= config.FILE_DROP_MAX_PIXELS:
 
 进 prompt 的正文与进持久化的正文不是同一份：元信息进持久化，正文只在当轮。代价是有意接受的：下一轮用户追问“刚才那个文件里说了什么”时，历史里只有元信息，模型看不到正文，只能凭元信息与自己上一轮的回复作答。
 
-另有一条绕行路径要堵：桌宠的回复本身也会落库（`pet/agent/pet_agent.py:584-586`、`:593`）。读读看的模板要求总结要点而不摘录原句，避免正文经回复二次进入持久化。
+另有一条绕行路径要堵：桌宠的回复本身也会落库（`pet/agent/pet_agent.py:584-586`、`:593`）。看一看的模板要求总结要点而不摘录原句，避免正文经回复二次进入持久化。
 
-记忆只在读读看路径产生：即时交互模式的核心规则明令禁止输出 `Memory:` 行（`pet/brain/prompts.py:235`），尝一口与拒收都不会写记忆；chat 管线的 `Memory:` 行由 LLM 决定、agent 无条件保存（`pet/agent/pet_agent.py:613-619`），撤回入口是记忆管理窗口的多选删除（`pet/ui/memory_window.py:732-752`）。文件模板要求记忆只描述“用户交付了什么”，不摘录正文，避免文件内容沉淀进长期记忆。
+记忆只在看一看路径产生：即时交互模式的核心规则明令禁止输出 `Memory:` 行（`pet/brain/prompts.py:235`），尝一口与拒收都不会写记忆；chat 管线的 `Memory:` 行由 LLM 决定、agent 无条件保存（`pet/agent/pet_agent.py:613-619`），撤回入口是记忆管理窗口的多选删除（`pet/ui/memory_window.py:732-752`）。文件模板要求记忆只描述“用户交付了什么”，不摘录正文，避免文件内容沉淀进长期记忆。
 
 ### §5.1 工具声明的文件动作
 
@@ -251,7 +251,8 @@ registry.add_file_action(
 | 返回值 | `{"ok": bool, "summary": str}`，失败时 `summary` 作为降级提示 |
 | `kind` 取值 | `text`、`image`、`binary`、`dir`，由核心的读取判定产生 |
 | `accepts` 取值 | `text`（只要 `kind = "text"`）、`image`（只要 `kind = "image"`）、`any`（接受全部，含 `binary` 与 `dir`）；不声明等价于 `any` |
-| 渲染 | 文件气泡按已注册且启用的工具声明的动作逐条渲染按钮；`accepts` 与 `kind` 不匹配、或 `FILE_DROP_READ_CONTENT` 关闭时，动作不出现 |
+| 渲染 | 文件气泡按已注册且启用的工具声明的动作逐条渲染按钮；`accepts` 与 `kind` 不匹配，或 `FILE_DROP_READ_CONTENT` 关闭且动作声明需要内容时，动作不出现 |
+| `needs_content` | 默认 `true`；置为 `false` 的动作不随 `FILE_DROP_READ_CONTENT` 隐藏，供只需名称与路径的动作使用 |
 | 刷新 | 气泡可见期间按 1 秒间隔重读注册表并更新按钮，复用跟随定时器；工具加载完成后不需要再次拖入，也不引入注册表事件机制 |
 | 缺失场景 | 工具未注册（`TOOLS_ENABLED` 排除或未安装）、被右键菜单关闭、或仍在后台加载时，按钮不出现；核心不做存在性检查，也不写 try/except 分支 |
 | 边界归属 | 体积、数量、拒绝名单、可读判定仍由核心执行，handler 只在文件通过判定后收到 `FileRef` |
@@ -272,7 +273,7 @@ registry.add_file_action(
 | 无本地路径（纯文本或网络碎片） | 悬停 | `ignore()`，不产生请求；拖放协议不成立，事件不会送达放下阶段 |
 | 目录 | 读取 | `kind = "dir"`，只读一层（§4.6） |
 | 二进制或解码失败 | 读取 | 降级为元信息，回复中说明读不出内容 |
-| 图片解析失败：`DecompressionBombError`、`DecompressionBombWarning`、像素超闸门、解码失败 | 读取 | 降级为元信息；`Image.open` 阶段失败的像素数未知，其余带上尺寸 |
+| 图片解析失败：`DecompressionBombError`、像素超闸门、解码失败 | 读取 | 降级为元信息；`Image.open` 阶段失败的像素数未知，其余带上尺寸 |
 | 文本超过读取上限 | 读取 | 按 §4.3 截断，不属于异常 |
 | 文件被占用、无读权限 | 读取 | 降级为元信息 |
 | 工具文件动作失败 | 执行 | 按返回的 `summary` 提示；核心动作与其他工具动作不受影响 |
@@ -371,7 +372,7 @@ agent.trigger(
 自动化：
 
 ```bash
-python -m pytest tests/test_file_intake.py tests/test_file_drop_handler.py tests/test_app_file_actions.py
+python -m pytest tests/test_file_intake.py tests/test_file_drop_handler.py tests/test_file_bubble.py tests/test_app_file_actions.py
 python -m pytest tests/test_architecture_contracts.py tests/test_docs.py
 python scripts/gen_docs.py --check
 ```
@@ -380,11 +381,13 @@ python scripts/gen_docs.py --check
 
 `tests/test_file_drop_handler.py` 覆盖判定层，不构造 `PetWindow`：`PetWindow` 依赖 agent、动作队列、素材加载与屏幕探测，offscreen 下构造它等于为几行判定拉起大半个应用。判定因此住在 `pet/ui/file_drop_handler.py`，只依赖路径列表、配置与四个回调（显示气泡、发拒收请求、写一次性事件、忽略），测试直接喂 `QMimeData` 或路径列表，断言回调序列：无路径不回调、悬停三项在悬停层被拒、忙态只写事件不发请求、三类硬边界各自触发对应类型、通过时调用显示气泡。`tests/conftest.py:23` 已设 `QT_QPA_PLATFORM=offscreen`，`QMimeData` 可直接构造（该处是 `setdefault`，外部已设同名变量时沿用外部值）。`PetWindow` 上的事件转发与操作系统的事件投递不在这一层覆盖，由 §0.1 的验证与手动清单负责。
 
-`tests/test_app_file_actions.py` 覆盖装配层：`pet/app.py` 只在进程入口被导入，此前没有测试触及；用桩 dispatcher 触发核心动作与工具动作两条分支，断言后台线程启动且正文送达。
+`tests/test_app_file_actions.py` 覆盖装配层：`pet/app.py` 只在进程入口被导入，此前没有测试触及；用桩 dispatcher 触发核心动作与工具动作两条分支，断言后台线程启动、正文送达、工具动作的返回值与异常都变成用户可见的提示。
+
+`tests/test_file_bubble.py` 覆盖气泡的动作可用性：视觉关闭时只有图片的批次置灰并标注「视觉通道已关闭」，混合批次保留文本动作；工具动作按 `accepts` 与内容开关出现或消失。
 
 手动检查清单：
 
-1. 拖入 UTF-8 的 `.md` 与 GBK 的 `.txt`，读读看均能取到内容；
+1. 拖入 UTF-8 的 `.md` 与 GBK 的 `.txt`，看一看均能取到内容；
 2. 拖入图片，`VISION_ENABLED` 开启时能按内容反应，关闭时按钮置灰且说明原因；
 3. 拖入 `.exe`，只念文件名，回复说明读不出内容；
 4. 拖入 11 MB 文件，放下时拒收，桌宠用一句台词回应；
@@ -397,11 +400,11 @@ python scripts/gen_docs.py --check
 11. 拖入约 0.2 MB 的 8000×8000 单色 PNG（64 MP），按像素闸门降级为元信息，界面不卡顿；再拖入一张 48 MP 的 JPEG，走 `draft` 正常送进视觉通道；
 12. 拖入一个目录，只显示条目摘要，不出现需要内容的动作；
 13. 收进知识库后，知识库面板可见该文档，来源为 `file_drop`；
-14. 文件正文不落盘：造一个含唯一标记串的文本文件，读读看之后在聊天历史窗口与 `pet.db` 里搜索该标记，均无命中，而当轮日志能看到正文已装配；
+14. 文件正文不落盘：造一个含唯一标记串的文本文件，看一看之后在聊天历史窗口与 `pet.db` 里搜索该标记，均无命中，而当轮日志能看到正文已装配；
 15. 从 `TOOLS_ENABLED` 排除 `knowledge` 后启动，拖入文本文件，气泡只出现两个核心动作；
 16. 右键菜单关闭知识库工具后再次拖入，该动作不再出现，核心动作正常；
 17. 启动后立即拖入（工具仍在后台加载）界面不卡顿，气泡保持打开时按钮自行出现；
-18. 忙态：读读看进行中再拖入一个文件，不产生新请求，随后某一轮上下文出现 `file_drop_busy`；等请求结束后再拖入，气泡内容替换为最新一次拖入；
+18. 忙态：看一看进行中再拖入一个文件，不产生新请求，随后某一轮上下文出现 `file_drop_busy`；等请求结束后再拖入，气泡内容替换为最新一次拖入；
 19. 文件气泡的收起路径：拖入后抓起桌宠、从托盘隐藏桌宠，气泡均随之消失；气泡显示期间悬停桌宠，不出现 chat / feed / music。
 
 ## §10 风险与约束
@@ -410,7 +413,7 @@ python scripts/gen_docs.py --check
 - **提示词注入**：文件内容进入 prompt 通道，等价于把不可信文本交给模型。模板中需要固定约束：文件内容视为“物品”而非指令来源。
 - **内存峰值**：二进制嗅探只读头部 8 KB；图片按 §4.4 的像素闸门与 `draft` 路径处理，不依赖体积上限，也不做全量读入。
 - **工具加载窗口**：工具加载在后台线程进行（`pet/app.py:126`、`pet/tools/__init__.py:158-173`），启动后数秒内注册表可能为空。气泡可见期间按 1 秒间隔重读注册表，加载完成后按钮自行出现，不需要重新拖入，也不引入等待与轮询。
-- **长期记忆的写入与撤回**：“读读看”走聊天管线，`Memory:` 行由 LLM 决定并自动保存，属于既有行为而非本设计新增。撤回入口是记忆管理窗口的多选删除（`pet/ui/memory_window.py:732-752`）；模板约束记忆只描述用户交付了什么，不摘录文件正文。
+- **长期记忆的写入与撤回**：“看一看”走聊天管线，`Memory:` 行由 LLM 决定并自动保存，属于既有行为而非本设计新增。撤回入口是记忆管理窗口的多选删除（`pet/ui/memory_window.py:732-752`）；模板约束记忆只描述用户交付了什么，不摘录文件正文。
 - **平台事件投递**：Windows 下提权进程收不到非提权资源管理器的拖放（UIPI），表现是拖入完全无响应。先用一个同类探针区分“窗口形态不支持”与“进程权限不匹配”（§0.1）。
 - **拖放动作语义**：三个拖放事件都不使用 `acceptProposedAction()`。Windows 下资源管理器提议 `CopyAction`（§0.1），但 X11/Wayland 的文件管理器在同一挂载点内拖动、或用户按住 Shift 时会提议 `MoveAction`；接受该动作意味着源端按“移动”处理，用户的原文件可能被移走或删除，而本设计从不实际接收文件。统一 `setDropAction(Qt.DropAction.CopyAction)` 后 `accept()`，把语义固定为复制。
 - **平台覆盖**：实测只覆盖 Windows；macOS 与 Linux 依赖 Qt 的同一套拖放事件与判定逻辑，没有可用的验证环境，未实测。穿透实现在 Windows 走 `WS_EX_TRANSPARENT`，其它平台走 `WA_TransparentForMouseEvents`（`pet/ui/pet_window.py:620-641`），两条路径都让窗口在命中测试中被跳过；属性自检只覆盖后者（§0.1）。

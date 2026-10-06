@@ -6,9 +6,10 @@
 from pet.file_intake.image import load_image
 from pet.file_intake.sniff import check_drop, dir_summary, match_deny, sniff
 from pet.file_intake.text import load_text, load_text_full, truncate
-from pet.file_intake.types import DropVerdict, FileRef
+from pet.file_intake.types import KIND_LABELS, DropVerdict, FileRef
 
 __all__ = [
+    "KIND_LABELS",
     "DropVerdict",
     "FileRef",
     "check_drop",

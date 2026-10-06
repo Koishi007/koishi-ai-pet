@@ -612,8 +612,8 @@ class ContextBuilder:
         return f"{text}{self._FILE_BODY_PREFIX}{attachment_text}{self._FILE_BODY_SUFFIX}"
 
     def _encode_attachment(self, image) -> Optional[str]:
-        """把附件图片编码成 base64；无附件或没有截图器时返回 None。"""
-        if image is None or self._screen_reader is None:
+        """把附件图片编码成 base64；无附件、视觉关闭或没有截图器时返回 None。"""
+        if image is None or not config.VISION_ENABLED or self._screen_reader is None:
             return None
         return self._screen_reader.prepare_image(image=image)
 

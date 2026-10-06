@@ -63,6 +63,11 @@ class TestChatAttachment:
         messages = _builder().build_chat_decide("看屏幕", "无窗口", screenshot=True)
         assert "SCREEN_B64" in str(messages[-1]["content"])
 
+    def test_attachment_image_dropped_without_vision(self, monkeypatch):
+        monkeypatch.setattr(config, "VISION_ENABLED", False)
+        messages = _builder().build_chat_decide("看图", "无窗口", attachment_image=object())
+        assert isinstance(messages[-1]["content"], str)
+
 
 class TestInteractAttachment:
     def test_body_wrapped_as_material(self):
@@ -71,11 +76,17 @@ class TestInteractAttachment:
         assert "MARKER" in content
         assert "观察资料" in content
 
-    def test_attachment_image_added(self):
+    def test_attachment_image_added(self, monkeypatch):
+        monkeypatch.setattr(config, "VISION_ENABLED", True)
         messages = _builder().build_interact("尝尝看", attachment_image=object())
         parts = messages[-1]["content"]
         assert isinstance(parts, list)
         assert "ATTACH_B64" in parts[1]["image_url"]["url"]
+
+    def test_attachment_image_dropped_without_vision(self, monkeypatch):
+        monkeypatch.setattr(config, "VISION_ENABLED", False)
+        messages = _builder().build_interact("尝尝看", attachment_image=object())
+        assert messages[-1]["content"] == "尝尝看"
 
     def test_no_attachment_keeps_plain_text(self):
         messages = _builder().build_interact("尝尝看")
