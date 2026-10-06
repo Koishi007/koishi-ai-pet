@@ -281,7 +281,9 @@ class PetAgent(QObject):
                           cooldown_ms: int = 15000, record_context: bool = False,
                           context_hint: str = "", is_play_loading: bool = True,
                           thinking: bool | None = None,
-                          enable_tools: bool | None = None):
+                          enable_tools: bool | None = None,
+                          attachment_text: str | None = None,
+                          attachment_image=None):
         if not hint:
             return
         from PySide6.QtCore import QDateTime
@@ -306,13 +308,16 @@ class PetAgent(QObject):
 
             self._play_loading(is_play_loading)
 
-            self._async_brain(self._interact_pipeline, hint, record_context, context_hint, thinking, enable_tools)
+            self._async_brain(self._interact_pipeline, hint, record_context, context_hint,
+                              thinking, enable_tools, attachment_text, attachment_image)
 
         QTimer.singleShot(delay_ms, _execute)
 
     def _interact_pipeline(self, hint: str, record_context: bool = False,
                            context_hint: str = "", thinking: bool | None = None,
-                           enable_tools: bool | None = None):
+                           enable_tools: bool | None = None,
+                           attachment_text: str | None = None,
+                           attachment_image=None):
         if record_context:
             store_hint = context_hint if context_hint else hint
             self.behavior.add_context(role="user", content=store_hint)
@@ -344,6 +349,7 @@ class PetAgent(QObject):
             hint, on_chunk=on_chunk, on_stream_end=on_stream_end,
             thinking=thinking, enable_tools=enable_tools,
             cancel_check=_is_stale,
+            attachment_text=attachment_text, attachment_image=attachment_image,
         )
 
         if stream_started:
@@ -352,7 +358,9 @@ class PetAgent(QObject):
 
     def _trigger_chat(self, message: str = "", is_play_loading: bool = True,
                       thinking: bool | None = None,
-                      enable_tools: bool | None = None):
+                      enable_tools: bool | None = None,
+                      attachment_text: str | None = None,
+                      attachment_image=None):
         if self.state_machine.state == PetState.INTERACTING:
             logger.info("[PetAgent] chat request ignored (INTERACTING)")
             return
@@ -371,7 +379,8 @@ class PetAgent(QObject):
 
         self._play_loading(is_play_loading)
 
-        self._async_brain(self._chat_pipeline, message, pet_x, pet_y, snap, thinking, enable_tools)
+        self._async_brain(self._chat_pipeline, message, pet_x, pet_y, snap, thinking, enable_tools,
+                          attachment_text, attachment_image)
         logger.info(f"[PetAgent] user chat:{message}")
         try:
             self.conversation_store.add("user", message)
@@ -380,7 +389,9 @@ class PetAgent(QObject):
 
     def _chat_pipeline(self, message: str, pet_x: int, pet_y: int, snap=None,
                        thinking: bool | None = None,
-                       enable_tools: bool | None = None):
+                       enable_tools: bool | None = None,
+                       attachment_text: str | None = None,
+                       attachment_image=None):
         self.behavior.add_context(role="user", content=message)
 
         window_context = self._window_context(pet_x, pet_y, snap)
@@ -415,6 +426,7 @@ class PetAgent(QObject):
             on_chunk=on_chunk, on_stream_end=on_stream_end,
             thinking=thinking, enable_tools=enable_tools,
             cancel_check=_is_stale,
+            attachment_text=attachment_text, attachment_image=attachment_image,
         )
 
         if stream_started:

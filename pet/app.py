@@ -9,7 +9,7 @@ from logging.handlers import TimedRotatingFileHandler
 
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMessageBox
 from PySide6.QtGui import QIcon
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtCore import QObject, QTimer, Qt, Signal, Slot
 
 from pet.ui.log_window import _LogRelay, LogWindowHandler
 from pet.ui.styles import ICON_PATH
@@ -22,9 +22,11 @@ from pet.ui.feed_bubble import FeedBubble
 from pet.ui.music_bubble import MusicBubble
 from pet.ui.file_bubble import FileBubble
 from pet.agent import PetAgent
-from pet.brain.prompts import interact_fed_prompt
+from pet.brain.prompts import interact_fed_prompt, interact_file_prompt
 from pet.tools import load_tools
 from pet.tools.context import TOOL_CTX
+from pet.tools.registry import TOOL_REGISTRY
+from pet.file_intake import load_image, load_text
 from pet.config import config
 from pet.auto_start import set_auto_start
 from pet.crash_reporter import get_guard
@@ -32,6 +34,84 @@ from pet.single_instance import SingleInstanceGuard
 from pet.version_check import UpdateChecker
 
 logger = logging.getLogger(__name__)
+
+_FILE_META_MAX_NAMES = 5
+
+
+class _FileActionDispatcher(QObject):
+    """把后台读到的正文送回 GUI 线程再触发管线（trigger 会读窗口坐标，属 GUI 线程）。"""
+
+    ready = Signal(str, object, object, str)
+
+    def __init__(self, agent):
+        super().__init__()
+        self._agent = agent
+        self.ready.connect(self._dispatch)
+
+    @Slot(str, object, object, str)
+    def _dispatch(self, action_id: str, refs, image, body: str) -> None:
+        meta = _file_meta_text(refs)
+        if action_id == "taste":
+            names = "、".join(ref.name for ref in refs[:_FILE_META_MAX_NAMES])
+            self._agent.trigger("interact", hint=interact_file_prompt(names),
+                                attachment_text=body, attachment_image=image,
+                                record_context=True, context_hint=meta,
+                                delay_ms=150, is_play_loading=False,
+                                thinking=False, enable_tools=False)
+        else:
+            self._agent.trigger("chat", message=meta,
+                                attachment_text=body, attachment_image=image)
+
+
+def _file_meta_text(refs) -> str:
+    """元信息：进 message 与 context_hint 落库的那一份，不含正文。"""
+    lines = [f"- {ref.name}（{ref.kind}，{ref.size} 字节）"
+             for ref in refs[:_FILE_META_MAX_NAMES]]
+    return "用户把文件交给了你：\n" + "\n".join(lines)
+
+
+def _read_file_payload(refs, limit: int) -> tuple[str, object]:
+    """后台线程读取：返回（正文片段, 首张可用图片）；读不出的项只记日志。"""
+    if not config.FILE_DROP_READ_CONTENT:
+        return "", None
+    chunks: list[str] = []
+    image = None
+    for ref in refs:
+        if ref.kind == "text":
+            text, reason = load_text(ref.path, limit)
+            if text:
+                chunks.append(f"【{ref.name}】\n{text}")
+            elif reason:
+                logger.info("[FileDrop] 读不出内容: %s %s", ref.name, reason)
+        elif ref.kind == "image" and image is None:
+            image = load_image(ref.path, config.FILE_DROP_MAX_PIXELS)
+    return "\n\n".join(chunks), image
+
+
+def _start_file_action(dispatcher: "_FileActionDispatcher", action_id: str, refs) -> None:
+    """文件气泡选定动作：核心动作后台读内容，工具动作交给注册表的 handler。"""
+    if action_id.startswith("tool:"):
+        _run_tool_file_action(action_id, refs)
+        return
+    limit = config.FILE_DROP_TASTE_CHARS if action_id == "taste" else config.FILE_DROP_MAX_CHARS
+
+    def worker() -> None:
+        body, image = _read_file_payload(refs, limit)
+        dispatcher.ready.emit(action_id, list(refs), image, body)
+
+    threading.Thread(target=worker, daemon=True, name="file-read").start()
+
+
+def _run_tool_file_action(action_id: str, refs) -> None:
+    """工具动作：按 id 找 handler 在后台执行，播报由工具自己负责。"""
+    _, _, rest = action_id.partition(":")
+    tool_name, _, action_key = rest.partition(":")
+    for action in TOOL_REGISTRY.file_actions():
+        if action["tool"] == tool_name and action["id"] == action_key:
+            threading.Thread(target=action["handler"], args=(list(refs),),
+                             daemon=True, name="file-tool-action").start()
+            return
+    logger.warning("[FileDrop] 工具动作已不可用: %s", action_id)
 
 
 def _warn_already_running() -> None:
@@ -172,6 +252,10 @@ def main():
 
     file_bubble = FileBubble(window)
     window.set_file_bubble(file_bubble)
+    file_action = _FileActionDispatcher(agent)
+    file_bubble.action_chosen.connect(
+        lambda action_id, refs: _start_file_action(file_action, action_id, refs)
+    )
 
     # 觅食窗口：装配层注入窗口工厂，food 层不依赖 UI
     from pet.food.food import FOOD

@@ -439,6 +439,24 @@ def interact_self_fed_prompt(food: str) -> str:
     )
 
 
+def interact_file_prompt(names: str) -> str:
+    """尝一口的交互 prompt：只给元信息，正文由 attachment_text 随当轮送入。"""
+    template = config.INTERACT_FILE_PROMPT
+    if template:
+        return template.format(names=names)
+    return (
+        f"用户把「{names}」交给了你尝一口，根据你的人格用一句话（≤15字）表达反应。"
+        f"同时根据文件的样子决定Vitals和Mood变化：\n"
+        f"  — 能读的文本/笔记/资料(satiety+0~5, joy+1~3)\n"
+        f"  — 图片(satiety+5~20, energy+0~5, joy+1~3)\n"
+        f"  — 代码/配置(satiety+0, energy-0~2, sanity-0~2)\n"
+        f"  — 二进制/读不出的东西(satiety+0, sanity-1~3, joy-0~2)\n"
+        f"  — 文件夹(satiety+0, joy+0~2)\n"
+        f"  — 空文件(joy+2~4, sanity+1~3)\n"
+        f"  仅输出受影响项，未列出的类型根据特征自行推断。"
+    )
+
+
 # 拖入文件被拒收时的场景与允许的数值增量：hint 只按类型变化，不含文件名
 _FILE_REJECT_SCENES = {
     "too_large": ("用户拖来的文件太大了，你没有接住", "sanity-1~3"),
