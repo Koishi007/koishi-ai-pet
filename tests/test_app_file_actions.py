@@ -138,17 +138,15 @@ def test_taste_branch_disables_cooldown(tmp_path):
     assert kwargs["cooldown_ms"] == 0
 
 
-def test_read_branch_separates_prompt_and_log(tmp_path):
+def test_read_branch_sends_meta_as_message(tmp_path):
     ref, _ = _text_ref(tmp_path)
     agent = _AgentStub()
     _FileActionDispatcher(agent)._dispatch("read", [ref], None, "正文")
 
     intent, kwargs = agent.calls[0]
     assert intent == "analyze"
-    assert "note.txt" in kwargs["message"]
-    assert kwargs["log_message"] == "用户把文件交给了你：\n- note.txt（文本，21 字节）"
-    assert "不要逐句摘录" in kwargs["message"]
-    assert "不要逐句摘录" not in kwargs["log_message"]
+    assert kwargs["message"] == "用户把文件交给了你：\n- note.txt（文本，21 字节）"
+    assert "正文" not in kwargs["message"]
     assert kwargs["attachment_text"] == "正文"
 
 

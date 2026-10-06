@@ -205,7 +205,7 @@ if im.size[0] * im.size[1] >= config.FILE_DROP_MAX_PIXELS:
 | 按钮 | 通道 | 读取 | 产出 |
 |---|---|---|---|
 | 尝一口 | `agent.trigger("interact", hint=interact_file_prompt(...), record_context=True, context_hint=...)` | 文本 `FILE_DROP_TASTE_CHARS`（默认 300）；图片走视觉 | 一句反应 + `Mood:` / `Vitals:` 增量 |
-| 看一看 | `agent.trigger("analyze", message=file_read_prompt(meta), log_message=meta)` | 文本 `FILE_DROP_MAX_CHARS`（默认 1500）；图片走视觉附件，不附当前屏幕 | 摘要或要点，动作可选，`Memory:` 行按需产出 |
+| 看一看 | `agent.trigger("analyze", message=meta)` | 文本 `FILE_DROP_MAX_CHARS`（默认 1500）；图片走视觉附件，不附当前屏幕 | 摘要或要点，动作可选，`Memory:` 行按需产出 |
 | 工具动作 | 工具注册的处理函数，内容不进 LLM | 由工具决定 | 由工具自身播报 |
 
 前两项是核心动作，始终出现，不可用时置灰并在文案后缀标注原因（如「看一看（没有可读文本）」）；第三项来自 §5.1 的扩展点，第一档由知识库工具声明一条“收进知识库”。「取消」不是动作：按钮固定显示在标题行，点击只收起气泡（§3.1）。
@@ -230,7 +230,7 @@ if im.size[0] * im.size[1] >= config.FILE_DROP_MAX_PIXELS:
 
 进 prompt 的正文与进持久化的正文不是同一份：元信息进持久化，正文只在当轮。代价是有意接受的：下一轮用户追问“刚才那个文件里说了什么”时，历史里只有元信息，模型看不到正文，只能凭元信息与自己上一轮的回复作答。
 
-另有一条绕行路径要堵：桌宠的回复本身也会落库（`pet/agent/pet_agent.py:584-586`、`:593`）。看一看的模板 `file_read_prompt` 要求总结要点而不摘录原句，避免正文经回复二次进入持久化。
+另有一条绕行路径要堵：桌宠的回复本身也会落库（`pet/agent/pet_agent.py:584-586`、`:593`）。analyze 段要求总结要点而不摘录原句：用户段第 3 步「用符合人格的话说出来，不要复述原文」与 `_analyze_task` 第 2 条「不逐句复述、不整段引用原文」，避免正文经回复二次进入持久化。
 
 记忆只在看一看路径产生：即时交互模式的核心规则明令禁止输出 `Memory:` 行（`pet/brain/prompts.py:237`），尝一口与拒收都不会写记忆；分析任务的 `Memory:` 行由 LLM 决定、agent 无条件保存（`pet/agent/pet_agent.py:589-630`），撤回入口是记忆管理窗口的多选删除（`pet/ui/memory_window.py:732-752`）。`_analyze_task` 的第 6 条约束记忆只写“用户交付了什么”，不写对象里的内容。
 
@@ -341,7 +341,6 @@ agent.trigger(
 | `FILE_DROP_BUBBLE_TIMEOUT_S` | int | 12 | 文件气泡无操作收起时间 |
 | `INTERACT_FILE_PROMPT` | str | "" | 尝一口模板覆盖，空值使用内置模板 |
 | `INTERACT_FILE_REJECT_PROMPT` | str | "" | 拒收台词模板覆盖，空值使用内置模板 |
-| `ANALYZE_FILE_PROMPT` | str | "" | 看一看模板覆盖，占位符 `{meta}`，空值使用内置模板 |
 | `LLM_MAX_TOKENS_ANALYZE` | int | 4096 | 分析任务的输出上限（`LLM_MAX_TOKENS_*` 一族，与 `LLM_MAX_TOKENS_CHAT` 同级） |
 
 配置项写入 `pet/config.py` 的 `_KEY_META`，并按仓库约定重新生成 `docs/reference/config.md`。
@@ -359,7 +358,7 @@ agent.trigger(
 | `pet/tools/knowledge/__init__.py` | 在 `register()` 内声明文件动作，入库在后台线程执行 |
 | `pet/tools/context.py` | `request_interact` 透传 `thinking` 与 `enable_tools`（见 §5.1） |
 | `docs/tool-development.md` | 登记文件动作扩展点 |
-| `pet/brain/prompts.py` | 新增 `analyze` 感知段与 `_analyze_task`、`analyze_*_user_prompt`、`file_read_prompt(meta)`、`interact_file_prompt(...)`、`interact_file_reject_prompt(reason, names)` 与内置模板 |
+| `pet/brain/prompts.py` | 新增 `analyze` 感知段与 `_analyze_task`、`analyze_*_user_prompt`、`interact_file_prompt(...)`、`interact_file_reject_prompt(reason, names)` 与内置模板 |
 | `pet/brain/context_builder.py` | `build_analyze_decide` 与 `build_interact`、`build_chat_decide` 的附件参数 |
 | `pet/brain/behavior.py` | 新增 `analyze_decide_stream` |
 | `pet/agent/pet_agent.py` | 文件读取与工具动作在后台线程执行；`trigger("analyze")` 与 chat 共用 `_dialogue_pipeline`，正文不进 `message` 与 `context_hint`；`log_message` 决定进历史与上下文池的那一份；超时事件走 `note_once_event` |

@@ -78,7 +78,6 @@ _KEY_META = {
     "FILE_DROP_BUBBLE_TIMEOUT_S": {"type": "int",     "default": 12,            "category": "behavior",   "needs_restart": False, "hidden": True,  "description": "文件气泡无操作收起秒数"},
     "INTERACT_FILE_PROMPT":      {"type": "str",      "default": "",            "category": "behavior",   "needs_restart": False, "hidden": True,  "description": "尝一口交互的自定义 prompt 模板"},
     "INTERACT_FILE_REJECT_PROMPT": {"type": "str",    "default": "",            "category": "behavior",   "needs_restart": False, "hidden": True,  "description": "拒收台词的自定义 prompt 模板"},
-    "ANALYZE_FILE_PROMPT":       {"type": "str",      "default": "",            "category": "behavior",   "needs_restart": False, "hidden": True,  "description": "看一看（文件分析）的自定义 prompt 模板"},
     "VISION_ENABLED":            {"type": "bool",     "default": False,         "category": "appearance", "needs_restart": False, "hidden": False, "description": "启用视觉理解(需多模态模型支持)"},
     "VISION_SCALE":              {"type": "float",    "default": 0.7,          "category": "appearance", "needs_restart": False, "hidden": False, "description": "截图缩放比例(0.1~1.0)"},
     "SCREENSHOT_FORMAT":         {"type": "str",      "default": "jpeg",       "category": "appearance", "needs_restart": False, "hidden": False, "description": "截图编码格式", "enum": ["jpeg", "png"]},

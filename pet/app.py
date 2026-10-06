@@ -23,7 +23,7 @@ from pet.ui.feed_bubble import FeedBubble
 from pet.ui.music_bubble import MusicBubble
 from pet.ui.file_bubble import FileBubble
 from pet.agent import PetAgent
-from pet.brain.prompts import file_read_prompt, interact_fed_prompt, interact_file_prompt
+from pet.brain.prompts import interact_fed_prompt, interact_file_prompt
 from pet.tools import load_tools
 from pet.tools.context import TOOL_CTX
 from pet.tools.registry import TOOL_REGISTRY
@@ -61,7 +61,7 @@ class _FileActionDispatcher(QObject):
                                 delay_ms=150, cooldown_ms=0, is_play_loading=False,
                                 thinking=False, enable_tools=False)
         else:
-            self._agent.trigger("analyze", message=file_read_prompt(meta), log_message=meta,
+            self._agent.trigger("analyze", message=meta,
                                 attachment_text=body, attachment_image=image)
 
 

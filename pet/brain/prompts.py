@@ -503,17 +503,6 @@ def interact_self_fed_prompt(food: str) -> str:
     )
 
 
-def file_read_prompt(meta: str) -> str:
-    """看一看的 user 段：元信息 + 这次分析要交付什么。"""
-    template = config.ANALYZE_FILE_PROMPT
-    if template:
-        return template.format(meta=meta)
-    return (
-        f"{meta}\n"
-        f"用你的人格回应，并总结这份文件的要点，不要逐句摘录原文。"
-    )
-
-
 def interact_file_prompt(names: str) -> str:
     """尝一口的交互 prompt：只给元信息，正文由 attachment_text 随当轮送入。"""
     template = config.INTERACT_FILE_PROMPT

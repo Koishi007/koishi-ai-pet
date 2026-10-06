@@ -291,7 +291,7 @@ git commit -m "feat(filedrop): 窗口接收拖放并转发到判定层"
 **Interfaces:**
 - Consumes: Task 3 的 `FileBubble.action_chosen`；Task 1 的 `load_text` / `load_image`。
 - Produces：
-  - `file_read_prompt(meta) -> str`、`interact_file_prompt(names) -> str`、`interact_file_reject_prompt(reason, names=()) -> str`
+  - `interact_file_prompt(names) -> str`、`interact_file_reject_prompt(reason, names=()) -> str`
   - `build_interact(event_hint, attachment_text=None, attachment_image=None)`、`build_chat_decide(user_message, window_context, screenshot=True, attachment_text=None, attachment_image=None)`、`build_analyze_decide(user_message, window_context, screenshot=False, attachment_text=None, attachment_image=None)`
   - `PetAgent.trigger("analyze", message=..., log_message=None, attachment_text=None, attachment_image=None)`、`trigger("chat", ...)` 与 `trigger("interact", hint=..., ...)` 的同类参数
 
@@ -316,7 +316,7 @@ Expected: FAIL，`TypeError: build_chat_decide() got an unexpected keyword argum
 
 - [x] **Step 3: 实现参数与接线**
 
-`pet/app.py` 的接线按 spec §5：尝一口走 `trigger("interact", hint=interact_file_prompt(...), record_context=True, context_hint=<元信息>, thinking=False, enable_tools=False, is_play_loading=False, delay_ms=150)`；看一看走 `trigger("analyze", message=file_read_prompt(<元信息>), log_message=<元信息>, attachment_text=<正文>)`；两者都不把正文写进 `message` / `context_hint`。读取在 daemon 线程执行，完成后回主线程调用 trigger（`PIL.Image` 对象在此移交所有权，UI 侧之后不再触碰）。
+`pet/app.py` 的接线按 spec §5：尝一口走 `trigger("interact", hint=interact_file_prompt(...), record_context=True, context_hint=<元信息>, thinking=False, enable_tools=False, is_play_loading=False, delay_ms=150, cooldown_ms=0)`；看一看走 `trigger("analyze", message=<元信息>, attachment_text=<正文>)`；两者都不把正文写进 `message` / `context_hint`。读取在 daemon 线程执行，完成后回主线程调用 trigger（`PIL.Image` 对象在此移交所有权，UI 侧之后不再触碰）。
 
 - [x] **Step 4: 运行测试，确认通过**
 

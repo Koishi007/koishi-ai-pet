@@ -3,7 +3,7 @@
 import pytest
 
 from pet.brain.context_builder import ContextBuilder
-from pet.brain.prompts import file_read_prompt, interact_file_prompt, interact_file_reject_prompt
+from pet.brain.prompts import interact_file_prompt, interact_file_reject_prompt
 from pet.config import config
 
 
@@ -103,15 +103,6 @@ class TestPrompts:
         monkeypatch.setattr(config, "INTERACT_FILE_PROMPT", "只认「{names}」")
         assert interact_file_prompt("a.txt") == "只认「a.txt」"
 
-    def test_read_prompt_keeps_meta(self):
-        text = file_read_prompt("用户把文件交给了你：\n- a.txt（文本，10 字节）")
-        assert "a.txt" in text
-        assert "不要逐句摘录" in text
-
-    def test_read_template_override(self, monkeypatch):
-        monkeypatch.setattr(config, "ANALYZE_FILE_PROMPT", "看看{meta}")
-        assert file_read_prompt("a.txt") == "看看a.txt"
-
 
 class TestAnalyzeTask:
     def test_system_uses_analyze_rules(self):
@@ -127,6 +118,12 @@ class TestAnalyzeTask:
         text = _last_text(messages)
         assert "=== 用户交给你看的东西 ===" in text
         assert "a.txt" in text
+
+    def test_no_quote_guard_lives_in_analyze_segments(self):
+        """不复述原文的约束由 analyze 段承担：用户段第 3 步与系统段第 2 条。"""
+        messages = _builder().build_analyze_decide("元信息", "无窗口")
+        assert "不要复述原文" in _last_text(messages)
+        assert "不逐句复述" in messages[0]["content"]
 
     def test_body_wrapped_as_material(self):
         messages = _builder().build_analyze_decide("元信息", "无窗口", attachment_text="MARKER")
