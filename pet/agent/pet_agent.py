@@ -60,6 +60,7 @@ class PetAgent(QObject):
     llm_loading        = Signal(bool)  # True=开始等待, False=结束
     notify_requested   = Signal(str, str, int)  # title, message, duration_ms
     game_board_requested = Signal(str, object)  # (game_name, board_payload)
+    tool_interact_requested = Signal(dict)  # 工具线程请求的即时交互（kwargs），转回主线程执行
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -91,6 +92,7 @@ class PetAgent(QObject):
         self._active_stream_id = 0
         self._last_interact_ms: dict[str, int] = {}
         self.state_machine.state_changed.connect(self._on_state_changed)
+        self.tool_interact_requested.connect(self._trigger_tool_interact)
 
     _RECENT_EVENT_MAX = 16
     _ONCE_EVENT_MAX = 16  # 一次性事件积压上限（正常会在下一轮被消费掉，纯防御）
@@ -277,6 +279,10 @@ class PetAgent(QObject):
         anim_fn = getattr(self._pet_window.pet_actions, "thinking", None)
         if callable(anim_fn):
             anim_fn()
+
+    def _trigger_tool_interact(self, kwargs: dict):
+        """工具线程经信号转来的即时交互请求：回主线程执行（QTimer 依赖主线程事件循环）。"""
+        self.trigger("interact", **kwargs)
 
     def _trigger_interact(self, hint: str = "", delay_ms: int = 100,
                           cooldown_ms: int = 15000, record_context: bool = False,

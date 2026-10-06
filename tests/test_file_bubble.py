@@ -213,7 +213,7 @@ class TestBusyHint:
         assert wired_bubble._buttons.count() == 0
         assert wired_bubble._cancel_button.isEnabled()
         assert "云异环.lnk" in wired_bubble._rows[0].text()
-        assert "等你忙完再拖一次" in wired_bubble._rows[0].text()
+        assert "b.bin" in wired_bubble._rows[0].text()
 
     def test_show_files_restores_action_mode(self, wired_bubble, monkeypatch):
         wired_bubble.show_busy(["C:/tmp/a.txt"])

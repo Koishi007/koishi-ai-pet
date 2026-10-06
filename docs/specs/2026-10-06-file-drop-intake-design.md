@@ -256,7 +256,7 @@ registry.add_file_action(
 | 缺失场景 | 工具未注册（`TOOLS_ENABLED` 排除或未安装）、被右键菜单关闭、或仍在后台加载时，按钮不出现；核心不做存在性检查，也不写 try/except 分支 |
 | 边界归属 | 体积、数量、拒绝名单、可读判定仍由核心执行，handler 只在文件通过判定后收到 `FileRef` |
 | 全文读取 | 工具用 `pet/file_intake` 的读取实现取全文，方向为 tools 依赖核心 |
-| 播报 | 工具在完成后经 `TOOL_CTX.request_interact(hint=...)` 或 `TOOL_CTX.speech(...)` 播报，核心不代写台词。`request_interact` 透传 `delay_ms`、`cooldown_ms`、`thinking`、`enable_tools`（`pet/tools/context.py`） |
+| 播报 | 工具在完成后经 `TOOL_CTX.request_interact(hint=...)` 或 `TOOL_CTX.speech(...)` 播报，核心不代写台词。`request_interact` 透传 `delay_ms`、`cooldown_ms`、`thinking`、`enable_tools`（`pet/tools/context.py`）；请求从工具线程经 `tool_interact_requested` 信号转回主线程执行，QTimer 依赖主线程事件循环，工作线程直接调用不会触发 |
 | 私有访问 | 动作列表由新增的公开查询方法提供，不复用 `TOOL_REGISTRY._tools`。（`tests/test_architecture_contracts.py:1019-1020`），新增同类访问会失败 |
 
 扩展点对任何工具开放，核心只负责渲染动作与执行边界判定。

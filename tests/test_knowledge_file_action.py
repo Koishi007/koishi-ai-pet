@@ -1,11 +1,20 @@
-"""知识库文件动作：入库与播报 hint 的内容。
+"""知识库文件动作：入库与播报 hint 的内容，以及播报请求的线程转发。
 
-用桩 storage 与桩播报，验证只把成功入库的文件名写进 hint，读不出内容的文件不出现。
+用桩 storage 与桩播报，验证只把成功入库的文件名写进 hint，读不出内容的文件不出现；
+播报请求经 tool_interact_requested 信号转回主线程。
 """
+
+import pytest
+from PySide6.QtCore import QCoreApplication, QObject, Signal
 
 from pet.file_intake import FileRef
 from pet.tools import knowledge
 from pet.tools.context import TOOL_CTX
+
+
+@pytest.fixture(scope="module")
+def qcore_app():
+    return QCoreApplication.instance() or QCoreApplication([])
 
 
 class _StorageStub:
@@ -82,3 +91,27 @@ def test_hint_names_are_capped(monkeypatch, tmp_path):
     assert result["summary"] == "已收进知识库 6 份"
     assert "f4.txt" in spy.hints[0]
     assert "f5.txt" not in spy.hints[0]
+
+
+class _AgentSignalStub(QObject):
+    tool_interact_requested = Signal(dict)
+
+    def __init__(self):
+        super().__init__()
+        self.emitted: list[dict] = []
+        self.tool_interact_requested.connect(self.emitted.append)
+
+
+def test_request_interact_marshals_via_signal(qcore_app, monkeypatch):
+    agent = _AgentSignalStub()
+    monkeypatch.setattr(TOOL_CTX, "_agent", agent)
+
+    TOOL_CTX.request_interact("用户把「笔记.md」交给你收进知识库了", cooldown_ms=0)
+
+    assert agent.emitted == [{
+        "hint": "用户把「笔记.md」交给你收进知识库了",
+        "delay_ms": 100,
+        "cooldown_ms": 0,
+        "thinking": None,
+        "enable_tools": None,
+    }]
