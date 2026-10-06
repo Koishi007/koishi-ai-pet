@@ -439,6 +439,29 @@ def interact_self_fed_prompt(food: str) -> str:
     )
 
 
+# 拖入文件被拒收时的场景与允许的数值增量：hint 只按类型变化，不含文件名
+_FILE_REJECT_SCENES = {
+    "too_large": ("用户拖来的文件太大了，你没有接住", "sanity-1~3"),
+    "too_many": ("用户一次拖来一堆文件，你没有接住", "sanity-1~3"),
+    "forbidden": ("用户拖来的东西你不想碰", "sanity-2~5, joy-0~2"),
+}
+
+
+def interact_file_reject_prompt(reason: str) -> str:
+    """拒收台词 prompt：用户主动交付了不合适的东西，不是操作失败。"""
+    template = config.INTERACT_FILE_REJECT_PROMPT
+    if template:
+        return template.format(reason=reason)
+    scene, delta = _FILE_REJECT_SCENES.get(
+        reason, ("用户拖来的东西你没有接住", "sanity-1~3"))
+    return (
+        f"{scene}，根据你的人格用一句话（≤20字）表达反应，不要表现得被冒犯。"
+        f"这是用户主动交付了不合适的东西，不是操作失败。\n"
+        f"数值变化只允许：Mood {delta}；Vitals 不变（没有进食）；"
+        f"不改 affection（误拖不构成负面事件）。"
+    )
+
+
 
 SUMMARY_SYSTEM_PROMPT = (
     "你是一个桌面AI宠物（恋恋）的上下文摘要助手。"

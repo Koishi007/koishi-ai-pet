@@ -5,14 +5,18 @@ import time
 
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QMenu
 from PySide6.QtCore import Qt, QPoint, QPointF, QDateTime, QTimer, QSize, Property, QPropertyAnimation, Signal
-from PySide6.QtGui import QMouseEvent, QAction, QPainter, QPainterPath, QColor, QPen
+from PySide6.QtGui import (QMouseEvent, QAction, QPainter, QPainterPath, QColor, QPen,
+                           QDragEnterEvent, QDragMoveEvent, QDragLeaveEvent, QDropEvent)
+from pet.agent.state import PetState
 from pet.ui.base_window import TransparentWindow
 from pet.ui.pet_animations import PetAnimator
 from pet.ui.particle import ParticleWidget
 from pet.ui.styles import MENU_QSS
 from pet.ui.settings_window import SettingsWindow
+from pet.ui.file_drop_handler import FileDropHandler, paths_from_mime
 from pet.action import PetActions, ActionQueue, outcome
-from pet.brain.prompts import INTERACT_GRABBED, INTERACT_RELEASED, INTERACT_WINDOW_DISAPPEARED
+from pet.brain.prompts import (INTERACT_GRABBED, INTERACT_RELEASED,
+                               INTERACT_WINDOW_DISAPPEARED, interact_file_reject_prompt)
 from pet.tools.registry import TOOL_REGISTRY
 from pet.config import config
 
@@ -182,6 +186,14 @@ class PetWindow(TransparentWindow):
         self._PROMPT_GRABBED = INTERACT_GRABBED
         self._PROMPT_RELEASED = INTERACT_RELEASED
         self._PROMPT_WINDOW_DISAPPEARED = INTERACT_WINDOW_DISAPPEARED
+        self._file_drop = FileDropHandler(
+            hover_state=self._file_drop_state,
+            is_busy=self._file_drop_busy,
+            on_show_bubble=self._show_file_bubble,
+            on_reject=self._reject_file_drop,
+            on_busy_event=self._note_file_drop_busy,
+        )
+        self.setAcceptDrops(True)
 
     def set_chat_bubble(self, chat_bubble):
         """注入 ChatBubble 引用。"""
@@ -382,6 +394,63 @@ class PetWindow(TransparentWindow):
             self._agent.note_event("released")
             if self._event_reaction:
                 self._agent.trigger("interact", hint=self._PROMPT_RELEASED, is_play_loading=False, thinking=False)
+
+    # 拖入文件
+
+    @staticmethod
+    def _accept_copy(event) -> None:
+        """统一以复制语义接受拖放。
+
+        非 Windows 平台在按住 Shift 或同盘拖动时会提议 MoveAction，
+        接受它意味着源端按移动处理，用户的原文件可能被移走，而本功能只读路径。
+        """
+        event.setDropAction(Qt.DropAction.CopyAction)
+        event.accept()
+
+    def dragEnterEvent(self, event: QDragEnterEvent):
+        if not self._file_drop.accept_hover(bool(event.mimeData().urls())):
+            event.ignore()
+            return
+        self._accept_copy(event)
+
+    def dragMoveEvent(self, event: QDragMoveEvent):
+        # 不接受则收不到 dropEvent，探针实测见设计文档 §0.1
+        self._accept_copy(event)
+
+    def dragLeaveEvent(self, event: QDragLeaveEvent):
+        event.accept()
+
+    def dropEvent(self, event: QDropEvent):
+        self._accept_copy(event)
+        self._file_drop.handle_drop(paths_from_mime(event.mimeData()))
+
+    def _file_drop_state(self) -> tuple[bool, bool]:
+        """（功能开关, 鼠标穿透）：两项任一为真都走忽略分支。"""
+        return bool(config.FILE_DROP_ENABLED), bool(self._mouse_penetration)
+
+    def _file_drop_busy(self) -> bool:
+        """忙态：请求已发出未返回，即状态机处在 INTERACTING。"""
+        agent = self._agent
+        if agent is None:
+            return False
+        return agent.state_machine.state == PetState.INTERACTING
+
+    def _show_file_bubble(self, refs) -> None:
+        if self._file_bubble:
+            self._file_bubble.show_files(refs)
+
+    def _reject_file_drop(self, reason: str) -> None:
+        """三类硬边界拒收：发一次快速交互请求，姿态与数值交给模型决定。"""
+        if self._agent is None:
+            return
+        self._agent.trigger("interact", hint=interact_file_reject_prompt(reason),
+                            delay_ms=150, is_play_loading=False,
+                            thinking=False, enable_tools=False)
+
+    def _note_file_drop_busy(self, text: str) -> None:
+        """忙态不请求即时反应（通道在 INTERACTING 状态自我丢弃），改写一次性事件。"""
+        if self._agent is not None:
+            self._agent.note_once_event("file_drop_busy", text)
 
     def _show_context_menu(self, pos):
         """右键菜单。"""

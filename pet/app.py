@@ -20,6 +20,7 @@ from pet.ui.emotion import EmotionBubble
 from pet.ui.chat_bubble import ChatBubble
 from pet.ui.feed_bubble import FeedBubble
 from pet.ui.music_bubble import MusicBubble
+from pet.ui.file_bubble import FileBubble
 from pet.agent import PetAgent
 from pet.brain.prompts import interact_fed_prompt
 from pet.tools import load_tools
@@ -168,6 +169,9 @@ def main():
 
     music_bubble = MusicBubble(window)
     window.set_music_bubble(music_bubble)
+
+    file_bubble = FileBubble(window)
+    window.set_file_bubble(file_bubble)
 
     # 觅食窗口：装配层注入窗口工厂，food 层不依赖 UI
     from pet.food.food import FOOD
