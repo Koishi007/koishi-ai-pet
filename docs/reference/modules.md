@@ -101,6 +101,7 @@
 | `pet/ui/debug_window.py` | 调试面板 | `DebugWindow` |
 | `pet/ui/emotion.py` | 桌宠情绪气泡显示 emoji 表情 | `emotion_to_emoji()` `EmotionBubble` |
 | `pet/ui/feed_bubble.py` | 桌宠喂食交互组件 | `FeedBubble` |
+| `pet/ui/file_drop_handler.py` | 拖放判定层：悬停与放下两层的判定、回调分发。 | `paths_from_mime()` `busy_event_text()` `FileDropHandler` |
 | `pet/ui/food_window.py` | 觅食的食物悬浮窗 — 纯展示组件，生命周期由 FoodManager 管理。 | `FoodWindow` |
 | `pet/ui/game_panel.py` | 游戏面板基类 — 通用无边框窗口框架 + 统一渲染入口 + 用户手动收场。 | `GamePanelBase` |
 | `pet/ui/log_window.py` | 日志窗口 | `_LogRelay` `LogWindowHandler` `LogWindow` |
@@ -124,4 +125,4 @@
 | `pet/voice/voice_session.py` | 语音会话编排：麦克风采集 → 讯飞识别 | `VoiceSession` |
 | `pet/voice/xunfei_stt.py` | 讯飞语音听写 (iat) WebSocket API 封装 | `XunfeiSTT` |
 
-共 116 个模块。
+共 117 个模块。

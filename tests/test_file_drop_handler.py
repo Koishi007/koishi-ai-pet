@@ -1,0 +1,133 @@
+"""拖放判定层的单元测试。
+
+只构造 QMimeData 与临时文件，不构造 PetWindow；三个出口用记录列表断言调用序列。
+"""
+
+from pathlib import Path
+
+from PySide6.QtCore import QMimeData, QUrl
+
+from pet.ui.file_drop_handler import FileDropHandler, busy_event_text, paths_from_mime
+
+
+def _mime(paths=None, text=None) -> QMimeData:
+    mime = QMimeData()
+    if paths:
+        mime.setUrls([QUrl.fromLocalFile(path) for path in paths])
+    if text is not None:
+        mime.setText(text)
+    return mime
+
+
+def _file(tmp_path: Path, name: str, data: bytes = b"hi") -> str:
+    path = tmp_path / name
+    path.write_bytes(data)
+    return str(path)
+
+
+def make_handler(*, enabled: bool = True, penetration: bool = False, busy: bool = False):
+    """返回（handler, calls）；calls 记录三个出口的调用参数。"""
+    calls = {"bubble": [], "reject": [], "busy": []}
+    handler = FileDropHandler(
+        hover_state=lambda: (enabled, penetration),
+        is_busy=lambda: busy,
+        on_show_bubble=calls["bubble"].append,
+        on_reject=calls["reject"].append,
+        on_busy_event=calls["busy"].append,
+    )
+    return handler, calls
+
+
+class TestPathsFromMime:
+    def test_local_files(self, tmp_path):
+        first = _file(tmp_path, "a.txt")
+        second = _file(tmp_path, "b.md")
+        assert paths_from_mime(_mime([first, second])) == [first, second]
+
+    def test_empty_mime(self):
+        assert paths_from_mime(_mime()) == []
+
+    def test_text_only(self):
+        assert paths_from_mime(_mime(text="hello")) == []
+
+    def test_remote_url_ignored(self):
+        mime = QMimeData()
+        mime.setUrls([QUrl("https://example.com/a.txt")])
+        assert paths_from_mime(mime) == []
+
+    def test_none(self):
+        assert paths_from_mime(None) == []
+
+
+class TestHoverLayer:
+    def test_accepts_plain_local_paths(self):
+        handler, _ = make_handler()
+        assert handler.accept_hover(True) is True
+
+    def test_rejects_without_local_paths(self):
+        handler, _ = make_handler()
+        assert handler.accept_hover(False) is False
+
+    def test_rejects_when_disabled(self):
+        handler, _ = make_handler(enabled=False)
+        assert handler.accept_hover(True) is False
+
+    def test_rejects_when_penetration_on(self):
+        handler, _ = make_handler(penetration=True)
+        assert handler.accept_hover(True) is False
+
+
+class TestDropLayer:
+    def test_too_many(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("pet.config.config.FILE_DROP_MAX_FILES", 2)
+        handler, calls = make_handler()
+        handler.handle_drop([_file(tmp_path, f"f{i}.txt") for i in range(3)])
+        assert calls["reject"] == ["too_many"]
+        assert calls["bubble"] == []
+        assert calls["busy"] == []
+
+    def test_too_large(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("pet.config.config.FILE_DROP_MAX_FILE_MB", 0)
+        handler, calls = make_handler()
+        handler.handle_drop([_file(tmp_path, "big.txt", b"x" * 2048)])
+        assert calls["reject"] == ["too_large"]
+        assert calls["bubble"] == []
+
+    def test_forbidden(self, tmp_path):
+        handler, calls = make_handler()
+        handler.handle_drop([_file(tmp_path, ".env", b"A=1")])
+        assert calls["reject"] == ["forbidden"]
+        assert calls["bubble"] == []
+
+    def test_ok_shows_bubble_once(self, tmp_path):
+        handler, calls = make_handler()
+        handler.handle_drop([_file(tmp_path, "note.md")])
+        assert calls["reject"] == []
+        assert len(calls["bubble"]) == 1
+        refs = calls["bubble"][0]
+        assert [ref.name for ref in refs] == ["note.md"]
+
+    def test_busy_writes_event_only(self, tmp_path):
+        handler, calls = make_handler(busy=True)
+        handler.handle_drop([_file(tmp_path, "note.md")])
+        assert calls["reject"] == []
+        assert calls["bubble"] == []
+        assert len(calls["busy"]) == 1
+        assert "note.md" in calls["busy"][0]
+
+    def test_empty_paths_are_ignored(self):
+        handler, calls = make_handler(busy=True)
+        handler.handle_drop([])
+        assert calls["busy"] == []
+
+
+class TestBusyText:
+    def test_lists_names(self):
+        text = busy_event_text(["C:/x/报告.md", "D:/y/图.png"])
+        assert "报告.md" in text
+        assert "图.png" in text
+
+    def test_names_are_capped(self):
+        text = busy_event_text([f"C:/x/f{i}.txt" for i in range(6)])
+        assert "f0.txt" in text
+        assert "f3.txt" not in text
