@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (QBoxLayout, QHBoxLayout, QLabel, QPushButton, QVB
 
 from pet.config import config
 from pet.file_intake import KIND_LABELS, FileRef, dir_summary
+from pet.ui.debounce import Debounce
 from pet.tools.registry import TOOL_REGISTRY
 from pet.ui.styles import BUBBLE_ROW_CHAT, bubble_column_y
 
@@ -37,6 +38,22 @@ _ACTION_QSS = (
     "  color: #333;"
     "}"
     "QPushButton:hover { background: rgba(240,240,250,255); }"
+    "QPushButton:disabled {"
+    "  color: #b4b4b4;"
+    "  background: rgba(248,248,248,200);"
+    "  border-color: #e4e4e4;"
+    "}"
+)
+_CANCEL_QSS = (
+    "QPushButton {"
+    "  background: transparent;"
+    "  border: 1px solid #d8d8d8;"
+    "  border-radius: 9px;"
+    "  padding: 2px 8px;"
+    "  color: #888;"
+    "  font-size: 12px;"
+    "}"
+    "QPushButton:hover { color: #444; border-color: #bbb; }"
 )
 _TITLE_QSS = "color:#666; font-size:12px;"
 _ROW_QSS = "color:#333; font-size:12px;"
@@ -88,6 +105,7 @@ class FileBubble(QWidget):
         self._rows: list[QLabel] = []
         self._action_ids: tuple[tuple[str, str, bool], ...] = ()
         self._dir_token = 0
+        self._action_guard = Debounce()
 
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -121,9 +139,19 @@ class FileBubble(QWidget):
         self._panel_layout.setContentsMargins(10, 8, 10, 8)
         self._panel_layout.setSpacing(4)
 
-        self._title = QLabel("这些给你")
+        header = QHBoxLayout()
+        header.setSpacing(8)
+        self._title = QLabel("让恋恋")
         self._title.setStyleSheet(_TITLE_QSS)
-        self._panel_layout.addWidget(self._title)
+        header.addWidget(self._title)
+        header.addStretch(1)
+
+        self._cancel_button = QPushButton("取消")
+        self._cancel_button.setStyleSheet(_CANCEL_QSS)
+        self._cancel_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._cancel_button.clicked.connect(self._on_cancel)
+        header.addWidget(self._cancel_button)
+        self._panel_layout.addLayout(header)
 
         self._body = QVBoxLayout()
         self._body.setSpacing(2)
@@ -273,7 +301,14 @@ class FileBubble(QWidget):
 
     # 交互
 
+    def _on_cancel(self):
+        """取消：收起气泡，不读内容、不发请求。"""
+        logger.info("[FileBubble] cancelled")
+        self.hide_bubble()
+
     def _on_action(self, action_id: str):
+        if not self._action_guard.ready():
+            return
         self._idle_timer.stop()
         refs = self._refs
         self.hide_bubble()
@@ -313,6 +348,9 @@ class FileBubble(QWidget):
     def _show_bubble(self):
         if self._hide_anim and self._hide_anim.state() == QPropertyAnimation.State.Running:
             self._hide_anim.stop()
+            # 淡出被打断：复原透明度与跟随，下面的提前返回不再重建这两项
+            self.setWindowOpacity(1.0)
+            self._follow_timer.start(50)
         if self.isVisible():
             return
         self._update_position()

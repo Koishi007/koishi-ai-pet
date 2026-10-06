@@ -1,11 +1,13 @@
-"""文件气泡的动作可用性判定与目录摘要回填。
+"""文件气泡的动作可用性判定、按钮状态与目录摘要回填。
 
-只构造 FileBubble 本身，不构造 PetWindow：动作判定只读 refs 与配置。
+只构造 FileBubble 本身，不构造 PetWindow：动作判定只读 refs 与配置，
+需要重绘按钮的用例用几何桩替代窗口。
 """
 
 import time
 
 import pytest
+from PySide6.QtCore import QRect
 from PySide6.QtWidgets import QApplication
 
 from pet.file_intake import FileRef
@@ -23,6 +25,37 @@ def qt_app():
 def bubble(qt_app, monkeypatch):
     monkeypatch.setattr(TOOL_REGISTRY, "file_actions", lambda: [])
     return FileBubble(pet_window=None)
+
+
+class _WindowStub:
+    """只提供 FileBubble 定位所需的几何信息。"""
+
+    def __init__(self, rect: QRect):
+        self._rect = rect
+
+    def geometry(self) -> QRect:
+        return self._rect
+
+    def screen(self):
+        return None
+
+
+@pytest.fixture
+def wired_bubble(qt_app, monkeypatch):
+    """带定位窗口的实例：重建按钮会顺带更新位置。"""
+    monkeypatch.setattr(TOOL_REGISTRY, "file_actions", lambda: [])
+    return FileBubble(pet_window=_WindowStub(QRect(100, 100, 64, 64)))
+
+
+def _wait_until(qt_app, condition, timeout_s: float = 3.0) -> bool:
+    """驱动事件循环直到条件成立，用于等动画结束。"""
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        qt_app.processEvents()
+        if condition():
+            return True
+        time.sleep(0.02)
+    return condition()
 
 
 def _ref(kind: str, name: str) -> FileRef:
@@ -128,3 +161,44 @@ class TestSummaries:
 
     def test_empty_dir_note(self):
         assert _dir_note(0, []) == "空文件夹"
+
+
+class TestButtonStates:
+    """按钮可用性：不可用动作保留按钮但置灰，取消始终可用且不产生请求。"""
+
+    def _button(self, bubble, text: str):
+        for index in range(bubble._buttons.count()):
+            widget = bubble._buttons.itemAt(index).widget()
+            if widget is not None and widget.text() == text:
+                return widget
+        raise AssertionError(f"按钮不存在: {text}")
+
+    def test_unreadable_drop_greys_out_read(self, wired_bubble, monkeypatch):
+        actions = _actions(wired_bubble, monkeypatch, ["binary"])
+        assert actions["read"] == ("看一看（没有可读文本）", False)
+        wired_bubble._render_buttons()
+        button = self._button(wired_bubble, "看一看（没有可读文本）")
+        assert not button.isEnabled()
+        assert ":disabled" in button.styleSheet()
+
+    def test_readable_drop_keeps_read_enabled(self, wired_bubble, monkeypatch):
+        _actions(wired_bubble, monkeypatch, ["text"])
+        wired_bubble._render_buttons()
+        assert self._button(wired_bubble, "看一看").isEnabled()
+
+    def test_cancel_enabled_when_all_actions_disabled(self, wired_bubble, monkeypatch):
+        _actions(wired_bubble, monkeypatch, ["binary"], read_content=False)
+        wired_bubble._render_buttons()
+        assert not self._button(wired_bubble, "看一看（内容读取已关闭）").isEnabled()
+        assert wired_bubble._cancel_button.isEnabled()
+
+    def test_cancel_closes_without_request(self, wired_bubble, qt_app):
+        chosen: list[str] = []
+        wired_bubble.action_chosen.connect(lambda action_id, refs: chosen.append(action_id))
+        wired_bubble.show_files((_ref("text", "a.txt"),))
+        assert wired_bubble.isVisible()
+
+        wired_bubble._cancel_button.click()
+        assert _wait_until(qt_app, lambda: not wired_bubble.isVisible())
+        assert chosen == []
+        assert not wired_bubble._idle_timer.isActive()

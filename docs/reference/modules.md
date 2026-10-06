@@ -98,6 +98,7 @@
 | `pet/ui/base_window.py` | （模块未提供 docstring） | `TransparentWindow` |
 | `pet/ui/chat_bubble.py` | 桌宠聊天交互组件 | `ChatBubble` |
 | `pet/ui/chat_history.py` | 对话历史窗口 — 以对话气泡形式展示用户与桌宠的对话记录。 | `ChatBubbleDelegate` `ChatHistoryWindow` |
+| `pet/ui/debounce.py` | 按钮与提交的防抖：一次物理操作只产生一次请求。 | `Debounce` |
 | `pet/ui/debug_window.py` | 调试面板 | `DebugWindow` |
 | `pet/ui/emotion.py` | 桌宠情绪气泡显示 emoji 表情 | `emotion_to_emoji()` `EmotionBubble` |
 | `pet/ui/feed_bubble.py` | 桌宠喂食交互组件 | `FeedBubble` |
@@ -126,4 +127,4 @@
 | `pet/voice/voice_session.py` | 语音会话编排：麦克风采集 → 讯飞识别 | `VoiceSession` |
 | `pet/voice/xunfei_stt.py` | 讯飞语音听写 (iat) WebSocket API 封装 | `XunfeiSTT` |
 
-共 118 个模块。
+共 119 个模块。

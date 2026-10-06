@@ -96,16 +96,17 @@
 |---|---|
 | 放下通过 | 先隐藏 chat / feed / music 三个气泡，再显示文件气泡并启动超时定时器 |
 | 按钮点击 | 停止定时器，进入忙态 |
+| 取消按钮 | 停止定时器，收起气泡，不读内容、不发请求，不写一次性事件（用户已明确结束本次交互） |
 | 12 秒超时 | 收起，写一次 `file_drop_idle` 事件 |
 | 抓取桌宠（`mousePressEvent`） | 收起，并入 `pet/ui/pet_window.py:283-294` 的既有隐藏清单 |
 | 程序隐藏桌宠（`hide()`） | 收起，并入 `pet/ui/pet_window.py:606-618` 的既有隐藏清单 |
 | 非忙态再次放下 | 复用实例，内容替换为最新一次拖入，定时器重置 |
 
-文件气泡显示期间 `enterEvent` 不显示 chat / feed / music：三个悬空气泡与文件气泡位置相邻，共存会互相遮挡并争抢鼠标。文件气泡收起后恢复原有悬停行为；想立刻恢复可以点一下桌宠，`mousePressEvent` 会收起文件气泡。
+文件气泡显示期间 `enterEvent` 不显示 chat / feed / music：三个悬空气泡与文件气泡位置相邻，共存会互相遮挡并争抢鼠标。文件气泡收起后恢复原有悬停行为；想立刻恢复可以点一下桌宠（`mousePressEvent` 会收起文件气泡）或点气泡标题行的「取消」。
 
 忙态的定义是请求已发出且未返回，即 `state_machine.state == PetState.INTERACTING`（`pet/agent/pet_agent.py:276-279`、`:356-358` 用的就是这个条件）。气泡打开但未点按钮不算忙态。
 
-`_trigger_interact` 的冷却按 hint 计数（`pet/agent/pet_agent.py:260-273`）。文件动作的 hint 含文件名，不同文件不互相阻塞；会发请求的三类拒收 hint 只含类型，同类型在冷却窗口内合并为一次请求（§6.1）。忙态不走这条通道，与冷却无关。
+`_trigger_interact` 的冷却按 hint 计数，挂在通道上默认生效（15 秒），调用方可覆盖：`cooldown_ms` 为 0 表示不冷却。文件动作、投喂、觅食、工具播报都传 0：重复交付同一份东西各触发一次，不是异常。抓取、放下、窗口消失沿用默认值，靠冷却合并抖动重放。忙态不走这条通道，与冷却无关。
 
 ## §4 内容通道
 
@@ -204,32 +205,34 @@ if im.size[0] * im.size[1] >= config.FILE_DROP_MAX_PIXELS:
 | 按钮 | 通道 | 读取 | 产出 |
 |---|---|---|---|
 | 尝一口 | `agent.trigger("interact", hint=interact_file_prompt(...), record_context=True, context_hint=...)` | 文本 `FILE_DROP_TASTE_CHARS`（默认 300）；图片走视觉 | 一句反应 + `Mood:` / `Vitals:` 增量 |
-| 看一看 | `agent.trigger("chat", message=...)` | 文本 `FILE_DROP_MAX_CHARS`（默认 1500）；图片走视觉 | 摘要或要点，`Memory:` 行按需产出 |
+| 看一看 | `agent.trigger("analyze", message=file_read_prompt(meta), log_message=meta)` | 文本 `FILE_DROP_MAX_CHARS`（默认 1500）；图片走视觉附件，不附当前屏幕 | 摘要或要点，动作可选，`Memory:` 行按需产出 |
 | 工具动作 | 工具注册的处理函数，内容不进 LLM | 由工具决定 | 由工具自身播报 |
 
-前两项是核心动作，始终出现；第三项来自 §5.1 的扩展点，第一档由知识库工具声明一条“收进知识库”。
+前两项是核心动作，始终出现，不可用时置灰并在文案后缀标注原因（如「看一看（没有可读文本）」）；第三项来自 §5.1 的扩展点，第一档由知识库工具声明一条“收进知识库”。「取消」不是动作：按钮固定显示在标题行，点击只收起气泡（§3.1）。
 
-核心动作不新增 LLM 调用路径：尝一口与投喂同构，看一看复用聊天管线。
+核心动作不新增 LLM 调用路径：尝一口与投喂同构，看一看复用对话装配（历史、上下文池、记忆都保留）但走独立的 `analyze` 任务段，动作数量不强制（`pet/brain/prompts.py` 的 `_analyze_task`）。
 
 一次拖入多个文件时，核心动作作用于全部文件，合成一次请求：提示词中每个文件一条元信息与片段，每个文件各自用满 §4.3 的额度；工具动作按 §5.1 的约定，一次调用传入全部文件。附件通道一次只带一张图片：多张图里取第一张可解码的，其余图片只按元信息参与提示词。
 
 属性变化由 LLM 输出 `Mood:` / `Vitals:` 行，字段限于 `affection`、`joy`、`sanity`、`satiety`、`energy`（`pet/brain/parsing.py:37-39`）。模板 `INTERACT_FILE_PROMPT` 与 `INTERACT_FED_PROMPT` 形式一致，内含文件类型到数值增量的规则，不在 drop 处理代码中直写数值。
 
+看一看只改心理不改生理：`_analyze_task` 注入 `_MOOD_GUIDE` 与工具 aside，不注入 `_VITALS_GUIDE`，因此它不产生 `Vitals:` 行（与「看一看不是进食」一致）。尝一口与拒收走 `interact` 任务，两个指南都有。
+
 图片与正文都只进当轮 messages，不落盘。三处持久化位置全部只写元信息（文件名、类型、大小）：
 
 | 持久化位置 | 写入内容 | 机制 |
 |---|---|---|
-| `conversation_store` 的 user 行 | 元信息请求文本 | `_chat_pipeline` 落库的是 `message`（`pet/agent/pet_agent.py:377`），正文不经 `message` |
+| `conversation_store` 的 user 行 | 元信息请求文本 | 落库的是 `log_message`（缺省取 `message`），看一看传入的是元信息，模板文本不进历史 |
 | 上下文池的 user 条目 | 元信息，经 `context_hint` | `record_context=True` 时写的是 `context_hint`（`:316-318`），投喂已用这条通道（`pet/app.py:163-166`） |
 | 上下文摘要 | 上一条的压缩结果 | 摘要输入取自上下文池 |
 
-正文经新增的附件参数装配进当轮 messages：`build_interact` 增加附件参数（当前为纯文本），`build_chat_decide` 增加附件参数并支持关闭截图（当前图片只来自 `_prepare_image`，`pet/brain/context_builder.py:57-64`）。历史与摘要本来就取不到图片（`context_builder.py:265-267` → `pet/brain/base.py:230-245`），正文走同一条边界。同一轮存在附件图片时不再附加截图，避免同时出现两张图。
+正文经新增的附件参数装配进当轮 messages：`build_interact` 增加附件参数（当前为纯文本），`build_chat_decide` 增加附件参数并支持关闭截图（当前图片只来自 `_prepare_image`，`pet/brain/context_builder.py:57-64`），`build_analyze_decide` 默认不带截图：分析只看交付物，图片只从附件通道进来。历史与摘要本来就取不到图片（`context_builder.py:265-267` → `pet/brain/base.py:230-245`），正文走同一条边界。对话通道在同一轮存在附件图片时不再附加截图，避免同时出现两张图。
 
 进 prompt 的正文与进持久化的正文不是同一份：元信息进持久化，正文只在当轮。代价是有意接受的：下一轮用户追问“刚才那个文件里说了什么”时，历史里只有元信息，模型看不到正文，只能凭元信息与自己上一轮的回复作答。
 
-另有一条绕行路径要堵：桌宠的回复本身也会落库（`pet/agent/pet_agent.py:584-586`、`:593`）。看一看的模板要求总结要点而不摘录原句，避免正文经回复二次进入持久化。
+另有一条绕行路径要堵：桌宠的回复本身也会落库（`pet/agent/pet_agent.py:584-586`、`:593`）。看一看的模板 `file_read_prompt` 要求总结要点而不摘录原句，避免正文经回复二次进入持久化。
 
-记忆只在看一看路径产生：即时交互模式的核心规则明令禁止输出 `Memory:` 行（`pet/brain/prompts.py:235`），尝一口与拒收都不会写记忆；chat 管线的 `Memory:` 行由 LLM 决定、agent 无条件保存（`pet/agent/pet_agent.py:613-619`），撤回入口是记忆管理窗口的多选删除（`pet/ui/memory_window.py:732-752`）。文件模板要求记忆只描述“用户交付了什么”，不摘录正文，避免文件内容沉淀进长期记忆。
+记忆只在看一看路径产生：即时交互模式的核心规则明令禁止输出 `Memory:` 行（`pet/brain/prompts.py:237`），尝一口与拒收都不会写记忆；分析任务的 `Memory:` 行由 LLM 决定、agent 无条件保存（`pet/agent/pet_agent.py:589-630`），撤回入口是记忆管理窗口的多选删除（`pet/ui/memory_window.py:732-752`）。`_analyze_task` 的第 6 条约束记忆只写“用户交付了什么”，不写对象里的内容。
 
 ### §5.1 工具声明的文件动作
 
@@ -257,8 +260,8 @@ registry.add_file_action(
 | 缺失场景 | 工具未注册（`TOOLS_ENABLED` 排除或未安装）、被右键菜单关闭、或仍在后台加载时，按钮不出现；核心不做存在性检查，也不写 try/except 分支 |
 | 边界归属 | 体积、数量、拒绝名单、可读判定仍由核心执行，handler 只在文件通过判定后收到 `FileRef` |
 | 全文读取 | 工具用 `pet/file_intake` 的读取实现取全文，方向为 tools 依赖核心 |
-| 播报 | 工具在完成后经 `TOOL_CTX.request_interact(hint=...)` 或 `TOOL_CTX.speech(...)` 播报，核心不代写台词。`request_interact` 现只透传 `delay_ms` 与 `cooldown_ms`（`pet/tools/context.py:91-95`），需要无工具、无思考形态时补两个透传参数 |
-| 私有访问 | 动作列表由新增的公开查询方法提供，不复用 `TOOL_REGISTRY._tools`。该访问已作为历史债冻结在契约测试里（`tests/test_architecture_contracts.py:1019-1020`），新增同类访问会失败 |
+| 播报 | 工具在完成后经 `TOOL_CTX.request_interact(hint=...)` 或 `TOOL_CTX.speech(...)` 播报，核心不代写台词。`request_interact` 透传 `delay_ms`、`cooldown_ms`、`thinking`、`enable_tools`（`pet/tools/context.py`） |
+| 私有访问 | 动作列表由新增的公开查询方法提供，不复用 `TOOL_REGISTRY._tools`。（`tests/test_architecture_contracts.py:1019-1020`），新增同类访问会失败 |
 
 扩展点对任何工具开放，核心只负责渲染动作与执行边界判定。
 
@@ -285,12 +288,12 @@ registry.add_file_action(
 
 ### §6.1 拒收的快速请求
 
-放下阶段判定失败时，三类拒收按类型发起一次即时交互请求，调用形态与觅食一致（`pet/food/food.py:365-380`）；`busy` 不走这条通道，见本节末尾：
+放下阶段判定失败时，三类拒收按类型与涉及的文件名发起一次即时交互请求，调用形态与觅食一致（`pet/food/food.py:365-380`）；`busy` 不走这条通道，见本节末尾：
 
 ```python
 agent.trigger(
     "interact",
-    hint=interact_file_reject_prompt(reason),
+    hint=interact_file_reject_prompt(reason, names),
     delay_ms=150,
     record_context=False,
     is_play_loading=False,
@@ -302,12 +305,12 @@ agent.trigger(
 | 项 | 约束 |
 |---|---|
 | 请求形态 | 无工具、无思考、不播放加载姿态、不写对话上下文，四项与觅食一致 |
-| hint 变化维度 | 只按拒收类型变化：`too_large`、`too_many`、`forbidden`；不含文件名。`busy` 不走本通道，原因见下 |
-| 冷却 | 冷却键为 hint 全串（`pet/agent/pet_agent.py:289`）。类型级 hint 使同类型拒收在 15 秒窗口内合并为一次请求，逐个拖入文件不会各触发一次 |
+| hint 变化维度 | 按拒收类型与涉及的项名变化：`too_large`、`too_many`、`forbidden` 各自带上项名，模板里最多列 3 个，超出补总数。`busy` 不走本通道，原因见下 |
+| 重复请求 | 文件动作传 `cooldown_ms=0`，不参与通道冷却：同一批文件重复拖入各触发一次。界面侧由按钮防抖兜住一次物理点击内的连击（`pet/ui/debounce.py`） |
 | 互动反应开关 | 不读取 `_event_reaction`。该开关默认关闭（`pet/ui/pet_window.py:169`），只覆盖抓取、放下、窗口消失三处；拒收与投喂（`pet/app.py:163-167`）同侧，都由用户主动交付触发 |
 | 姿态与动作 | 代码不指定姿态，但拒收请求必然产生动作：`_interact_task()` 强制输出 1 至 2 个 `Action`（`pet/brain/prompts.py:218-239`“只输出 1-2 个 Action”，动作名从动作表选取），由管线执行并进入动作队列（`pet/agent/pet_agent.py:598-601`），因此拒收可能打断当前动画，与抓取、放下同类 |
 | 属性变化 | 同样会输出 `Mood:` / `Vitals:` 行，增量规则见下表，模板不写死数值 |
-| 台词模板 | `interact_file_reject_prompt(reason)` 与配置键 `INTERACT_FILE_REJECT_PROMPT`，形式与 `interact_fed_prompt` 一致（`pet/brain/prompts.py:412-425`） |
+| 台词模板 | `interact_file_reject_prompt(reason, names)` 与配置键 `INTERACT_FILE_REJECT_PROMPT`，自定义模板的占位符是 `{reason}` 与 `{names}`，形式与 `interact_fed_prompt` 一致（`pet/brain/prompts.py:412-425`） |
 
 忙态拒收不走即时请求：即时交互与聊天两条通道在 `INTERACTING` 状态下都会丢弃请求（`pet/agent/pet_agent.py:276-279`、`:356-358`），发出去也会被扔掉。忙态改为 `note_once_event("file_drop_busy", text)`，在下一次构造上下文时注入一次，由桌宠自行提一句；拖放本身在放下阶段被拒，不弹气泡、不读内容。
 
@@ -338,6 +341,8 @@ agent.trigger(
 | `FILE_DROP_BUBBLE_TIMEOUT_S` | int | 12 | 文件气泡无操作收起时间 |
 | `INTERACT_FILE_PROMPT` | str | "" | 尝一口模板覆盖，空值使用内置模板 |
 | `INTERACT_FILE_REJECT_PROMPT` | str | "" | 拒收台词模板覆盖，空值使用内置模板 |
+| `ANALYZE_FILE_PROMPT` | str | "" | 看一看模板覆盖，占位符 `{meta}`，空值使用内置模板 |
+| `LLM_MAX_TOKENS_ANALYZE` | int | 4096 | 分析任务的输出上限（`LLM_MAX_TOKENS_*` 一族，与 `LLM_MAX_TOKENS_CHAT` 同级） |
 
 配置项写入 `pet/config.py` 的 `_KEY_META`，并按仓库约定重新生成 `docs/reference/config.md`。
 
@@ -347,15 +352,17 @@ agent.trigger(
 |---|---|
 | `pet/ui/pet_window.py` | `setAcceptDrops(True)` 恒定开启；四个拖放事件只做转发，`dragMoveEvent` 需接受事件，否则收不到放下（§0.1）；动作语义见 §10；`enterEvent` 在文件气泡显示期间不显示 chat / feed / music；隐藏清单补入文件气泡（`mousePressEvent` 与 `hide()`）；持有文件气泡单例 |
 | `pet/ui/file_drop_handler.py`（新增） | 拖放处理层：从 `QMimeData` 取路径、调用 `pet/file_intake` 判定、经回调驱动气泡与请求；不依赖 `PetWindow` 实例，可单测 |
-| `pet/ui/file_bubble.py`（新增） | 文件气泡：文件名、后缀、大小摘要，核心动作按钮按固定两条渲染，工具动作按钮按注册表快照渲染，跟随桌宠位置，复用 `music_bubble.py` 的跟随与显示结构；单例复用，超时定时器归它管理 |
+| `pet/ui/file_bubble.py`（新增） | 文件气泡：文件名、后缀、大小摘要，核心动作按钮按固定两条渲染，工具动作按钮按注册表快照渲染，不可用的核心动作置灰并标注原因，标题行固定一个「取消」按钮，跟随桌宠位置，复用 `music_bubble.py` 的跟随与显示结构；单例复用，超时定时器归它管理；按钮防抖 |
+| `pet/ui/debounce.py`（新增） | 按钮与提交框的防抖：一次物理操作只产生一次请求 |
 | `pet/file_intake/`（新增包） | 纯逻辑：嗅探、解码链、截断、图片处理、体积与数量校验、拒绝名单、模板参数组装 |
 | `pet/tools/registry.py` | `ToolDef` 增加 `file_actions` 字段、`add_file_action(...)` 与公开的查询方法 |
 | `pet/tools/knowledge/__init__.py` | 在 `register()` 内声明文件动作，入库在后台线程执行 |
 | `pet/tools/context.py` | `request_interact` 透传 `thinking` 与 `enable_tools`（见 §5.1） |
 | `docs/tool-development.md` | 登记文件动作扩展点 |
-| `pet/brain/prompts.py` | 新增 `interact_file_prompt(...)`、`interact_file_reject_prompt(reason)` 与内置模板 |
-| `pet/brain/context_builder.py` | `build_interact` 与 `build_chat_decide` 增加附件参数 |
-| `pet/agent/pet_agent.py` | 文件读取与工具动作在后台线程执行；chat 与 interact 透传附件参数，正文不进 `message` 与 `context_hint`；超时事件走 `note_once_event` |
+| `pet/brain/prompts.py` | 新增 `analyze` 感知段与 `_analyze_task`、`analyze_*_user_prompt`、`file_read_prompt(meta)`、`interact_file_prompt(...)`、`interact_file_reject_prompt(reason, names)` 与内置模板 |
+| `pet/brain/context_builder.py` | `build_analyze_decide` 与 `build_interact`、`build_chat_decide` 的附件参数 |
+| `pet/brain/behavior.py` | 新增 `analyze_decide_stream` |
+| `pet/agent/pet_agent.py` | 文件读取与工具动作在后台线程执行；`trigger("analyze")` 与 chat 共用 `_dialogue_pipeline`，正文不进 `message` 与 `context_hint`；`log_message` 决定进历史与上下文池的那一份；超时事件走 `note_once_event` |
 | `pet/config.py` | 新增 §7 的配置键 |
 | `pet/ui/__init__.py` | 模块说明补充文件气泡 |
 | `docs/architecture.md` | 模块职责表登记新包（`tests/test_docs.py` 要求覆盖全部包） |
@@ -372,7 +379,7 @@ agent.trigger(
 自动化：
 
 ```bash
-python -m pytest tests/test_file_intake.py tests/test_file_drop_handler.py tests/test_file_bubble.py tests/test_app_file_actions.py
+python -m pytest tests/test_file_intake.py tests/test_file_drop_handler.py tests/test_file_bubble.py tests/test_ui_debounce.py tests/test_app_file_actions.py tests/test_knowledge_file_action.py
 python -m pytest tests/test_architecture_contracts.py tests/test_docs.py
 python scripts/gen_docs.py --check
 ```
@@ -383,20 +390,22 @@ python scripts/gen_docs.py --check
 
 `tests/test_app_file_actions.py` 覆盖装配层：`pet/app.py` 只在进程入口被导入，此前没有测试触及；用桩 dispatcher 触发核心动作与工具动作两条分支，断言后台线程启动、正文送达、工具动作的返回值与异常都变成用户可见的提示。
 
-`tests/test_file_bubble.py` 覆盖气泡的动作可用性：视觉关闭时只有图片的批次置灰并标注「视觉通道已关闭」，混合批次保留文本动作；工具动作按 `accepts` 与内容开关出现或消失。
+`tests/test_file_bubble.py` 覆盖气泡的动作可用性：视觉关闭时只有图片的批次置灰并标注「视觉通道已关闭」，混合批次保留文本动作；工具动作按 `accepts` 与内容开关出现或消失；渲染出的按钮与可用性同步（不可用项 `disabled` 且带置灰样式），「取消」在所有动作都不可用时仍可用，点击只收起气泡、不触发动作。
+
+`tests/test_knowledge_file_action.py` 覆盖知识库文件动作：播报的 hint 只列成功入库的文件名，读不出内容的文件不出现也不触发请求。
 
 手动检查清单：
 
 1. 拖入 UTF-8 的 `.md` 与 GBK 的 `.txt`，看一看均能取到内容；
-2. 拖入图片，`VISION_ENABLED` 开启时能按内容反应，关闭时按钮置灰且说明原因；
-3. 拖入 `.exe`，只念文件名，回复说明读不出内容；
+2. 拖入图片，`VISION_ENABLED` 开启时能按内容反应，关闭时按钮置灰且说明原因，置灰与可用按钮肉眼可区分；
+3. 拖入 `.exe`，看一看按钮置灰并标注「没有可读文本」，尝一口只念文件名，回复说明读不出内容；
 4. 拖入 11 MB 文件，放下时拒收，桌宠用一句台词回应；
 5. 一次拖入 6 个文件，拒收一次并回应一次；
-6. 冷却窗口内连续拖入两个超限文件，第二次不再产生新请求；
+6. 连续拖入同一个超限文件两次，两次都被拒收并各回应一次；快速连点气泡按钮只触发一次请求；
 7. 拖着文件在窗口上反复划过再移开，不产生任何请求与动画；
 8. 拖入后 12 秒不操作，气泡收起且不产生 LLM 请求，下一轮上下文出现一次性事件；
 9. 托盘开启鼠标穿透后拖入无效，关闭后恢复；
-10. 拖入 `.env` 与 `.npmrc`，均拒收且回应一次；
+10. 拖入 `.env` 与 `.npmrc`，两次都被拒收，且各回应一次；
 11. 拖入约 0.2 MB 的 8000×8000 单色 PNG（64 MP），按像素闸门降级为元信息，界面不卡顿；再拖入一张 48 MP 的 JPEG，走 `draft` 正常送进视觉通道；
 12. 拖入一个目录，只显示条目摘要，不出现需要内容的动作；
 13. 收进知识库后，知识库面板可见该文档，来源为 `file_drop`；
@@ -405,7 +414,7 @@ python scripts/gen_docs.py --check
 16. 右键菜单关闭知识库工具后再次拖入，该动作不再出现，核心动作正常；
 17. 启动后立即拖入（工具仍在后台加载）界面不卡顿，气泡保持打开时按钮自行出现；
 18. 忙态：看一看进行中再拖入一个文件，不产生新请求，随后某一轮上下文出现 `file_drop_busy`；等请求结束后再拖入，气泡内容替换为最新一次拖入；
-19. 文件气泡的收起路径：拖入后抓起桌宠、从托盘隐藏桌宠，气泡均随之消失；气泡显示期间悬停桌宠，不出现 chat / feed / music。
+19. 文件气泡的收起路径：拖入后抓起桌宠、从托盘隐藏桌宠、点标题行的「取消」，气泡均随之消失；取消只收起气泡，不产生请求，下一轮上下文不出现 `file_drop_idle`；气泡显示期间悬停桌宠，不出现 chat / feed / music。
 
 ## §10 风险与约束
 
