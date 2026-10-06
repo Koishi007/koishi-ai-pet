@@ -27,14 +27,15 @@ def _file(tmp_path: Path, name: str, data: bytes = b"hi") -> str:
 
 
 def make_handler(*, enabled: bool = True, penetration: bool = False, busy: bool = False):
-    """返回（handler, calls）；calls 记录三个出口的调用参数。"""
-    calls = {"bubble": [], "reject": [], "busy": []}
+    """返回（handler, calls）；calls 记录各出口的调用参数。"""
+    calls = {"bubble": [], "reject": [], "busy": [], "busy_show": []}
     handler = FileDropHandler(
         hover_state=lambda: (enabled, penetration),
         is_busy=lambda: busy,
         on_show_bubble=calls["bubble"].append,
         on_reject=lambda status, names: calls["reject"].append((status, names)),
         on_busy_event=calls["busy"].append,
+        on_show_busy=calls["busy_show"].append,
     )
     return handler, calls
 
@@ -108,13 +109,15 @@ class TestDropLayer:
         refs = calls["bubble"][0]
         assert [ref.name for ref in refs] == ["note.md"]
 
-    def test_busy_writes_event_only(self, tmp_path):
+    def test_busy_writes_event_and_shows_hint(self, tmp_path):
+        path = _file(tmp_path, "note.md")
         handler, calls = make_handler(busy=True)
-        handler.handle_drop([_file(tmp_path, "note.md")])
+        handler.handle_drop([path])
         assert calls["reject"] == []
         assert calls["bubble"] == []
         assert len(calls["busy"]) == 1
         assert "note.md" in calls["busy"][0]
+        assert calls["busy_show"] == [[path]]
 
     def test_empty_paths_are_ignored(self):
         handler, calls = make_handler(busy=True)

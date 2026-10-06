@@ -345,6 +345,10 @@ def main():
     agent.state_changed.connect(
         lambda s: feed_bubble.set_busy(s in ("autonomous", "interacting"))
     )
+    # 自主/对话开始即收起文件气泡：打开期间未选的动作已过期，也避免打断在跑的脑线程
+    agent.state_changed.connect(
+        lambda s: file_bubble.hide_bubble() if s in ("autonomous", "interacting") else None
+    )
 
     _voice_session = None
     _hotkey_mgr = None

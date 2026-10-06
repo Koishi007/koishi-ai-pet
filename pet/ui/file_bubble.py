@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import threading
 
 from PySide6.QtCore import (QEasingCurve, QParallelAnimationGroup, QPoint, QPropertyAnimation,
@@ -91,6 +92,18 @@ def _button_label(text: str, reason: str) -> str:
     return f"{text}（{reason}）" if reason else text
 
 
+_BUSY_NAME_MAX = 3
+
+
+def _busy_note(paths: list[str]) -> str:
+    """忙态提示的文件清单：最多列 3 个名字，超出补总数。"""
+    names = [os.path.basename(path) for path in paths[:_BUSY_NAME_MAX]]
+    listed = "、".join(names)
+    if len(paths) > _BUSY_NAME_MAX:
+        listed = f"{listed} 等 {len(paths)} 个"
+    return f"「{listed}」等你忙完再拖一次"
+
+
 class FileBubble(QWidget):
     """文件气泡：显示拖入项与动作按钮，超时或收起时通知装配层。"""
 
@@ -102,6 +115,7 @@ class FileBubble(QWidget):
         super().__init__(parent)
         self._pet_window = pet_window
         self._refs: tuple[FileRef, ...] = ()
+        self._busy_hint = False
         self._rows: list[QLabel] = []
         self._action_ids: tuple[tuple[str, str, bool], ...] = ()
         self._dir_token = 0
@@ -167,8 +181,18 @@ class FileBubble(QWidget):
 
     def show_files(self, refs: tuple[FileRef, ...], timeout_s: int | None = None):
         """显示文件摘要与动作按钮；重复调用复用同一实例，内容整体替换。"""
+        self._show(refs, busy=False, timeout_s=timeout_s)
+
+    def show_busy(self, paths: list[str]):
+        """忙态放下：复用同一窗口提示收不下，不提供动作。"""
+        self._show((), busy=True, paths=paths)
+
+    def _show(self, refs: tuple[FileRef, ...], busy: bool, timeout_s: int | None = None,
+              paths: list[str] | None = None):
+        self._busy_hint = busy
         self._refs = tuple(refs)
-        self._render_body()
+        self._title.setText("现在忙，先收不下啦" if busy else "这些给你")
+        self._render_body(paths=paths)
         self._render_buttons()
         self._show_bubble()
         seconds = config.FILE_DROP_BUBBLE_TIMEOUT_S if timeout_s is None else timeout_s
@@ -194,13 +218,20 @@ class FileBubble(QWidget):
 
     # 渲染
 
-    def _render_body(self):
+    def _render_body(self, paths: list[str] | None = None):
         while self._body.count():
             item = self._body.takeAt(0)
             widget = item.widget()
             if widget is not None:
                 widget.deleteLater()
         self._rows = []
+        if paths is not None:
+            row = QLabel(_busy_note(paths))
+            row.setStyleSheet(_ROW_QSS)
+            row.setWordWrap(True)
+            self._body.addWidget(row)
+            self._rows.append(row)
+            return
         for ref in self._refs:
             row = QLabel(describe_ref(ref))
             row.setStyleSheet(_ROW_QSS)
@@ -272,7 +303,7 @@ class FileBubble(QWidget):
         return actions
 
     def _render_buttons(self):
-        actions = self._available_actions()
+        actions = () if self._busy_hint else tuple(self._available_actions())
         signature = tuple(actions)
         if signature == self._action_ids:
             return

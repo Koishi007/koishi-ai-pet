@@ -192,6 +192,7 @@ class PetWindow(TransparentWindow):
             on_show_bubble=self._show_file_bubble,
             on_reject=self._reject_file_drop,
             on_busy_event=self._note_file_drop_busy,
+            on_show_busy=self._show_busy_bubble,
         )
         self.setAcceptDrops(True)
 
@@ -399,11 +400,7 @@ class PetWindow(TransparentWindow):
 
     @staticmethod
     def _accept_copy(event) -> None:
-        """统一以复制语义接受拖放。
-
-        非 Windows 平台在按住 Shift 或同盘拖动时会提议 MoveAction，
-        接受它意味着源端按移动处理，用户的原文件可能被移走，而本功能只读路径。
-        """
+        """统一以复制语义接受拖放"""
         event.setDropAction(Qt.DropAction.CopyAction)
         event.accept()
 
@@ -429,19 +426,29 @@ class PetWindow(TransparentWindow):
         return bool(config.FILE_DROP_ENABLED), bool(self._mouse_penetration)
 
     def _file_drop_busy(self) -> bool:
-        """忙态：请求已发出未返回，即状态机处在 INTERACTING。"""
+        """忙态：脑线程占用中，即 INTERACTING（请求已发出未返回）或 AUTONOMOUS（自主决策进行中）。"""
         agent = self._agent
         if agent is None:
             return False
-        return agent.state_machine.state == PetState.INTERACTING
+        return agent.state_machine.state in (PetState.INTERACTING, PetState.AUTONOMOUS)
 
-    def _show_file_bubble(self, refs) -> None:
-        """放下通过：先收起三个悬空气泡，再显示文件气泡（设计文档 §3.1）。"""
+    def _hide_hover_bubbles(self) -> None:
+        """收起 chat / feed / music 三个悬空气泡，给文件气泡让位。"""
         for bubble in (self._chat_bubble, self._feed_bubble, self._music_bubble):
             if bubble:
                 bubble.hide_bubble()
+
+    def _show_file_bubble(self, refs) -> None:
+        """放下通过：先收起三个悬空气泡，再显示文件气泡"""
+        self._hide_hover_bubbles()
         if self._file_bubble:
             self._file_bubble.show_files(refs)
+
+    def _show_busy_bubble(self, paths) -> None:
+        """忙态放下：复用文件气泡提示收不下，不打断脑线程。"""
+        self._hide_hover_bubbles()
+        if self._file_bubble:
+            self._file_bubble.show_busy(paths)
 
     def _reject_file_drop(self, reason: str, names=()) -> None:
         """三类硬边界拒收：发一次快速交互请求，姿态与数值交给模型决定。"""

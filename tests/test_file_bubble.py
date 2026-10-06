@@ -202,3 +202,22 @@ class TestButtonStates:
         assert _wait_until(qt_app, lambda: not wired_bubble.isVisible())
         assert chosen == []
         assert not wired_bubble._idle_timer.isActive()
+
+
+class TestBusyHint:
+    """忙态放下：复用窗口提示收不下，无动作按钮，取消可用。"""
+
+    def test_busy_shows_note_without_actions(self, wired_bubble):
+        wired_bubble.show_busy(["C:/tmp/云异环.lnk", "C:/tmp/b.bin"])
+        assert wired_bubble._title.text() == "现在忙，先收不下啦"
+        assert wired_bubble._buttons.count() == 0
+        assert wired_bubble._cancel_button.isEnabled()
+        assert "云异环.lnk" in wired_bubble._rows[0].text()
+        assert "等你忙完再拖一次" in wired_bubble._rows[0].text()
+
+    def test_show_files_restores_action_mode(self, wired_bubble, monkeypatch):
+        wired_bubble.show_busy(["C:/tmp/a.txt"])
+        _actions(wired_bubble, monkeypatch, ["text"])
+        wired_bubble.show_files((_ref("text", "a.txt"),))
+        assert wired_bubble._title.text() == "这些给你"
+        assert wired_bubble._buttons.count() >= 2

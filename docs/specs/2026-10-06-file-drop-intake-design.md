@@ -73,7 +73,7 @@
 | 无本地路径 | 悬停 | `ignore()`，无反应 |
 | `FILE_DROP_ENABLED = false` | 悬停 | `ignore()`，无反应 |
 | 鼠标穿透开启 | 悬停 | `ignore()`，无反应 |
-| 忙态 | 放下 | 拒收，写一次性事件 `file_drop_busy`（§6.1） |
+| 忙态（INTERACTING / AUTONOMOUS） | 放下 | 复用文件气泡提示收不下（无动作按钮），写一次性事件 `file_drop_busy`（§6.1） |
 | 数量超过 `FILE_DROP_MAX_FILES` | 放下 | 拒收，发 `too_many` 请求 |
 | 单文件超过 `FILE_DROP_MAX_FILE_MB` | 放下 | 拒收，发 `too_large` 请求 |
 | 文件名命中 `FILE_DROP_DENY_PATTERNS` | 放下 | 拒收，发 `forbidden` 请求 |
@@ -95,16 +95,18 @@
 | 触发 | 行为 |
 |---|---|
 | 放下通过 | 先隐藏 chat / feed / music 三个气泡，再显示文件气泡并启动超时定时器 |
+| 忙态放下 | 复用文件气泡提示收不下：标题「现在忙，先收不下啦」，正文一行文件名清单（最多列 3 个），无动作按钮；不读内容、不发请求，写一次性事件 `file_drop_busy` |
 | 按钮点击 | 停止定时器，进入忙态 |
 | 取消按钮 | 停止定时器，收起气泡，不读内容、不发请求，不写一次性事件（用户已明确结束本次交互） |
 | 12 秒超时 | 收起，写一次 `file_drop_idle` 事件 |
 | 抓取桌宠（`mousePressEvent`） | 收起，并入 `pet/ui/pet_window.py:283-294` 的既有隐藏清单 |
+| 自主决策或对话交互开始（state 变为 autonomous / interacting） | 收起文件气泡：打开期间未选择的动作已过期，也不打断在跑的脑线程 |
 | 程序隐藏桌宠（`hide()`） | 收起，并入 `pet/ui/pet_window.py:606-618` 的既有隐藏清单 |
 | 非忙态再次放下 | 复用实例，内容替换为最新一次拖入，定时器重置 |
 
 文件气泡显示期间 `enterEvent` 不显示 chat / feed / music：三个悬空气泡与文件气泡位置相邻，共存会互相遮挡并争抢鼠标。文件气泡收起后恢复原有悬停行为；想立刻恢复可以点一下桌宠（`mousePressEvent` 会收起文件气泡）或点气泡标题行的「取消」。
 
-忙态的定义是请求已发出且未返回，即 `state_machine.state == PetState.INTERACTING`（`pet/agent/pet_agent.py:276-279`、`:356-358` 用的就是这个条件）。气泡打开但未点按钮不算忙态。
+忙态是脑线程占用：INTERACTING（请求已发出未返回）或 AUTONOMOUS（自主决策进行中），判定在 `pet/ui/pet_window.py:431-436`。拖入不打断自主轮；自主触发的觅食播报不受影响，它由吃到食物的动作触发，此刻状态已回 IDLE。气泡打开但未点按钮不算忙态。
 
 `_trigger_interact` 的冷却按 hint 计数，挂在通道上默认生效（15 秒），调用方可覆盖：`cooldown_ms` 为 0 表示不冷却。文件动作、投喂、觅食、工具播报都传 0：重复交付同一份东西各触发一次，不是异常。抓取、放下、窗口消失沿用默认值，靠冷却合并抖动重放。忙态不走这条通道，与冷却无关。
 
@@ -261,14 +263,14 @@ registry.add_file_action(
 
 ### §5.2 上下文池的写入与回忆
 
-三条动作通道的结果经 `_on_brain_result` 统一结算（`pet/agent/pet_agent.py:602-666`）：assistant 台词写入上下文池并落聊天历史（`conversation_store` 的 pet 行），`Memory:` 行后台写入记忆库，`Mood:` / `Vitals:` 增量应用到状态。各路径写入上下文池的范围：
+三条动作通道的结果经 `_on_brain_result` 统一结算（`pet/agent/pet_agent.py:602-666`）：assistant 台词与 Summary 各写一条上下文池，台词落聊天历史（`conversation_store` 的 pet 行），`Memory:` 行后台写入记忆库，`Mood:` / `Vitals:` 增量应用到状态。各路径写入上下文池的范围：
 
 | 路径 | 池 user 行 | 池 assistant 行 | 聊天历史 pet 行 | 记忆库 | 数值 |
 |---|---|---|---|---|---|
-| 尝一口 | 元信息（`context_hint`，`record_context=True`） | 台词 | 台词 | 不写（interact 禁止 `Memory:` 行） | Mood |
+| 尝一口 | 元信息（`context_hint`，`record_context=True`） | 台词 + Summary | 台词 | 不写（interact 禁止 `Memory:` 行） | Mood |
 | 看一看 | 元信息（`message`，`log_message` 缺省取 `message`） | 台词 + Summary | 台词 | `Memory:` 行由模型决定 | Mood |
-| 工具动作播报 | 不写（`record_context=False`） | 台词 | 台词 | 不写 | 无 |
-| 拒收 | 不写（同上） | 台词 | 台词 | 不写 | Mood（sanity/joy） |
+| 工具动作播报 | 不写（`record_context=False`） | 台词 + Summary | 台词 | 不写 | 无 |
+| 拒收 | 不写（同上） | 台词 + Summary | 台词 | 不写 | Mood（sanity/joy） |
 
 回忆规则：
 
@@ -277,7 +279,7 @@ registry.add_file_action(
 - 正文任何路径都不进池；全文唯一的持久化是工具动作的知识库入库，之后经 RAG 检索进入上下文。
 - 拒收与工具播报不写 user 行：下次对话模型只看得到桌宠当时的台词，看不到「用户拖过文件」这一事实。
 - 工具动作的返回 `summary` 经 `TOOL_CTX.speech` 气泡直出，不进 LLM，也不进池与历史。
-- 忙态放下不发请求：写一次性事件 `file_drop_busy`，在下一轮 `[最近发生了什么]` 注入一次后清除。
+- 忙态（INTERACTING / AUTONOMOUS）放下不发请求：写一次性事件 `file_drop_busy`，在下一轮 `[最近发生了什么]` 注入一次后清除。
 
 ## §6 拒绝与降级规则
 
@@ -364,8 +366,8 @@ agent.trigger(
 | 文件 | 改动 |
 |---|---|
 | `pet/ui/pet_window.py` | `setAcceptDrops(True)` 恒定开启；四个拖放事件只做转发，`dragMoveEvent` 需接受事件，否则收不到放下（§0.1）；动作语义见 §10；`enterEvent` 在文件气泡显示期间不显示 chat / feed / music；隐藏清单补入文件气泡（`mousePressEvent` 与 `hide()`）；持有文件气泡单例 |
-| `pet/ui/file_drop_handler.py`（新增） | 拖放处理层：从 `QMimeData` 取路径、调用 `pet/file_intake` 判定、经回调驱动气泡与请求；不依赖 `PetWindow` 实例，可单测 |
-| `pet/ui/file_bubble.py`（新增） | 文件气泡：文件名、后缀、大小摘要，核心动作按钮按固定两条渲染，工具动作按钮按注册表快照渲染，不可用的核心动作置灰并标注原因，标题行固定一个「取消」按钮，跟随桌宠位置，复用 `music_bubble.py` 的跟随与显示结构；单例复用，超时定时器归它管理；按钮防抖 |
+| `pet/ui/file_drop_handler.py`（新增） | 拖放处理层：从 `QMimeData` 取路径、调用 `pet/file_intake` 判定、经回调驱动气泡与请求（忙态出口分一次性事件与气泡提示两个回调）；不依赖 `PetWindow` 实例，可单测 |
+| `pet/ui/file_bubble.py`（新增） | 文件气泡：文件名、后缀、大小摘要，核心动作按钮按固定两条渲染，工具动作按钮按注册表快照渲染，不可用的核心动作置灰并标注原因，标题行固定一个「取消」按钮，忙态放下复用窗口提示收不下（无动作按钮），跟随桌宠位置，复用 `music_bubble.py` 的跟随与显示结构；单例复用，超时定时器归它管理；按钮防抖 |
 | `pet/ui/debounce.py`（新增） | 按钮与提交框的防抖：一次物理操作只产生一次请求 |
 | `pet/file_intake/`（新增包） | 纯逻辑：嗅探、解码链、截断、图片处理、体积与数量校验、拒绝名单、模板参数组装 |
 | `pet/tools/registry.py` | `ToolDef` 增加 `file_actions` 字段、`add_file_action(...)` 与公开的查询方法 |
@@ -426,8 +428,8 @@ python scripts/gen_docs.py --check
 15. 从 `TOOLS_ENABLED` 排除 `knowledge` 后启动，拖入文本文件，气泡只出现两个核心动作；
 16. 右键菜单关闭知识库工具后再次拖入，该动作不再出现，核心动作正常；
 17. 启动后立即拖入（工具仍在后台加载）界面不卡顿，气泡保持打开时按钮自行出现；
-18. 忙态：看一看进行中再拖入一个文件，不产生新请求，随后某一轮上下文出现 `file_drop_busy`；等请求结束后再拖入，气泡内容替换为最新一次拖入；
-19. 文件气泡的收起路径：拖入后抓起桌宠、从托盘隐藏桌宠、点标题行的「取消」，气泡均随之消失；取消只收起气泡，不产生请求，下一轮上下文不出现 `file_drop_idle`；气泡显示期间悬停桌宠，不出现 chat / feed / music。
+18. 忙态：看一看进行中再拖入一个文件，不产生新请求，气泡显示忙态提示（无动作按钮）；自主决策进行中拖入同样按忙态处理，且不打断自主行为；随后某一轮上下文出现 `file_drop_busy`；等请求结束后再拖入，气泡内容替换为最新一次拖入；
+19. 文件气泡的收起路径：拖入后抓起桌宠、从托盘隐藏桌宠、自主决策触发、点标题行的「取消」，气泡均随之消失；取消只收起气泡，不产生请求，下一轮上下文不出现 `file_drop_idle`；气泡显示期间悬停桌宠，不出现 chat / feed / music。
 
 ## §10 风险与约束
 

@@ -48,12 +48,14 @@ class FileDropHandler:
                  is_busy: Callable[[], bool],
                  on_show_bubble: Callable[[tuple[FileRef, ...]], None],
                  on_reject: Callable[[str, tuple[str, ...]], None],
-                 on_busy_event: Callable[[str], None]):
+                 on_busy_event: Callable[[str], None],
+                 on_show_busy: Callable[[Sequence[str]], None]):
         self._hover_state = hover_state
         self._is_busy = is_busy
         self._on_show_bubble = on_show_bubble
         self._on_reject = on_reject
         self._on_busy_event = on_busy_event
+        self._on_show_busy = on_show_busy
 
     def accept_hover(self, has_local_paths: bool) -> bool:
         """悬停是否接受：命中三项之一就 ignore，让系统显示禁止光标。"""
@@ -68,6 +70,7 @@ class FileDropHandler:
         if self._is_busy():
             logger.info(f"[FileDrop] busy, drop ignored: {len(candidates)} item(s)")
             self._on_busy_event(busy_event_text(candidates))
+            self._on_show_busy(candidates)
             return
 
         verdict = check_drop(
