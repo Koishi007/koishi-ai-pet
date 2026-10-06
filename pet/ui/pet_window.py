@@ -414,7 +414,7 @@ class PetWindow(TransparentWindow):
         self._accept_copy(event)
 
     def dragMoveEvent(self, event: QDragMoveEvent):
-        # 不接受则收不到 dropEvent，探针实测见设计文档 §0.1
+        # 不接受则收不到 dropEvent（设计文档 §0.1）
         self._accept_copy(event)
 
     def dragLeaveEvent(self, event: QDragLeaveEvent):

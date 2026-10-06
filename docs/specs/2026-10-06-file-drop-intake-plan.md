@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- 原文件只读：不移动、不删除、不改写；三个拖放事件统一 `setDropAction(Qt.DropAction.CopyAction)` 后 `accept()`，不使用 `acceptProposedAction()`（spec §11）。
+- 原文件只读：不移动、不删除、不改写；三个拖放事件统一 `setDropAction(Qt.DropAction.CopyAction)` 后 `accept()`，不使用 `acceptProposedAction()`（spec §10）。
 - 正文不落盘：`conversation_store`、上下文池、上下文摘要三处只写元信息（文件名、类型、大小），正文经附件参数只装配进当轮 messages（spec §5）。
 - 代码不调用动画：姿态与动作由 LLM 输出的 `Action:` 行决定，程序不调用 `PetAnimator` / `PetActions`（spec §3）。
 - 判定分层：悬停层只处理无本地路径、`FILE_DROP_ENABLED=false`、鼠标穿透三项；忙态与三类硬边界（数量、体积、拒绝名单）在放下层（spec §3）。
@@ -259,7 +259,7 @@ def dropEvent(self, event):
     self._file_drop.handle_drop(paths_from_mime(event.mimeData()))
 ```
 
-三个事件都固定 `CopyAction`，不使用 `acceptProposedAction()`（spec §11）。
+三个事件都固定 `CopyAction`，不使用 `acceptProposedAction()`（spec §10）。
 
 - [ ] **Step 2: 手动验证拖放**
 
