@@ -45,7 +45,7 @@
   - `load_text_full(path) -> str`
   - `load_image(path, max_pixels) -> PIL.Image | None`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 新建 `tests/test_file_intake.py`，包含以下测试类。所有样本文件在 `tmp_path` 现造，不放仓库素材。
 
@@ -60,13 +60,13 @@
 | `TestImageGate` | `max_pixels` 调到 100 的小图被拒（返回 `None`）；`max_pixels` 覆盖到足够大时返回 `PIL.Image`；长边被缩到 1024 以内 |
 | `TestDirMeta` | 目录的 `size` 为 0、`kind` 为 `dir`；条目计数上限 200、展示前 20 个名字 |
 
-- [ ] **Step 2: 运行测试，确认按预期失败**
+- [x] **Step 2: 运行测试，确认按预期失败**
 
 Run: `python -m pytest tests/test_file_intake.py -v`
 
 Expected: 全部 FAIL，`ModuleNotFoundError: No module named 'pet.file_intake'`。
 
-- [ ] **Step 3: 新增配置键**
+- [x] **Step 3: 新增配置键**
 
 在 `pet/config.py` 的 `_KEY_META` 里、`INTERACT_FED_PROMPT` 之后插入：
 
@@ -84,7 +84,7 @@ Expected: 全部 FAIL，`ModuleNotFoundError: No module named 'pet.file_intake'`
     "INTERACT_FILE_REJECT_PROMPT": {"type": "str", "default": "",   "category": "behavior", "needs_restart": False, "hidden": True, "description": "拒收台词的自定义 prompt 模板"},
 ```
 
-- [ ] **Step 4: 实现纯逻辑包**
+- [x] **Step 4: 实现纯逻辑包**
 
 `pet/file_intake/sniff.py` 的判定规则：
 
@@ -104,13 +104,13 @@ Expected: 全部 FAIL，`ModuleNotFoundError: No module named 'pet.file_intake'`
 
 `pet/file_intake/types.py` 的 `FileRef` 为 frozen dataclass，`size` 对目录记 0。
 
-- [ ] **Step 5: 运行测试，确认通过**
+- [x] **Step 5: 运行测试，确认通过**
 
 Run: `python -m pytest tests/test_file_intake.py -v`
 
 Expected: 全部 PASS。
 
-- [ ] **Step 6: 重生成参考文档并登记新包**
+- [x] **Step 6: 重生成参考文档并登记新包**
 
 ```bash
 python scripts/gen_docs.py
@@ -125,7 +125,7 @@ python -m pytest tests/test_docs.py -q
 
 Expected: `tests/test_docs.py` 全 PASS（新包必须出现在架构文档里，否则该测试红）。
 
-- [ ] **Step 7: 全量测试并提交**
+- [x] **Step 7: 全量测试并提交**
 
 Run: `python -m pytest -q`
 
@@ -151,7 +151,7 @@ git commit -m "feat(filedrop): 新增拖入文件的纯逻辑包与配置键"
 
 **约束：** handler 不持有 `PetWindow`，三个回调由装配层注入；`handle_drop` 内部按 spec §3 的分层表调用 `check_drop`，忙态由 `hover_state` 之外的第 4 个可调用对象 `is_busy()` 提供。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 新建 `tests/test_file_drop_handler.py`：
 
@@ -163,23 +163,23 @@ git commit -m "feat(filedrop): 新增拖入文件的纯逻辑包与配置键"
 
 用假回调（`unittest.mock.Mock` 或记录列表）断言调用序列，不构造 `PetWindow`。
 
-- [ ] **Step 2: 运行测试，确认按预期失败**
+- [x] **Step 2: 运行测试，确认按预期失败**
 
 Run: `python -m pytest tests/test_file_drop_handler.py -v`
 
 Expected: FAIL，`ModuleNotFoundError: No module named 'pet.ui.file_drop_handler'`。
 
-- [ ] **Step 3: 实现 handler**
+- [x] **Step 3: 实现 handler**
 
 分层按 spec §3：`accept_hover` 只看三项（`enabled`、`penetration`、`has_local_paths`）；`handle_drop` 先查 `is_busy()`，再调 `check_drop`，顺序为忙态 → 数量 → 体积 → 名单 → 通过。所有判定都不读文件内容。
 
-- [ ] **Step 4: 运行测试，确认通过**
+- [x] **Step 4: 运行测试，确认通过**
 
 Run: `python -m pytest tests/test_file_drop_handler.py -v`
 
 Expected: 全部 PASS。
 
-- [ ] **Step 5: 全量测试并提交**
+- [x] **Step 5: 全量测试并提交**
 
 Run: `python -m pytest -q`
 
@@ -205,7 +205,7 @@ git commit -m "feat(filedrop): 新增拖放判定层，分层处理悬停与放�
 
 **约束：** 动作按钮渲染规则见 spec §5 与 §5.1：两条核心动作固定显示，工具动作按 `accepts` 与 `kind` 是否匹配决定是否出现；气泡可见期间每 1 秒重读一次注册表刷新按钮。
 
-- [ ] **Step 1: 实现气泡**
+- [x] **Step 1: 实现气泡**
 
 跟随与显示结构复用 `pet/ui/music_bubble.py`（`_follow_timer`、`show_bubble` / `hide_bubble` 的成对动画）。三条收起路径在 `pet_window` 侧接线：`mousePressEvent`（`pet/ui/pet_window.py:283-294` 的隐藏清单）、`hide()`（`:606-618` 的隐藏清单）、`enterEvent`（文件气泡可见时不显示 chat / feed / music）。
 
@@ -215,7 +215,7 @@ Run: `python -m pet`
 
 按 spec §9 手动清单第 19 条检查：拖入后抓起桌宠、从托盘隐藏桌宠，气泡均随之消失；气泡显示期间悬停桌宠，不出现 chat / feed / music；点一下桌宠后悬停行为恢复。
 
-- [ ] **Step 3: 全量测试并提交**
+- [x] **Step 3: 全量测试并提交**
 
 Run: `python -m pytest -q`
 
@@ -235,7 +235,7 @@ git commit -m "feat(filedrop): 新增文件气泡与生命周期接线"
 - Consumes: Task 2 的 `FileDropHandler` 与 `paths_from_mime`；Task 3 的 `FileBubble`。
 - Produces: 窗口侧的四条事件处理；`setAcceptDrops(True)` 在 `__init__` 里恒定开启。
 
-- [ ] **Step 1: 接线四个事件**
+- [x] **Step 1: 接线四个事件**
 
 ```python
 def dragEnterEvent(self, event):
@@ -267,7 +267,7 @@ Run: `python -m pet`
 
 按 spec §9 手动清单第 4、5、7、9 条检查：超限拒收并回应、拖过多文件拒收一次、拖着文件反复划过不产生请求与动画、穿透开启时无效且关闭后恢复。
 
-- [ ] **Step 3: 全量测试并提交**
+- [x] **Step 3: 全量测试并提交**
 
 Run: `python -m pytest -q`
 
@@ -297,7 +297,7 @@ git commit -m "feat(filedrop): 窗口接收拖放并转发到判定层"
 
 **约束：** 元信息（文件名、类型、大小）走 `message` 与 `context_hint`，正文只进附件参数；附件是 `PIL.Image` 时由 `ContextBuilder` 用 `self._screen_reader.prepare_image(image=...)` 编码，同一轮不再附截图。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 新建 `tests/test_file_attachment.py`（不构造 agent，用一个桩 brain 提供 `get_multi_turn_messages` 与 `_MAX_POOL_ENTRIES`）：
 
@@ -308,23 +308,23 @@ git commit -m "feat(filedrop): 窗口接收拖放并转发到判定层"
 | `test_interact_prompt_contains_meta_not_body` | `interact_file_prompt` 的输出含文件名与类型；正文片段按额度截断 |
 | `test_reject_prompt_by_reason` | 四种类型各自产出不同文案，且模板要求限定 `Mood:` / `Vitals:` 增量（见 spec §6.1 的规则表） |
 
-- [ ] **Step 2: 运行测试，确认按预期失败**
+- [x] **Step 2: 运行测试，确认按预期失败**
 
 Run: `python -m pytest tests/test_file_attachment.py -v`
 
 Expected: FAIL，`TypeError: build_chat_decide() got an unexpected keyword argument 'attachment_text'`。
 
-- [ ] **Step 3: 实现参数与接线**
+- [x] **Step 3: 实现参数与接线**
 
 `pet/app.py` 的接线按 spec §5：尝一口走 `trigger("interact", hint=interact_file_prompt(...), record_context=True, context_hint=<元信息>, thinking=False, enable_tools=False, is_play_loading=False, delay_ms=150)`；读读看走 `trigger("chat", message=<元信息请求>, attachment_text=<正文>)`；两者都不把正文写进 `message` / `context_hint`。读取在 daemon 线程执行，完成后回主线程调用 trigger（`PIL.Image` 对象在此移交所有权，UI 侧之后不再触碰）。
 
-- [ ] **Step 4: 运行测试，确认通过**
+- [x] **Step 4: 运行测试，确认通过**
 
 Run: `python -m pytest tests/test_file_attachment.py -v`
 
 Expected: 全部 PASS。
 
-- [ ] **Step 5: 重生成提示词参考文档并全量测试**
+- [x] **Step 5: 重生成提示词参考文档并全量测试**
 
 ```bash
 python scripts/gen_docs.py
@@ -335,7 +335,7 @@ python -m pytest -q
 
 按 spec §9 手动清单第 14 条：造一个含唯一标记串的文本文件，读读看之后在聊天历史窗口与 `pet.db` 里搜索该标记，均无命中，而当轮日志能看到正文已装配。
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add pet/brain/prompts.py pet/brain/context_builder.py pet/agent/pet_agent.py pet/app.py docs/reference/prompt-blocks.md tests/test_file_attachment.py
@@ -360,17 +360,17 @@ git commit -m "feat(filedrop): 三条动作通道与附件参数，正文只进�
   - `ToolRegistry.file_actions() -> list[dict]`：只返回已注册且已启用的工具声明的动作，每项含 `tool`、`id`、`label`、`handler`、`accepts`；不使用 `_tools` 私有访问
   - 工具 handler 签名 `handler(files: list[FileRef]) -> dict`，返回 `{"ok": bool, "summary": str}`
 
-- [ ] **Step 1: 追加失败测试**
+- [x] **Step 1: 追加失败测试**
 
 在 `tests/test_file_drop_handler.py` 追加 `TestFileActions`：未注册时 `file_actions()` 为空；注册后返回动作且 `accepts` 原样带出；`set_enabled(tool, False)` 后该动作不再出现；`file_actions()` 的名字里不出现 `_tools`（用 `monkeypatch` 删除属性后仍可调用，确保走的是公开方法）。
 
-- [ ] **Step 2: 运行测试，确认按预期失败**
+- [x] **Step 2: 运行测试，确认按预期失败**
 
 Run: `python -m pytest tests/test_file_drop_handler.py::TestFileActions -v`
 
 Expected: FAIL，`AttributeError: 'ToolRegistry' object has no attribute 'file_actions'`。
 
-- [ ] **Step 3: 实现扩展点与知识库声明**
+- [x] **Step 3: 实现扩展点与知识库声明**
 
 `pet/tools/knowledge/__init__.py` 在 `register()` 内、`add_menu_action` 之后声明：
 
@@ -395,13 +395,13 @@ def _ingest_files(files):
 
 `accepts="text"`；handler 由气泡侧在 daemon 线程调用，工具自己循环处理全部文件并只播报一次（spec §5.1 的调用次数约定）。
 
-- [ ] **Step 4: 运行测试，确认通过**
+- [x] **Step 4: 运行测试，确认通过**
 
 Run: `python -m pytest tests/test_file_drop_handler.py -v`
 
 Expected: 全部 PASS。
 
-- [ ] **Step 5: 记录扩展点**
+- [x] **Step 5: 记录扩展点**
 
 在 `docs/tool-development.md` 增加一节，写明 `add_file_action` 的声明位置、`handler` 契约、`accepts` 取值（`text` / `image` / `any`）、返回值约定与"工具缺席表现为按钮不存在"。同时在 `docs/architecture.md` §12 常见改动入口表补一行"加一个文件动作"。
 
@@ -409,7 +409,7 @@ Expected: 全部 PASS。
 
 按 spec §9 手动清单第 13、15、16、17 条：入库后知识库面板可见该文档且来源为 `file_drop`；`TOOLS_ENABLED` 排除 `knowledge` 后气泡只显示两条核心动作；右键关闭该工具后动作消失；启动即拖入时按钮随后自行出现。
 
-- [ ] **Step 7: 全量测试并提交**
+- [x] **Step 7: 全量测试并提交**
 
 Run: `python -m pytest -q`
 
@@ -431,13 +431,13 @@ git commit -m "feat(filedrop): 工具文件动作扩展点与知识库入库"
 
 按 spec §9 的 19 条逐项检查，重点四条：第 6 条（冷却合并）、第 11 条（像素闸门降级 + 48 MP JPEG 走 draft）、第 12 条（目录只显示条目摘要）、第 18 条（忙态写一次性事件）。
 
-- [ ] **Step 2: 删除探针并更新设计文档**
+- [x] **Step 2: 删除探针并更新设计文档**
 
 ```bash
 git rm scripts/spike_dragdrop.py
 ```
 
-- [ ] **Step 3: 收尾验证**
+- [x] **Step 3: 收尾验证**
 
 ```bash
 python -m pytest -q
@@ -446,7 +446,7 @@ python scripts/gen_docs.py --check
 
 Expected: 全部通过，退出码 0。
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add -A docs/ scripts/

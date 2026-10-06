@@ -25,15 +25,14 @@
 
 ### §0.1 前置验证
 
-探针脚本 `scripts/spike_dragdrop.py` 复制真实窗口形态（`pet/ui/base_window.py:5-14` 的无边框、置顶、`Tool`、半透明）并开启 `setAcceptDrops(True)`，从资源管理器拖入文件时在控制台打印拖放事件与本地路径；脚本不导入 `pet` 包，避免崩溃钩子在 `logs/crash` 留下报告。
+验证用一个一次性探针脚本完成，它复制真实窗口形态（`pet/ui/base_window.py:5-14` 的无边框、置顶、`Tool`、半透明）并开启 `setAcceptDrops(True)`，从资源管理器拖入文件时在控制台打印拖放事件与本地路径，且不导入 `pet` 包以免崩溃钩子在 `logs/crash` 留下报告。结论如下，脚本已删除。
 
 已实测通过（本机 Windows + PySide6 6.11.1）：拖入一个 206 字节的 `.txt`，输出 `hasUrls=True urls=1 proposed=CopyAction`、`[drop] 1 url(s)` 与完整本地路径。该窗口形态能收到拖放，且系统提议的是复制语义，本设计只读路径、不执行任何文件操作。
 
-- 自检：`python scripts/spike_dragdrop.py --selftest` 打印 `frameless=True stays_on_top=True tool=True popup=True`、`acceptDrops=True`、`translucent=True`。判读窗口类型要看 `tool` 位：`Tool` 的 flags 值包含 `Popup` 的位（`0x0b` 含 `0x08`），`flags & Popup` 为真不代表窗口是弹出窗口，`pet/ui/pet_window.py:32-36` 的 `Popup` 属于右键菜单基类 `_FlatMenuBase`。
-- 穿透模式：`--penetration` 附加 `WA_TransparentForMouseEvents`，属性自检通过（`penetration=True`）。拖放行为未人工确认：平台层面窗口会在命中测试中被跳过，代码不依赖这一点（§11）。
-- `dragMoveEvent` 的必要性已实测：`--no-dragmove` 让该事件走 `QWidget` 默认的 `ignore()`，此时只打印 `[dragEnter] hasUrls=True urls=1 proposed=CopyAction`，不再收到 `[drop]`。四个拖放事件缺一不可，`dragMoveEvent` 必须接受事件（写法见 §11 的动作语义）。
+- 窗口形态：`frameless=True stays_on_top=True tool=True popup=True`、`acceptDrops=True`、`translucent=True`。判读窗口类型要看 `tool` 位：`Tool` 的 flags 值包含 `Popup` 的位（`0x0b` 含 `0x08`），`flags & Popup` 为真不代表窗口是弹出窗口，`pet/ui/pet_window.py:32-36` 的 `Popup` 属于右键菜单基类 `_FlatMenuBase`。
+- 穿透模式：附加 `WA_TransparentForMouseEvents` 后属性自检通过。拖放行为未人工确认：平台层面窗口会在命中测试中被跳过，代码不依赖这一点（§11）。
+- `dragMoveEvent` 的必要性：让它走 `QWidget` 默认的 `ignore()` 后，只打印 `[dragEnter] hasUrls=True urls=1 proposed=CopyAction`，不再收到 `[drop]`。四个拖放事件缺一不可，`dragMoveEvent` 必须接受事件（写法见 §11 的动作语义）。
 - 平台约束：以管理员身份运行的进程收不到非提权资源管理器发起的拖放（Windows UIPI），拖入无响应时先排除这一项。
-- 人工拖放验证通过后可删除该脚本，它不是产品代码。
 
 ## §1 目标
 
@@ -359,7 +358,6 @@ agent.trigger(
 | `pet/ui/__init__.py` | 模块说明补充文件气泡 |
 | `docs/architecture.md` | 模块职责表登记新包（`tests/test_docs.py` 要求覆盖全部包） |
 | `docs/README.md` | 登记本文档 |
-| `scripts/spike_dragdrop.py`（新增） | §0.1 的前置验证探针，验证后可删除 |
 | `tests/test_file_intake.py`（新增） | 纯逻辑单测 |
 | `tests/test_file_drop_handler.py`（新增） | 拖放判定层单测，不构造 `PetWindow`，见 §9 |
 
@@ -367,14 +365,7 @@ agent.trigger(
 
 ## §9 验证方式
 
-前置人工验证（先于实现）：
-
-```bash
-python scripts/spike_dragdrop.py
-python scripts/spike_dragdrop.py --no-dragmove
-```
-
-两条都已实测通过（见 §0.1）：拖放能收到，`dragMoveEvent` 不接受则收不到放下。穿透模式可用 `--penetration` 复现失效（属性自检通过，拖放行为未人工确认）。探针的验证目标已达成，本机确认后可删除。
+前置验证已完成，探针脚本已删除，结论留在 §0.1：拖放能收到，`dragMoveEvent` 不接受则收不到放下。穿透模式的属性自检通过、拖放行为未人工确认，由手动清单第 9 条覆盖。
 
 自动化：
 
