@@ -5,6 +5,7 @@ import ctypes
 import logging
 import os
 import sys
+import threading
 from logging.handlers import TimedRotatingFileHandler
 
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMessageBox

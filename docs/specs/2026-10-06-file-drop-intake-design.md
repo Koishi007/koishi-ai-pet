@@ -371,7 +371,7 @@ agent.trigger(
 自动化：
 
 ```bash
-python -m pytest tests/test_file_intake.py tests/test_file_drop_handler.py
+python -m pytest tests/test_file_intake.py tests/test_file_drop_handler.py tests/test_app_file_actions.py
 python -m pytest tests/test_architecture_contracts.py tests/test_docs.py
 python scripts/gen_docs.py --check
 ```
@@ -379,6 +379,8 @@ python scripts/gen_docs.py --check
 `tests/test_file_intake.py` 覆盖纯逻辑：文本嗅探（UTF-8、GBK、UTF-16LE、含 NUL 的文件）、截断的两条路径与省略计数、独立额度、体积与数量上限、拒绝名单的 glob 匹配、像素闸门、目录分类、工具文件动作的注册与查询（只测注册表，不加载具体工具）。
 
 `tests/test_file_drop_handler.py` 覆盖判定层，不构造 `PetWindow`：`PetWindow` 依赖 agent、动作队列、素材加载与屏幕探测，offscreen 下构造它等于为几行判定拉起大半个应用。判定因此住在 `pet/ui/file_drop_handler.py`，只依赖路径列表、配置与四个回调（显示气泡、发拒收请求、写一次性事件、忽略），测试直接喂 `QMimeData` 或路径列表，断言回调序列：无路径不回调、悬停三项在悬停层被拒、忙态只写事件不发请求、三类硬边界各自触发对应类型、通过时调用显示气泡。`tests/conftest.py:23` 已设 `QT_QPA_PLATFORM=offscreen`，`QMimeData` 可直接构造（该处是 `setdefault`，外部已设同名变量时沿用外部值）。`PetWindow` 上的事件转发与操作系统的事件投递不在这一层覆盖，由 §0.1 的验证与手动清单负责。
+
+`tests/test_app_file_actions.py` 覆盖装配层：`pet/app.py` 只在进程入口被导入，此前没有测试触及；用桩 dispatcher 触发核心动作与工具动作两条分支，断言后台线程启动且正文送达。
 
 手动检查清单：
 
