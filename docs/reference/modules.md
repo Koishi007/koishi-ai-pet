@@ -48,6 +48,11 @@
 | `pet/config.py` | 配置系统：`_KEY_META` 是所有配置项的唯一真源，`settings.json` 存用户覆盖（路径见 `pet/settings.py`）。 | `Config` |
 | `pet/crash_reporter.py` | 崩溃信息收集与持久化 | `CrashReporter` `get_guard()` `install()` `mark_started()` `clear_marker()` |
 | `pet/db.py` | 数据库路径管理 — 集中管理 pet.db 路径与统一连接配置。 | `get_db_path()` `get_conn()` |
+| `pet/file_intake/__init__.py` | 拖入文件的纯逻辑：类型嗅探、解码链、截断与额度、图片闸门、拒绝名单、目录摘要。 |  |
+| `pet/file_intake/image.py` | 图片读取：先 draft 后判像素闸门，通过后再解码与缩放。 | `load_image()` |
+| `pet/file_intake/sniff.py` | 类型嗅探、解码链、拒绝名单与目录摘要。 | `read_head()` `decode_bytes()` `sniff()` `match_deny()` `dir_summary()` `make_ref()` |
+| `pet/file_intake/text.py` | 文本读取与截断。 | `truncate()` `load_text()` `load_text_full()` |
+| `pet/file_intake/types.py` | 拖入文件的数据结构。 | `FileRef` `DropVerdict` |
 | `pet/food/__init__.py` | food 层 — 需求驱动的本能行为（觅食）。 |  |
 | `pet/food/food.py` | 觅食本能 — 需求驱动的自主觅食行为（satiety 低时触发）。 | `pick_emoji()` `name_of()` `FoodManager` |
 | `pet/game/__init__.py` | 游戏层 — 四个回合制小游戏的注册与导出。 |  |
@@ -119,4 +124,4 @@
 | `pet/voice/voice_session.py` | 语音会话编排：麦克风采集 → 讯飞识别 | `VoiceSession` |
 | `pet/voice/xunfei_stt.py` | 讯飞语音听写 (iat) WebSocket API 封装 | `XunfeiSTT` |
 
-共 111 个模块。
+共 116 个模块。

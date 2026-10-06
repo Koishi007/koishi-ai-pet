@@ -203,6 +203,7 @@ system prompt 由三段拼起来：
 | `pet/brain/` | 决策与记忆：上下文组装、LLM 客户端与重试、输出解析、记忆库、窗口探测、对话历史 | `behavior.py`、`context_builder.py`、`prompts.py`、`memory.py` |
 | `pet/action/` | 动作系统：动作定义与注册、帧动画播放队列、重力与站立、动作产出 | `registry.py`、`action.py`、`action_queue.py`、`gravity.py` |
 | `pet/pulse/` | 数值引擎：生理（饱食/精力）与心理（好感/愉悦/理智），含衰减、阈值与落库 | `vitals.py`、`mood.py` |
+| `pet/file_intake/` | 拖入文件的纯逻辑：类型嗅探、解码链、截断与额度、图片闸门与缩放、拒绝名单、目录摘要 | `sniff.py`、`text.py`、`image.py` |
 | `pet/tools/` | 工具层：注册表、执行器、上下文、加载器，以及各工具子包 | `registry.py`、`executor.py`、`context.py` |
 | `pet/ui/` | 界面层：宠物窗口、各类气泡、表情、粒子、设置/调试/记忆面板、托盘 | `pet_window.py`、`particle.py`、`settings_window.py` |
 | `pet/food/` | 觅食：需求驱动的地面食物生成与食用 | `food.py` |

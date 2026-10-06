@@ -108,9 +108,20 @@
 | `CONTEXT_PERSIST_ENABLED` | bool | true | 是 |  | 启用上下文持久化 |
 | `CONTEXT_TOKEN_BUDGET` | int | 8192 | 是 |  | 上下文token预算上限 |
 | `FALL_DOWN_SECONDS` | float | 1.5 | 是 |  | 下落超过该秒数，落地先播放 fall_down 动作再恢复队列 |
+| `FILE_DROP_BUBBLE_TIMEOUT_S` | int | 12 | 是 |  | 文件气泡无操作收起秒数 |
+| `FILE_DROP_DENY_PATTERNS` | str_list | [".env*", "*.key", "*.pem", "*.pfx", "*.p12", ".npmrc", ".netrc", ".pgpass", ".git-credentials", "id_rsa*", "id_ed25519*"] | 是 |  | 拒收名单，按文件名 glob 匹配 |
+| `FILE_DROP_ENABLED` | bool | true | 是 |  | 拖入文件交互总开关 |
+| `FILE_DROP_MAX_CHARS` | int | 1500 | 是 |  | 单文件进入 prompt 的字符上限 |
+| `FILE_DROP_MAX_FILES` | int | 5 | 是 |  | 单次拖入数量上限 |
+| `FILE_DROP_MAX_FILE_MB` | int | 10 | 是 |  | 单文件体积上限(MB) |
+| `FILE_DROP_MAX_PIXELS` | int | 40000000 | 是 |  | draft 之后的像素上限，判据为大于等于 |
+| `FILE_DROP_READ_CONTENT` | bool | true | 是 |  | 读取文件内容开关，关闭后所有文件只传元信息 |
+| `FILE_DROP_TASTE_CHARS` | int | 300 | 是 |  | 尝一口路径的字符上限 |
 | `FOOD_ENABLED` | bool | true |  | 是 | 觅食总开关（桌宠自主生成食物并吃掉），修改后需重启生效 |
 | `FOOD_TTL_SECONDS` | int | 300 |  |  | 觅食食物存活秒数，超时未吃自动消失 |
 | `INTERACT_FED_PROMPT` | str | `""` | 是 |  | 喂食交互的自定义 prompt 模板 |
+| `INTERACT_FILE_PROMPT` | str | `""` | 是 |  | 尝一口交互的自定义 prompt 模板 |
+| `INTERACT_FILE_REJECT_PROMPT` | str | `""` | 是 |  | 拒收台词的自定义 prompt 模板 |
 | `MOOD_AFFECTION_BASELINE` | float | 50.0 |  |  | 好感度回归基线，长期疏远会缓慢回落到此值 |
 | `MOOD_AFFECTION_DECAY_PER_TICK` | float | 0.2 |  |  | 好感度每 tick 回归速率(点/300秒) |
 | `MOOD_DECAY_ENABLED` | bool | true |  |  | 心理数值自然衰减总开关（愉悦/好感随时间回落） |
@@ -156,4 +167,4 @@
 - `hidden`：`true` 表示不在界面显示，只能直接编辑 `settings.json`
 - `enum` / `minimum` / `maximum`：取值约束，会写进 `settings-schema.json`
 
-共 92 项（其中 39 项未在界面列出）。
+共 103 项（其中 50 项未在界面列出）。
