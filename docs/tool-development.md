@@ -148,6 +148,29 @@ def alert() -> dict:
 TOOL_CTX.note_event("timer", "「吃药」定时器响了")
 ```
 
+## 文件动作
+
+工具可以声明一个「文件动作」：用户把文件拖到桌宠上时，文件气泡里会出现对应的按钮。
+
+```python
+def _ingest_files(files):
+    """files: list[FileRef]，一次调用收到全部文件。"""
+    ...
+
+registry.add_file_action(TOOL_NAME, "ingest", "收进知识库", _ingest_files, accepts="text")
+```
+
+| 项 | 约定 |
+|---|---|
+| 声明位置 | `register()` 内，此时工具已持有可用实例 |
+| handler 签名 | `handler(files: list[FileRef]) -> {"ok": bool, "summary": str}`；一次点击调用一次，收到全部文件，工具自己循环处理并只播报一次 |
+| `accepts` | `text` / `image` / `any`（不声明等价 `any`）；与文件的 `kind` 不匹配时按钮不出现 |
+| 全文读取 | 用 `pet/file_intake` 的 `load_text_full` / `load_image`；体积、数量、拒绝名单与解码判定都由核心先做过 |
+| 播报 | 工具自己调 `TOOL_CTX.request_interact(...)` 或 `TOOL_CTX.speech(...)`，核心不代写台词 |
+| 禁用与缺席 | 工具被禁用或未加载时按钮不出现，核心不做存在性检查 |
+
+`FileRef` 的字段是 `path`、`name`、`suffix`、`size`、`kind`（`kind` 取 `text` / `image` / `binary` / `dir`）。
+
 ## aside 通用参数
 
 每个方法都会自动附带一个可选参数 `aside`（自言自语）：模型调用工具时可以带一句台词

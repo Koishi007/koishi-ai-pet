@@ -324,6 +324,7 @@ system prompt 由三段拼起来：
 | 加一个配置项 | `pet/config.py` 的 `_KEY_META` | 要在界面可见则同时改 `pet/ui/settings_window.py`；重生成 [reference/config.md](reference/config.md) |
 | 改提示词 | `pet/brain/prompts.py`；运行时段落改 `pet/brain/context_builder.py` | 组合白名单；重生成 [reference/prompt-blocks.md](reference/prompt-blocks.md) |
 | 加一个工具 | `pet/tools/<name>/__init__.py` | 声明 `TOOL_NAME`/`TOOL_DESCRIPTION`/`register()`，可加 `TOOL_GROUP`；重生成 [reference/tools.md](reference/tools.md) |
+| 加一个文件动作 | `pet/tools/<name>/__init__.py` 的 `register()` 内 `add_file_action(...)` | 拖入文件时由文件气泡渲染成按钮，工具被禁用则不出现；契约见 [tool-development.md](tool-development.md) |
 | 调数值手感 | `pet/pulse/vitals.py`、`pet/pulse/mood.py` + `_KEY_META` 的阈值项 | 文案档位同步（第 11 节第 2 条） |
 | 改记忆策略 | `pet/brain/memory.py` | 被动注入不要动访问统计 |
 | 加/改窗口探测 | `pet/brain/window_detector.py` 与各平台后端 | 三个平台保持同一接口 |

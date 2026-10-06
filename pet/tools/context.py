@@ -89,10 +89,14 @@ class ToolContext:
             self._agent.note_event(kind, text)
 
     def request_interact(self, hint: str, delay_ms: int = 100,
-                         cooldown_ms: int = 15000):
+                         cooldown_ms: int = 15000,
+                         thinking: bool | None = None,
+                         enable_tools: bool | None = None):
+        """请求一次即时交互；thinking / enable_tools 为 None 时沿用管家默认。"""
         if self._check_agent():
             self._agent.trigger("interact", hint=hint,
-                                delay_ms=delay_ms, cooldown_ms=cooldown_ms)
+                                delay_ms=delay_ms, cooldown_ms=cooldown_ms,
+                                thinking=thinking, enable_tools=enable_tools)
 
     def notify(self, title: str, message: str, duration: int = 5000):
         if self._check_agent():

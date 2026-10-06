@@ -7,6 +7,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QMimeData, QUrl
 
+from pet.tools.registry import ToolRegistry
 from pet.ui.file_drop_handler import FileDropHandler, busy_event_text, paths_from_mime
 
 
@@ -119,6 +120,47 @@ class TestDropLayer:
         handler, calls = make_handler(busy=True)
         handler.handle_drop([])
         assert calls["busy"] == []
+
+
+class TestFileActions:
+    """工具文件动作的注册与查询：只测注册表，不加载具体工具。"""
+
+    def test_empty_by_default(self):
+        registry = ToolRegistry()
+        assert registry.file_actions() == []
+
+    def test_registered_action_is_listed(self):
+        registry = ToolRegistry()
+        registry.register("demo", "示例工具")
+        handler = lambda files: {"ok": True, "summary": ""}  # noqa: E731
+        registry.add_file_action("demo", "ingest", "收进去", handler, accepts="text")
+
+        actions = registry.file_actions()
+        assert len(actions) == 1
+        assert actions[0]["tool"] == "demo"
+        assert actions[0]["id"] == "ingest"
+        assert actions[0]["label"] == "收进去"
+        assert actions[0]["accepts"] == "text"
+        assert actions[0]["handler"] is handler
+
+    def test_returns_plain_dicts(self):
+        registry = ToolRegistry()
+        registry.register("demo", "示例工具")
+        registry.add_file_action("demo", "ingest", "收进去", lambda files: {})
+        assert set(registry.file_actions()[0]) == {"tool", "id", "label", "handler", "accepts"}
+
+    def test_disabled_tool_hides_action(self):
+        registry = ToolRegistry()
+        registry.register("demo", "示例工具")
+        registry.add_file_action("demo", "ingest", "收进去", lambda files: {})
+        registry.set_enabled("demo", False)
+        assert registry.file_actions() == []
+
+    def test_default_accepts_is_any(self):
+        registry = ToolRegistry()
+        registry.register("demo", "示例工具")
+        registry.add_file_action("demo", "ingest", "收进去", lambda files: {})
+        assert registry.file_actions()[0]["accepts"] == "any"
 
 
 class TestBusyText:
