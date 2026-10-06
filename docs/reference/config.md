@@ -120,8 +120,8 @@
 | `FOOD_ENABLED` | bool | true |  | 是 | 觅食总开关（桌宠自主生成食物并吃掉），修改后需重启生效 |
 | `FOOD_TTL_SECONDS` | int | 300 |  |  | 觅食食物存活秒数，超时未吃自动消失 |
 | `INTERACT_FED_PROMPT` | str | `""` | 是 |  | 喂食交互的自定义 prompt 模板 |
-| `INTERACT_FILE_PROMPT` | str | `""` | 是 |  | 尝一口交互的自定义 prompt 模板 |
 | `INTERACT_FILE_REJECT_PROMPT` | str | `""` | 是 |  | 拒收台词的自定义 prompt 模板 |
+| `INTERACT_TAKE_A_BITE_PROMPT` | str | `""` | 是 |  | 尝一口交互的自定义 prompt 模板 |
 | `MOOD_AFFECTION_BASELINE` | float | 50.0 |  |  | 好感度回归基线，长期疏远会缓慢回落到此值 |
 | `MOOD_AFFECTION_DECAY_PER_TICK` | float | 0.2 |  |  | 好感度每 tick 回归速率(点/300秒) |
 | `MOOD_DECAY_ENABLED` | bool | true |  |  | 心理数值自然衰减总开关（愉悦/好感随时间回落） |

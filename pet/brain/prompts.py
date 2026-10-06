@@ -440,7 +440,7 @@ def analyze_vision_user_prompt(user_message: str, context: str) -> str:
         f"=== 用户交给你看的东西 ===\n{user_message}\n\n"
         f"{context}\n\n"
         "按以下步骤处理：\n\n"
-        "1. 先看完对象（文字读完、图看清楚），弄清它是什么、讲了什么\n"
+        "1. 先看完对象（文字读完、图看清楚），弄清它是什么、讲了什么，不熟悉时可以使用工具获取信息（搜索、回忆、知识库等）\n"
         "2. 提炼要点和你自己的判断\n"
         "3. 用符合人格的话说出来，不要复述原文\n"
         "4. 按输出格式写完整输出（Summary → Emotion → Speech → Action(0-2个) → Memory(可选) → Mood）"
@@ -452,7 +452,7 @@ def analyze_non_vision_user_prompt(user_message: str, context: str) -> str:
         f"=== 用户交给你看的东西 ===\n{user_message}\n\n"
         f"{context}\n\n"
         "按以下步骤处理：\n\n"
-        "1. 先读完对象，弄清它是什么、讲了什么\n"
+        "1. 先读完对象，弄清它是什么、弄清它是什么、讲了什么，不熟悉时可以使用工具获取信息（搜索、回忆、知识库等）\n"
         "2. 提炼要点和你自己的判断\n"
         "3. 用符合人格的话说出来，不要复述原文\n"
         "4. 按输出格式写完整输出（Summary → Emotion → Speech → Action(0-2个) → Memory(可选) → Mood）"
@@ -503,21 +503,21 @@ def interact_self_fed_prompt(food: str) -> str:
     )
 
 
-def interact_file_prompt(names: str) -> str:
-    """尝一口的交互 prompt：只给元信息，正文由 attachment_text 随当轮送入。"""
-    template = config.INTERACT_FILE_PROMPT
+def interact_take_a_bite_prompt(names: str) -> str:
+    """尝一口的交互 prompt：味道的想象与心理变化，正文由 attachment_text 随当轮送入。"""
+    template = config.INTERACT_TAKE_A_BITE_PROMPT
     if template:
         return template.format(names=names)
     return (
-        f"用户把「{names}」交给了你尝一口，根据你的人格用一句话（≤15字）表达反应。"
-        f"同时根据文件的样子决定Vitals和Mood变化：\n"
-        f"  — 能读的文本/笔记/资料(satiety+0~5, joy+1~3)\n"
-        f"  — 图片(satiety+5~20, energy+0~5, joy+1~3)\n"
-        f"  — 代码/配置(satiety+0, energy-0~2, sanity-0~2)\n"
-        f"  — 二进制/读不出的东西(satiety+0, sanity-1~3, joy-0~2)\n"
-        f"  — 文件夹(satiety+0, joy+0~2)\n"
-        f"  — 空文件(joy+2~4, sanity+1~3)\n"
-        f"  仅输出受影响项，未列出的类型根据特征自行推断。"
+        f"用户把「{names}」递过来让你尝一口。"
+        f"根据文件的名称、类型想象它尝起来是什么味道，用一句话（≤20字）把味道和口感说出来，同时给出心理变化 Mood（affection/joy/sanity）：\n"
+        f"  — 能读的文本/笔记/资料：joy+0~+2\n"
+        f"  — 图片：joy+1~+3\n"
+        f"  — 代码/配置：anity-0~-2\n"
+        f"  — 二进制/读不出的东西：sanity-1~-3, joy-0~-2\n"
+        f"  — 文件夹：joy+0~+2\n"
+        f"  — 空文件：joy+1~+2, sanity+0~+1\n"
+        f"  未列出的类型按味道、类型自行推断。"
     )
 
 

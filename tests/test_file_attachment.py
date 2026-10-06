@@ -3,7 +3,7 @@
 import pytest
 
 from pet.brain.context_builder import ContextBuilder
-from pet.brain.prompts import interact_file_prompt, interact_file_reject_prompt
+from pet.brain.prompts import interact_take_a_bite_prompt, interact_file_reject_prompt
 from pet.config import config
 
 
@@ -94,14 +94,16 @@ class TestInteractAttachment:
 
 
 class TestPrompts:
-    def test_taste_prompt_has_names_and_rules(self):
-        text = interact_file_prompt("报告.md、图.png")
+    def test_taste_prompt_is_taste_and_mood(self):
+        text = interact_take_a_bite_prompt("报告.md、图.png")
         assert "报告.md" in text
-        assert "satiety" in text and "sanity" in text
+        assert "味道" in text
+        assert "joy" in text and "sanity" in text
+        assert "satiety" not in text and "energy" not in text
 
     def test_taste_template_override(self, monkeypatch):
-        monkeypatch.setattr(config, "INTERACT_FILE_PROMPT", "只认「{names}」")
-        assert interact_file_prompt("a.txt") == "只认「a.txt」"
+        monkeypatch.setattr(config, "INTERACT_TAKE_A_BITE_PROMPT", "只认「{names}」")
+        assert interact_take_a_bite_prompt("a.txt") == "只认「a.txt」"
 
 
 class TestAnalyzeTask:

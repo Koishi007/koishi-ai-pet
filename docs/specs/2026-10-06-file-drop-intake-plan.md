@@ -80,7 +80,7 @@ Expected: 全部 FAIL，`ModuleNotFoundError: No module named 'pet.file_intake'`
     "FILE_DROP_MAX_PIXELS":      {"type": "int",   "default": 40000000, "category": "behavior", "needs_restart": False, "hidden": True, "description": "draft 之后的像素上限，判据为 >="},
     "FILE_DROP_DENY_PATTERNS":   {"type": "str_list", "default": [".env*", "*.key", "*.pem", "*.pfx", "*.p12", ".npmrc", ".netrc", ".pgpass", ".git-credentials", "id_rsa*", "id_ed25519*"], "category": "behavior", "needs_restart": False, "hidden": True, "description": "拒收名单，按文件名 glob 匹配"},
     "FILE_DROP_BUBBLE_TIMEOUT_S": {"type": "int",  "default": 12,   "category": "behavior", "needs_restart": False, "hidden": True, "description": "文件气泡无操作收起秒数"},
-    "INTERACT_FILE_PROMPT":      {"type": "str",   "default": "",   "category": "behavior", "needs_restart": False, "hidden": True, "description": "尝一口交互的自定义 prompt 模板"},
+    "INTERACT_TAKE_A_BITE_PROMPT": {"type": "str", "default": "",   "category": "behavior", "needs_restart": False, "hidden": True, "description": "尝一口交互的自定义 prompt 模板"},
     "INTERACT_FILE_REJECT_PROMPT": {"type": "str", "default": "",   "category": "behavior", "needs_restart": False, "hidden": True, "description": "拒收台词的自定义 prompt 模板"},
 ```
 
@@ -281,7 +281,7 @@ git commit -m "feat(filedrop): 窗口接收拖放并转发到判定层"
 ## Task 5: 交互模板与附件参数
 
 **Files:**
-- Modify: `pet/brain/prompts.py`（新增 `interact_file_prompt(...)`、`interact_file_reject_prompt(reason)` 与内置模板）
+- Modify: `pet/brain/prompts.py`（新增 `interact_take_a_bite_prompt(...)`、`interact_file_reject_prompt(reason)` 与内置模板）
 - Modify: `pet/brain/context_builder.py`（`build_interact` 与 `build_chat_decide` 增加附件参数）
 - Modify: `pet/agent/pet_agent.py`（`trigger("analyze")` 与 chat 共用 `_trigger_dialogue` / `_dialogue_pipeline`，透传附件，正文不进 `message`）
 - Modify: `pet/app.py`（接线：`FileBubble.action_chosen` → 读取 → `agent.trigger(...)`）
@@ -291,7 +291,7 @@ git commit -m "feat(filedrop): 窗口接收拖放并转发到判定层"
 **Interfaces:**
 - Consumes: Task 3 的 `FileBubble.action_chosen`；Task 1 的 `load_text` / `load_image`。
 - Produces：
-  - `interact_file_prompt(names) -> str`、`interact_file_reject_prompt(reason, names=()) -> str`
+  - `interact_take_a_bite_prompt(names) -> str`、`interact_file_reject_prompt(reason, names=()) -> str`
   - `build_interact(event_hint, attachment_text=None, attachment_image=None)`、`build_chat_decide(user_message, window_context, screenshot=True, attachment_text=None, attachment_image=None)`、`build_analyze_decide(user_message, window_context, screenshot=False, attachment_text=None, attachment_image=None)`
   - `PetAgent.trigger("analyze", message=..., log_message=None, attachment_text=None, attachment_image=None)`、`trigger("chat", ...)` 与 `trigger("interact", hint=..., ...)` 的同类参数
 
@@ -305,7 +305,7 @@ git commit -m "feat(filedrop): 窗口接收拖放并转发到判定层"
 |---|---|
 | `test_attachment_text_only_in_current_turn` | `build_chat_decide(..., attachment_text="MARKER")` 的结果里，`MARKER` 只出现在最后一条 user 消息，历史条目里没有 |
 | `test_attachment_image_replaces_screenshot` | 传入 `attachment_image` 且 `VISION_ENABLED` 为真时，最后一条 user 是包含 `image_url` 的列表，且图片内容来自附件（与 `_prepare_image` 的桩返回值不同） |
-| `test_interact_prompt_contains_meta_not_body` | `interact_file_prompt` 的输出含文件名与类型；正文片段按额度截断 |
+| `test_taste_prompt_is_taste_and_mood` | `interact_take_a_bite_prompt` 的输出含文件名、味道方向与 Mood 规则，不含生理字段 |
 | `test_reject_prompt_by_reason` | 四种类型各自产出不同文案，且模板要求限定 `Mood:` / `Vitals:` 增量（见 spec §6.1 的规则表） |
 
 - [x] **Step 2: 运行测试，确认按预期失败**
@@ -316,7 +316,7 @@ Expected: FAIL，`TypeError: build_chat_decide() got an unexpected keyword argum
 
 - [x] **Step 3: 实现参数与接线**
 
-`pet/app.py` 的接线按 spec §5：尝一口走 `trigger("interact", hint=interact_file_prompt(...), record_context=True, context_hint=<元信息>, thinking=False, enable_tools=False, is_play_loading=False, delay_ms=150, cooldown_ms=0)`；看一看走 `trigger("analyze", message=<元信息>, attachment_text=<正文>)`；两者都不把正文写进 `message` / `context_hint`。读取在 daemon 线程执行，完成后回主线程调用 trigger（`PIL.Image` 对象在此移交所有权，UI 侧之后不再触碰）。
+`pet/app.py` 的接线按 spec §5：尝一口走 `trigger("interact", hint=interact_take_a_bite_prompt(...), record_context=True, context_hint=<元信息>, thinking=False, enable_tools=False, is_play_loading=False, delay_ms=150, cooldown_ms=0)`；看一看走 `trigger("analyze", message=<元信息>, attachment_text=<正文>)`；两者都不把正文写进 `message` / `context_hint`。读取在 daemon 线程执行，完成后回主线程调用 trigger（`PIL.Image` 对象在此移交所有权，UI 侧之后不再触碰）。
 
 - [x] **Step 4: 运行测试，确认通过**
 

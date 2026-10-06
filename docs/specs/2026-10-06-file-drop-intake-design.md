@@ -204,7 +204,7 @@ if im.size[0] * im.size[1] >= config.FILE_DROP_MAX_PIXELS:
 
 | 按钮 | 通道 | 读取 | 产出 |
 |---|---|---|---|
-| 尝一口 | `agent.trigger("interact", hint=interact_file_prompt(...), record_context=True, context_hint=...)` | 文本 `FILE_DROP_TASTE_CHARS`（默认 300）；图片走视觉 | 一句反应 + `Mood:` / `Vitals:` 增量 |
+| 尝一口 | `agent.trigger("interact", hint=interact_take_a_bite_prompt(...), record_context=True, context_hint=...)` | 文本 `FILE_DROP_TASTE_CHARS`（默认 300）；图片走视觉 | 味道的描述 + `Mood:` 增量 |
 | 看一看 | `agent.trigger("analyze", message=meta)` | 文本 `FILE_DROP_MAX_CHARS`（默认 1500）；图片走视觉附件，不附当前屏幕 | 摘要或要点，动作可选，`Memory:` 行按需产出 |
 | 工具动作 | 工具注册的处理函数，内容不进 LLM | 由工具决定 | 由工具自身播报 |
 
@@ -214,17 +214,11 @@ if im.size[0] * im.size[1] >= config.FILE_DROP_MAX_PIXELS:
 
 一次拖入多个文件时，核心动作作用于全部文件，合成一次请求：提示词中每个文件一条元信息与片段，每个文件各自用满 §4.3 的额度；工具动作按 §5.1 的约定，一次调用传入全部文件。附件通道一次只带一张图片：多张图里取第一张可解码的，其余图片只按元信息参与提示词。
 
-属性变化由 LLM 输出 `Mood:` / `Vitals:` 行，字段限于 `affection`、`joy`、`sanity`、`satiety`、`energy`（`pet/brain/parsing.py:37-39`）。模板 `INTERACT_FILE_PROMPT` 与 `INTERACT_FED_PROMPT` 形式一致，内含文件类型到数值增量的规则，不在 drop 处理代码中直写数值。
+属性变化由 LLM 输出 `Mood:` / `Vitals:` 行，字段限于 `affection`、`joy`、`sanity`、`satiety`、`energy`（`pet/brain/parsing.py:37-39`）。投喂与尝一口在模板层分工：`INTERACT_FED_PROMPT` 专注生理参数（satiety/energy 的数值规则），`INTERACT_TAKE_A_BITE_PROMPT` 专注味道的想象与心理方向（Mood 的数值规则），并明确不输出 Vitals 行；数值规则都写在模板里，不在 drop 处理代码中直写。
 
-看一看只改心理不改生理：`_analyze_task` 注入 `_MOOD_GUIDE` 与工具 aside，不注入 `_VITALS_GUIDE`，因此它不产生 `Vitals:` 行（与「看一看不是进食」一致）。尝一口与拒收走 `interact` 任务，两个指南都有。
+看一看只改心理不改生理：`_analyze_task` 注入 `_MOOD_GUIDE` 与工具 aside，不注入 `_VITALS_GUIDE`，因此它不产生 `Vitals:` 行（与「看一看不是进食」一致）。尝一口与拒收走 `interact` 任务，两个指南都在系统段；但尝一口的 hint 明确不要 Vitals 行，拒收的增量只有 sanity/joy，两条路径实际都不产生生理变化。
 
-图片与正文都只进当轮 messages，不落盘。三处持久化位置全部只写元信息（文件名、类型、大小）：
-
-| 持久化位置 | 写入内容 | 机制 |
-|---|---|---|
-| `conversation_store` 的 user 行 | 元信息请求文本 | 落库的是 `log_message`（缺省取 `message`），看一看传入的是元信息，模板文本不进历史 |
-| 上下文池的 user 条目 | 元信息，经 `context_hint` | `record_context=True` 时写的是 `context_hint`（`:316-318`），投喂已用这条通道（`pet/app.py:163-166`） |
-| 上下文摘要 | 上一条的压缩结果 | 摘要输入取自上下文池 |
+图片与正文都只进当轮 messages，不落盘；各路径写入上下文池、聊天历史与记忆库的范围见 §5.2。
 
 正文经新增的附件参数装配进当轮 messages：`build_interact` 增加附件参数（当前为纯文本），`build_chat_decide` 增加附件参数并支持关闭截图（当前图片只来自 `_prepare_image`，`pet/brain/context_builder.py:57-64`），`build_analyze_decide` 默认不带截图：分析只看交付物，图片只从附件通道进来。历史与摘要本来就取不到图片（`context_builder.py:265-267` → `pet/brain/base.py:230-245`），正文走同一条边界。对话通道在同一轮存在附件图片时不再附加截图，避免同时出现两张图。
 
@@ -264,6 +258,26 @@ registry.add_file_action(
 | 私有访问 | 动作列表由新增的公开查询方法提供，不复用 `TOOL_REGISTRY._tools`。（`tests/test_architecture_contracts.py:1019-1020`），新增同类访问会失败 |
 
 扩展点对任何工具开放，核心只负责渲染动作与执行边界判定。
+
+### §5.2 上下文池的写入与回忆
+
+三条动作通道的结果经 `_on_brain_result` 统一结算（`pet/agent/pet_agent.py:602-666`）：assistant 台词写入上下文池并落聊天历史（`conversation_store` 的 pet 行），`Memory:` 行后台写入记忆库，`Mood:` / `Vitals:` 增量应用到状态。各路径写入上下文池的范围：
+
+| 路径 | 池 user 行 | 池 assistant 行 | 聊天历史 pet 行 | 记忆库 | 数值 |
+|---|---|---|---|---|---|
+| 尝一口 | 元信息（`context_hint`，`record_context=True`） | 台词 | 台词 | 不写（interact 禁止 `Memory:` 行） | Mood |
+| 看一看 | 元信息（`message`，`log_message` 缺省取 `message`） | 台词 + Summary | 台词 | `Memory:` 行由模型决定 | Mood |
+| 工具动作播报 | 不写（`record_context=False`） | 台词 | 台词 | 不写 | 无 |
+| 拒收 | 不写（同上） | 台词 | 台词 | 不写 | Mood（sanity/joy） |
+
+回忆规则：
+
+- 上下文池只在 chat 与 analyze 的请求里拼进 messages（`get_multi_turn_messages`，条数与 token 预算裁剪，摘要以 system 备注合并进主 system）；interact 单轮（`build_interact` 只有 system 与 user 两条）不读池。
+- 池持久化到 db，重启后恢复；`conversation_store` 只供聊天历史窗口展示，不进 prompt。
+- 正文任何路径都不进池；全文唯一的持久化是工具动作的知识库入库，之后经 RAG 检索进入上下文。
+- 拒收与工具播报不写 user 行：下次对话模型只看得到桌宠当时的台词，看不到「用户拖过文件」这一事实。
+- 工具动作的返回 `summary` 经 `TOOL_CTX.speech` 气泡直出，不进 LLM，也不进池与历史。
+- 忙态放下不发请求：写一次性事件 `file_drop_busy`，在下一轮 `[最近发生了什么]` 注入一次后清除。
 
 ## §6 拒绝与降级规则
 
@@ -339,7 +353,7 @@ agent.trigger(
 | `FILE_DROP_MAX_PIXELS` | int | 40000000 | `draft` 之后的像素上限，判据为 `>=`，取值是十进制像素数（§4.4） |
 | `FILE_DROP_DENY_PATTERNS` | str_list | [".env*", "*.key", "*.pem", "*.pfx", "*.p12", ".npmrc", ".netrc", ".pgpass", ".git-credentials", "id_rsa*", "id_ed25519*"] | 拒收名单，按文件名 glob 匹配 |
 | `FILE_DROP_BUBBLE_TIMEOUT_S` | int | 12 | 文件气泡无操作收起时间 |
-| `INTERACT_FILE_PROMPT` | str | "" | 尝一口模板覆盖，空值使用内置模板 |
+| `INTERACT_TAKE_A_BITE_PROMPT` | str | "" | 尝一口模板覆盖，空值使用内置模板 |
 | `INTERACT_FILE_REJECT_PROMPT` | str | "" | 拒收台词模板覆盖，空值使用内置模板 |
 | `LLM_MAX_TOKENS_ANALYZE` | int | 4096 | 分析任务的输出上限（`LLM_MAX_TOKENS_*` 一族，与 `LLM_MAX_TOKENS_CHAT` 同级） |
 
@@ -358,7 +372,7 @@ agent.trigger(
 | `pet/tools/knowledge/__init__.py` | 在 `register()` 内声明文件动作，入库在后台线程执行 |
 | `pet/tools/context.py` | `request_interact` 透传 `thinking` 与 `enable_tools`（见 §5.1） |
 | `docs/tool-development.md` | 登记文件动作扩展点 |
-| `pet/brain/prompts.py` | 新增 `analyze` 感知段与 `_analyze_task`、`analyze_*_user_prompt`、`interact_file_prompt(...)`、`interact_file_reject_prompt(reason, names)` 与内置模板 |
+| `pet/brain/prompts.py` | 新增 `analyze` 感知段与 `_analyze_task`、`analyze_*_user_prompt`、`interact_take_a_bite_prompt(...)`、`interact_file_reject_prompt(reason, names)` 与内置模板 |
 | `pet/brain/context_builder.py` | `build_analyze_decide` 与 `build_interact`、`build_chat_decide` 的附件参数 |
 | `pet/brain/behavior.py` | 新增 `analyze_decide_stream` |
 | `pet/agent/pet_agent.py` | 文件读取与工具动作在后台线程执行；`trigger("analyze")` 与 chat 共用 `_dialogue_pipeline`，正文不进 `message` 与 `context_hint`；`log_message` 决定进历史与上下文池的那一份；超时事件走 `note_once_event` |

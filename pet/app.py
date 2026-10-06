@@ -23,7 +23,7 @@ from pet.ui.feed_bubble import FeedBubble
 from pet.ui.music_bubble import MusicBubble
 from pet.ui.file_bubble import FileBubble
 from pet.agent import PetAgent
-from pet.brain.prompts import interact_fed_prompt, interact_file_prompt
+from pet.brain.prompts import interact_fed_prompt, interact_take_a_bite_prompt
 from pet.tools import load_tools
 from pet.tools.context import TOOL_CTX
 from pet.tools.registry import TOOL_REGISTRY
@@ -55,7 +55,7 @@ class _FileActionDispatcher(QObject):
         if action_id == "taste":
             names = "、".join(_file_meta_lines(refs))
             # 文件动作不做冷却：同一个文件重复拖入各触发一次
-            self._agent.trigger("interact", hint=interact_file_prompt(names),
+            self._agent.trigger("interact", hint=interact_take_a_bite_prompt(names),
                                 attachment_text=body, attachment_image=image,
                                 record_context=True, context_hint=meta,
                                 delay_ms=150, cooldown_ms=0, is_play_loading=False,

@@ -76,7 +76,7 @@ _KEY_META = {
     "FILE_DROP_MAX_PIXELS":      {"type": "int",      "default": 40000000,      "category": "behavior",   "needs_restart": False, "hidden": True,  "description": "draft 之后的像素上限，判据为大于等于"},
     "FILE_DROP_DENY_PATTERNS":   {"type": "str_list", "default": [".env*", "*.key", "*.pem", "*.pfx", "*.p12", ".npmrc", ".netrc", ".pgpass", ".git-credentials", "id_rsa*", "id_ed25519*"], "category": "behavior", "needs_restart": False, "hidden": True, "description": "拒收名单，按文件名 glob 匹配"},
     "FILE_DROP_BUBBLE_TIMEOUT_S": {"type": "int",     "default": 12,            "category": "behavior",   "needs_restart": False, "hidden": True,  "description": "文件气泡无操作收起秒数"},
-    "INTERACT_FILE_PROMPT":      {"type": "str",      "default": "",            "category": "behavior",   "needs_restart": False, "hidden": True,  "description": "尝一口交互的自定义 prompt 模板"},
+    "INTERACT_TAKE_A_BITE_PROMPT": {"type": "str",    "default": "",            "category": "behavior",   "needs_restart": False, "hidden": True,  "description": "尝一口交互的自定义 prompt 模板"},
     "INTERACT_FILE_REJECT_PROMPT": {"type": "str",    "default": "",            "category": "behavior",   "needs_restart": False, "hidden": True,  "description": "拒收台词的自定义 prompt 模板"},
     "VISION_ENABLED":            {"type": "bool",     "default": False,         "category": "appearance", "needs_restart": False, "hidden": False, "description": "启用视觉理解(需多模态模型支持)"},
     "VISION_SCALE":              {"type": "float",    "default": 0.7,          "category": "appearance", "needs_restart": False, "hidden": False, "description": "截图缩放比例(0.1~1.0)"},
