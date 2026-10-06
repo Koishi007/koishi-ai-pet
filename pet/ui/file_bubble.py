@@ -101,7 +101,7 @@ def _busy_note(paths: list[str]) -> str:
     listed = "、".join(names)
     if len(paths) > _BUSY_NAME_MAX:
         listed = f"{listed} 等 {len(paths)} 个"
-    return f"「{listed}」等你忙完再拖一次"
+    return f"「{listed}」等一下再拖一次吧"
 
 
 class FileBubble(QWidget):
