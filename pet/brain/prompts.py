@@ -1,9 +1,13 @@
 ﻿"""系统提示词分层组装"""
 
+import logging
 from typing import Sequence
 
 from pet.action.registry import generate_action_section, target_sequence_duration, min_action_count, default_duration
 from pet.config import config
+from pet.tools.registry import TOOL_REGISTRY
+
+logger = logging.getLogger(__name__)
 
 # context_builder._build_system 用于注入感受描述的错点标记
 FEELING_MARKER = "<<FEELING>>"
@@ -88,6 +92,41 @@ _TOOL_ASIDE_GUIDE = ("调用工具时，可以配合 aside 字段表现地言行
                      "aside 是你行动时的自言自语，内容要贴合你的人格与口吻（用词、语气、习惯都和你平时说话一致），"
                      "仅作为辅助让用户理解你正在行动，不会作为对用户的正式回复；"
                      "最终输出的 Speech 才是本轮主要语句输出")
+
+_TOOL_DISCOVERY_GUIDE = (
+    "[可用工具]\n"
+    "清单只列工具名、所属分组与一句话用途，不含调用参数：\n"
+    "{tool_list}\n"
+    "分组为 default 的工具始终在你的工具列表里，可直接调用；"
+    "其余组的只是目录：调用前先用 tool_search__list_groups 浏览全部分组，"
+    "或 tool_search__search 按关键词搜索，命中的分组会自动激活，"
+    "完整方法名与参数 schema 会进入你的工具列表，以 schema 为准调用，禁止凭本清单猜参数。"
+)
+
+
+def _tool_list() -> str:
+    """已启用的非元工具渲染成最小清单：名称 [分组] 首句用途"""
+    lines = []
+    for t in TOOL_REGISTRY.enabled_tools:
+        if t.meta:
+            continue
+        head, sep, _ = t.description.partition("。")
+        lines.append(f"- {t.name} [{t.group}] {head + '。' if sep else head}")
+    return "\n".join(lines)
+
+
+def _tool_guide() -> str:
+    """aside 指南 + 工具清单"""
+    if not config.LLM_TOOLS_ENABLED:
+        return _TOOL_ASIDE_GUIDE
+    try:
+        tool_list = _tool_list()
+    except Exception:
+        logger.warning("[prompts] 渲染工具清单失败，退回 aside 指南", exc_info=True)
+        return _TOOL_ASIDE_GUIDE
+    if not tool_list:
+        return _TOOL_ASIDE_GUIDE
+    return f"{_TOOL_ASIDE_GUIDE}\n\n{_TOOL_DISCOVERY_GUIDE.format(tool_list=tool_list)}"
 
 _ADDRESS_GUIDE = """[称呼]
 禁止用「用户」称呼对方；用「你」或记忆中已记住的称呼（如名字）代替。"""
@@ -182,7 +221,7 @@ def _autonomous_task() -> list[str]:
         "7. 按[记忆]判断是否输出 Memory 行；心理无变化时省略 Mood 行",
     ]
 
-    guides = [_MOOD_GUIDE, _TOOL_ASIDE_GUIDE]
+    guides = [_MOOD_GUIDE, _tool_guide()]
     if config.FOOD_ENABLED:
         guides.append(_FOOD_GUIDE)
     return [format_guide] + constraints + guides
@@ -218,7 +257,7 @@ def _chat_task() -> list[str]:
         "8. 按[记忆]判断是否输出 Memory 行；心理无变化时省略 Mood 行",
     ]
 
-    guides = [_MOOD_GUIDE, _TOOL_ASIDE_GUIDE]
+    guides = [_MOOD_GUIDE, _tool_guide()]
     if config.FOOD_ENABLED:
         guides.append(_FOOD_GUIDE)
     return [format_guide] + constraints + guides
@@ -276,7 +315,7 @@ def _analyze_task() -> list[str]:
         "6. Memory 行只记「用户交付了什么」，不写对象里的内容；心理无变化时省略 Mood 行",
     ]
 
-    return [format_guide] + constraints + [_MOOD_GUIDE, _TOOL_ASIDE_GUIDE]
+    return [format_guide] + constraints + [_MOOD_GUIDE, _tool_guide()]
 
 
 _TASK_SECTIONS = {
