@@ -277,10 +277,10 @@ class FoodManager(QObject):
             else:
                 jump = ""
                 if bounce_height > 0:
-                    jump = f"；需要跳起来时用 Action: bounce {direction} 水平距离 高度 {bounce_height}"
+                    jump = f"；需要跳起来时改用 Action: bounce {direction} {dx} {bounce_height}"
                 summary = (f"{f['name']}在你{_side_text(direction)} {dx}px，{height_hint}，{remaining}秒后过期。"
                            f"下一步输出最终回复即可，其中带上移动 Action 靠近它："
-                           f"Action: walk {direction} 水平距离（500-1000 之间取值）{jump}；"
+                           f"Action: walk {direction} {dx}{jump}；"
                            f"到达后自动开吃，不必再调用本工具。")
             return {
                 "summary": summary,
