@@ -146,6 +146,7 @@ class MemoryWindow(QWidget):
         scroll.setStyleSheet(
             f"QScrollArea {{ background: {_COLOR_BG}; border: none; }}"
             f"QWidget#ScrollInner {{ background: {_COLOR_BG}; }}"
+            + SCROLLBAR_QSS
         )
 
         scroll_inner = QWidget()
