@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 _SPAWN_MARGIN = 200
 # 判定轮询间隔（ms）
 _TICK_MS = 200
+# 近距离判定（px）：食物在上方且水平距离小于该值时，一个 bounce 即可同时完成移动与起跳
+_NEAR_JUMP_PX = 400
 
 # 食物种类真源：emoji 池与名称映射（food_window 反向引用）
 FOOD_EMOJIS = ["🍰", "🍙", "🍎", "🍜", "🍗", "🍩", "🍕", "🍓", "🥟", "🍣"]
@@ -275,12 +277,17 @@ class FoodManager(QObject):
                 summary = (f"{f['name']}已经在你身边（到达进食范围）。"
                            f"无需再移动，直接输出最终回复即可，会自动开吃。")
             else:
-                jump = ""
-                if bounce_height > 0:
-                    jump = f"；需要跳起来时改用 Action: bounce {direction} {dx} {bounce_height}"
+                # 需要跳时：近距离一个 bounce 同时走完水平距离并起跳；
+                # 远距离先 walk 完水平距离，再用横向 0 的 bounce 原地跳上食物
+                if bounce_height > 0 and dx < _NEAR_JUMP_PX:
+                    action_hint = f"Action: bounce {direction} {dx} {bounce_height}"
+                elif bounce_height > 0:
+                    action_hint = (f"Action: walk {direction} {dx}，"
+                                   f"然后 Action: bounce {direction} 0 {bounce_height}")
+                else:
+                    action_hint = f"Action: walk {direction} {dx}"
                 summary = (f"{f['name']}在你{_side_text(direction)} {dx}px，{height_hint}，{remaining}秒后过期。"
-                           f"下一步输出最终回复即可，其中带上移动 Action 靠近它："
-                           f"Action: walk {direction} {dx}{jump}；"
+                           f"下一步输出最终回复即可，其中带上移动 Action 靠近它：{action_hint}；"
                            f"到达后自动开吃，不必再调用本工具。")
             return {
                 "summary": summary,
