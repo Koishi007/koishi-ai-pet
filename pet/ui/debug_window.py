@@ -150,6 +150,7 @@ class DebugWindow(QWidget):
         body_scroll.setWidgetResizable(True)
         body_scroll.setFrameShape(QFrame.Shape.NoFrame)
         body_scroll.setWidget(body_host)
+        body_scroll.setStyleSheet(SCROLLBAR_QSS)
         root.addWidget(body_scroll, 1)
 
 
