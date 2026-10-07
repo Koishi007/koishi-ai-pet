@@ -5,14 +5,18 @@ import time
 
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QMenu
 from PySide6.QtCore import Qt, QPoint, QPointF, QDateTime, QTimer, QSize, Property, QPropertyAnimation, Signal
-from PySide6.QtGui import QMouseEvent, QAction, QPainter, QPainterPath, QColor, QPen
+from PySide6.QtGui import (QMouseEvent, QAction, QPainter, QPainterPath, QColor, QPen,
+                           QDragEnterEvent, QDragMoveEvent, QDragLeaveEvent, QDropEvent)
+from pet.agent.state import PetState
 from pet.ui.base_window import TransparentWindow
 from pet.ui.pet_animations import PetAnimator
 from pet.ui.particle import ParticleWidget
 from pet.ui.styles import MENU_QSS
 from pet.ui.settings_window import SettingsWindow
+from pet.ui.file_drop_handler import FileDropHandler, paths_from_mime
 from pet.action import PetActions, ActionQueue, outcome
-from pet.brain.prompts import INTERACT_GRABBED, INTERACT_RELEASED, INTERACT_WINDOW_DISAPPEARED
+from pet.brain.prompts import (INTERACT_GRABBED, INTERACT_RELEASED,
+                               INTERACT_WINDOW_DISAPPEARED, interact_file_reject_prompt)
 from pet.tools.registry import TOOL_REGISTRY
 from pet.config import config
 
@@ -157,6 +161,7 @@ class PetWindow(TransparentWindow):
         self._chat_bubble = None
         self._feed_bubble = None
         self._music_bubble = None
+        self._file_bubble = None
         self._speech_bubble = None
         self._emotion_bubble = None
         self._agent = None
@@ -181,6 +186,15 @@ class PetWindow(TransparentWindow):
         self._PROMPT_GRABBED = INTERACT_GRABBED
         self._PROMPT_RELEASED = INTERACT_RELEASED
         self._PROMPT_WINDOW_DISAPPEARED = INTERACT_WINDOW_DISAPPEARED
+        self._file_drop = FileDropHandler(
+            hover_state=self._file_drop_state,
+            is_busy=self._file_drop_busy,
+            on_show_bubble=self._show_file_bubble,
+            on_reject=self._reject_file_drop,
+            on_busy_event=self._note_file_drop_busy,
+            on_show_busy=self._show_busy_bubble,
+        )
+        self.setAcceptDrops(True)
 
     def set_chat_bubble(self, chat_bubble):
         """注入 ChatBubble 引用。"""
@@ -193,6 +207,10 @@ class PetWindow(TransparentWindow):
     def set_music_bubble(self, music_bubble):
         """注入 MusicBubble 引用。"""
         self._music_bubble = music_bubble
+
+    def set_file_bubble(self, file_bubble):
+        """注入 FileBubble 引用。"""
+        self._file_bubble = file_bubble
 
     def set_speech_bubble(self, speech_bubble):
         """注入 SpeechBubble 引用。"""
@@ -211,8 +229,11 @@ class PetWindow(TransparentWindow):
         self._app = app
 
     def enterEvent(self, event):
-        """鼠标进入桌宠区域时显示聊天、喂食和音乐按钮。"""
-        if self._grab_local is None:
+        """鼠标进入桌宠区域时显示聊天、喂食和音乐按钮。
+
+        文件气泡显示期间让位：两者位置相邻，共存会互相遮挡并争抢鼠标。
+        """
+        if self._grab_local is None and not self._file_bubble_visible():
             if self._chat_bubble:
                 self._chat_bubble.show_bubble()
             if self._feed_bubble:
@@ -220,6 +241,9 @@ class PetWindow(TransparentWindow):
             if self._music_bubble:
                 self._music_bubble.show_bubble()
         super().enterEvent(event)
+
+    def _file_bubble_visible(self) -> bool:
+        return bool(self._file_bubble and self._file_bubble.isVisible())
 
     def leaveEvent(self, event):
         """鼠标离开桌宠区域时延迟隐藏。"""
@@ -290,6 +314,8 @@ class PetWindow(TransparentWindow):
                 self._feed_bubble.hide_bubble()
             if self._music_bubble:
                 self._music_bubble.hide_bubble()
+            if self._file_bubble:
+                self._file_bubble.hide_bubble()
             # 先启动单击检测定时器，等待判断是单击还是拖拽
             self._click_timer.start()
         elif event.button() == Qt.MouseButton.RightButton:
@@ -369,6 +395,74 @@ class PetWindow(TransparentWindow):
             self._agent.note_event("released")
             if self._event_reaction:
                 self._agent.trigger("interact", hint=self._PROMPT_RELEASED, is_play_loading=False, thinking=False)
+
+    # 拖入文件
+
+    @staticmethod
+    def _accept_copy(event) -> None:
+        """统一以复制语义接受拖放"""
+        event.setDropAction(Qt.DropAction.CopyAction)
+        event.accept()
+
+    def dragEnterEvent(self, event: QDragEnterEvent):
+        if not self._file_drop.accept_hover(bool(paths_from_mime(event.mimeData()))):
+            event.ignore()
+            return
+        self._accept_copy(event)
+
+    def dragMoveEvent(self, event: QDragMoveEvent):
+        # 不接受则收不到 dropEvent（设计文档 §0.1）
+        self._accept_copy(event)
+
+    def dragLeaveEvent(self, event: QDragLeaveEvent):
+        event.accept()
+
+    def dropEvent(self, event: QDropEvent):
+        self._accept_copy(event)
+        self._file_drop.handle_drop(paths_from_mime(event.mimeData()))
+
+    def _file_drop_state(self) -> tuple[bool, bool]:
+        """（功能开关, 鼠标穿透）：两项任一为真都走忽略分支。"""
+        return bool(config.FILE_DROP_ENABLED), bool(self._mouse_penetration)
+
+    def _file_drop_busy(self) -> bool:
+        """忙态：脑线程占用中，即 INTERACTING（请求已发出未返回）或 AUTONOMOUS（自主决策进行中）。"""
+        agent = self._agent
+        if agent is None:
+            return False
+        return agent.state_machine.state in (PetState.INTERACTING, PetState.AUTONOMOUS)
+
+    def _hide_hover_bubbles(self) -> None:
+        """收起 chat / feed / music 三个悬空气泡，给文件气泡让位。"""
+        for bubble in (self._chat_bubble, self._feed_bubble, self._music_bubble):
+            if bubble:
+                bubble.hide_bubble()
+
+    def _show_file_bubble(self, refs) -> None:
+        """放下通过：先收起三个悬空气泡，再显示文件气泡"""
+        self._hide_hover_bubbles()
+        if self._file_bubble:
+            self._file_bubble.show_files(refs)
+
+    def _show_busy_bubble(self, paths) -> None:
+        """忙态放下：复用文件气泡提示收不下，不打断脑线程。"""
+        self._hide_hover_bubbles()
+        if self._file_bubble:
+            self._file_bubble.show_busy(paths)
+
+    def _reject_file_drop(self, reason: str, names=()) -> None:
+        """三类硬边界拒收：发一次快速交互请求，姿态与数值交给模型决定。"""
+        if self._agent is None:
+            return
+        # 文件动作不做冷却：同一个文件重复拖入各触发一次
+        self._agent.trigger("interact", hint=interact_file_reject_prompt(reason, names),
+                            delay_ms=150, cooldown_ms=0, is_play_loading=False,
+                            thinking=False, enable_tools=False)
+
+    def _note_file_drop_busy(self, text: str) -> None:
+        """忙态不请求即时反应（通道在 INTERACTING 状态自我丢弃），改写一次性事件。"""
+        if self._agent is not None:
+            self._agent.note_once_event("file_drop_busy", text)
 
     def _show_context_menu(self, pos):
         """右键菜单。"""
@@ -611,6 +705,8 @@ class PetWindow(TransparentWindow):
             self._feed_bubble.hide()
         if self._music_bubble:
             self._music_bubble.hide()
+        if self._file_bubble:
+            self._file_bubble.hide_bubble()
         if self._speech_bubble:
             self._speech_bubble.hide()
         if self._emotion_bubble:

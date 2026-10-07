@@ -25,6 +25,7 @@ class ToolDef:
     description: str
     methods: dict[str, ToolMethod] = field(default_factory=dict)
     menu_items: list[dict] = field(default_factory=list)
+    file_actions: list[dict] = field(default_factory=list)
     group: str = "default"
     meta: bool = False  # 元工具：系统内置，不可禁用、不出现在工具管理列表
 
@@ -60,6 +61,29 @@ class ToolRegistry:
         tool = self._tools[tool_name]
         tool.menu_items.append({"label": label, "handler": handler})
         logger.info(f"[ToolRegistry] menu item added: {tool_name} > {label}")
+
+    def add_file_action(self, tool_name: str, action_id: str, label: str,
+                        handler: Callable, accepts: str = "any",
+                        needs_content: bool = True):
+        """注册一个文件动作：拖入文件后由文件气泡渲染成按钮。
+
+        accepts 取值：text（需要可读文本）、image（需要可解码图片）、any（只要有元信息）。
+        needs_content 为真时该动作跟随内容读取开关隐藏，只需文件名与路径的动作传 False。
+        handler 签名 (files: list[FileRef]) -> {"ok": bool, "summary": str}，一次调用收到全部文件。
+        """
+        tool = self._tools[tool_name]
+        tool.file_actions.append({"tool": tool_name, "id": action_id, "label": label,
+                                  "handler": handler, "accepts": accepts,
+                                  "needs_content": bool(needs_content)})
+        logger.info(f"[ToolRegistry] file action added: {tool_name} > {label}")
+
+    def file_actions(self) -> list[dict]:
+        """返回已注册且已启用的工具声明的文件动作。"""
+        actions: list[dict] = []
+        for tool in self._tools.values():
+            if tool.file_actions and self.is_enabled(tool.name):
+                actions.extend(tool.file_actions)
+        return actions
 
     def get_method(self, full_name: str) -> ToolMethod | None:
         """通过 'tool_name.method_name' 获取方法对象。"""

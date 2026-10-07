@@ -373,6 +373,9 @@ class MusicBubble(QWidget):
         self.cancel_hide()
         if self._hide_anim and self._hide_anim.state() == QPropertyAnimation.State.Running:
             self._hide_anim.stop()
+            # 淡出被打断：复原透明度与跟随，下面的提前返回不再重建这两项
+            self.setWindowOpacity(1.0)
+            self._follow_timer.start(50)
         if self.isVisible():
             return
         self._update_position()

@@ -149,24 +149,24 @@ system prompt 由三段拼起来：
 「为什么这么切分」（system 稳定换 prompt 缓存、数值不直接进提示词、做法只写一处、交互不注入需求）
 的理由见 [decisions/](decisions/) 的 0001 / 0003 / 0004。
 
-## 6. 三条任务路径
+## 6. 四条任务路径
 
-| | autonomous | chat | interact |
-|---|---|---|---|
-| 触发 | mid tick；启动 5 秒后 | 用户发送消息 | 抓起/放下/站立窗口消失/投喂/工具请求 |
-| 入口 | `PetAgent._autonomous_pipeline` | `_trigger_chat` → `_chat_pipeline` | `_trigger_interact` → `_interact_pipeline` |
-| 提示词 | `autonomous_vision` / `autonomous_non_vision` | `chat_vision` / `chat_non_vision` | `interact` |
-| 状态 | 需 IDLE 才能进入 AUTONOMOUS | 进入 INTERACTING，交互中被忽略 | 进入 INTERACTING，有节流与冷却 |
-| 产出 | 气泡、动作、数值变化、记忆 | 同上 + 对话历史 | 通常只有一句话 |
+| | autonomous | chat | analyze | interact |
+|---|---|---|---|---|
+| 触发 | mid tick；启动 5 秒后 | 用户发送消息 | 文件气泡的看一看 | 抓起/放下/站立窗口消失/投喂/工具请求 |
+| 入口 | `PetAgent._autonomous_pipeline` | `_trigger_chat` → `_dialogue_pipeline` | `_trigger_analyze` → `_dialogue_pipeline` | `_trigger_interact` → `_interact_pipeline` |
+| 提示词 | `autonomous_vision` / `autonomous_non_vision` | `chat_vision` / `chat_non_vision` | `analyze` | `interact` |
+| 状态 | 需 IDLE 才能进入 AUTONOMOUS | 进入 INTERACTING，交互中被忽略 | 同 chat | 进入 INTERACTING，15 秒 hint 级冷却（文件动作、投喂、觅食、工具播报传 `cooldown_ms=0` 关闭） |
+| 产出 | 气泡、动作、数值变化、记忆 | 同上 + 对话历史 | 摘要与判断，动作可选 | 通常只有一句话 |
 
 补充：**鼠标悬停不发 LLM 请求**，只显示聊天气泡、喂食与音乐按钮；真正触发决策的是拖拽、放置、
-窗口消失、投喂等事件。三条路径共享同一个工具轮次预算与看门狗。
+窗口消失、投喂等事件。四条路径共享同一个工具轮次预算与看门狗。
 
 ## 7. 状态机与看门狗
 
 状态只有三个：`IDLE`、`AUTONOMOUS`、`INTERACTING`（`pet/agent/state.py`）。
-合法迁移是三者之间相互转换，`can_decide`（空闲）才允许发起自主决策；`chat` 与 `interact` 共用
-`INTERACTING`，因此二者互斥。`force()` 绕过校验，只给看门狗恢复用。
+合法迁移是三者之间相互转换，`can_decide`（空闲）才允许发起自主决策；`chat`、`analyze` 与 `interact`
+共用 `INTERACTING`，因此三者互斥。`force()` 绕过校验，只给看门狗恢复用。
 
 看门狗（fast tick `_brain_watchdog`）：
 
@@ -203,6 +203,7 @@ system prompt 由三段拼起来：
 | `pet/brain/` | 决策与记忆：上下文组装、LLM 客户端与重试、输出解析、记忆库、窗口探测、对话历史 | `behavior.py`、`context_builder.py`、`prompts.py`、`memory.py` |
 | `pet/action/` | 动作系统：动作定义与注册、帧动画播放队列、重力与站立、动作产出 | `registry.py`、`action.py`、`action_queue.py`、`gravity.py` |
 | `pet/pulse/` | 数值引擎：生理（饱食/精力）与心理（好感/愉悦/理智），含衰减、阈值与落库 | `vitals.py`、`mood.py` |
+| `pet/file_intake/` | 拖入文件的纯逻辑：类型嗅探、解码链、截断与额度、图片闸门与缩放、拒绝名单、目录摘要 | `sniff.py`、`text.py`、`image.py` |
 | `pet/tools/` | 工具层：注册表、执行器、上下文、加载器，以及各工具子包 | `registry.py`、`executor.py`、`context.py` |
 | `pet/ui/` | 界面层：宠物窗口、各类气泡、表情、粒子、设置/调试/记忆面板、托盘 | `pet_window.py`、`particle.py`、`settings_window.py` |
 | `pet/food/` | 觅食：需求驱动的地面食物生成与食用 | `food.py` |
@@ -323,6 +324,7 @@ system prompt 由三段拼起来：
 | 加一个配置项 | `pet/config.py` 的 `_KEY_META` | 要在界面可见则同时改 `pet/ui/settings_window.py`；重生成 [reference/config.md](reference/config.md) |
 | 改提示词 | `pet/brain/prompts.py`；运行时段落改 `pet/brain/context_builder.py` | 组合白名单；重生成 [reference/prompt-blocks.md](reference/prompt-blocks.md) |
 | 加一个工具 | `pet/tools/<name>/__init__.py` | 声明 `TOOL_NAME`/`TOOL_DESCRIPTION`/`register()`，可加 `TOOL_GROUP`；重生成 [reference/tools.md](reference/tools.md) |
+| 加一个文件动作 | `pet/tools/<name>/__init__.py` 的 `register()` 内 `add_file_action(...)` | 拖入文件时由文件气泡渲染成按钮，工具被禁用则不出现；契约见 [tool-development.md](tool-development.md) |
 | 调数值手感 | `pet/pulse/vitals.py`、`pet/pulse/mood.py` + `_KEY_META` 的阈值项 | 文案档位同步（第 11 节第 2 条） |
 | 改记忆策略 | `pet/brain/memory.py` | 被动注入不要动访问统计 |
 | 加/改窗口探测 | `pet/brain/window_detector.py` 与各平台后端 | 三个平台保持同一接口 |

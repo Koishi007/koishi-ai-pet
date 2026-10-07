@@ -5,11 +5,12 @@ import ctypes
 import logging
 import os
 import sys
+import threading
 from logging.handlers import TimedRotatingFileHandler
 
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMessageBox
 from PySide6.QtGui import QIcon
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtCore import QObject, QTimer, Qt, Signal, Slot
 
 from pet.ui.log_window import _LogRelay, LogWindowHandler
 from pet.ui.styles import ICON_PATH
@@ -20,10 +21,13 @@ from pet.ui.emotion import EmotionBubble
 from pet.ui.chat_bubble import ChatBubble
 from pet.ui.feed_bubble import FeedBubble
 from pet.ui.music_bubble import MusicBubble
+from pet.ui.file_bubble import FileBubble
 from pet.agent import PetAgent
-from pet.brain.prompts import interact_fed_prompt
+from pet.brain.prompts import interact_fed_prompt, interact_take_a_bite_prompt
 from pet.tools import load_tools
 from pet.tools.context import TOOL_CTX
+from pet.tools.registry import TOOL_REGISTRY
+from pet.file_intake import KIND_LABELS, load_image, load_text
 from pet.config import config
 from pet.auto_start import set_auto_start
 from pet.crash_reporter import get_guard
@@ -31,6 +35,114 @@ from pet.single_instance import SingleInstanceGuard
 from pet.version_check import UpdateChecker
 
 logger = logging.getLogger(__name__)
+
+_FILE_META_MAX_NAMES = 5
+
+
+class _FileActionDispatcher(QObject):
+    """把后台读到的正文送回 GUI 线程再触发管线（trigger 会读窗口坐标，属 GUI 线程）。"""
+
+    ready = Signal(str, object, object, str)
+
+    def __init__(self, agent):
+        super().__init__()
+        self._agent = agent
+        self.ready.connect(self._dispatch)
+
+    @Slot(str, object, object, str)
+    def _dispatch(self, action_id: str, refs, image, body: str) -> None:
+        meta = _file_meta_text(refs)
+        if action_id == "taste":
+            names = "、".join(_file_meta_lines(refs))
+            # 文件动作不做冷却：同一个文件重复拖入各触发一次
+            self._agent.trigger("interact", hint=interact_take_a_bite_prompt(names),
+                                attachment_text=body, attachment_image=image,
+                                record_context=True, context_hint=meta,
+                                delay_ms=150, cooldown_ms=0, is_play_loading=False,
+                                thinking=False, enable_tools=False)
+        else:
+            self._agent.trigger("analyze", message=meta,
+                                attachment_text=body, attachment_image=image)
+
+
+def _file_meta_lines(refs) -> list[str]:
+    """每条一项：名称、类型、大小；目录不带大小。"""
+    lines = []
+    for ref in refs[:_FILE_META_MAX_NAMES]:
+        label = KIND_LABELS.get(ref.kind, ref.kind)
+        size = "" if ref.kind == "dir" else f"，{ref.size} 字节"
+        lines.append(f"{ref.name}（{label}{size}）")
+    return lines
+
+
+def _file_meta_text(refs) -> str:
+    """元信息：进 message 与 context_hint 落库的那一份，不含正文。"""
+    return "用户把文件交给了你：\n" + "\n".join(f"- {line}" for line in _file_meta_lines(refs))
+
+
+def _read_file_payload(refs, limit: int) -> tuple[str, object]:
+    """后台线程读取：返回（正文片段, 首张可用图片）；读不出的项只记日志。"""
+    if not config.FILE_DROP_READ_CONTENT:
+        return "", None
+    chunks: list[str] = []
+    image = None
+    for ref in refs:
+        if ref.kind == "text":
+            text, reason = load_text(ref.path, limit)
+            if text:
+                chunks.append(f"【{ref.name}】\n{text}")
+            elif reason:
+                logger.info("[FileDrop] 读不出内容: %s %s", ref.name, reason)
+        elif ref.kind == "image" and image is None and config.VISION_ENABLED:
+            image = load_image(ref.path, config.FILE_DROP_MAX_PIXELS)
+    return "\n\n".join(chunks), image
+
+
+def _start_file_action(dispatcher: "_FileActionDispatcher", action_id: str, refs) -> None:
+    """文件气泡选定动作：核心动作后台读内容，工具动作交给注册表的 handler。"""
+    if action_id.startswith("tool:"):
+        _run_tool_file_action(action_id, refs)
+        return
+    limit = config.FILE_DROP_TASTE_CHARS if action_id == "taste" else config.FILE_DROP_MAX_CHARS
+
+    def worker() -> None:
+        body, image = _read_file_payload(refs, limit)
+        dispatcher.ready.emit(action_id, list(refs), image, body)
+
+    threading.Thread(target=worker, daemon=True, name="file-read").start()
+
+
+def _run_tool_file_action(action_id: str, refs) -> None:
+    """工具动作：按 id 找 handler 在后台执行，播报由工具自己负责。"""
+    _, _, rest = action_id.partition(":")
+    tool_name, _, action_key = rest.partition(":")
+    for action in TOOL_REGISTRY.file_actions():
+        if action["tool"] == tool_name and action["id"] == action_key:
+            threading.Thread(target=_call_tool_handler,
+                             args=(action_id, action["handler"], list(refs)),
+                             daemon=True, name="file-tool-action").start()
+            return
+    logger.warning("[FileDrop] 工具动作已不可用: %s", action_id)
+
+
+def _call_tool_handler(action_id: str, handler, files) -> None:
+    """执行工具动作；异常按失败处理，不让它冒到线程钩子。"""
+    try:
+        result = handler(files)
+    except Exception:
+        logger.exception(f"[FileDrop] 工具动作异常: {action_id}")
+        _report_tool_result({"ok": False, "summary": "这个动作没能完成（错误已记入日志）"})
+        return
+    _report_tool_result(result)
+
+
+def _report_tool_result(result) -> None:
+    """失败结果按 summary 提示；成功由工具自己播报，非 dict 的返回值忽略。"""
+    if not isinstance(result, dict) or result.get("ok"):
+        return
+    summary = str(result.get("summary") or "").strip()
+    if summary:
+        TOOL_CTX.speech(summary)
 
 
 def _warn_already_running() -> None:
@@ -161,13 +273,21 @@ def main():
     feed_bubble = FeedBubble(window)
     window.set_feed_bubble(feed_bubble)
     feed_bubble.feed_submitted.connect(
+        # 投喂不做冷却：同样的食物重复喂各触发一次
         lambda text: agent.trigger("interact", hint=interact_fed_prompt(text),
                                     record_context=True, context_hint=f"用户投喂了{text}",
-                                    enable_tools=False)
+                                    cooldown_ms=0, enable_tools=False)
     )
 
     music_bubble = MusicBubble(window)
     window.set_music_bubble(music_bubble)
+
+    file_bubble = FileBubble(window)
+    window.set_file_bubble(file_bubble)
+    file_action = _FileActionDispatcher(agent)
+    file_bubble.action_chosen.connect(
+        lambda action_id, refs: _start_file_action(file_action, action_id, refs)
+    )
 
     # 觅食窗口：装配层注入窗口工厂，food 层不依赖 UI
     from pet.food.food import FOOD
@@ -224,6 +344,10 @@ def main():
     )
     agent.state_changed.connect(
         lambda s: feed_bubble.set_busy(s in ("autonomous", "interacting"))
+    )
+    # 自主/对话开始即收起文件气泡：打开期间未选的动作已过期，也避免打断在跑的脑线程
+    agent.state_changed.connect(
+        lambda s: file_bubble.hide_bubble() if s in ("autonomous", "interacting") else None
     )
 
     _voice_session = None
