@@ -191,7 +191,7 @@ class FileBubble(QWidget):
               paths: list[str] | None = None):
         self._busy_hint = busy
         self._refs = tuple(refs)
-        self._title.setText("现在忙，先收不下啦" if busy else "这些给你")
+        self._title.setText("恋恋思考中，收不下啦" if busy else "让恋恋")
         self._render_body(paths=paths)
         self._render_buttons()
         self._show_bubble()
