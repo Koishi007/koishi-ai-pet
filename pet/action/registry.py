@@ -79,14 +79,14 @@ def _build_duration_registry() -> dict[str, ActionDef]:
             name="drive",
             category="移动",
             description="骑小电驴",
-            params=["direction=left/right", "distance=500-1000"],
+            params=["direction=left/right", "distance>=0"],
             usage_example="Action: drive right 800",
         ),
         "walk": ActionDef(
             name="walk",
             category="移动",
             description="行走",
-            params=["direction=left/right", "distance=500-1000"],
+            params=["direction=left/right", "distance>=0（按 50px 步进）"],
             usage_example="Action: walk right 800",
         ),
         "bounce": ActionDef(

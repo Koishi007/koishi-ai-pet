@@ -27,8 +27,8 @@
 
 | 动作 | 参数 | 说明 | 示例 |
 |---|---|---|---|
-| `drive` | direction=left/right distance=500-1000 | 骑小电驴 | `Action: drive right 800` |
-| `walk` | direction=left/right distance=500-1000 | 行走 | `Action: walk right 800` |
+| `drive` | direction=left/right distance>=0 | 骑小电驴 | `Action: drive right 800` |
+| `walk` | direction=left/right distance>=0（按 50px 步进） | 行走 | `Action: walk right 800` |
 | `bounce` | direction=left/right distance=0-800 height>0 | 跳跃 | `Action: bounce right 400 200` |
 
 ## 驻留
@@ -65,8 +65,8 @@
 
 ```text
 [可用动作] 共 20 个
-- drive [direction=left/right distance=500-1000] 骑小电驴 | 示例: drive right 800
-- walk [direction=left/right distance=500-1000] 行走 | 示例: walk right 800
+- drive [direction=left/right distance>=0] 骑小电驴 | 示例: drive right 800
+- walk [direction=left/right distance>=0（按 50px 步进）] 行走 | 示例: walk right 800
 - bounce [direction=left/right distance=0-800 height>0] 跳跃 | 示例: bounce right 400 200
 - shake_arms 无参数 开心摇晃手臂
 - look_around 无参数 张望环顾四周
