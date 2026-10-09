@@ -5,12 +5,14 @@
 """
 
 import time
+from types import SimpleNamespace
 
 import pytest
 from PySide6.QtCore import QRect
 from PySide6.QtWidgets import QApplication
 
 from pet.file_intake import FileRef
+from pet.ui import music_bubble as music_bubble_mod
 from pet.ui.chat_bubble import ChatBubble
 from pet.ui.feed_bubble import FeedBubble
 from pet.ui.file_bubble import FileBubble
@@ -38,6 +40,17 @@ class _WindowStub:
 @pytest.fixture
 def pet_window():
     return _WindowStub(QRect(100, 100, 64, 64))
+
+
+@pytest.fixture(autouse=True)
+def audio_endpoint_unavailable(monkeypatch):
+    """音乐气泡构造会取系统音量端点，桩成取不到，测试不依赖真实声卡。"""
+
+    def _no_speakers():
+        raise OSError("Element not found.")
+
+    monkeypatch.setattr(music_bubble_mod, "AudioUtilities",
+                        SimpleNamespace(GetSpeakers=_no_speakers), raising=False)
 
 
 def _pump(qt_app, condition, timeout_s: float = 3.0) -> bool:
@@ -83,3 +96,8 @@ def test_interrupted_fade_restores_bubble(factory, pet_window, qt_app):
     bubble = factory(pet_window)
     assert _interrupted_show(bubble, qt_app) == 1.0
     assert bubble._follow_timer.isActive()
+
+
+def test_music_bubble_without_audio_endpoint(pet_window, qt_app):
+    """取不到音量端点（无声卡机器、远程桌面、CI）时仍可构造，音量键回退媒体键。"""
+    assert MusicBubble(pet_window)._volume is None

@@ -31,8 +31,15 @@ except ImportError:
 
 
 def _get_volume():
-    """获取 Windows 系统主音量端点接口（IAudioEndpointVolume）。"""
-    return AudioUtilities.GetSpeakers().EndpointVolume
+    """获取 Windows 系统主音量端点接口（IAudioEndpointVolume），取不到返回 None。
+
+    无声卡、远程桌面会话、CI 机器上没有默认渲染设备，pycaw 抛 COMError；
+    返回 None 后音量键走 pynput 媒体键回退。
+    """
+    try:
+        return AudioUtilities.GetSpeakers().EndpointVolume
+    except Exception:
+        return None
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
