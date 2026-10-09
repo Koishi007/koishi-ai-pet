@@ -8,6 +8,8 @@
 from dataclasses import dataclass
 from typing import Optional
 
+import logging
+
 import pytest
 
 from pet.brain.parsing import (
@@ -359,3 +361,32 @@ class TestStreamMatchesNonStreamPath:
         assert [a.name for a in streamed.actions] == [a.name for a in parsed.actions]
         assert streamed.mood_deltas == parsed.mood_deltas
         assert streamed.vitals_deltas == parsed.vitals_deltas
+
+
+class TestFullWidthColon:
+    """全角冒号的标签行与半角同义：中文上下文里模型偶尔输出「Summary：」。"""
+
+    def test_stream_path(self):
+        parser = BehaviorParser(_Sink())
+        raw, _ = parser.collect_stream(_stream_text("Summary：只有摘要\nSpeech：你好\n"), 5.0, tag="test")
+        out = parser.parse_behavior(raw)
+        assert out.summary == "只有摘要"
+        assert out.speech == "你好"
+
+    def test_non_stream_path(self):
+        out = parse_behavior("Summary：只有摘要\nSpeech：你好\n", action_fallback=False)
+        assert out.summary == "只有摘要"
+        assert out.speech == "你好"
+
+
+class TestUntaggedContentDiag:
+    """未带标签的内容按格式契约整行丢弃，但原文要进日志供诊断。"""
+
+    def test_prose_only_logs_head(self, caplog):
+        parser = BehaviorParser(_Sink())
+        with caplog.at_level(logging.WARNING, logger="pet.brain.parsing"):
+            raw, _ = parser.collect_stream(
+                _stream_text("恋恋没有开始游戏哦，要不现在来一局？\n"), 5.0, tag="test")
+        assert raw == ""
+        assert any("未解析出字段" in r.getMessage() and "恋恋没有开始游戏哦" in r.getMessage()
+                   for r in caplog.records)
