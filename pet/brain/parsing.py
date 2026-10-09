@@ -16,16 +16,14 @@ from pet.brain.output import ActionStep, BehaviorOutput, CancelledError
 
 logger = logging.getLogger(__name__)
 
-# 行首标签真源：标签 -> 正则。匹配到冒号为止、不吃分隔空白，
-# 分隔空白由取值处各去掉一个，紧凑写法与常规写法都兼容
 _TAGS: dict[str, re.Pattern] = {
-    "speech": re.compile(r"^\s*Speech:", re.IGNORECASE),
-    "action": re.compile(r"^\s*Action:", re.IGNORECASE),
-    "summary": re.compile(r"^\s*Summary:", re.IGNORECASE),
-    "memory": re.compile(r"^\s*Memory:", re.IGNORECASE),
-    "emotion": re.compile(r"^\s*Emotion:", re.IGNORECASE),
-    "mood": re.compile(r"^\s*Mood:", re.IGNORECASE),
-    "vitals": re.compile(r"^\s*Vitals:", re.IGNORECASE),
+    "speech": re.compile(r"^\s*Speech[:：]", re.IGNORECASE),
+    "action": re.compile(r"^\s*Action[:：]", re.IGNORECASE),
+    "summary": re.compile(r"^\s*Summary[:：]", re.IGNORECASE),
+    "memory": re.compile(r"^\s*Memory[:：]", re.IGNORECASE),
+    "emotion": re.compile(r"^\s*Emotion[:：]", re.IGNORECASE),
+    "mood": re.compile(r"^\s*Mood[:：]", re.IGNORECASE),
+    "vitals": re.compile(r"^\s*Vitals[:：]", re.IGNORECASE),
 }
 
 # 行首最多缓冲多少字符：超过仍未命中标签就按未知行处理，不再等标签
@@ -267,6 +265,8 @@ class BehaviorParser:
         tool_calls_map: dict = {}
         finish_reason = None
         stream_usage = None
+        received: list[str] = []  # 原始 content，供「未解析出字段」时的诊断日志
+        reasoning_len = 0
 
         for chunk in self.iter_stream_with_timeout(stream, total_timeout, cancel_check=cancel_check):
             # usage-only chunk（choices 为空，仅含 usage）
@@ -279,7 +279,11 @@ class BehaviorParser:
                 finish_reason = choice.finish_reason
             delta = choice.delta
 
+            reasoning = getattr(delta, "reasoning_content", None)
+            if reasoning:
+                reasoning_len += len(reasoning)
             if delta.content:
+                received.append(delta.content)
                 # 同一 chunk 内的语音增量合并成一次回调，不逐字符发信号
                 pending: list = []
                 for char in delta.content:
@@ -316,6 +320,10 @@ class BehaviorParser:
             logger.warning(f"[Behavior] dropped {len(tool_calls_map) - len(usable)} tool call(s) "
                            f"without function name ({tag})")
         raw = build_raw_text(acc)
+        if not raw and (received or reasoning_len):
+            # 未带标签的 content 可能夹带用户内容，只记长度不记原文
+            logger.warning(f"[Behavior] [{tag}] 响应未解析出字段：content "
+                           f"{sum(map(len, received))} 字符、reasoning {reasoning_len} 字符")
         logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] [Behavior] === LLM RESPONSE ({tag}) ===")
         logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] [Behavior]   raw: {raw}")
         return raw, usable

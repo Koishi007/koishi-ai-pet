@@ -22,8 +22,16 @@ os.environ["APPDATA"] = str(_TMP_ROOT)
 os.environ["XDG_CONFIG_HOME"] = str(_TMP_ROOT)
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+class _NoopGuard:
+    """崩溃守卫的空实现：装配层只用到 set_enabled。"""
+
+    def set_enabled(self, enabled: bool) -> None:
+        pass
+
+
 _crash_stub = types.ModuleType("pet.crash_reporter")
 _crash_stub.install = lambda: None
+_crash_stub.get_guard = lambda: _NoopGuard()
 sys.modules.setdefault("pet.crash_reporter", _crash_stub)
 
 import pet.db as _db  # noqa: E402

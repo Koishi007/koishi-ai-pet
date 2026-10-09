@@ -22,7 +22,7 @@
 | `pet/agent/scheduler.py` | 多频率 Tick 调度器 | `Scheduler` |
 | `pet/agent/screen_reader.py` | 屏幕截图 | `ScreenReader` |
 | `pet/agent/state.py` | 轻量状态机 | `PetState` `StateMachine` |
-| `pet/app.py` | KoishiAI 桌面宠物 — 主入口 | `main()` |
+| `pet/app.py` | KoishiAI 桌面宠物 — 主入口 | `_FileActionDispatcher` `main()` |
 | `pet/auto_start.py` | 开机自启管理 — 跨平台支持 Windows / macOS / Linux。 | `set_auto_start()` |
 | `pet/brain/__init__.py` | Brain 层 — Behavior 自主/对话决策，LLMClient LLM封装，prompts 模板， |  |
 | `pet/brain/base.py` | 一条结构化的上下文记录。 | `ContextEntry` `BrainMixin` |
@@ -48,6 +48,11 @@
 | `pet/config.py` | 配置系统：`_KEY_META` 是所有配置项的唯一真源，`settings.json` 存用户覆盖（路径见 `pet/settings.py`）。 | `Config` |
 | `pet/crash_reporter.py` | 崩溃信息收集与持久化 | `CrashReporter` `get_guard()` `install()` `mark_started()` `clear_marker()` |
 | `pet/db.py` | 数据库路径管理 — 集中管理 pet.db 路径与统一连接配置。 | `get_db_path()` `get_conn()` |
+| `pet/file_intake/__init__.py` | 拖入文件的纯逻辑：类型嗅探、解码链、截断与额度、图片闸门、拒绝名单、目录摘要。 |  |
+| `pet/file_intake/image.py` | 图片读取：先 draft 后判像素闸门，通过后再解码与缩放。 | `load_image()` |
+| `pet/file_intake/sniff.py` | 类型嗅探、解码链、拒绝名单与目录摘要。 | `read_head()` `decode_bytes()` `sniff()` `match_deny()` `dir_summary()` `make_ref()` |
+| `pet/file_intake/text.py` | 文本读取与截断。 | `truncate()` `load_text()` `load_text_full()` |
+| `pet/file_intake/types.py` | 拖入文件的数据结构。 | `FileRef` `DropVerdict` |
 | `pet/food/__init__.py` | food 层 — 需求驱动的本能行为（觅食）。 |  |
 | `pet/food/food.py` | 觅食本能 — 需求驱动的自主觅食行为（satiety 低时触发）。 | `pick_emoji()` `name_of()` `FoodManager` |
 | `pet/game/__init__.py` | 游戏层 — 四个回合制小游戏的注册与导出。 |  |
@@ -89,13 +94,16 @@
 | `pet/tools/weather/core.py` | 通过 Open-Meteo 免费 API 获取实时天气和预报。 | `get_current()` `get_forecast()` |
 | `pet/tools/web_search/__init__.py` | 支持 SearXNG（自建）和 Bing Web Search API。 | `register()` |
 | `pet/tools/web_search/core.py` | 支持 SearXNG（自建）和 Bing Web Search API 两种后端。 | `check_connectivity()` `search()` `deep_search()` |
-| `pet/ui/__init__.py` | UI 层 — pet_window 宠物主窗口，speech_bubble/chat_bubble/feed_bubble 气泡组件，emotion 表情系统，particle 粒子特效， |  |
+| `pet/ui/__init__.py` | UI 层 — pet_window 宠物主窗口，speech_bubble/chat_bubble/feed_bubble/file_bubble 气泡组件，file_drop_handler 拖放判定， |  |
 | `pet/ui/base_window.py` | （模块未提供 docstring） | `TransparentWindow` |
 | `pet/ui/chat_bubble.py` | 桌宠聊天交互组件 | `ChatBubble` |
 | `pet/ui/chat_history.py` | 对话历史窗口 — 以对话气泡形式展示用户与桌宠的对话记录。 | `ChatBubbleDelegate` `ChatHistoryWindow` |
+| `pet/ui/debounce.py` | 按钮与提交的防抖：一次物理操作只产生一次请求。 | `Debounce` |
 | `pet/ui/debug_window.py` | 调试面板 | `DebugWindow` |
 | `pet/ui/emotion.py` | 桌宠情绪气泡显示 emoji 表情 | `emotion_to_emoji()` `EmotionBubble` |
 | `pet/ui/feed_bubble.py` | 桌宠喂食交互组件 | `FeedBubble` |
+| `pet/ui/file_bubble.py` | 文件气泡 - 拖入文件后显示摘要与动作按钮，单例复用。 | `describe_ref()` `FileBubble` |
+| `pet/ui/file_drop_handler.py` | 拖放判定层：悬停与放下两层的判定、回调分发。 | `paths_from_mime()` `busy_event_text()` `FileDropHandler` |
 | `pet/ui/food_window.py` | 觅食的食物悬浮窗 — 纯展示组件，生命周期由 FoodManager 管理。 | `FoodWindow` |
 | `pet/ui/game_panel.py` | 游戏面板基类 — 通用无边框窗口框架 + 统一渲染入口 + 用户手动收场。 | `GamePanelBase` |
 | `pet/ui/log_window.py` | 日志窗口 | `_LogRelay` `LogWindowHandler` `LogWindow` |
@@ -119,4 +127,4 @@
 | `pet/voice/voice_session.py` | 语音会话编排：麦克风采集 → 讯飞识别 | `VoiceSession` |
 | `pet/voice/xunfei_stt.py` | 讯飞语音听写 (iat) WebSocket API 封装 | `XunfeiSTT` |
 
-共 111 个模块。
+共 119 个模块。

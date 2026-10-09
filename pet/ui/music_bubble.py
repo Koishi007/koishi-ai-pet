@@ -31,8 +31,15 @@ except ImportError:
 
 
 def _get_volume():
-    """获取 Windows 系统主音量端点接口（IAudioEndpointVolume）。"""
-    return AudioUtilities.GetSpeakers().EndpointVolume
+    """获取 Windows 系统主音量端点接口（IAudioEndpointVolume），取不到返回 None。
+
+    无声卡、远程桌面会话、CI 机器上没有默认渲染设备，pycaw 抛 COMError；
+    返回 None 后音量键走 pynput 媒体键回退。
+    """
+    try:
+        return AudioUtilities.GetSpeakers().EndpointVolume
+    except Exception:
+        return None
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -373,6 +380,9 @@ class MusicBubble(QWidget):
         self.cancel_hide()
         if self._hide_anim and self._hide_anim.state() == QPropertyAnimation.State.Running:
             self._hide_anim.stop()
+            # 淡出被打断：复原透明度与跟随，下面的提前返回不再重建这两项
+            self.setWindowOpacity(1.0)
+            self._follow_timer.start(50)
         if self.isVisible():
             return
         self._update_position()
