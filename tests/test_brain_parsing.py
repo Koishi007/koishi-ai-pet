@@ -380,13 +380,15 @@ class TestFullWidthColon:
 
 
 class TestUntaggedContentDiag:
-    """未带标签的内容按格式契约整行丢弃，但原文要进日志供诊断。"""
+    """未带标签的内容按格式契约整行丢弃，日志只记字符数、不记原文。"""
 
-    def test_prose_only_logs_head(self, caplog):
+    def test_prose_only_logs_counts_without_raw(self, caplog):
         parser = BehaviorParser(_Sink())
         with caplog.at_level(logging.WARNING, logger="pet.brain.parsing"):
             raw, _ = parser.collect_stream(
                 _stream_text("恋恋没有开始游戏哦，要不现在来一局？\n"), 5.0, tag="test")
         assert raw == ""
-        assert any("未解析出字段" in r.getMessage() and "恋恋没有开始游戏哦" in r.getMessage()
-                   for r in caplog.records)
+        records = [r.getMessage() for r in caplog.records if "未解析出字段" in r.getMessage()]
+        assert records
+        assert all("字符" in m for m in records)
+        assert all("恋恋没有开始游戏哦" not in m for m in records)

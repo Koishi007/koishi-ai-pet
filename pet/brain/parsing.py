@@ -321,9 +321,9 @@ class BehaviorParser:
                            f"without function name ({tag})")
         raw = build_raw_text(acc)
         if not raw and (received or reasoning_len):
-            head = "".join(received)[:200]
+            # 未带标签的 content 可能夹带用户内容，只记长度不记原文
             logger.warning(f"[Behavior] [{tag}] 响应未解析出字段：content "
-                           f"{sum(map(len, received))} 字符、reasoning {reasoning_len} 字符，原文：{head}")
+                           f"{sum(map(len, received))} 字符、reasoning {reasoning_len} 字符")
         logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] [Behavior] === LLM RESPONSE ({tag}) ===")
         logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] [Behavior]   raw: {raw}")
         return raw, usable

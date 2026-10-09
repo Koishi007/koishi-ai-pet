@@ -491,7 +491,7 @@ def analyze_non_vision_user_prompt(user_message: str, context: str) -> str:
         f"=== 用户交给你看的东西 ===\n{user_message}\n\n"
         f"{context}\n\n"
         "按以下步骤处理：\n\n"
-        "1. 先读完对象，弄清它是什么、弄清它是什么、讲了什么，不熟悉时可以使用工具获取信息（搜索、回忆、知识库等）\n"
+        "1. 先读完对象，弄清它是什么、讲了什么，不熟悉时可以使用工具获取信息（搜索、回忆、知识库等）\n"
         "2. 提炼要点和你自己的判断\n"
         "3. 用符合人格的话说出来，不要复述原文\n"
         "4. 按输出格式写完整输出（Summary → Emotion → Speech → Action(0-2个) → Memory(可选) → Mood）"
@@ -552,7 +552,7 @@ def interact_take_a_bite_prompt(names: str) -> str:
         f"根据文件的名称、类型想象它尝起来是什么味道，用一句话（≤20字）把味道和口感说出来，同时给出心理变化 Mood（affection/joy/sanity）：\n"
         f"  — 能读的文本/笔记/资料：joy+0~+2\n"
         f"  — 图片：joy+1~+3\n"
-        f"  — 代码/配置：anity-0~-2\n"
+        f"  — 代码/配置：sanity-0~-2\n"
         f"  — 二进制/读不出的东西：sanity-1~-3, joy-0~-2\n"
         f"  — 文件夹：joy+0~+2\n"
         f"  — 空文件：joy+1~+2, sanity+0~+1\n"
@@ -563,7 +563,7 @@ def interact_take_a_bite_prompt(names: str) -> str:
 # 拖入文件被拒收时的场景与允许的数值增量：hint 按类型与文件名变化
 _FILE_REJECT_SCENES = {
     "too_large": ("太大了，你没有接住", "sanity-1~3"),
-    "too_many": ("，你没有接住", "sanity-1~3"),
+    "too_many": ("太多了，你一次接不住", "sanity-1~3"),
     "forbidden": ("你不想碰", "sanity-2~5, joy-0~2"),
 }
 _REJECT_NAME_MAX = 3
