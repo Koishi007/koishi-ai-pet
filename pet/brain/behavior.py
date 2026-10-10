@@ -329,7 +329,8 @@ class Behavior(BrainMixin):
             content = msg.content or ""
             logger.info(f"[{t}] [Behavior] === LLM RESPONSE ({tag}) ===")
             logger.info(f"[{t}] [Behavior]   finish_reason: {resp.choices[0].finish_reason}")
-            logger.info(f"[{t}] [Behavior]   raw: {content}")
+            if content:
+                logger.info(f"[{t}] [Behavior]   raw: {content}")
 
             if msg.tool_calls:
                 tool_calls_map = {}

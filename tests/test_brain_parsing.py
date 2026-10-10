@@ -55,6 +55,7 @@ class _ToolCallDelta:
 class _Delta:
     content: Optional[str] = None
     tool_calls: Optional[list] = None
+    reasoning_content: Optional[str] = None
 
 
 @dataclass
@@ -392,3 +393,20 @@ class TestUntaggedContentDiag:
         assert records
         assert all("字符" in m for m in records)
         assert all("恋恋没有开始游戏哦" not in m for m in records)
+
+    def test_tool_round_reasoning_only_is_not_warned(self, caplog):
+        """工具轮次只带 reasoning、不带正文：空 raw 是预期形态，不按异常上报。"""
+        parser = BehaviorParser(_Sink())
+        stream = [
+            _Chunk([_Choice(
+                _Delta(reasoning_content="先开一局再说",
+                       tool_calls=[_ToolCallDelta(0, id="call_1", name="game__init",
+                                                  arguments='{"game_name": "rps"}')]),
+                finish_reason="tool_calls")]),
+        ]
+        with caplog.at_level(logging.INFO, logger="pet.brain.parsing"):
+            raw, tool_calls = parser.collect_stream(stream, 5.0, tag="test")
+        assert raw == "" and tool_calls
+        messages = [r.getMessage() for r in caplog.records]
+        assert not [m for m in messages if "未解析出字段" in m]
+        assert not [m for m in messages if "raw:" in m]
