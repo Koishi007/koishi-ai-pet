@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QGridLayout, QScrollArea, QApplication,
 )
 from datetime import datetime
+import time
 
 from PySide6.QtCore import Qt, QPoint, QTimer, QSize
 from PySide6.QtGui import QFont, QIcon, QPainter, QPainterPath, QColor, QPen
@@ -81,6 +82,7 @@ class DebugWindow(QWidget):
         self._pos_timer.timeout.connect(self._refresh_pos)
         self._pos_timer.timeout.connect(self._refresh_llm_stats)
         self._pos_timer.timeout.connect(self._refresh_context)
+        self._pos_timer.timeout.connect(self._refresh_state_elapsed)
         self._pos_timer.start(1000)
 
     def showEvent(self, event):
@@ -390,6 +392,31 @@ class DebugWindow(QWidget):
         right.addWidget(particle_group)
 
 
+        state_group = QGroupBox("状态机流转")
+        state_layout = QVBoxLayout(state_group)
+
+        state_row = QHBoxLayout()
+        state_row.addWidget(QLabel("当前状态:"))
+        self.label_sm_state = QLabel("—")
+        self.label_sm_state.setFont(QFont("Consolas", 10))
+        state_row.addWidget(self.label_sm_state)
+        state_row.addStretch()
+        self.label_sm_dwell = QLabel("已持续 —")
+        state_row.addWidget(self.label_sm_dwell)
+        state_layout.addLayout(state_row)
+
+        self.sm_list = QListWidget()
+        self.sm_list.setMaximumHeight(130)
+        self.sm_list.setFont(QFont("Consolas", 9))
+        state_layout.addWidget(self.sm_list)
+
+        if self.agent:
+            self.agent.state_machine.state_changed.connect(self._on_sm_state_changed)
+        self._refresh_state_view()
+
+        right.addWidget(state_group)
+
+
         ctx_group = QGroupBox("上下文存储 (BrainMixin)")
         ctx_layout = QVBoxLayout(ctx_group)
 
@@ -614,6 +641,34 @@ class DebugWindow(QWidget):
         if self.agent and hasattr(self.agent.behavior, 'clear_context'):
             self.agent.behavior.clear_context()
             self._refresh_context()
+
+    def _on_sm_state_changed(self, _state: str):
+        self._refresh_state_view()
+
+    def _refresh_state_view(self):
+        """按状态机的流转历史重建展示：含面板打开前的流转，列表项与历史一一对应。"""
+        sm = self.agent.state_machine if self.agent else None
+        if sm is None:
+            self.label_sm_state.setText("—")
+            self.label_sm_dwell.setText("已持续 —")
+            self.sm_list.clear()
+            self.sm_list.addItem("（无 agent，无法观测状态机）")
+            return
+        self.label_sm_state.setText(sm.state.value)
+        self.sm_list.clear()
+        for t in sm.history:
+            mark = "（强制）" if t.forced else ""
+            ts = datetime.fromtimestamp(t.wall_ts).strftime("%H:%M:%S")
+            self.sm_list.addItem(f"[{ts}] {t.from_state} → {t.to_state}{mark}")
+        self.sm_list.scrollToBottom()
+        self._refresh_state_elapsed()
+
+    def _refresh_state_elapsed(self):
+        sm = self.agent.state_machine if self.agent else None
+        if sm is None:
+            return
+        dwell = max(0, int(time.monotonic() - sm.state_since))
+        self.label_sm_dwell.setText(f"已持续 {dwell // 60:02d}:{dwell % 60:02d}")
 
 
     def paintEvent(self, event):

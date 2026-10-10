@@ -21,7 +21,7 @@
 | `pet/agent/scheduled_tasks.py` | 定时任务注册与回调 | `ScheduledTasks` |
 | `pet/agent/scheduler.py` | 多频率 Tick 调度器 | `Scheduler` |
 | `pet/agent/screen_reader.py` | 屏幕截图 | `ScreenReader` |
-| `pet/agent/state.py` | 轻量状态机 | `PetState` `StateMachine` |
+| `pet/agent/state.py` | 轻量状态机 | `PetState` `StateTransition` `StateMachine` |
 | `pet/app.py` | KoishiAI 桌面宠物 — 主入口 | `_FileActionDispatcher` `main()` |
 | `pet/auto_start.py` | 开机自启管理 — 跨平台支持 Windows / macOS / Linux。 | `set_auto_start()` |
 | `pet/brain/__init__.py` | Brain 层 — Behavior 自主/对话决策，LLMClient LLM封装，prompts 模板， |  |
