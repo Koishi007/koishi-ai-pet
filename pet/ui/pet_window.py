@@ -224,6 +224,11 @@ class PetWindow(TransparentWindow):
         """注入 PetAgent 引用，供右键菜单使用。"""
         self._agent = agent
 
+    @property
+    def agent(self):
+        """只读访问当前 agent。"""
+        return self._agent
+
     def set_app(self, app):
         """注入 QApplication 引用，供退出按钮使用。"""
         self._app = app
@@ -503,7 +508,7 @@ class PetWindow(TransparentWindow):
             # 工具子菜单（每工具支持独立子菜单）
             tool_menu = StickyMenu("工具", menu)
             for name in TOOL_REGISTRY.tool_names:
-                tool = TOOL_REGISTRY._tools.get(name)
+                tool = TOOL_REGISTRY.get_tool(name)
                 if not tool:
                     continue
                 if tool.meta:
@@ -539,9 +544,9 @@ class PetWindow(TransparentWindow):
         hide_action.triggered.connect(self.hide)
         menu.addAction(hide_action)
 
-        if hasattr(self, "_quit_fn"):
+        if hasattr(self, "quit_fn"):
             quit_action = QAction("退出")
-            quit_action.triggered.connect(self._quit_fn)
+            quit_action.triggered.connect(self.quit_fn)
             menu.addAction(quit_action)
 
         menu.exec(pos)
@@ -712,6 +717,11 @@ class PetWindow(TransparentWindow):
         if self._emotion_bubble:
             self._emotion_bubble.hide()
         super().hide()
+
+    @property
+    def mouse_penetration(self) -> bool:
+        """鼠标穿透当前状态。"""
+        return self._mouse_penetration
 
     def set_mouse_penetration(self, enabled: bool):
         """开启/关闭鼠标穿透：开启后窗口不接收任何鼠标事件，点击穿透到下层。"""

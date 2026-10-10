@@ -12,7 +12,7 @@ from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMessageBox
 from PySide6.QtGui import QIcon
 from PySide6.QtCore import QObject, QTimer, Qt, Signal, Slot
 
-from pet.ui.log_window import _LogRelay, LogWindowHandler
+from pet.ui.log_window import LogRelay, LogWindowHandler
 from pet.ui.styles import ICON_PATH
 from pet.ui.pet_window import PetWindow
 from pet.ui.system_tray import SystemTrayManager
@@ -31,8 +31,10 @@ from pet.file_intake import KIND_LABELS, load_image, load_text
 from pet.config import config
 from pet.auto_start import set_auto_start
 from pet.crash_reporter import get_guard
+from pet.self_update import apply_pending_update_scripts
 from pet.single_instance import SingleInstanceGuard
 from pet.version_check import UpdateChecker
+from pet.game import register_all
 
 logger = logging.getLogger(__name__)
 
@@ -192,7 +194,6 @@ def main():
         atexit.register(_guard.release)
 
     # 应用上次更新遗留的 update.bat.new / update.sh.new
-    from pet.self_update import apply_pending_update_scripts
     apply_pending_update_scripts()
 
     # 文件日志：按天切分，保留 3 天
@@ -213,7 +214,7 @@ def main():
     logging.getLogger().addHandler(_file_handler)
 
     # GUI 日志桥接 (INFO 级)
-    _log_relay = _LogRelay()
+    _log_relay = LogRelay()
     _log_handler = LogWindowHandler(_log_relay, level=logging.INFO)
     _log_relay.set_handler(_log_handler)
     logging.getLogger().addHandler(_log_handler)
@@ -236,6 +237,9 @@ def main():
 
     # 启动时加载工具插件
     load_tools(config.TOOLS_ENABLED)
+
+    # 内置游戏在装配入口整包登记，game 包不在导入期建对象
+    register_all()
 
     # 应用开机自启设置
     set_auto_start(config.AUTO_START_ON_BOOT)
@@ -358,7 +362,7 @@ def main():
         from pet.voice.hotkey_manager import HotkeyManager
 
         _voice_session = VoiceSession()
-        agent._voice_session = _voice_session
+        agent.voice_session = _voice_session
         _hotkey_mgr = HotkeyManager()
 
         _hotkey_mgr.voice_start.connect(_voice_session.start_recording)
@@ -368,7 +372,7 @@ def main():
         _voice_session.transcription_done.connect(chat_bubble.finalize_voice_text)
 
         chat_bubble.enter_intercept.connect(_hotkey_mgr.set_intercept_enter)
-        _hotkey_mgr.enter_pressed.connect(chat_bubble._on_submit)
+        _hotkey_mgr.enter_pressed.connect(chat_bubble.submit)
 
         _voice_session.recording_started.connect(chat_bubble.show_voice_input)
         _voice_session.recording_started.connect(lambda: chat_bubble.set_recording_icon(True))
@@ -417,8 +421,8 @@ def main():
             if _w is window:
                 continue
             try:
-                if hasattr(_w, "_force_close"):
-                    _w._force_close = True
+                if hasattr(_w, "force_close"):
+                    _w.force_close = True
                 if _w.isVisible():
                     _w.close()
                 else:
@@ -454,7 +458,7 @@ def main():
         except Exception as e:
             logger.warning(f"shutdown: llm_stats save failed: {e}")
         try:
-            agent.behavior._save_context(record_shutdown=True)
+            agent.behavior.save_context(record_shutdown=True)
         except Exception as e:
             logger.warning(f"shutdown: context save failed: {e}")
 
@@ -486,8 +490,8 @@ def main():
     app.aboutToQuit.connect(_shutdown)
 
     # 将退出函数注入到需要的地方
-    window._quit_fn = _do_quit
-    tray._quit_fn = _do_quit
+    window.quit_fn = _do_quit
+    tray.quit_fn = _do_quit
 
     # 初始化完成：更新启动标记，区分"启动中途崩溃"与"正常运行中崩溃"
     get_guard().mark_started()

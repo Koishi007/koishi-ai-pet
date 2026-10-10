@@ -18,17 +18,25 @@ def _get_special_folder(name: str) -> str:
     return os.path.expanduser(f"~/{name.capitalize()}")
 
 
-_ALLOWED_ROOTS = [
-    _get_special_folder("DESKTOP"),
-    _get_special_folder("DOCUMENTS"),
-]
+_ALLOWED_ROOTS: list[str] | None = None
+
+
+def _allowed_roots() -> list[str]:
+    """允许访问的根目录，首次校验时才查询系统特殊目录。"""
+    global _ALLOWED_ROOTS
+    if _ALLOWED_ROOTS is None:
+        _ALLOWED_ROOTS = [
+            _get_special_folder("DESKTOP"),
+            _get_special_folder("DOCUMENTS"),
+        ]
+    return _ALLOWED_ROOTS
 
 
 class FileOpsTool:
     def _check_path(self, path: str) -> str:
         # realpath 解析 symlink / junction：否则允许目录内的链接可指向外部造成逃逸
         abs_path = os.path.realpath(os.path.expanduser(path))
-        for root in _ALLOWED_ROOTS:
+        for root in _allowed_roots():
             real_root = os.path.realpath(root)
             try:
                 if os.path.commonpath([abs_path, real_root]) == real_root:

@@ -26,7 +26,7 @@ class StateTransition:
 
 
 class StateMachine(QObject):
-    """简单状态机，维护当前状态并做合法性检查，同时记录流转历史供调试观测"""
+    """简单状态机，维护当前状态并做合法性检查，记录流转历史供调试观测"""
 
     state_changed = Signal(str)
 
@@ -36,7 +36,7 @@ class StateMachine(QObject):
         PetState.INTERACTING: [PetState.IDLE, PetState.AUTONOMOUS],
     }
 
-    _HISTORY_MAX = 50  # 流转历史上限：调试观测够用，又不随运行时长无限增长
+    _HISTORY_MAX = 50  # 流转历史上限，防止随运行时长无限增长
 
     def __init__(self, initial: PetState = PetState.IDLE, parent=None):
         super().__init__(parent)
@@ -50,7 +50,7 @@ class StateMachine(QObject):
 
     @property
     def state_since(self) -> float:
-        """进入当前状态的单调时刻（monotonic），供停留时长展示。"""
+        """进入当前状态的单调时刻，供停留时长展示。"""
         return self._entered_at
 
     @property

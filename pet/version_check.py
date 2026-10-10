@@ -26,7 +26,15 @@ REPO = "Koishi007/koishi-ai-pet"
 API_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
 _PKG_NAME = "koishi-ai-pet"
 _TIMEOUT = 8  # 网络请求超时（秒）
-_ssl_ctx = ssl.create_default_context()
+_ssl_ctx = None
+
+
+def _get_ssl_ctx():
+    """SSL 上下文首次请求时创建。"""
+    global _ssl_ctx
+    if _ssl_ctx is None:  # 无锁竞态最坏重复创建一次，无副作用
+        _ssl_ctx = ssl.create_default_context()
+    return _ssl_ctx
 
 # 文本解析 pyproject.toml 中的 version 字段（match 不适用，文件不以 version 开头）
 _RE_VERSION = re.compile(r'^\s*version\s*=\s*["\']([^"\']+)', re.IGNORECASE | re.MULTILINE)
@@ -106,7 +114,7 @@ class _CheckWorker(QObject):
                 return
             try:
                 req = urllib.request.Request(API_URL, headers=_build_headers())
-                with urllib.request.urlopen(req, timeout=_TIMEOUT, context=_ssl_ctx) as resp:
+                with urllib.request.urlopen(req, timeout=_TIMEOUT, context=_get_ssl_ctx()) as resp:
                     # urlopen 对 4xx/5xx 直接抛 HTTPError，此处仅防御 3xx 等极端场景
                     if resp.status != 200:
                         logger.debug(f"[VersionCheck] HTTP {resp.status}")

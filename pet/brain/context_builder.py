@@ -383,7 +383,7 @@ class ContextBuilder:
         if len(entries) > self._MAX_EVENT_LINES:
             entries = entries[-self._MAX_EVENT_LINES:]
         return "\n".join(
-            f"[{BrainMixin._format_context_time(ts)}] {label}"
+            f"[{BrainMixin.format_context_time(ts)}] {label}"
             for ts, label in entries
         )
 
@@ -430,7 +430,7 @@ class ContextBuilder:
         lines = []
         for key, start in self._active_needs.items():
             elapsed = now - start
-            age = "刚起念" if elapsed < 60 else f"已持续 {BrainMixin._format_duration(elapsed)}"
+            age = "刚起念" if elapsed < 60 else f"已持续 {BrainMixin.format_duration(elapsed)}"
             if circadian and key == circadian[0]:
                 _, label, hint = circadian
             else:

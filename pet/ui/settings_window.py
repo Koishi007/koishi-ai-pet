@@ -231,7 +231,7 @@ class SettingsWindow(QWidget):
         if cls._instance is None:
             # 强制顶层窗口，确保在 Windows 任务栏有独立图标
             cls._instance = cls(agent, parent=None)
-        cls._instance._load_values()
+        cls._instance.load_values()
         cls._instance.show()
         cls._instance.raise_()
 
@@ -944,8 +944,8 @@ class SettingsWindow(QWidget):
         return w
 
 
-    def _load_values(self):
-        """从 config 读取当前值填充各控件。"""
+    def load_values(self):
+        """从 config 读取当前值填充各控件，每次打开窗口时调用。"""
         for key, widget in self._fields.items():
             value = getattr(config, key, None)
             if value is None:

@@ -33,7 +33,7 @@ class DebugWindow(QWidget):
         super().__init__(parent)
         self.pet = pet_window
         self.agent = agent
-        self._force_close = False
+        self.force_close = False
         self.bubble = SpeechBubble(self.pet)
         self.emotion_bubble = EmotionBubble(self.pet)
         if agent is not None:
@@ -614,20 +614,20 @@ class DebugWindow(QWidget):
         prev_max = scroll_bar.maximum()
 
         self.ctx_output.clear()
-        if not self.agent or not hasattr(self.agent.behavior, '_context'):
+        if not self.agent or not hasattr(self.agent.behavior, 'context_entries'):
             self.ctx_output.append("（无 agent 或 Behavior 不可用）")
             self.label_ctx_count.setText("共 0 条")
             return
-        entries = self.agent.behavior._context
+        entries = self.agent.behavior.context_entries()
         self.label_ctx_count.setText(f"共 {len(entries)} 条")
         if not entries:
             self.ctx_output.append("（空）")
             return
-        now = __import__('time').time()
+        now = time.time()
         for i, e in enumerate(entries, 1):
             age = int(now - e.timestamp)
             age_str = f"{age}s" if age < 60 else f"{age // 60}m{age % 60}s"
-            score = self.agent.behavior._score_entry(e) if hasattr(self.agent.behavior, '_score_entry') else 0
+            score = self.agent.behavior.score_entry(e)
             summary_flag = " [summary]" if e.is_summary else ""
             self.ctx_output.append(
                 f"#{i} role={e.role}{summary_flag} score={score:.1f} age={age_str} ts={e.timestamp:.0f}\n  {e.content}"
@@ -646,7 +646,7 @@ class DebugWindow(QWidget):
         self._refresh_state_view()
 
     def _refresh_state_view(self):
-        """按状态机的流转历史重建展示：含面板打开前的流转，列表项与历史一一对应。"""
+        """按流转历史重建展示，含面板打开前发生的流转。"""
         sm = self.agent.state_machine if self.agent else None
         if sm is None:
             self.label_sm_state.setText("—")
@@ -694,7 +694,7 @@ class DebugWindow(QWidget):
 
     def closeEvent(self, event):
         self._pos_timer.stop()
-        if self._force_close:
+        if self.force_close:
             event.accept()
         else:
             self.hide()

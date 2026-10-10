@@ -18,7 +18,7 @@ from pet.ui.styles import (
 
 
 
-class _LogRelay(QObject):
+class LogRelay(QObject):
     """跨线程日志桥接器"""
 
     log_received = Signal(str)
@@ -40,7 +40,7 @@ class _LogRelay(QObject):
     def set_widget(self, widget: QWidget):
         self._widget = widget
         while self._buffer:
-            widget._append_log(self._buffer.popleft())
+            widget.append_log(self._buffer.popleft())
 
     def set_handler(self, handler: "LogWindowHandler"):
         self._handler = handler
@@ -60,16 +60,16 @@ class _LogRelay(QObject):
 
     def _on_log_received(self, formatted: str):
         if self._widget:
-            self._widget._append_log(formatted)
+            self._widget.append_log(formatted)
         else:
             self._buffer.append(formatted)
 
 
 
 class LogWindowHandler(logging.Handler):
-    """自定义 logging.Handler — 仅 INFO 及以上，格式化后经由 _LogRelay 进入 GUI。"""
+    """自定义 logging.Handler — 仅 INFO 及以上，格式化后经由 LogRelay 进入 GUI。"""
 
-    def __init__(self, relay: _LogRelay, level=logging.INFO):
+    def __init__(self, relay: LogRelay, level=logging.INFO):
         super().__init__(level=level)
         self._relay = relay
         self.setFormatter(logging.Formatter(
@@ -104,7 +104,7 @@ _MAX_BLOCK_COUNT = 5000
 class LogWindow(QWidget):
     """INFO 日志查看窗口"""
 
-    def __init__(self, relay: _LogRelay, parent=None):
+    def __init__(self, relay: LogRelay, parent=None):
         super().__init__(parent)
         self.setWindowTitle("日志")
         self.setObjectName("LogWindowRoot")
@@ -219,8 +219,8 @@ class LogWindow(QWidget):
             self._drag_pos = event.globalPosition().toPoint()
 
 
-    def _append_log(self, formatted: str):
-        """由 _LogRelay 调用（主线程安全）。"""
+    def append_log(self, formatted: str):
+        """由 LogRelay 调用（主线程安全）。"""
         self._log_view.append(formatted)
         self._trim_if_needed()
 

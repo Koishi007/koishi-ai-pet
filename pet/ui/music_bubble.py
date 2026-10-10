@@ -230,7 +230,7 @@ class MusicBubble(QWidget):
         speech_bubble = getattr(self._pet_window, "_speech_bubble", None)
         if speech_bubble is None:
             return
-        if speech_bubble._is_active() or speech_bubble._speech_queue:
+        if speech_bubble.is_busy():
             return
         speech_bubble.show_text(random.choice(messages), duration=3000)
 

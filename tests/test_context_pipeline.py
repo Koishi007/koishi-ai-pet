@@ -37,17 +37,17 @@ class TestEstimateTokens:
 class TestFormatContextTime:
     def test_today_uses_clock_only(self):
         now = datetime.now().replace(hour=9, minute=30)
-        assert BrainMixin._format_context_time(now.timestamp()) == "09:30"
+        assert BrainMixin.format_context_time(now.timestamp()) == "09:30"
 
     def test_yesterday_and_before_yesterday(self):
         yesterday = datetime.now() - timedelta(days=1)
-        assert BrainMixin._format_context_time(yesterday.timestamp()).startswith("昨天 ")
+        assert BrainMixin.format_context_time(yesterday.timestamp()).startswith("昨天 ")
         two_days = datetime.now() - timedelta(days=2)
-        assert BrainMixin._format_context_time(two_days.timestamp()).startswith("前天 ")
+        assert BrainMixin.format_context_time(two_days.timestamp()).startswith("前天 ")
 
     def test_older_uses_date(self):
         older = datetime.now() - timedelta(days=5)
-        assert len(BrainMixin._format_context_time(older.timestamp())) == len("09-01 09:30")
+        assert len(BrainMixin.format_context_time(older.timestamp())) == len("09-01 09:30")
 
 
 class TestGetMultiTurnMessages:

@@ -102,7 +102,7 @@ class ChatBubble(QWidget):
         self._input.setMaximumWidth(180)
         self._input.setMinimumHeight(28)
         self._input.setStyleSheet(self._INPUT_STYLE)
-        self._input.returnPressed.connect(self._on_submit)
+        self._input.returnPressed.connect(self.submit)
         self._input.textChanged.connect(self._on_input_changed)
         self._input.hide()
         self._layout.addWidget(self._input)
@@ -169,7 +169,8 @@ class ChatBubble(QWidget):
         self._input.setMaximumWidth(180)
         self.adjustSize()
 
-    def _on_submit(self):
+    def submit(self):
+        """提交输入框内容，回车与语音热键共用此入口。"""
         # 取消语音自动收回定时器
         self._voice_auto_collapse.stop()
         self.enter_intercept.emit(False)

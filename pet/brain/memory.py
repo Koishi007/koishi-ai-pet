@@ -22,7 +22,8 @@ try:
     JIEBA_AVAILABLE = True
 except ImportError:
     JIEBA_AVAILABLE = False
-    logger.info("jieba 未安装，关键词提取将使用正则降级方案")
+
+_JIEBA_NOTICE_SHOWN = False  # 首次降级提取时提示，导入期保持静默
 
 STOP_WORDS = {
     "的", "地", "得", "了", "着", "过", "吗", "呢", "吧", "啊", "呀", "哦", "哇", "嘛", "呗", "么",
@@ -157,12 +158,10 @@ class _MemoryRetriever(ABC):
 
     @property
     def MAX_MEMORIES(self) -> int:
-        from pet.config import config
         return config.MEMORY_MAX_CAPACITY
 
     @property
     def RECALL_COOLDOWN_SECONDS(self) -> int:
-        from pet.config import config
         return config.MEMORY_RECALL_COOLDOWN_S
 
     def __init__(self, conn: sqlite3.Connection, dedup_threshold: float = 0.6):
@@ -474,7 +473,6 @@ class _MemoryRetriever(ABC):
         - recent_slot:  按时间选最新记忆，固定保留（对话连续性）
         - mmr_slot:     从文本匹配候选中按 MMR 挑选，既相关又与已选不同
         """
-        from pet.config import config
         total = max(3, config.MEMORY_RECALL_COUNT)
         # 按 3:2:5 比例分配，每槽至少 1 条
         core_n = max(1, round(total * 0.3))
@@ -605,6 +603,10 @@ class _MemoryRetriever(ABC):
                 return keywords
 
         # 降级方案：正则提取
+        global _JIEBA_NOTICE_SHOWN
+        if not _JIEBA_NOTICE_SHOWN:
+            _JIEBA_NOTICE_SHOWN = True
+            logger.info("jieba 未安装，关键词提取将使用正则降级方案")
         tokens = re.split(r"[\s,，。！？、；：\n]+", text)
         keywords = [
             t for t in tokens
@@ -958,7 +960,6 @@ class VectorRetriever(_MemoryRetriever):
     def __init__(self, conn: sqlite3.Connection, dedup_threshold: float = 0.6):
         super().__init__(conn, dedup_threshold)
 
-        from pet.config import config
         from pet.brain.embedding_client import EmbeddingClient
         self._embedder = EmbeddingClient(
             url=config.EMBEDDING_URL,
@@ -1214,6 +1215,11 @@ class MemoryStore:
 
     _HEAVY_INTERVAL = 6  # 每 6 次 slow_tick 执行一次重量维护（≈30min）
 
+    @property
+    def db_path(self) -> str:
+        """记忆库文件路径，供装配期复用同一库。"""
+        return self._db_path
+
     def __init__(self, db_path: str | None = None, dedup_threshold: float = 0.6):
         if db_path is None:
             db_path = get_db_path()
@@ -1277,7 +1283,6 @@ class MemoryStore:
             return False
 
     def _build_retriever(self, dedup_threshold: float) -> _MemoryRetriever:
-        from pet.config import config
         reasons = []
         vec_ok = False
 

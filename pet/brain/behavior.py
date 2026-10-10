@@ -16,6 +16,7 @@ from pet.brain.summary import SummaryHooks, flush_summaries, summarize_with_llm
 from pet.brain.tool_loop import run_tool_loop
 from pet.tools.executor import ToolExecutor
 from pet.config import config
+from pet.tools.context import TOOL_CTX
 from pet.tools.registry import TOOL_REGISTRY
 
 logger = logging.getLogger(__name__)
@@ -37,7 +38,7 @@ class Behavior(BrainMixin):
 
     def __init__(self, memory_store=None, screen_reader=None, vitals=None, mood=None,
                  recent_events_fn=None, once_events_fn=None, progress_fn=None):
-        db_path = memory_store._db_path if memory_store else None
+        db_path = memory_store.db_path if memory_store else None
         super().__init__(db_path=db_path)
         self._llm = LLMClient()
         # 进展心跳回调：每产生一次实质进展（chunk / 工具轮次 / LLM 返回）通知一次，
@@ -510,12 +511,10 @@ class _BehaviorToolSession:
         self._behavior.note_progress()
 
     def speak_aside(self, text: str):
-        from pet.tools.context import TOOL_CTX
         TOOL_CTX.speech(text, duration=2000)
         TOOL_CTX.push_model_aside_pending()
 
     def end_aside(self):
-        from pet.tools.context import TOOL_CTX
         TOOL_CTX.pop_model_aside_pending()
 
     def add_context(self, role: str, content: str, is_summary: bool = False):

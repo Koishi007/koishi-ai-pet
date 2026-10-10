@@ -5,27 +5,35 @@ TOOL_NAME = "file_ops"
 TOOL_DESCRIPTION = "文件操作（读写、列目录，限桌面/文档）"
 TOOL_GROUP = "file"
 
-_instance = FileOpsTool()
+_instance: FileOpsTool | None = None
+
+
+def _get_instance() -> FileOpsTool:
+    """工具实例首次使用时创建。"""
+    global _instance
+    if _instance is None:
+        _instance = FileOpsTool()
+    return _instance
 
 
 def _list_dir(**kw):
     TOOL_CTX.speech_random(["看看有什么…", "翻翻看…", "瞄一眼…", "看看都有什么…"])
-    return _instance.list_dir(**kw)
+    return _get_instance().list_dir(**kw)
 
 
 def _read_file(**kw):
     TOOL_CTX.speech_random(["读读看…", "看看写了什么…", "瞄一眼…", "读一下…"])
-    return _instance.read_file(**kw)
+    return _get_instance().read_file(**kw)
 
 
 def _write_note(**kw):
     TOOL_CTX.speech_random(["记东西…", "写下来…", "记一下…", "别忘了…"])
-    return _instance.write_note(**kw)
+    return _get_instance().write_note(**kw)
 
 
 def _write_file(**kw):
     TOOL_CTX.speech_random(["嗯…写写看…", "写一下…", "动笔了…", "写写看…"])
-    return _instance.write_file(**kw)
+    return _get_instance().write_file(**kw)
 
 
 def register(registry):

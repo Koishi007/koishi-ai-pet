@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 
 from pet.tools.context import TOOL_CTX
+from pet.tools.knowledge.chunker import chunk_text
 from pet.db import get_conn
 
 logger = logging.getLogger(__name__)
@@ -167,8 +168,6 @@ class KnowledgeStorage:
     def add_document(self, title: str, content: str, tags: str = "",
                      source: str = "manual") -> dict:
         """添加文档 → 分块 → 生成向量（如可用）→ 存储。"""
-        from pet.tools.knowledge.chunker import chunk_text
-
         now = datetime.now().isoformat()
         cfg = _load_config()
         chunks = chunk_text(

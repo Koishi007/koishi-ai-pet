@@ -6,6 +6,12 @@ from typing import List
 
 from pet.config import config
 
+__all__ = [
+    "ActionDef", "REGISTRY", "ACTION_NAMES",
+    "target_sequence_duration", "min_action_count", "default_duration",
+    "has_duration", "duration_range", "generate_action_section",
+]
+
 
 # 动作时长参数定义：(名称, 最小秒数, 占 target_sequence_duration 的比例)
 _DURATION_ACTION_DEFS = {
@@ -200,8 +206,22 @@ def _build_duration_registry() -> dict[str, ActionDef]:
     return result
 
 
-# 每次 import 时构建，但 generate_action_section() 调用时也会重新读取 config
-REGISTRY: dict[str, ActionDef] = _build_duration_registry()
+def __getattr__(name: str):
+    """REGISTRY / ACTION_NAMES 首次访问时构建并缓存，导入期只留定义。"""
+    if name == "REGISTRY":
+        registry = _build_duration_registry()
+        globals()["REGISTRY"] = registry
+        return registry
+    if name == "ACTION_NAMES":
+        names = list(__getattr__("REGISTRY").keys())
+        globals()["ACTION_NAMES"] = names
+        return names
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    """把惰性名字并入 dir()，供 IDE 补全与自省使用。"""
+    return sorted(set(globals()) | {"REGISTRY", "ACTION_NAMES"})
 
 
 def generate_action_section(exclude: list[str] | None = None) -> str:
@@ -226,6 +246,3 @@ def generate_action_section(exclude: list[str] | None = None) -> str:
             entry += f" | 示例: {ex}"
         lines.append(entry)
     return "\n".join(lines)
-
-
-ACTION_NAMES: list[str] = list(REGISTRY.keys())
