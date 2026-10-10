@@ -90,7 +90,7 @@ def _ingest_files(files) -> dict:
     names = "、".join(item["title"] for item in added[:_HINT_NAMES_MAX])
     TOOL_CTX.request_interact(
         hint=f"用户把「{names}」交给你收进知识库了，一共 {len(added)} 份，"
-             f"根据你的人格用一句话（≤15字）回应",
+             f"根据你的人格用一句或多句短句（总量≤30字）回应",
         cooldown_ms=0,  # 不做冷却：入库多少次就回应多少次
         thinking=False, enable_tools=False)
     return {"ok": True, "summary": f"已收进知识库 {len(added)} 份"}

@@ -191,7 +191,7 @@ def _autonomous_task() -> list[str]:
 
     format_guide = (
         f"[输出格式]\n"
-        f"严格按此顺序输出：Summary → Emotion(可选) → Speech(可选) → Action(≥{min_actions}个) → Memory(可选) → Mood(可选)：\n"
+        f"严格按此顺序输出：Summary → Emotion(可选) → Speech(可选，可多个) → Action(≥{min_actions}个) → Memory(可选) → Mood(可选)：\n"
         f"  Summary: <本轮所见或状态、行为决策，≤50字>\n"
         f"  Emotion: happy\n"
         f"  Speech: 又在写代码呀...\n"
@@ -232,7 +232,7 @@ def _chat_task() -> list[str]:
 
     format_guide = (
         f"[输出格式]\n"
-        f"严格按此顺序输出：Summary → Emotion(可选) → Speech → Action(≥3个) → Memory(可选) → Mood(可选)：\n"
+        f"严格按此顺序输出：Summary → Emotion(可选) → Speech(可多个) → Action(≥3个) → Memory(可选) → Mood(可选)：\n"
         f"  Summary: <对话内容和行为决策，≤50字>\n"
         f"  Emotion: happy\n"
         f"  Speech: 跳过去嘛...好的\n"
@@ -266,10 +266,11 @@ def _chat_task() -> list[str]:
 def _interact_task() -> list[str]:
     format_guide = (
         f"[输出格式]\n"
-        f"严格按此顺序输出：Summary → Emotion(可选) → Speech(可选) → Action(1-2个) → Mood(可选) → Vitals(可选)：\n"
-        f"  Summary: <互动内容和反应，≤15字>\n"
+        f"严格按此顺序输出：Summary → Emotion(可选) → Speech(可选，可多个) → Action(1-2个) → Mood(可选) → Vitals(可选)：\n"
+        f"  Summary: <互动内容和反应，≤30字>\n"
         f"  Emotion: happy\n"
         f"  Speech: 你怎么抓我呀\n"
+        f"  Speech: 哇——放开\n"
         f"  Action: walk left 600\n"
         f"  Action: shake_arms\n"
         f"  Mood: affection+1 joy-1 sanity-5\n"
@@ -281,9 +282,9 @@ def _interact_task() -> list[str]:
     constraints = [
         "[核心规则]",
         "1. 反应必须反映当前状态；禁止输出 Memory 行",
-        "2. Speech 是本能反应，≤20字，可以输出多个Speech，分句表达，让对话更自然，语气由性格决定；也可以选择沉默（比如生气时一言不发），省略 Speech 只输出动作；根据互动类型选择不同动作",
+        "2. Speech 是本能反应，≤30字，可以输出多个Speech，分句表达，让对话更自然，语气由性格决定；也可以选择沉默（比如生气时一言不发），省略 Speech 只输出动作；根据互动类型选择不同动作",
         "3. 只输出 1-2 个 Action，每行一个，格式 Action: 动作名 [参数...]，动作名从动作表选取",
-        "4. Summary 必须在最前面，≤15字",
+        "4. Summary 必须在最前面，≤30字",
     ]
 
     return [format_guide] + constraints + [_MOOD_GUIDE, _VITALS_GUIDE]
@@ -294,10 +295,11 @@ def _analyze_task() -> list[str]:
 
     format_guide = (
         f"[输出格式]\n"
-        f"严格按此顺序输出：Summary → Emotion(可选) → Speech → Action(0-2个) → Memory(可选) → Mood(可选)：\n"
+        f"严格按此顺序输出：Summary → Emotion(可选) → Speech(可多个) → Action(≥3个) → Memory(可选) → Mood(可选)：\n"
         f"  Summary: <对象是什么 + 你的结论，≤50字>\n"
         f"  Emotion: curious\n"
         f"  Speech: 这份笔记写了三件事…\n"
+        f"  Speech: 最有意思的是第二件\n"
         f"  Action: thinking {think_dur}\n"
         f"  Memory: event 用户给你看过一张旅行照片 | keywords:[照片] | importance:2 | level:L3\n"
         f"  Mood: joy+1\n"
@@ -309,8 +311,8 @@ def _analyze_task() -> list[str]:
         "[核心规则]",
         "1. 结论必须来自你看到的内容：对象是什么、重点在哪、你怎么看；看不懂就说看不懂，不要编",
         "2. 不逐句复述、不整段引用原文；要举证时只提一两个细节",
-        "3. Speech 是主要产出，可以分多句，长度以说清结论为准",
-        "4. Action 可选，0-2 个，格式 Action: 动作名 [参数...]，动作名从动作表选取；没有合适的动作就省略",
+        "3. Speech 是主要产出，可以输出多个 Speech 分句表达，长度以说清结论为准",
+        "4. 至少 3 个 Action，每行一个，格式 Action: 动作名 [参数...]，动作名从动作表选取",
         "5. Summary 必须在最前面，≤50字",
         "6. Memory 行只记「用户交付了什么」，不写对象里的内容；心理无变化时省略 Mood 行",
     ]
@@ -420,7 +422,7 @@ def autonomous_vision_user_prompt(context: str) -> str:
         f"5. 理智不正常时话语可以混乱，但行为必须无害——不做破坏性操作，不主动写/覆盖文件、打开未知网页或改动用户环境；多个独立工具可一次并行调用\n"
         f"6. 画面没什么变化时不要硬找新话题、不要给画面加戏或堆砌修辞；可以说当下的感受，也可以用很短的句子\n"
         f"7. 记忆：本轮是否出现了值得记住的新信息（环境里暴露的稳定事实、明确的偏好或安排）？有就写一行 Memory，没有就省略\n"
-        f"8. 按顺序写出完整输出（Summary → Emotion → Speech(可选) → Actions → Memory(可选) → Mood）"
+        f"8. 按顺序写出完整输出（Summary → Emotion → Speech(可选，可多个) → Actions → Memory(可选) → Mood）"
     )
 
 
@@ -442,7 +444,7 @@ def autonomous_non_vision_user_prompt(context: str) -> str:
         f"4. 理智不正常时话语可以混乱，但行为必须无害——不做破坏性操作，不主动写/覆盖文件、打开未知网页或改动用户环境；多个独立工具可一次并行调用\n"
         f"5. 避免与近期台词重复；没什么想说就简短表达当下的感觉\n"
         f"6. 记忆：本轮是否出现了值得记住的新信息（窗口标题、记忆段里没有的稳定事实或偏好）？有就写一行 Memory，没有就省略\n"
-        f"7. 按顺序写出完整输出（Summary → Emotion → Speech(可选) → Actions → Memory(可选) → Mood）"
+        f"7. 按顺序写出完整输出（Summary → Emotion → Speech(可选，可多个) → Actions → Memory(可选) → Mood）"
     )
 
 
@@ -454,10 +456,10 @@ def chat_vision_user_prompt(user_message: str, context: str) -> str:
         "按以下步骤思考和行动：\n\n"
         "1. 理解用户说了什么，判断意图\n"
         "2. 分析截图，识别窗口内容——结合画面理解语境\n"
-        "3. 结合「你现在的状态」和截图内容，说一句符合人格和当下心境的话；「你惦记着的事」里有未满足的需求，可以顺口带一句，禁止和工具调用时说的话重复，需要保持连续性\n"
+        "3. 结合「你现在的状态」和截图内容，用符合人格和当下心境的话回应，可以输出多个 Speech 分句；「你惦记着的事」里有未满足的需求，可以顺口带一句，禁止和工具调用时说的话重复，需要保持连续性\n"
         "4. 规划配合对话的动作序列，按输出格式要求凑满时长\n"
         "5. 记忆：用户本轮是否说出了值得记住的新信息（姓名、住址、偏好、确定的安排、刚发生的事）？有就写一行 Memory，没有就省略\n"
-        "6. 按顺序写出完整输出（Summary → Emotion → Speech → Actions → Memory(可选) → Mood）"
+        "6. 按顺序写出完整输出（Summary → Emotion → Speech(可多个) → Actions → Memory(可选) → Mood）"
     )
 
 
@@ -467,10 +469,10 @@ def chat_non_vision_user_prompt(user_message: str, context: str) -> str:
         f"{context}\n\n"
         "按以下步骤思考和行动：\n\n"
         "1. 理解用户说了什么，判断意图\n"
-        "2. 结合「你现在的状态」和用户消息内容，说一句符合人格和当下心境的话；「你惦记着的事」里有未满足的需求，可以顺口带一句，禁止和工具调用时说的话重复，需要保持连续性\n"
+        "2. 结合「你现在的状态」和用户消息内容，用符合人格和当下心境的话回应，可以输出多个 Speech 分句；「你惦记着的事」里有未满足的需求，可以顺口带一句，禁止和工具调用时说的话重复，需要保持连续性\n"
         "3. 规划配合对话的动作序列，按输出格式要求凑满时长\n"
         "4. 记忆：用户本轮是否说出了值得记住的新信息（姓名、住址、偏好、确定的安排、刚发生的事）？有就写一行 Memory，没有就省略\n"
-        "5. 按顺序写出完整输出（Summary → Emotion → Speech → Actions → Memory(可选) → Mood）"
+        "5. 按顺序写出完整输出（Summary → Emotion → Speech(可多个) → Actions → Memory(可选) → Mood）"
     )
 
 
@@ -481,8 +483,8 @@ def analyze_vision_user_prompt(user_message: str, context: str) -> str:
         "按以下步骤处理：\n\n"
         "1. 先看完对象（文字读完、图看清楚），弄清它是什么、讲了什么，不熟悉时可以使用工具获取信息（搜索、回忆、知识库等）\n"
         "2. 提炼要点和你自己的判断\n"
-        "3. 用符合人格的话说出来，不要复述原文\n"
-        "4. 按输出格式写完整输出（Summary → Emotion → Speech → Action(0-2个) → Memory(可选) → Mood）"
+        "3. 用符合人格的话说出来（可输出多个 Speech 分句），不要复述原文\n"
+        "4. 按输出格式写完整输出（Summary → Emotion → Speech(可多个) → Action(≥3个) → Memory(可选) → Mood）"
     )
 
 
@@ -493,28 +495,28 @@ def analyze_non_vision_user_prompt(user_message: str, context: str) -> str:
         "按以下步骤处理：\n\n"
         "1. 先读完对象，弄清它是什么、讲了什么，不熟悉时可以使用工具获取信息（搜索、回忆、知识库等）\n"
         "2. 提炼要点和你自己的判断\n"
-        "3. 用符合人格的话说出来，不要复述原文\n"
-        "4. 按输出格式写完整输出（Summary → Emotion → Speech → Action(0-2个) → Memory(可选) → Mood）"
+        "3. 用符合人格的话说出来（可输出多个 Speech 分句），不要复述原文\n"
+        "4. 按输出格式写完整输出（Summary → Emotion → Speech(可多个) → Action(≥3个) → Memory(可选) → Mood）"
     )
 
 
 
 
 INTERACT_GRABBED = config.INTERACT_GRABBED_PROMPT or (
-    "用户正用鼠标把你抓起来，用一句话（≤15字）根据你的人格表达被抓住的反应"
+    "用户正用鼠标把你抓起来，用一句或多句短句（总量≤30字）根据你的人格表达被抓住的反应"
 )
 
 INTERACT_RELEASED = config.INTERACT_RELEASED_PROMPT or (
-    "用户刚刚把你放开了，你可以自由走动了，用一句话（≤15字）表达重获自由的感觉"
+    "用户刚刚把你放开了，你可以自由走动了，用一句或多句短句（总量≤30字）表达重获自由的感觉"
 )
 
 INTERACT_WINDOW_DISAPPEARED = config.INTERACT_WINDOW_DISAPPEARED_PROMPT or (
-    "你刚才站在的窗口消失了（关闭/最小化/被遮挡），用一句话（≤20字）根据你的人格表达反应"
+    "你刚才站在的窗口消失了（关闭/最小化/被遮挡），用一句或多句短句（总量≤30字）根据你的人格表达反应"
 )
 
 def interact_fed_prompt(food: str) -> str:
     template = config.INTERACT_FED_PROMPT or (
-        "用户给你投喂了{food}，根据你的人格用一句话（≤15字）表达反应。"
+        "用户给你投喂了{food}，根据你的人格用一句或多句短句（总量≤30字）表达反应。"
         "同时根据投喂的食物决定Vitals和Mood变化：\n"
         "  — 正餐/主食(satiety+40~80, energy+5~10, affection/joy+0~1)\n"
         "  — 零食/甜点(satiety+20~50, energy+5~15, joy+2~3, affection+1~2)\n"
@@ -532,7 +534,7 @@ def interact_self_fed_prompt(food: str) -> str:
     """自己觅食吃到食物的交互 prompt（与投喂同构，但强调是自主所得）。"""
     return (
         f"你找到了{food}并自己吃掉了（自己觅食所得，不是用户投喂），"
-        f"根据你的人格用一句话（≤15字）表达反应。"
+        f"根据你的人格用一句或多句短句（总量≤30字）表达反应。"
         f"同时根据食物的类型决定Vitals和Mood变化（参考投喂规则）：\n"
         f"  — 正餐/主食(satiety+40~80, energy+5~10, joy+1~2)\n"
         f"  — 零食/甜点(satiety+20~50, energy+5~15, joy+2~3)\n"
@@ -549,7 +551,7 @@ def interact_take_a_bite_prompt(names: str) -> str:
         return template.format(names=names)
     return (
         f"用户把「{names}」递过来让你尝一口。"
-        f"根据文件的名称、类型想象它尝起来是什么味道，用一句话（≤20字）把味道和口感说出来，同时给出心理变化 Mood（affection/joy/sanity）：\n"
+        f"根据文件的名称、类型想象它尝起来是什么味道，用一句或多句短句（总量≤30字）把味道和口感说出来，同时给出心理变化 Mood（affection/joy/sanity）：\n"
         f"  — 能读的文本/笔记/资料：joy+0~+2\n"
         f"  — 图片：joy+1~+3\n"
         f"  — 代码/配置：sanity-0~-2\n"
@@ -586,7 +588,7 @@ def interact_file_reject_prompt(reason: str, names: Sequence[str] = ()) -> str:
         return template.format(reason=reason, names="、".join(names[:_REJECT_NAME_MAX]))
     tail, delta = _FILE_REJECT_SCENES.get(reason, ("你没有接住", "sanity-1~3"))
     return (
-        f"用户拖来的{_reject_subject(names)}{tail}，根据你的人格用一句话（≤20字）表达反应，"
+        f"用户拖来的{_reject_subject(names)}{tail}，根据你的人格用一句或多句短句（总量≤30字）表达反应，"
         f"不要表现得被冒犯。这是用户主动交付了不合适的东西，不是操作失败。\n"
         f"数值变化只允许：Mood {delta}；Vitals 不变（没有进食）；"
         f"不改 affection（误拖不构成负面事件）。"

@@ -158,7 +158,7 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
             low = "，轮次不多了请尽快输出" if remaining <= low_threshold else ""
             current_messages.append({
                 "role": "user",
-                "content": f"工具已执行，可直接输出最终行为（Summary+Speech+Action），无需重复分析；有值得记忆的信息才输出 Memory（剩余工具轮次：{remaining}/{max_rounds}{low}）"
+                "content": f"工具已执行，可直接输出最终行为（Summary+Speech(可多个)+Action），无需重复分析；有值得记忆的信息才输出 Memory（剩余工具轮次：{remaining}/{max_rounds}{low}）"
             })
             final_instruction_added = True
 

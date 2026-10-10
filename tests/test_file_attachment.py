@@ -111,8 +111,7 @@ class TestAnalyzeTask:
         system = _builder().build_analyze_decide(
             "用户把文件交给了你：\n- a.txt", "无窗口")[0]["content"]
         assert "分析模式" in system
-        assert "Action 可选" in system
-        assert "至少 3 个 Action" not in system
+        assert "至少 3 个 Action" in system
 
     def test_user_prompt_is_analyze_variant(self):
         messages = _builder().build_analyze_decide(
