@@ -10,26 +10,37 @@ TOOL_NAME = "browser"
 TOOL_DESCRIPTION = "浏览器操作（搜索网页、读取网页正文、截图）"
 TOOL_GROUP = "web"
 
-_instance = BrowserTool()
-atexit.register(_instance.close)
+_instance: BrowserTool | None = None
+
+
+def _get_instance() -> BrowserTool:
+    """工具实例首次使用时创建。"""
+    global _instance
+    if _instance is None:
+        _instance = BrowserTool()
+        atexit.register(_instance.close)
+    return _instance
 
 
 def _search(**kw):
     TOOL_CTX.speech_random(["搜一下…", "搜搜看…", "查查看…", "找找…"])
-    return _instance.search(**kw)
+    return _get_instance().search(**kw)
 
 
 def _read_url(**kw):
     TOOL_CTX.speech_random(["读一读网页…", "看看写了什么…", "读读看…", "瞄一眼…"])
-    return _instance.read_url(**kw)
+    return _get_instance().read_url(**kw)
 
 
 def _screenshot_url(**kw):
     TOOL_CTX.speech_random(["看看网页…", "瞄一眼…", "瞧瞧…", "看看…"])
-    return _instance.screenshot_url(**kw)
+    return _get_instance().screenshot_url(**kw)
 
 
 def _close():
+    """关闭浏览器；实例从未创建时直接返回。"""
+    if _instance is None:
+        return None
     return _instance.close()
 
 

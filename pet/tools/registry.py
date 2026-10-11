@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Callable, Any
 
 from pet.config import config
+from pet.tools.context import TOOL_CTX
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +85,10 @@ class ToolRegistry:
             if tool.file_actions and self.is_enabled(tool.name):
                 actions.extend(tool.file_actions)
         return actions
+
+    def get_tool(self, tool_name: str) -> "ToolDef | None":
+        """按名称取工具定义，未注册返回 None。"""
+        return self._tools.get(tool_name)
 
     def get_method(self, full_name: str) -> ToolMethod | None:
         """通过 'tool_name.method_name' 获取方法对象。"""
@@ -389,7 +394,6 @@ class ToolRegistry:
 
     def _recall_search(self, query: str, limit: int = 5) -> dict:
         """recall__search 工具实现。"""
-        from pet.tools.context import TOOL_CTX
         from pet.brain.memory import get_memory_store
         TOOL_CTX.speech_random(["让我想想…", "回忆一下…", "翻翻记忆…"])
         query = (query or "").strip()
@@ -417,7 +421,6 @@ class ToolRegistry:
         **_ 吞掉模型多传的未声明参数：executor 会把 schema 外的键原样透传给
         handler，缺少它时一个多余参数就会让整次调用 TypeError 失败。
         """
-        from pet.tools.context import TOOL_CTX
         from pet.brain.memory import get_memory_store
         TOOL_CTX.speech_random(["翻翻记忆…", "看看都记了些什么…", "回忆一下…"])
         start_date, err = self._normalize_date(start_date, "start_date")

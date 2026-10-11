@@ -166,6 +166,10 @@ class SpeechBubble(QLabel):
             self._type_timer.stop()
             self._finish_stream()
 
+    def is_busy(self) -> bool:
+        """气泡是否被占用：显示、打字中或有排队文本。"""
+        return self._is_active() or bool(self._speech_queue)
+
     def _is_active(self) -> bool:
         """气泡当前是否正在使用（显示中或打字中）。"""
         return self.isVisible() and (

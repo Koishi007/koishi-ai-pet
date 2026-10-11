@@ -14,8 +14,6 @@ from pet.db import get_conn, get_db_path
 
 logger = logging.getLogger(__name__)
 
-_DB_PATH = get_db_path()
-
 
 @dataclass(frozen=True)
 class MoodThresholds:
@@ -71,7 +69,7 @@ class Mood(QObject):
         self._last_activity_ts: float = 0.0  # 最近一次互动时间（防抖）
 
         # SQLite 持久化
-        self._db_path = db_path or _DB_PATH
+        self._db_path = db_path or get_db_path()
         self._conn = get_conn(self._db_path, timeout=5.0)
         self._lock = threading.Lock()
         self._create_table()

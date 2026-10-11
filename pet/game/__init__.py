@@ -1,15 +1,17 @@
-"""游戏层 — 四个回合制小游戏的注册与导出。"""
+"""游戏层 — 四个回合制小游戏的导出与整包注册。"""
 
 from pet.game.gamebase import GAME, Game, GameBase
 
 from pet.game.guess_number import GuessNumberGame
-from pet.game.tic_tac_toe import TicTacToeGame
 from pet.game.rps import RockPaperScissorsGame
+from pet.game.tic_tac_toe import TicTacToeGame
 from pet.game.twenty_questions import TwentyQuestionsGame
 
-GAME.register(GuessNumberGame())
-GAME.register(TicTacToeGame())
-GAME.register(RockPaperScissorsGame())
-GAME.register(TwentyQuestionsGame())
+__all__ = ["GAME", "Game", "GameBase", "GuessNumberGame", "RockPaperScissorsGame",
+           "TicTacToeGame", "TwentyQuestionsGame", "register_all"]
 
-__all__ = ["GAME", "Game", "GameBase"]
+
+def register_all() -> None:
+    """把四个内置游戏登记进 GAME，重复调用无副作用。"""
+    for game in (GuessNumberGame(), TicTacToeGame(), RockPaperScissorsGame(), TwentyQuestionsGame()):
+        GAME.register(game)

@@ -313,19 +313,20 @@ class BehaviorParser:
             self.consume_line(tagger, tagger.line, acc)
 
         _log_stream_done(tag, time.perf_counter() - t0, finish_reason, stream_usage)
-        # 缺 function name 的调用既执行不了，也拼不出合法的 assistant.tool_calls，
-        # 放行只会让下一轮请求被服务商以「missing a function name」拒绝
+        # 缺 function name 的调用既执行不了，也拼不出合法的 assistant.tool_calls
         usable = {idx: tc for idx, tc in tool_calls_map.items() if tc["name"]}
         if len(usable) != len(tool_calls_map):
             logger.warning(f"[Behavior] dropped {len(tool_calls_map) - len(usable)} tool call(s) "
                            f"without function name ({tag})")
         raw = build_raw_text(acc)
-        if not raw and (received or reasoning_len):
-            # 未带标签的 content 可能夹带用户内容，只记长度不记原文
-            logger.warning(f"[Behavior] [{tag}] 响应未解析出字段：content "
-                           f"{sum(map(len, received))} 字符、reasoning {reasoning_len} 字符")
-        logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] [Behavior] === LLM RESPONSE ({tag}) ===")
-        logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] [Behavior]   raw: {raw}")
+        counts = f"content {sum(map(len, received))} 字符、reasoning {reasoning_len} 字符"
+        if raw:
+            logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] [Behavior] === LLM RESPONSE ({tag}) ===")
+            logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] [Behavior]   raw: {raw}")
+        elif usable and (received or reasoning_len):
+            logger.debug(f"[Behavior] [{tag}] 工具轮次无正文：{counts}")
+        elif received or reasoning_len:
+            logger.warning(f"[Behavior] [{tag}] 响应未解析出字段：{counts}")
         return raw, usable
 
     def iter_stream_with_timeout(self, stream, total_timeout: float,

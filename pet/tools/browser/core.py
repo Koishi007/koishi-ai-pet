@@ -27,7 +27,15 @@ def _load_config() -> dict:
     return {}
 
 
-_cfg = _load_config()
+_cfg: dict | None = None
+
+
+def _get_cfg() -> dict:
+    """工具配置首次使用时读取。"""
+    global _cfg
+    if _cfg is None:
+        _cfg = _load_config()
+    return _cfg
 
 # 反检测注入脚本：隐藏 webdriver、伪造 chrome.runtime、拟真 plugins/permissions
 _STEALTH_INIT_JS = r"""
@@ -220,23 +228,23 @@ class BrowserTool:
 
     @property
     def _headless(self) -> bool:
-        return _cfg.get("headless", True)
+        return _get_cfg().get("headless", True)
 
     @property
     def _user_agent(self) -> str:
-        return _cfg.get("user_agent", _DEFAULT_UA)
+        return _get_cfg().get("user_agent", _DEFAULT_UA)
 
     @property
     def _engine(self) -> str:
-        return _cfg.get("search_engine", "bing")
+        return _get_cfg().get("search_engine", "bing")
 
     @property
     def _ignore_cert(self) -> bool:
-        return _cfg.get("ignore_https_errors", False)
+        return _get_cfg().get("ignore_https_errors", False)
 
     @property
     def _no_sandbox(self) -> bool:
-        return _cfg.get("no_sandbox", False)
+        return _get_cfg().get("no_sandbox", False)
 
     def _validate_url(self, url: str, label: str = "URL") -> str | None:
         if not url:

@@ -143,7 +143,7 @@ def _load_tools_sync(enabled: list[str]):
             register_fn(TOOL_REGISTRY)
             tool_group = getattr(module, "TOOL_GROUP", None)
             if tool_group:
-                tdef = TOOL_REGISTRY._tools.get(tool_name)
+                tdef = TOOL_REGISTRY.get_tool(tool_name)
                 if tdef:
                     tdef.group = tool_group
                     logger.debug(f"[ToolLoader] {tool_name} → group: {tool_group}")

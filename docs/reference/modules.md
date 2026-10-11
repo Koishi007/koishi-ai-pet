@@ -21,7 +21,7 @@
 | `pet/agent/scheduled_tasks.py` | 定时任务注册与回调 | `ScheduledTasks` |
 | `pet/agent/scheduler.py` | 多频率 Tick 调度器 | `Scheduler` |
 | `pet/agent/screen_reader.py` | 屏幕截图 | `ScreenReader` |
-| `pet/agent/state.py` | 轻量状态机 | `PetState` `StateMachine` |
+| `pet/agent/state.py` | 轻量状态机 | `PetState` `StateTransition` `StateMachine` |
 | `pet/app.py` | KoishiAI 桌面宠物 — 主入口 | `_FileActionDispatcher` `main()` |
 | `pet/auto_start.py` | 开机自启管理 — 跨平台支持 Windows / macOS / Linux。 | `set_auto_start()` |
 | `pet/brain/__init__.py` | Brain 层 — Behavior 自主/对话决策，LLMClient LLM封装，prompts 模板， |  |
@@ -55,7 +55,7 @@
 | `pet/file_intake/types.py` | 拖入文件的数据结构。 | `FileRef` `DropVerdict` |
 | `pet/food/__init__.py` | food 层 — 需求驱动的本能行为（觅食）。 |  |
 | `pet/food/food.py` | 觅食本能 — 需求驱动的自主觅食行为（satiety 低时触发）。 | `pick_emoji()` `name_of()` `FoodManager` |
-| `pet/game/__init__.py` | 游戏层 — 四个回合制小游戏的注册与导出。 |  |
+| `pet/game/__init__.py` | 游戏层 — 四个回合制小游戏的导出与整包注册。 | `register_all()` |
 | `pet/game/gamebase.py` | 游戏对局基类与全局对局容器 GAME。 | `Game` `GameBase` |
 | `pet/game/guess_number.py` | 猜数字游戏 — 1-100 随机目标，7 次内猜中算赢。 | `GuessNumberGame` |
 | `pet/game/rps.py` | 猜拳游戏 — 石头剪刀布，三局两胜。 | `RockPaperScissorsGame` |
@@ -106,7 +106,7 @@
 | `pet/ui/file_drop_handler.py` | 拖放判定层：悬停与放下两层的判定、回调分发。 | `paths_from_mime()` `busy_event_text()` `FileDropHandler` |
 | `pet/ui/food_window.py` | 觅食的食物悬浮窗 — 纯展示组件，生命周期由 FoodManager 管理。 | `FoodWindow` |
 | `pet/ui/game_panel.py` | 游戏面板基类 — 通用无边框窗口框架 + 统一渲染入口 + 用户手动收场。 | `GamePanelBase` |
-| `pet/ui/log_window.py` | 日志窗口 | `_LogRelay` `LogWindowHandler` `LogWindow` |
+| `pet/ui/log_window.py` | 日志窗口 | `LogRelay` `LogWindowHandler` `LogWindow` |
 | `pet/ui/memory_window.py` | 记忆管理窗口 | `MemoryWindow` |
 | `pet/ui/music_bubble.py` | 桌宠音乐控制气泡 - 操控系统媒体播放 | `MusicBubble` |
 | `pet/ui/particle.py` | 桌宠粒子特效 | `Particle` `_SpiralGlyph` `ParticleWidget` |

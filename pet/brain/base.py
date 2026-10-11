@@ -119,7 +119,7 @@ class BrainMixin:
                     shutdown_time = datetime.fromisoformat(meta["value"])
                     away_seconds = (datetime.now() - shutdown_time).total_seconds()
                     if away_seconds > 60:
-                        away_str = self._format_duration(away_seconds)
+                        away_str = self.format_duration(away_seconds)
                         self.add_context(role="system", content=f"用户离开了 {away_str}，刚刚回来")
                         logger.info(f"[BrainMixin] user was away for {away_str}")
                 except Exception:
@@ -169,7 +169,7 @@ class BrainMixin:
             logger.warning(f"[BrainMixin] save context failed: {e}")
 
     @staticmethod
-    def _format_duration(seconds: float) -> str:
+    def format_duration(seconds: float) -> str:
         """将秒数格式化为人类可读的时长。"""
         if seconds < 3600:
             return f"{int(seconds // 60)} 分钟"
@@ -226,6 +226,19 @@ class BrainMixin:
     def context_count(self) -> int:
         with self._ctx_lock:
             return len(self._context)
+
+    def context_entries(self) -> List[ContextEntry]:
+        """上下文条目只读快照，供调试面板消费。"""
+        with self._ctx_lock:
+            return list(self._context)
+
+    def score_entry(self, entry: ContextEntry) -> float:
+        """单条上下文的淘汰打分，供调试面板消费。"""
+        return self._score_entry(entry)
+
+    def save_context(self, record_shutdown: bool = False):
+        """立即落盘上下文，退出流程使用。"""
+        self._save_context(record_shutdown=record_shutdown)
 
     def get_multi_turn_messages(self, max_entries: int = 10, skip_last: int = 0, token_budget: int = 0) -> List[dict]:
         """构建多轮消息列表。时间顺序优先，打分仅用于淘汰决策。"""
@@ -289,7 +302,7 @@ class BrainMixin:
             # 4. 构建消息：保持时间顺序，system/摘要/对话各归其位
             messages = []
             for e in selected:
-                time_str = self._format_context_time(e.timestamp)
+                time_str = self.format_context_time(e.timestamp)
                 prefix = f"[{time_str}] " if time_str else ""
                 content_with_time = prefix + e.content
 
@@ -305,7 +318,7 @@ class BrainMixin:
 
 
     @staticmethod
-    def _format_context_time(timestamp: float) -> str:
+    def format_context_time(timestamp: float) -> str:
         """将 float 时间戳转为绝对时间：同天→HH:MM，昨天→昨天 HH:MM，前天→前天 HH:MM，更早→MM-DD HH:MM"""
         ref = datetime.fromtimestamp(timestamp)
         now = datetime.now()

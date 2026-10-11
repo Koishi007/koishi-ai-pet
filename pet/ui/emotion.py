@@ -26,8 +26,6 @@ EMOTION_MAP = {
     "crazy":      "\U0001f92a",   # 🤪
 }
 
-VALID_EMOTIONS = set(EMOTION_MAP.keys())
-
 
 def emotion_to_emoji(name: str) -> str:
     """将情绪名映射为 emoji；未知名直接返回原文本。"""
@@ -67,7 +65,7 @@ class EmotionBubble(QLabel):
     def show_emotion(self, emotion: str, duration: int = 3000, parent_pos=None):
         """显示情绪 emoji。emotion 可为情绪名、emoji 文本，或逗号分隔的多个情绪（按序播放）。"""
         names = [e.strip() for e in re.split(r"[,，、\s]+", emotion) if e.strip()]
-        valid = [e for e in names if e.lower() in VALID_EMOTIONS]
+        valid = [e for e in names if e.lower() in EMOTION_MAP]
         if not valid:
             # 无合法情绪（如直接传入 emoji 文本）：原样显示一次
             valid = [emotion]

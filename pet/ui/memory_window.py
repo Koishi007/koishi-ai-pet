@@ -45,7 +45,7 @@ class MemoryWindow(QWidget):
         super().__init__(parent)
         self._agent = agent
         self._memory_store = agent.memory_store if agent else None
-        self._force_close = False
+        self.force_close = False
 
         # 分页状态
         self._page = 0
@@ -96,7 +96,7 @@ class MemoryWindow(QWidget):
     # 标题栏相关
 
     def closeEvent(self, event):
-        if self._force_close:
+        if self.force_close:
             event.accept()
         else:
             self.hide()

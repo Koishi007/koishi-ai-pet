@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QGridLayout, QScrollArea, QApplication,
 )
 from datetime import datetime
+import time
 
 from PySide6.QtCore import Qt, QPoint, QTimer, QSize
 from PySide6.QtGui import QFont, QIcon, QPainter, QPainterPath, QColor, QPen
@@ -32,7 +33,7 @@ class DebugWindow(QWidget):
         super().__init__(parent)
         self.pet = pet_window
         self.agent = agent
-        self._force_close = False
+        self.force_close = False
         self.bubble = SpeechBubble(self.pet)
         self.emotion_bubble = EmotionBubble(self.pet)
         if agent is not None:
@@ -81,6 +82,7 @@ class DebugWindow(QWidget):
         self._pos_timer.timeout.connect(self._refresh_pos)
         self._pos_timer.timeout.connect(self._refresh_llm_stats)
         self._pos_timer.timeout.connect(self._refresh_context)
+        self._pos_timer.timeout.connect(self._refresh_state_elapsed)
         self._pos_timer.start(1000)
 
     def showEvent(self, event):
@@ -390,6 +392,31 @@ class DebugWindow(QWidget):
         right.addWidget(particle_group)
 
 
+        state_group = QGroupBox("状态机流转")
+        state_layout = QVBoxLayout(state_group)
+
+        state_row = QHBoxLayout()
+        state_row.addWidget(QLabel("当前状态:"))
+        self.label_sm_state = QLabel("—")
+        self.label_sm_state.setFont(QFont("Consolas", 10))
+        state_row.addWidget(self.label_sm_state)
+        state_row.addStretch()
+        self.label_sm_dwell = QLabel("已持续 —")
+        state_row.addWidget(self.label_sm_dwell)
+        state_layout.addLayout(state_row)
+
+        self.sm_list = QListWidget()
+        self.sm_list.setMaximumHeight(130)
+        self.sm_list.setFont(QFont("Consolas", 9))
+        state_layout.addWidget(self.sm_list)
+
+        if self.agent:
+            self.agent.state_machine.state_changed.connect(self._on_sm_state_changed)
+        self._refresh_state_view()
+
+        right.addWidget(state_group)
+
+
         ctx_group = QGroupBox("上下文存储 (BrainMixin)")
         ctx_layout = QVBoxLayout(ctx_group)
 
@@ -587,20 +614,20 @@ class DebugWindow(QWidget):
         prev_max = scroll_bar.maximum()
 
         self.ctx_output.clear()
-        if not self.agent or not hasattr(self.agent.behavior, '_context'):
+        if not self.agent or not hasattr(self.agent.behavior, 'context_entries'):
             self.ctx_output.append("（无 agent 或 Behavior 不可用）")
             self.label_ctx_count.setText("共 0 条")
             return
-        entries = self.agent.behavior._context
+        entries = self.agent.behavior.context_entries()
         self.label_ctx_count.setText(f"共 {len(entries)} 条")
         if not entries:
             self.ctx_output.append("（空）")
             return
-        now = __import__('time').time()
+        now = time.time()
         for i, e in enumerate(entries, 1):
             age = int(now - e.timestamp)
             age_str = f"{age}s" if age < 60 else f"{age // 60}m{age % 60}s"
-            score = self.agent.behavior._score_entry(e) if hasattr(self.agent.behavior, '_score_entry') else 0
+            score = self.agent.behavior.score_entry(e)
             summary_flag = " [summary]" if e.is_summary else ""
             self.ctx_output.append(
                 f"#{i} role={e.role}{summary_flag} score={score:.1f} age={age_str} ts={e.timestamp:.0f}\n  {e.content}"
@@ -614,6 +641,34 @@ class DebugWindow(QWidget):
         if self.agent and hasattr(self.agent.behavior, 'clear_context'):
             self.agent.behavior.clear_context()
             self._refresh_context()
+
+    def _on_sm_state_changed(self, _state: str):
+        self._refresh_state_view()
+
+    def _refresh_state_view(self):
+        """按流转历史重建展示，含面板打开前发生的流转。"""
+        sm = self.agent.state_machine if self.agent else None
+        if sm is None:
+            self.label_sm_state.setText("—")
+            self.label_sm_dwell.setText("已持续 —")
+            self.sm_list.clear()
+            self.sm_list.addItem("（无 agent，无法观测状态机）")
+            return
+        self.label_sm_state.setText(sm.state.value)
+        self.sm_list.clear()
+        for t in sm.history:
+            mark = "（强制）" if t.forced else ""
+            ts = datetime.fromtimestamp(t.wall_ts).strftime("%H:%M:%S")
+            self.sm_list.addItem(f"[{ts}] {t.from_state} → {t.to_state}{mark}")
+        self.sm_list.scrollToBottom()
+        self._refresh_state_elapsed()
+
+    def _refresh_state_elapsed(self):
+        sm = self.agent.state_machine if self.agent else None
+        if sm is None:
+            return
+        dwell = max(0, int(time.monotonic() - sm.state_since))
+        self.label_sm_dwell.setText(f"已持续 {dwell // 60:02d}:{dwell % 60:02d}")
 
 
     def paintEvent(self, event):
@@ -639,7 +694,7 @@ class DebugWindow(QWidget):
 
     def closeEvent(self, event):
         self._pos_timer.stop()
-        if self._force_close:
+        if self.force_close:
             event.accept()
         else:
             self.hide()

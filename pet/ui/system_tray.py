@@ -16,7 +16,15 @@ from pet.version_check import get_local_version
 
 logger = logging.getLogger(__name__)
 
-_PROCESS = psutil.Process(os.getpid())
+_PROCESS = None
+
+
+def _get_process() -> psutil.Process:
+    """进程句柄首次读取时创建。"""
+    global _PROCESS
+    if _PROCESS is None:  # 无锁竞态最坏重复创建一次，无副作用
+        _PROCESS = psutil.Process(os.getpid())
+    return _PROCESS
 
 
 def _format_bytes(b: int) -> str:
@@ -81,7 +89,7 @@ class SystemTrayManager(QObject):
         local_ver = get_local_version() or "?"
         lines = [f"Koishi v{local_ver}"]
         # pulse 参数
-        agent = self.pet._agent if self.pet else None
+        agent = self.pet.agent if self.pet else None
         if agent:
             v = agent.vitals
             m = agent.mood
@@ -93,8 +101,9 @@ class SystemTrayManager(QObject):
                 lines.append(f"好感 {ms['affection']:.0f} | 愉悦 {ms['joy']:.0f} | 理智 {ms['sanity']:.0f}")
         # 资源占用
         try:
-            mem_info = _PROCESS.memory_info()
-            cpu_pct = _PROCESS.cpu_percent(interval=0)
+            process = _get_process()
+            mem_info = process.memory_info()
+            cpu_pct = process.cpu_percent(interval=0)
             mem_str = _format_bytes(mem_info.rss)
             lines.append(f"内存: {mem_str} | CPU: {cpu_pct:.1f}%")
         except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -130,10 +139,10 @@ class SystemTrayManager(QObject):
             menu.addAction(show_action)
 
         # 鼠标穿透开关
-        pen = self.pet._mouse_penetration
+        pen = self.pet.mouse_penetration
         pen_action = QAction("关闭鼠标穿透" if pen else "开启鼠标穿透", menu)
         pen_action.triggered.connect(
-            lambda: self.pet.set_mouse_penetration(not self.pet._mouse_penetration)
+            lambda: self.pet.set_mouse_penetration(not self.pet.mouse_penetration)
         )
         menu.addAction(pen_action)
         menu.addSeparator()
@@ -145,8 +154,8 @@ class SystemTrayManager(QObject):
         menu.addSeparator()
 
         quit_action = QAction("退出", menu)
-        if hasattr(self, "_quit_fn"):
-            quit_action.triggered.connect(self._quit_fn)
+        if hasattr(self, "quit_fn"):
+            quit_action.triggered.connect(self.quit_fn)
         else:
             quit_action.triggered.connect(self.app.quit)
         menu.addAction(quit_action)

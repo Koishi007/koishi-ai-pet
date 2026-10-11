@@ -356,14 +356,11 @@ system prompt 由三段拼起来：
 | 位置 | 访问了什么 |
 |---|---|
 | `pet/action/action.py`（46 处、8 个符号） | `gravity._vy` / `_clamp_pos()` / `_cached_effective_bottom` / `_standing_hwnd` 等 - 行走与 drive 直接读重力内部状态，是最大的一处耦合 |
-| `pet/app.py` | `agent._voice_session`、`agent.behavior._save_context()`、`window._quit_fn`、`tray._quit_fn` |
-| `pet/brain/behavior.py` | `memory_store._db_path`；`_BehaviorToolSession` 读同文件 `Behavior` 的 `_build_tools_param` 与分组激活方法 |
+| `pet/brain/behavior.py` | `_BehaviorToolSession` 读同文件 `Behavior` 的 `_build_tools_param` 与分组激活方法 |
 | `pet/brain/context_builder.py` | `brain._MAX_POOL_ENTRIES`：注入条数上限由池子的拥有者决定，只读派生值，不涉及可变状态 |
-| `pet/ui/debug_window.py` | `agent.behavior._context`、`_score_entry` |
-| `pet/ui/music_bubble.py` | `speech_bubble._speech_queue`、`_is_active` |
-| `pet/action/action_queue.py` | `gravity._tick()`：动作结束前手动跑一次重力，见 [0007](decisions/0007-action-timeout-settles.md) |
-| `pet/agent/scheduled_tasks.py` | `conversation_store._cleanup_old()` |
-| `pet/ui/pet_window.py`、`pet/tools/registry.py` | `TOOL_REGISTRY._tools` |
+| `pet/brain/memory.py` | `MemoryStore` 透读 `_MemoryRetriever` 内部，存储与检索分层不彻底 |
+| `pet/action/action_queue.py` | `Actions._anim` / `_stop_drive` / `gravity._tick()`：动作收尾读内部动画器并手动跑一次重力，见 [0007](decisions/0007-action-timeout-settles.md) |
+| `pet/agent/scheduled_tasks.py` | 定时任务探活与强制收尾读 `agent._pet_window` / `_thread` / `_async_brain` / `_autonomous_pipeline`；慢档清理读 `agent.conversation_store._cleanup_old()` |
 
 `context_builder.py` 里的 11 处 `ContextBuilder._XXX` 是访问自己类的常量，不算越界。
 清单之外的私有访问在改动时收敛为公开方法（或把协作提到调用方）。

@@ -15,6 +15,7 @@ from pet.agent.screen_reader import ScreenReader
 from pet.brain.memory import get_memory_store
 from pet.brain.conversation_store import ConversationStore
 from pet.action.registry import default_duration, has_duration
+from pet.game.gamebase import GAME
 from pet.pulse.vitals import Vitals
 from pet.pulse.mood import Mood
 
@@ -80,7 +81,7 @@ class PetAgent(QObject):
         self.state_machine = StateMachine(parent=self)
         self.state_machine.state_changed.connect(self.state_changed)
         self._pet_window = None
-        self._voice_session = None  # pet/app.py 设置
+        self.voice_session = None  # pet/app.py 装配时注入
 
         self._tasks = ScheduledTasks(self)
         self._tasks.register_all(self.scheduler)
@@ -168,7 +169,6 @@ class PetAgent(QObject):
         self.screen_reader.disable()
         # 唤醒等待中的游戏会话，避免脑线程卡在等待用户落子导致退出挂起
         try:
-            from pet.game.gamebase import GAME
             GAME.cancel_all()
         except Exception:
             pass
@@ -480,7 +480,6 @@ class PetAgent(QObject):
     def is_game_active(self) -> bool:
         """是否存在进行中的游戏对局（脑线程可能正阻塞等待玩家落子）。"""
         try:
-            from pet.game.gamebase import GAME
             return GAME.has_active_session()
         except Exception:
             return False
@@ -501,7 +500,6 @@ class PetAgent(QObject):
         self._cancel_flag = True
         # 终结旧线程持有的游戏会话
         try:
-            from pet.game.gamebase import GAME
             GAME.cancel_all()
         except Exception:
             pass

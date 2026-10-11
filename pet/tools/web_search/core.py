@@ -8,8 +8,6 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-logging.getLogger("trafilatura").setLevel(logging.ERROR)
-
 _TOOL_DIR = Path(__file__).parent
 _CONFIG_FILE = _TOOL_DIR / "config.json"
 
@@ -33,6 +31,8 @@ def _extract_text(url: str, max_chars: int = 2000) -> str:
     except ImportError:
         logger.debug("[web_search] trafilatura not installed, skip text extraction")
         return ""
+    # 首次用到时才调低它自己的日志级别
+    logging.getLogger("trafilatura").setLevel(logging.ERROR)
 
     try:
         downloaded = trafilatura.fetch_url(url)
