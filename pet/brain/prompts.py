@@ -301,6 +301,8 @@ def _analyze_task() -> list[str]:
         f"  Speech: 这份笔记写了三件事…\n"
         f"  Speech: 最有意思的是第二件\n"
         f"  Action: thinking {think_dur}\n"
+        f"  Action: look_around\n"
+        f"  Action: shake_arms\n"
         f"  Memory: event 用户给你看过一张旅行照片 | keywords:[照片] | importance:2 | level:L3\n"
         f"  Mood: joy+1\n"
         f"\n"

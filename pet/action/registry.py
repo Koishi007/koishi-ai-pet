@@ -7,7 +7,7 @@ from typing import List
 from pet.config import config
 
 __all__ = [
-    "ActionDef", "REGISTRY", "ACTION_NAMES",
+    "ActionDef", "REGISTRY", "ACTION_NAMES",  # noqa: F822  惰性导出，由 __getattr__ 提供
     "target_sequence_duration", "min_action_count", "default_duration",
     "has_duration", "duration_range", "generate_action_section",
 ]
