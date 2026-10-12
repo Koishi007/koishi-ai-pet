@@ -148,6 +148,55 @@ def test_recover_stuck_brain_resets_groups_and_notifies():
     assert stub.notify_requested.emitted
 
 
+class _DispatchStub:
+    """承载 _dispatch_result / _dispatch_error 所需的 agent 最小面。"""
+
+    def __init__(self, token):
+        self._call_token = token
+        self.sender_obj = None
+
+    def sender(self):
+        return self.sender_obj
+
+    def _is_current_call(self, token):
+        return PetAgent._is_current_call(self, token)  # 走真实判定
+
+
+class _WorkerStub:
+    def __init__(self, token, calls):
+        self.call_token = token
+        self.result_handler = calls.append
+        self.error_handler = calls.append
+
+
+def test_result_of_current_call_is_dispatched():
+    calls, token = [], object()
+    stub = _DispatchStub(token)
+    stub.sender_obj = _WorkerStub(token, calls)
+
+    PetAgent._dispatch_result(stub, "ok")
+    PetAgent._dispatch_error(stub, "boom")
+    assert calls == ["ok", "boom"]
+
+
+def test_result_of_stale_call_is_dropped():
+    calls = []
+    stub = _DispatchStub(object())  # 当前调用已换令牌
+    stub.sender_obj = _WorkerStub(object(), calls)
+
+    PetAgent._dispatch_result(stub, "late")
+    PetAgent._dispatch_error(stub, "late")
+    assert calls == []
+
+
+def test_dispatch_without_sender_is_noop():
+    stub = _DispatchStub(object())
+    stub.sender_obj = None
+
+    PetAgent._dispatch_result(stub, "orphan")
+    PetAgent._dispatch_error(stub, "orphan")
+
+
 def _raise_cancelled():
     raise CancelledError("流式调用被新请求取消")
 

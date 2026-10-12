@@ -4,7 +4,7 @@ import logging
 import threading
 import time
 from datetime import datetime
-from PySide6.QtCore import QObject, QThread, QThreadPool, QTimer, Signal
+from PySide6.QtCore import QObject, QThread, QThreadPool, QTimer, Qt, Signal, Slot
 
 from pet.brain.behavior import Behavior
 from pet.brain.output import BehaviorOutput, CancelledError
@@ -33,6 +33,9 @@ class BrainWorker(QObject):
         self._fn = fn
         self._args = args
         self._name = getattr(fn, "__name__", repr(fn))
+        self.call_token = None      # 派发时写入：本次调用的令牌
+        self.result_handler = None  # 派发时写入：结果与错误的落地处理器
+        self.error_handler = None
 
     def run(self):
         ts = datetime.now().strftime("%H:%M:%S")
@@ -549,19 +552,35 @@ class PetAgent(QObject):
         self._call_token = token  # 令牌在派发时固定，管线与回调都以它判定是否仍属当前调用
         self._set_llm_loading(True)  # 开始 LLM 加载粒子
         self._worker = BrainWorker(fn, token, *args)
+        self._worker.call_token = token
+        self._worker.result_handler = on_result or self._on_brain_result
+        self._worker.error_handler = on_error or self._on_brain_error
         self._thread = QThread()
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
+        # worker 在脑线程里发信号：绑到本对象的槽并走队列连接，结果与错误才回到 PetAgent 所在线程；
         # 已进入事件队列的旧信号不会被 _retire 的 disconnect 撤销，按令牌丢弃
-        result_handler = on_result or self._on_brain_result
-        error_handler = on_error or self._on_brain_error
-        self._worker.finished.connect(
-            lambda result, t=token, h=result_handler: h(result) if self._is_current_call(t) else None)
-        self._worker.error.connect(
-            lambda msg, t=token, h=error_handler: h(msg) if self._is_current_call(t) else None)
+        self._worker.finished.connect(self._dispatch_result, Qt.QueuedConnection)
+        self._worker.error.connect(self._dispatch_error, Qt.QueuedConnection)
         self._worker.finished.connect(self._thread.quit)
         self._thread.finished.connect(self._cleanup_thread)
         self._thread.start()
+
+    @Slot(object)
+    def _dispatch_result(self, result):
+        worker = self.sender()
+        if worker is None:
+            return
+        if self._is_current_call(worker.call_token):
+            worker.result_handler(result)
+
+    @Slot(str)
+    def _dispatch_error(self, msg):
+        worker = self.sender()
+        if worker is None:
+            return
+        if self._is_current_call(worker.call_token):
+            worker.error_handler(msg)
 
     def _set_llm_loading(self, loading: bool):
         """更新 LLM 交互状态，同时广播给 UI。"""
