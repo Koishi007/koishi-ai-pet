@@ -480,6 +480,12 @@ class PetWindow(TransparentWindow):
             toggle_sched.triggered.connect(self._toggle_scheduler)
             menu.addAction(toggle_sched)
 
+            # 中断当前调用（没有可中断的调用时禁用）
+            interrupt_action = QAction("中断当前调用")
+            interrupt_action.setEnabled(self._agent.can_interrupt())
+            interrupt_action.triggered.connect(self._interrupt_current_call)
+            menu.addAction(interrupt_action)
+
             # 调试窗口
             debug_action = QAction("调试面板")
             debug_action.triggered.connect(self._show_debug_window)
@@ -550,6 +556,10 @@ class PetWindow(TransparentWindow):
             menu.addAction(quit_action)
 
         menu.exec(pos)
+
+    def _interrupt_current_call(self):
+        if self._agent:
+            self._agent.interrupt_current_call()
 
     def _toggle_scheduler(self):
         scheduler = self._agent.scheduler

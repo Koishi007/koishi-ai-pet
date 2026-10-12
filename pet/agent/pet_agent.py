@@ -492,18 +492,32 @@ class PetAgent(QObject):
         self._set_llm_loading(False)
         self.notify_requested.emit("状态恢复", "LLM调用疑似挂死，已强制恢复", 5000)
 
+    def can_interrupt(self) -> bool:
+        """是否存在可中断的调用：只看当前线程，退休线程已在取消路径上。"""
+        return self._thread is not None and self._thread.isRunning()
+
+    def interrupt_current_call(self) -> bool:
+        """用户主动中断当前调用：取消脑线程并回到 IDLE；没有可中断的调用时返回 False。"""
+        if not self.can_interrupt():
+            return False
+        ts = datetime.now().strftime("%H:%M:%S")
+        thread, worker = self._thread, self._worker
+        self._active_stream_id += 1  # 世代失效，令管线在下一个轮询点退出
+        self._request_cancel()  # 不等待：线程交给 _retire 回收
+        self._retire(thread, worker)
+        self._thread = None
+        self._worker = None
+        self.state_machine.force(PetState.IDLE)
+        self._set_llm_loading(False)
+        self.behavior.reset_active_tool_groups()
+        logger.info(f"[{ts}] [PetAgent] current call interrupted by user")
+        return True
+
     def _cancel_running_thread(self, ts: str = ""):
-        """协作式取消当前脑线程：置取消标志、终结游戏会话、短窗口等待退出"""
-        old_thread = self._thread
-        if old_thread is None or not old_thread.isRunning():
+        """协作式取消当前脑线程：请求取消并短窗口等待退出"""
+        old_thread = self._request_cancel()
+        if old_thread is None:
             return
-        self._cancel_flag = True
-        # 终结旧线程持有的游戏会话
-        try:
-            GAME.cancel_all()
-        except Exception:
-            pass
-        old_thread.quit()
         # 给旧线程一个短等待窗口（最多 1s），超时不强杀，让其自然退出
         for _ in range(20):
             if not old_thread.isRunning():
@@ -511,6 +525,20 @@ class PetAgent(QObject):
             QThread.msleep(50)
         if old_thread.isRunning():
             logger.warning(f"[{ts}] [PetAgent] old brain thread still running after cancel, continue anyway")
+
+    def _request_cancel(self):
+        """置取消标志、终结游戏会话并请求线程退出；返回被取消的线程（无则 None）。"""
+        old_thread = self._thread
+        if old_thread is None or not old_thread.isRunning():
+            return None
+        self._cancel_flag = True
+        # 终结旧线程持有的游戏会话
+        try:
+            GAME.cancel_all()
+        except Exception:
+            pass
+        old_thread.quit()
+        return old_thread
 
     def _async_brain(self, fn, *args, on_result=None, on_error=None):
         fn_name = getattr(fn, "__name__", repr(fn))
