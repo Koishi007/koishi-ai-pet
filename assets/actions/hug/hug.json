@@ -1,0 +1,7 @@
+{
+  "desc": "拥抱",
+  "tick_counts": 60,
+  "frame_ratios": [0.3, 0.175, 0.175, 0.175, 0.175],
+  "loop": false,
+  "note": "单次播放"
+}

@@ -9,12 +9,13 @@ from pet.config import config
 
 logger = logging.getLogger(__name__)
 
-# 动作名称 → (粒子名, 触发间隔 tick)
+# 动作名称 → (粒子名, 触发间隔：fast tick 数)
 _ACTION_PARTICLES: dict[str, tuple[str, int]] = {
     "shake_arms":   ("stars", 2),
     "rotate":       ("stars", 2),
     "finger_heart": ("hearts", 2),
     "shy":          ("hearts", 2),
+    "hug":          ("hearts", 2),
     "confuse":      ("question_marks", 2),
     "calling":      ("notes", 2),
     "sleep":        ("zzz", 3),

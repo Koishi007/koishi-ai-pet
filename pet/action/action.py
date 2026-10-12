@@ -459,6 +459,9 @@ class PetActions(QObject):
     def dejected(self, *_, **_kw):
         self._anim.play("dejected")
 
+    def hug(self, *_, **_kw):
+        self._anim.play("hug")
+
     def unconsciousness(self, *_, **_kw):
         """无意识化，动作名 `unconsciousness`（系统动画，不进 registry）。"""
         self._anim.play("unconsciousness")
