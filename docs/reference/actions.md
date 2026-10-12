@@ -44,6 +44,7 @@
 | `embarrassed` | 无参数 | 做错事后的尴尬 | `Action: embarrassed` |
 | `shy` | 无参数 | 双手捧脸表达害羞 | `Action: shy` |
 | `dejected` | 无参数 | 失落，情绪低落地蹲着 | `Action: dejected` |
+| `hug` | 无参数 | 张开双手求抱抱 | `Action: hug` |
 | `sit` | 10-216秒 | 坐下 | `Action: sit 108` |
 | `thinking` | 5-108秒 | 沉思 | `Action: thinking 54` |
 | `sleep` | 10-216秒 | 睡觉 | `Action: sleep 108` |
@@ -64,7 +65,7 @@
 这段文本被 `_Lazy` 缓存（首次求值后不再重算，保 system 前缀稳定）；改完 `settings.json` 里与调度相关的项后，设置界面会调用 `invalidate_action_section()` 让它按新配置重算。
 
 ```text
-[可用动作] 共 20 个
+[可用动作] 共 21 个
 - drive [direction=left/right distance>=0] 骑小电驴 | 示例: drive right 800
 - walk [direction=left/right distance>=0（按 50px 步进）] 行走 | 示例: walk right 800
 - bounce [direction=left/right distance=0-800 height>0] 跳跃 | 示例: bounce right 400 200
@@ -77,6 +78,7 @@
 - embarrassed 无参数 做错事后的尴尬
 - shy 无参数 双手捧脸表达害羞
 - dejected 无参数 失落，情绪低落地蹲着
+- hug 无参数 张开双手求抱抱
 - sit [10-216秒] 坐下 | 示例: sit 108
 - thinking [5-108秒] 沉思 | 示例: thinking 54
 - sleep [10-216秒] 睡觉 | 示例: sleep 108

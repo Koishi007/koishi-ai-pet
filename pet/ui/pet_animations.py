@@ -119,9 +119,13 @@ class PetAnimator(QObject):
         return True
 
     def stop(self):
+        was_playing = self.is_playing
         self._frame_timer.stop()
         self._duration_timer.stop()
         self._reset_breath()
+        # 停播也是播放结束：等待 animation_finished 的收尾（如长下落后的恢复）才不会被悬空
+        if was_playing and self._current_action:
+            self.animation_finished.emit(self._current_action)
 
     def has_frames(self, action: str) -> bool:
         return self._load_action(action) is not None

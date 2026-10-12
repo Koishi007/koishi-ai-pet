@@ -4,10 +4,10 @@ import logging
 import threading
 import time
 from datetime import datetime
-from PySide6.QtCore import QObject, QThread, QThreadPool, QTimer, Signal
+from PySide6.QtCore import QObject, QThread, QThreadPool, QTimer, Qt, Signal, Slot
 
 from pet.brain.behavior import Behavior
-from pet.brain.output import BehaviorOutput
+from pet.brain.output import BehaviorOutput, CancelledError
 from pet.agent.scheduler import Scheduler
 from pet.agent.scheduled_tasks import ScheduledTasks
 from pet.agent.state import StateMachine, PetState
@@ -33,6 +33,9 @@ class BrainWorker(QObject):
         self._fn = fn
         self._args = args
         self._name = getattr(fn, "__name__", repr(fn))
+        self.call_token = None      # 派发时写入：本次调用的令牌
+        self.result_handler = None  # 派发时写入：结果与错误的落地处理器
+        self.error_handler = None
 
     def run(self):
         ts = datetime.now().strftime("%H:%M:%S")
@@ -41,6 +44,8 @@ class BrainWorker(QObject):
             result = self._fn(*self._args)
             logger.debug(f"[{ts}] [BrainWorker] done: {self._name} → {type(result).__name__}")
             self.finished.emit(result)
+        except CancelledError:
+            logger.info(f"[{ts}] [BrainWorker] cancelled: {self._name}")
         except Exception as e:
             logger.error(f"[{ts}] [BrainWorker] ERROR: {self._name}: {type(e).__name__}: {e}")
             import traceback
@@ -89,8 +94,7 @@ class PetAgent(QObject):
         self._thread: QThread | None = None
         self._worker: BrainWorker | None = None
         self._retired: list[tuple[QThread, BrainWorker]] = []  # 被抢占且仍在运行的旧脑线程
-        self._cancel_flag = False
-        self._active_stream_id = 0
+        self._call_token: object | None = None  # 当前调用的令牌；派发时新建，中断或被顶替即失效
         self._last_interact_ms: dict[str, int] = {}
         self.state_machine.state_changed.connect(self._on_state_changed)
         self.tool_interact_requested.connect(self._trigger_tool_interact)
@@ -157,7 +161,7 @@ class PetAgent(QObject):
             if stream:
                 self._async_brain(self._autonomous_pipeline, pet_x, pet_y, snap)
             else:
-                def _non_stream(px, py, snap):
+                def _non_stream(token, px, py, snap):
                     wctx = self._window_context(px, py, snap)
                     return self.behavior.autonomous_decide(wctx or "", screenshot=screenshot)
                 self._async_brain(_non_stream, pet_x, pet_y, snap)
@@ -174,8 +178,7 @@ class PetAgent(QObject):
             pass
         try:
             if self._thread and self._thread.isRunning():
-                self._cancel_flag = True
-                self._active_stream_id += 1  # 世代失效，令管线在下一个轮询点退出
+                self._call_token = None  # 令牌失效，令管线在下一个轮询点退出
                 self._thread.quit()
                 self._thread.wait(3000)
                 if self._thread.isRunning():
@@ -235,22 +238,19 @@ class PetAgent(QObject):
         hwnd, dpr, screen_h = snap or (0, 1.0, 1080)
         return self.behavior.ctx.build_window_context(pet_x, pet_y, hwnd, dpr, screen_h)
 
-    def _autonomous_pipeline(self, pet_x=0, pet_y=0, snap=None):
+    def _autonomous_pipeline(self, token, pet_x=0, pet_y=0, snap=None):
         self.behavior.note_autonomous_round()
         window_context = self._window_context(pet_x, pet_y, snap)
         context = window_context if window_context else ""
 
         stream_started = False
-        self._active_stream_id += 1
-        my_stream_id = self._active_stream_id
 
         def _is_stale() -> bool:
-            # 新一轮管线启动即令旧管线过期：共享取消标志会被新管线复位，不能只依赖它
-            return self._cancel_flag or my_stream_id != self._active_stream_id
+            return not self._is_current_call(token)
 
         def on_chunk(delta: str):
             nonlocal stream_started
-            if self._cancel_flag or my_stream_id != self._active_stream_id:
+            if not self._is_current_call(token):
                 return
             if not stream_started:
                 self.speak_stream_start.emit()
@@ -259,7 +259,7 @@ class PetAgent(QObject):
 
         def on_stream_end():
             nonlocal stream_started
-            if self._cancel_flag or my_stream_id != self._active_stream_id:
+            if not self._is_current_call(token):
                 return
             if stream_started:
                 self.speak_stream_end.emit(5000)
@@ -321,7 +321,7 @@ class PetAgent(QObject):
 
         QTimer.singleShot(delay_ms, _execute)
 
-    def _interact_pipeline(self, hint: str, record_context: bool = False,
+    def _interact_pipeline(self, token, hint: str, record_context: bool = False,
                            context_hint: str = "", thinking: bool | None = None,
                            enable_tools: bool | None = None,
                            attachment_text: str | None = None,
@@ -330,15 +330,13 @@ class PetAgent(QObject):
             store_hint = context_hint if context_hint else hint
             self.behavior.add_context(role="user", content=store_hint)
         stream_started = False
-        self._active_stream_id += 1
-        my_stream_id = self._active_stream_id
 
         def _is_stale() -> bool:
-            return self._cancel_flag or my_stream_id != self._active_stream_id
+            return not self._is_current_call(token)
 
         def on_chunk(delta: str):
             nonlocal stream_started
-            if self._cancel_flag or my_stream_id != self._active_stream_id:
+            if not self._is_current_call(token):
                 return
             if not stream_started:
                 self.speak_stream_start.emit()
@@ -347,7 +345,7 @@ class PetAgent(QObject):
 
         def on_stream_end():
             nonlocal stream_started
-            if self._cancel_flag or my_stream_id != self._active_stream_id:
+            if not self._is_current_call(token):
                 return
             if stream_started:
                 self.speak_stream_end.emit(4000)
@@ -405,7 +403,7 @@ class PetAgent(QObject):
         except Exception:
             pass
 
-    def _dialogue_pipeline(self, kind: str, message: str, pet_x: int, pet_y: int, snap=None,
+    def _dialogue_pipeline(self, token, kind: str, message: str, pet_x: int, pet_y: int, snap=None,
                            thinking: bool | None = None,
                            enable_tools: bool | None = None,
                            attachment_text: str | None = None,
@@ -417,15 +415,13 @@ class PetAgent(QObject):
         context = window_context if window_context else "当前无窗口信息"
 
         stream_started = False
-        self._active_stream_id += 1
-        my_stream_id = self._active_stream_id
 
         def _is_stale() -> bool:
-            return self._cancel_flag or my_stream_id != self._active_stream_id
+            return not self._is_current_call(token)
 
         def on_chunk(delta: str):
             nonlocal stream_started
-            if self._cancel_flag or my_stream_id != self._active_stream_id:
+            if not self._is_current_call(token):
                 return
             if not stream_started:
                 self.speak_stream_start.emit()
@@ -434,7 +430,7 @@ class PetAgent(QObject):
 
         def on_stream_end():
             nonlocal stream_started
-            if self._cancel_flag or my_stream_id != self._active_stream_id:
+            if not self._is_current_call(token):
                 return
             if stream_started:
                 self.speak_stream_end.emit(4000)
@@ -490,20 +486,38 @@ class PetAgent(QObject):
         self._cancel_running_thread(ts)
         self.state_machine.force(PetState.IDLE)
         self._set_llm_loading(False)
+        self.behavior.reset_active_tool_groups()
         self.notify_requested.emit("状态恢复", "LLM调用疑似挂死，已强制恢复", 5000)
 
+    def can_interrupt(self) -> bool:
+        """是否存在可中断的调用：只看当前线程，退休线程已在取消路径上。"""
+        return self._thread is not None and self._thread.isRunning()
+
+    def _is_current_call(self, token) -> bool:
+        """token 是否仍属于当前调用；被中断或被新调用顶替即为 False。"""
+        return self._call_token is token
+
+    def interrupt_current_call(self) -> bool:
+        """用户主动中断当前调用：取消脑线程并回到 IDLE；没有可中断的调用时返回 False。"""
+        if not self.can_interrupt():
+            return False
+        ts = datetime.now().strftime("%H:%M:%S")
+        thread, worker = self._thread, self._worker
+        self._request_cancel()  # 不等待：令牌失效 + 请求线程退出，线程交给 _retire 回收
+        self._retire(thread, worker)
+        self._thread = None
+        self._worker = None
+        self.state_machine.force(PetState.IDLE)
+        self._set_llm_loading(False)
+        self.behavior.reset_active_tool_groups()
+        logger.info(f"[{ts}] [PetAgent] current call interrupted by user")
+        return True
+
     def _cancel_running_thread(self, ts: str = ""):
-        """协作式取消当前脑线程：置取消标志、终结游戏会话、短窗口等待退出"""
-        old_thread = self._thread
-        if old_thread is None or not old_thread.isRunning():
+        """协作式取消当前脑线程：请求取消并短窗口等待退出"""
+        old_thread = self._request_cancel()
+        if old_thread is None:
             return
-        self._cancel_flag = True
-        # 终结旧线程持有的游戏会话
-        try:
-            GAME.cancel_all()
-        except Exception:
-            pass
-        old_thread.quit()
         # 给旧线程一个短等待窗口（最多 1s），超时不强杀，让其自然退出
         for _ in range(20):
             if not old_thread.isRunning():
@@ -511,6 +525,20 @@ class PetAgent(QObject):
             QThread.msleep(50)
         if old_thread.isRunning():
             logger.warning(f"[{ts}] [PetAgent] old brain thread still running after cancel, continue anyway")
+
+    def _request_cancel(self):
+        """作废当前调用令牌、终结游戏会话并请求线程退出；返回被取消的线程（无则 None）。"""
+        old_thread = self._thread
+        if old_thread is None or not old_thread.isRunning():
+            return None
+        self._call_token = None
+        # 终结旧线程持有的游戏会话
+        try:
+            GAME.cancel_all()
+        except Exception:
+            pass
+        old_thread.quit()
+        return old_thread
 
     def _async_brain(self, fn, *args, on_result=None, on_error=None):
         fn_name = getattr(fn, "__name__", repr(fn))
@@ -520,17 +548,39 @@ class PetAgent(QObject):
         old_worker = self._worker
         self._cancel_running_thread(ts)
         self._retire(old_thread, old_worker)
-        self._cancel_flag = False
+        token = object()
+        self._call_token = token  # 令牌在派发时固定，管线与回调都以它判定是否仍属当前调用
         self._set_llm_loading(True)  # 开始 LLM 加载粒子
-        self._worker = BrainWorker(fn, *args)
+        self._worker = BrainWorker(fn, token, *args)
+        self._worker.call_token = token
+        self._worker.result_handler = on_result or self._on_brain_result
+        self._worker.error_handler = on_error or self._on_brain_error
         self._thread = QThread()
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
-        self._worker.finished.connect(on_result or self._on_brain_result)
-        self._worker.error.connect(on_error or self._on_brain_error)
+        # worker 在脑线程里发信号：绑到本对象的槽并走队列连接，结果与错误才回到 PetAgent 所在线程；
+        # 已进入事件队列的旧信号不会被 _retire 的 disconnect 撤销，按令牌丢弃
+        self._worker.finished.connect(self._dispatch_result, Qt.QueuedConnection)
+        self._worker.error.connect(self._dispatch_error, Qt.QueuedConnection)
         self._worker.finished.connect(self._thread.quit)
         self._thread.finished.connect(self._cleanup_thread)
         self._thread.start()
+
+    @Slot(object)
+    def _dispatch_result(self, result):
+        worker = self.sender()
+        if worker is None:
+            return
+        if self._is_current_call(worker.call_token):
+            worker.result_handler(result)
+
+    @Slot(str)
+    def _dispatch_error(self, msg):
+        worker = self.sender()
+        if worker is None:
+            return
+        if self._is_current_call(worker.call_token):
+            worker.error_handler(msg)
 
     def _set_llm_loading(self, loading: bool):
         """更新 LLM 交互状态，同时广播给 UI。"""

@@ -333,8 +333,9 @@ class PetWindow(TransparentWindow):
             round(config.PET_HEIGHT * self._GRAB_RATIO_Y),
         )
         self.pet_actions.gravity.enable(False)
-        self.action_queue.pause()
+        # 先清空再暂停：clear 会复位暂停态，按住期间的新动作靠 pause 只入队不执行
         self.action_queue.clear()
+        self.action_queue.pause()
         self.pet_actions.grabbed()
         logger.info("[PetWindow] grabbed")
         if self._agent:
@@ -480,6 +481,12 @@ class PetWindow(TransparentWindow):
             toggle_sched.triggered.connect(self._toggle_scheduler)
             menu.addAction(toggle_sched)
 
+            # 中断当前调用（没有可中断的调用时禁用）
+            interrupt_action = QAction("中断当前调用")
+            interrupt_action.setEnabled(self._agent.can_interrupt())
+            interrupt_action.triggered.connect(self._interrupt_current_call)
+            menu.addAction(interrupt_action)
+
             # 调试窗口
             debug_action = QAction("调试面板")
             debug_action.triggered.connect(self._show_debug_window)
@@ -550,6 +557,10 @@ class PetWindow(TransparentWindow):
             menu.addAction(quit_action)
 
         menu.exec(pos)
+
+    def _interrupt_current_call(self):
+        if self._agent:
+            self._agent.interrupt_current_call()
 
     def _toggle_scheduler(self):
         scheduler = self._agent.scheduler
@@ -698,8 +709,9 @@ class PetWindow(TransparentWindow):
         self.action_queue.clear()
 
     def shutdown(self):
-        self.pet_anim.stop()
+        # 先断队列再停动画：stop 会发 animation_finished，避免队列在退出途中又推进一个动作
         self.action_queue.clear()
+        self.pet_anim.stop()
         self.pet_actions.gravity.enable(False)
 
     def hide(self):

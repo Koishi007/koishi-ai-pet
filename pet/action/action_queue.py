@@ -48,12 +48,16 @@ class ActionQueue(QObject):
         self._actions._anim.stop()
         self._active_name = None  # 中断：不结算
         self._running = False
+        self._paused = False  # 清空即恢复可运行，需要按住暂停的调用方随后自行 pause
         self.changed.emit()
 
     def start(self):
+        was_stopped = self._stopped
         self._disconnect_active()
         self._running = False
         self._stopped = False
+        if was_stopped:
+            self._paused = False  # 停止期间残留的暂停态：启动即解除，否则队列永不推进
         self._cursor = 0
         self.changed.emit()
         if self._cursor < len(self._queue):
@@ -77,6 +81,8 @@ class ActionQueue(QObject):
         self.changed.emit()
 
     def resume(self):
+        if self._stopped:
+            return  # 显式停止不被落地/松手等外部恢复越过
         self._paused = False
         self.changed.emit()
         self._run_next()

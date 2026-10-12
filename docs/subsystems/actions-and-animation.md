@@ -82,7 +82,7 @@
 - tick 30ms；前 70% 生命周期不透明，后 30% 线性淡出；空且无加载动画时自动停表并隐藏。
 - 触发来源：
   - **动作映射**：`scheduled_tasks._ACTION_PARTICLES`（`shake_arms`/`rotate` → `stars`、
-    `finger_heart`/`shy` → `hearts`、`confuse` → `question_marks`、`calling` → `notes`、
+    `finger_heart`/`shy`/`hug` → `hearts`、`confuse` → `question_marks`、`calling` → `notes`、
     `sleep` → `zzz`、`bathing` → `bubbles`、`dejected` → `spiral`），间隔单位是 **fast tick**（默认 1 秒）；
   - **状态驱动**：理智 < `SANITY_CRITICAL_THRESHOLD` 时每 2 个 fast tick 发 `dark_hearts`，并切 `grim` 动画；
   - **事件驱动**：好感提升 → `hearts`；落地 → `dust`；钓鱼命中 → `fish`（由产出结算给出）。
