@@ -598,9 +598,10 @@ class PetAgent(QObject):
 
     def _cleanup_thread(self):
         sender = self.sender()
-        if self._thread is not None and self._thread is sender:  # 仅清理当前线程，忽略旧线程延迟信号
-            self._thread.deleteLater()
-            self._thread = None
+        if self._thread is None or self._thread is not sender:  # 旧线程延迟信号：当前线程与 worker 都不动
+            return
+        self._thread.deleteLater()
+        self._thread = None
         if self._worker is not None:
             self._worker.deleteLater()
             self._worker = None
