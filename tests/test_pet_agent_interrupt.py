@@ -43,7 +43,7 @@ class _AgentStub:
     """承载 can_interrupt / interrupt_current_call 所需的 agent 最小面。"""
 
     def __init__(self, running: bool):
-        self._active_stream_id = 3
+        self._call_token = object()
         self._thread = _FakeThread(running)
         self._worker = object()
         self._retired: list = []  # 退役线程不参与中断判定
@@ -60,6 +60,7 @@ class _AgentStub:
 
     def _request_cancel(self):
         self.request_cancel_calls += 1
+        self._call_token = None  # 与真实实现一致：取消即作废令牌
         return self._thread
 
     def _cancel_running_thread(self, ts: str = ""):
@@ -88,7 +89,7 @@ def test_interrupt_without_current_thread_is_noop():
     assert PetAgent.interrupt_current_call(stub) is False
     assert stub.request_cancel_calls == 0
     assert stub.state_machine.forced is None
-    assert stub._active_stream_id == 3
+    assert stub._call_token is not None
 
 
 def test_interrupt_cancels_retires_and_returns_to_idle():
@@ -103,7 +104,7 @@ def test_interrupt_cancels_retires_and_returns_to_idle():
     assert stub.state_machine.forced is PetState.IDLE
     assert stub.loading_calls == [False]
     assert stub.behavior.groups_reset == 1
-    assert stub._active_stream_id == 4  # 世代失效，旧管线在下一个轮询点退出
+    assert stub._call_token is None  # 令牌失效，旧管线在下一个轮询点退出
 
 
 def test_repeated_interrupt_is_noop_after_first():
@@ -112,7 +113,28 @@ def test_repeated_interrupt_is_noop_after_first():
     assert PetAgent.interrupt_current_call(stub) is True
     assert PetAgent.interrupt_current_call(stub) is False
     assert stub.request_cancel_calls == 1
-    assert stub._active_stream_id == 4
+    assert stub._call_token is None
+
+
+def test_token_of_interrupted_call_stays_stale_after_restart():
+    """中断后立即发起新调用：旧令牌不复活，旧管线取不到新调用的令牌。"""
+    stub = _AgentStub(running=True)
+    stale = stub._call_token
+    assert PetAgent.interrupt_current_call(stub) is True
+
+    fresh = object()
+    stub._call_token = fresh  # 模拟 _async_brain 派发新调用
+
+    assert PetAgent._is_current_call(stub, stale) is False
+    assert PetAgent._is_current_call(stub, fresh) is True
+
+
+def test_pipeline_token_is_injected_at_dispatch():
+    """令牌由派发方作为首个参数注入管线，管线不在执行体内自行取号。"""
+    seen = []
+    worker = BrainWorker(lambda token, value: seen.append((token, value)), "T", 7)
+    worker.run()
+    assert seen == [("T", 7)]
 
 
 def test_recover_stuck_brain_resets_groups_and_notifies():

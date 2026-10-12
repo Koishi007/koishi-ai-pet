@@ -150,3 +150,12 @@ class TestClearLifecycle:
         assert actions.ran == []
         queue.start()
         assert actions.ran == ["sit"]
+
+    def test_start_clears_pause_left_by_stop(self):
+        # 暂停态残留会让 start 之后的队列永不推进
+        actions, queue, _ = _make_queue()
+        queue.pause()
+        queue.stop()
+        queue.enqueue("sit")
+        queue.start()
+        assert actions.ran == ["sit"]

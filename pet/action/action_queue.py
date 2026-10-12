@@ -52,9 +52,12 @@ class ActionQueue(QObject):
         self.changed.emit()
 
     def start(self):
+        was_stopped = self._stopped
         self._disconnect_active()
         self._running = False
         self._stopped = False
+        if was_stopped:
+            self._paused = False  # 停止期间残留的暂停态：启动即解除，否则队列永不推进
         self._cursor = 0
         self.changed.emit()
         if self._cursor < len(self._queue):
