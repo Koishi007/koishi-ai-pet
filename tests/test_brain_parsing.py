@@ -14,6 +14,7 @@ import pytest
 
 from pet.brain.parsing import (
     BehaviorParser,
+    InlineTagNormalizer,
     LineTagger,
     parse_action_line,
     parse_behavior,
@@ -410,3 +411,74 @@ class TestUntaggedContentDiag:
         messages = [r.getMessage() for r in caplog.records]
         assert not [m for m in messages if "未解析出字段" in m]
         assert not [m for m in messages if "raw:" in m]
+
+
+class TestInlineTags:
+    """模型偶尔不换行，把后继字段续写在同一行。"""
+
+    SAMPLE = (
+        "Summary: 屏幕窗口堆满表格，恋恋看不明白，踱开发呆。"
+        "Speech: 「再说吧」「先放着」。。全是字"
+        "Speech: 恋恋一个都看不懂呀。。。"
+        "Action: walk right 150"
+        "Action: confuse"
+        "Action: look_around"
+        "Action: thinking 25"
+        "Action: walk left 100"
+        "Action: sit 50"
+    )
+
+    def test_inline_fields_parse(self):
+        out = parse_behavior(self.SAMPLE)
+        assert out.summary == "屏幕窗口堆满表格，恋恋看不明白，踱开发呆。"
+        assert out.speech_parts == ["「再说吧」「先放着」。。全是字", "恋恋一个都看不懂呀。。。"]
+        assert [a.name for a in out.actions] == [
+            "walk", "confuse", "look_around", "thinking", "walk", "sit"]
+
+    def test_inline_labels_split_in_stream(self):
+        _, _, chunks, ends = _collect("", stream=_chunks(self.SAMPLE))
+        assert chunks == ["「再说吧」「先放着」。。全是字", "恋恋一个都看不懂呀。。。"]
+        assert len(ends) == 1  # 第二个 Speech 触发气泡分行
+
+    def test_inline_labels_split_across_chunks(self):
+        """标签恰好被 chunk 边界切开：hold 滞回的核心场景，逐字符流入。"""
+        raw, _, chunks, ends = _collect("", stream=_stream_text(self.SAMPLE, 1))
+        streamed = parse_behavior(raw)
+        assert streamed.speech_parts == ["「再说吧」「先放着」。。全是字", "恋恋一个都看不懂呀。。。"]
+        assert [a.name for a in streamed.actions] == [
+            "walk", "confuse", "look_around", "thinking", "walk", "sit"]
+        assert "".join(chunks) == "「再说吧」「先放着」。。全是字恋恋一个都看不懂呀。。。"
+        assert len(ends) == 1
+
+    def test_inline_emotion_and_mood_parse(self):
+        """整段无换行，且 Emotion 值与下一个标签直接粘连。"""
+        raw = (
+            "Summary: 午后犯困，窗外的雨声很轻。"
+            "Emotion: sleepySpeech: 好安静呀。。。再躺一会儿。"
+            "Action: look_aroundAction: sit 30Mood: joy-1 sanity-1"
+        )
+        out = parse_behavior(raw)
+        assert out.summary == "午后犯困，窗外的雨声很轻。"
+        assert out.emotion == "sleepy"
+        assert out.speech == "好安静呀。。。再躺一会儿。"
+        assert [a.name for a in out.actions] == ["look_around", "sit"]
+        assert out.mood_deltas == {"joy": -1.0, "sanity": -1.0}
+
+    def test_untagged_prefix_before_first_label_is_dropped(self):
+        out = parse_behavior("先随手记一笔 Speech: 你好\n")
+        assert out.speech == "你好"
+
+    def test_colon_less_word_is_not_split(self):
+        out = parse_behavior("Speech: 我做了个action plan，还没写完\n")
+        assert out.speech == "我做了个action plan，还没写完"
+        assert [a.name for a in out.actions] == ["sit"]  # 无动作时的兜底
+
+    def test_tag_prefix_is_held_until_disproved(self):
+        normalizer = InlineTagNormalizer()
+        assert normalizer.feed("Su") == ""            # 可能是 Summary 的开头，先攒着
+        assert normalizer.feed("nny") == "Sunny"      # 证伪后整段放行
+
+    def test_flush_releases_incomplete_prefix(self):
+        normalizer = InlineTagNormalizer()
+        assert normalizer.feed("Spee") == ""
+        assert normalizer.flush() == "Spee"

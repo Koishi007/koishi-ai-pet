@@ -32,6 +32,16 @@ _TAG_SCAN_LIMIT = 8
 # 静音标记：Speech 行取这些值时不产出语音
 _SILENCE_MARKERS = ("none", "", "null", "无")
 
+# 行内标签切行
+_TAG_NAMES = ("Speech", "Action", "Summary", "Memory", "Emotion", "Mood", "Vitals")
+_TAG_TOKENS: frozenset[str] = frozenset(
+    f"{name}{colon}".lower() for name in _TAG_NAMES for colon in (":", "：")
+)
+_TAG_PREFIXES: frozenset[str] = frozenset(
+    token[:i] for token in _TAG_TOKENS for i in range(1, len(token))
+)
+_HOLD_MAX = max(len(token) for token in _TAG_TOKENS)
+
 # 增量字段白名单：Mood / Vitals 各自可出现的键
 _MOOD_FIELDS = ("affection", "joy", "sanity")
 _VITALS_FIELDS = ("satiety", "energy")
@@ -95,6 +105,70 @@ def parse_action_line(raw: str, resolve=ACTION_NAMES.__contains__) -> Optional[A
                 pass
             args.append(token)
     return ActionStep(name, tuple(args), kwargs)
+
+
+class InlineTagNormalizer:
+    """把同一行内嵌的字段标签切成独立行，之后复用同一套按行解析。
+
+    结尾可能构成标签的字符先攒在 hold 里，等后续字符证明不是标签再放行；
+    单个 token 最长 8 字符，hold 也因此有界。
+    """
+
+    def __init__(self):
+        self._hold = ""
+        self._line_open = False  # 已输出内容还在当前行内（未以换行结束）
+
+    def feed(self, text: str) -> str:
+        out: list[str] = []
+        for char in text:
+            if char in ("\n", "\r"):
+                out.append(self._hold)
+                out.append(char)
+                self._hold = ""
+                self._line_open = False
+                continue
+            self._hold += char
+            self._drain(out)
+        return "".join(out)
+
+    def flush(self) -> str:
+        """流结束时放行尾字符，其中的完整标签仍按行首处理。"""
+        out: list[str] = []
+        self._drain(out)
+        out.append(self._hold)
+        self._hold = ""
+        return "".join(out)
+
+    def _drain(self, out: list[str]) -> None:
+        while True:
+            safe = self._safe_prefix_len()
+            if safe:
+                out.append(self._hold[:safe])
+                self._hold = self._hold[safe:]
+                self._line_open = True
+            end = self._token_end_at(0)
+            if not end:
+                return
+            if self._line_open:
+                out.append("\n")
+            out.append(self._hold[:end])
+            self._hold = self._hold[end:]
+            self._line_open = True
+
+    def _safe_prefix_len(self) -> int:
+        """hold 里最早的「可能是标签开头」位置，之前的字符可以放行。"""
+        for i in range(len(self._hold)):
+            if self._token_end_at(i) or self._hold[i:].lower() in _TAG_PREFIXES:
+                return i
+        return len(self._hold)
+
+    def _token_end_at(self, start: int) -> int:
+        """hold 从 start 起若是完整标签 token 则返回结束位置，否则返回 0。"""
+        limit = min(len(self._hold) - start, _HOLD_MAX)
+        for size in range(limit, 0, -1):
+            if self._hold[start:start + size].lower() in _TAG_TOKENS:
+                return start + size
+        return 0
 
 
 class LineTagger:
@@ -211,7 +285,8 @@ class BehaviorParser:
         """
         acc = _new_acc()
         tagger = LineTagger()
-        for line in content.split("\n"):
+        normalizer = InlineTagNormalizer()
+        for line in (normalizer.feed(content) + normalizer.flush()).split("\n"):
             if not line.strip():
                 continue
             tagger.finish(line)
@@ -261,12 +336,28 @@ class BehaviorParser:
         """
         t0 = time.perf_counter()
         tagger = LineTagger(on_stream_end=on_stream_end)
+        normalizer = InlineTagNormalizer()
         acc = _new_acc()
         tool_calls_map: dict = {}
         finish_reason = None
         stream_usage = None
         received: list[str] = []  # 原始 content，供「未解析出字段」时的诊断日志
         reasoning_len = 0
+
+        def _feed_text(text: str) -> None:
+            """逐字符喂给行状态机，换行即结算一行。"""
+            # 同一 chunk 内的speech增量合并成一次回调，不逐字符发信号
+            pending: list = []
+            for char in text:
+                if char in ("\n", "\r"):
+                    self._emit_speech(tagger, pending, on_chunk)
+                    self.consume_line(tagger, tagger.line, acc)
+                    tagger.reset()
+                else:
+                    piece = tagger.feed(char)
+                    if piece:
+                        pending.append(piece)
+            self._emit_speech(tagger, pending, on_chunk)
 
         for chunk in self.iter_stream_with_timeout(stream, total_timeout, cancel_check=cancel_check):
             # usage-only chunk（choices 为空，仅含 usage）
@@ -284,18 +375,7 @@ class BehaviorParser:
                 reasoning_len += len(reasoning)
             if delta.content:
                 received.append(delta.content)
-                # 同一 chunk 内的语音增量合并成一次回调，不逐字符发信号
-                pending: list = []
-                for char in delta.content:
-                    if char in ("\n", "\r"):
-                        self._emit_speech(tagger, pending, on_chunk)
-                        self.consume_line(tagger, tagger.line, acc)
-                        tagger.reset()
-                    else:
-                        piece = tagger.feed(char)
-                        if piece:
-                            pending.append(piece)
-                self._emit_speech(tagger, pending, on_chunk)
+                _feed_text(normalizer.feed(delta.content))
 
             if delta.tool_calls:
                 for tc_delta in delta.tool_calls:
@@ -309,6 +389,7 @@ class BehaviorParser:
                     if tc_delta.function and tc_delta.function.arguments:
                         tool_calls_map[idx]["arguments"] += tc_delta.function.arguments
 
+        _feed_text(normalizer.flush())
         if tagger.line.strip():
             self.consume_line(tagger, tagger.line, acc)
 
