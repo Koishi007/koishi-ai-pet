@@ -1,7 +1,10 @@
 """用户中断当前调用的编排测试：只验证判定、取消与收尾顺序，不建真实脑线程。"""
 
-from pet.agent.pet_agent import PetAgent
+import logging
+
+from pet.agent.pet_agent import BrainWorker, PetAgent
 from pet.agent.state import PetState
+from pet.brain.output import CancelledError
 
 
 class _FakeThread:
@@ -10,6 +13,14 @@ class _FakeThread:
 
     def isRunning(self) -> bool:
         return self.running
+
+
+class _Signal:
+    def __init__(self):
+        self.emitted = []
+
+    def emit(self, *args):
+        self.emitted.append(args)
 
 
 class _Behavior:
@@ -42,6 +53,7 @@ class _AgentStub:
         self.loading_calls: list[bool] = []
         self.state_machine = _StateMachine()
         self.behavior = _Behavior()
+        self.notify_requested = _Signal()
 
     def can_interrupt(self) -> bool:
         return PetAgent.can_interrupt(self)  # 走真实谓词
@@ -101,3 +113,54 @@ def test_repeated_interrupt_is_noop_after_first():
     assert PetAgent.interrupt_current_call(stub) is False
     assert stub.request_cancel_calls == 1
     assert stub._active_stream_id == 4
+
+
+def test_recover_stuck_brain_resets_groups_and_notifies():
+    stub = _AgentStub(running=True)
+
+    PetAgent.recover_stuck_brain(stub)
+    assert stub.waiting_cancel_calls == 1
+    assert stub.state_machine.forced is PetState.IDLE
+    assert stub.loading_calls == [False]
+    assert stub.behavior.groups_reset == 1
+    assert stub.notify_requested.emitted
+
+
+def _raise_cancelled():
+    raise CancelledError("流式调用被新请求取消")
+
+
+def _raise_boom():
+    raise RuntimeError("boom")
+
+
+class TestBrainWorkerCancellation:
+    """取消是预期结果：不发结果也不报错，收尾由发起取消的一方负责。"""
+
+    @staticmethod
+    def _worker(fn):
+        worker = BrainWorker(fn)
+        results, errors = [], []
+        worker.finished.connect(results.append)
+        worker.error.connect(errors.append)
+        return worker, results, errors
+
+    def test_cancel_logs_info_only(self, caplog):
+        worker, results, errors = self._worker(_raise_cancelled)
+        with caplog.at_level(logging.INFO, logger="pet.agent.pet_agent"):
+            worker.run()
+        assert results == [] and errors == []
+        assert any("cancelled" in r.getMessage() for r in caplog.records)
+        assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
+
+    def test_real_failure_still_emits_error(self, caplog):
+        worker, results, errors = self._worker(_raise_boom)
+        with caplog.at_level(logging.ERROR, logger="pet.agent.pet_agent"):
+            worker.run()
+        assert errors == ["boom"]
+        assert results == []
+
+    def test_result_is_emitted(self):
+        worker, results, errors = self._worker(lambda: "ok")
+        worker.run()
+        assert results == ["ok"] and errors == []

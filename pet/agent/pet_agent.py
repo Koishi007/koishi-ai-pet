@@ -7,7 +7,7 @@ from datetime import datetime
 from PySide6.QtCore import QObject, QThread, QThreadPool, QTimer, Signal
 
 from pet.brain.behavior import Behavior
-from pet.brain.output import BehaviorOutput
+from pet.brain.output import BehaviorOutput, CancelledError
 from pet.agent.scheduler import Scheduler
 from pet.agent.scheduled_tasks import ScheduledTasks
 from pet.agent.state import StateMachine, PetState
@@ -41,6 +41,8 @@ class BrainWorker(QObject):
             result = self._fn(*self._args)
             logger.debug(f"[{ts}] [BrainWorker] done: {self._name} → {type(result).__name__}")
             self.finished.emit(result)
+        except CancelledError:
+            logger.info(f"[{ts}] [BrainWorker] cancelled: {self._name}")
         except Exception as e:
             logger.error(f"[{ts}] [BrainWorker] ERROR: {self._name}: {type(e).__name__}: {e}")
             import traceback
@@ -490,6 +492,7 @@ class PetAgent(QObject):
         self._cancel_running_thread(ts)
         self.state_machine.force(PetState.IDLE)
         self._set_llm_loading(False)
+        self.behavior.reset_active_tool_groups()
         self.notify_requested.emit("状态恢复", "LLM调用疑似挂死，已强制恢复", 5000)
 
     def can_interrupt(self) -> bool:
