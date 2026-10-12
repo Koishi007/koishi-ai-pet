@@ -208,3 +208,21 @@ class TestUnconsciousness:
         # 信号传值会重建 python 包装，用 cacheKey 判定是同一份像素
         assert shown[-1].cacheKey() == animator._frames[-1].cacheKey()
         animator.stop()
+
+
+class TestStopEmitsFinished:
+    """停播等同播放结束：等待 animation_finished 的收尾不能被悬空。"""
+
+    def test_stop_emits_for_playing_action(self, animator):
+        seen: list[str] = []
+        animator.animation_finished.connect(seen.append)
+        assert animator.play("unconsciousness")
+        animator.stop()
+        assert seen == ["unconsciousness"]
+        assert animator.is_playing is False
+
+    def test_stop_without_playback_is_silent(self, animator):
+        seen: list[str] = []
+        animator.animation_finished.connect(seen.append)
+        animator.stop()
+        assert seen == []

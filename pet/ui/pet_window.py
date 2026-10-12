@@ -333,8 +333,9 @@ class PetWindow(TransparentWindow):
             round(config.PET_HEIGHT * self._GRAB_RATIO_Y),
         )
         self.pet_actions.gravity.enable(False)
-        self.action_queue.pause()
+        # 先清空再暂停：clear 会复位暂停态，按住期间的新动作靠 pause 只入队不执行
         self.action_queue.clear()
+        self.action_queue.pause()
         self.pet_actions.grabbed()
         logger.info("[PetWindow] grabbed")
         if self._agent:
@@ -708,8 +709,9 @@ class PetWindow(TransparentWindow):
         self.action_queue.clear()
 
     def shutdown(self):
-        self.pet_anim.stop()
+        # 先断队列再停动画：stop 会发 animation_finished，避免队列在退出途中又推进一个动作
         self.action_queue.clear()
+        self.pet_anim.stop()
         self.pet_actions.gravity.enable(False)
 
     def hide(self):

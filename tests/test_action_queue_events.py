@@ -31,10 +31,12 @@ class _FakeActions(QObject):
         self.gravity = _FakeGravity()
         self._anim = _FakeAnim()
         self.fail_actions: set[str] = set()
+        self.ran: list[str] = []
 
     def sit(self, *args, **kwargs):
         if "sit" in self.fail_actions:
             raise RuntimeError("动作本体炸了")
+        self.ran.append("sit")
 
     def idle(self):
         pass
@@ -120,3 +122,31 @@ class TestActionFinished:
         queue.pause()
         queue.resume()
         assert finished == []
+
+
+class TestClearLifecycle:
+    """clear 后队列必须重新可用；显式停止不被外部恢复越过。"""
+
+    def test_enqueue_after_clear_runs(self):
+        actions, queue, _ = _make_queue()
+        queue.pause()
+        queue.clear()
+        queue.enqueue("sit")
+        assert actions.ran == ["sit"]
+
+    def test_hold_requires_pause_after_clear(self):
+        # 抓取流程：clear 之后再 pause，按住期间的新动作只入队不执行
+        actions, queue, _ = _make_queue()
+        queue.clear()
+        queue.pause()
+        queue.enqueue("sit")
+        assert actions.ran == []
+
+    def test_resume_ignores_stopped_queue(self):
+        actions, queue, _ = _make_queue()
+        queue.stop()
+        queue.enqueue("sit")
+        queue.resume()  # 落地/松手等外部恢复不得越过停止
+        assert actions.ran == []
+        queue.start()
+        assert actions.ran == ["sit"]
