@@ -1,4 +1,4 @@
-"""猜高低面板 — 继承 GamePanelBase，负责牌堆展示与下注提交。"""
+"""更大还是更小面板 — 继承 GamePanelBase，负责牌堆展示与下注提交。"""
 
 import logging
 
@@ -32,9 +32,9 @@ _BTN_QSS = (
 
 
 class HigherLowerPanel(GamePanelBase):
-    """猜高低面板：分数、桌宠押注、基准与数字链、剩余牌堆、更高/更低按钮。"""
+    """更大还是更小面板：分数、桌宠押注、基准与数字链、剩余牌堆、更高/更低按钮。"""
 
-    TITLE = "猜高低 · 先到 6 分"
+    TITLE = "更大还是更小 · 先得 6 分者获胜"
     WIDTH = 360
     HEIGHT = 400
 
@@ -104,7 +104,7 @@ class HigherLowerPanel(GamePanelBase):
         pet_score = payload.get("pet_score", 0)
         user_score = payload.get("user_score", 0)
         target = payload.get("target", 6)
-        self._score.setText(f"桌宠 {pet_score} - {user_score} 你（先到 {target} 分）")
+        self._score.setText(f"桌宠 {pet_score} - {user_score} 你（先得 {target} 分者获胜）")
 
         pet_choice = payload.get("pet_choice")
         self._pet_choice.setText(f"桌宠押：{_CN.get(pet_choice, '')}" if pet_choice else "")

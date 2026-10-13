@@ -58,7 +58,7 @@
 | `pet/game/__init__.py` | 游戏层 — 五个回合制小游戏的导出与整包注册。 | `register_all()` |
 | `pet/game/gamebase.py` | 游戏对局基类与全局对局容器 GAME。 | `Game` `GameBase` |
 | `pet/game/guess_number.py` | 猜数字游戏 — 1-100 随机目标，7 次内猜中算赢。 | `GuessNumberGame` |
-| `pet/game/higher_lower.py` | 猜高低对赌游戏 — 0-9 十张牌，双方各押「更高/更低」，按赔率计分，先到 6 分者胜。 | `side_counts()` `odds()` `judge()` `HigherLowerGame` |
+| `pet/game/higher_lower.py` | 更大还是更小对赌游戏 — 0-9 十张牌，双方各押「更高/更低」，按赔率计分，先得 6 分者获胜。 | `side_counts()` `odds()` `judge()` `HigherLowerGame` |
 | `pet/game/rps.py` | 猜拳游戏 — 石头剪刀布，三局两胜。 | `RockPaperScissorsGame` |
 | `pet/game/tic_tac_toe.py` | 井字棋游戏 — 3x3 棋盘，开局随机决定先后手（X 先手）。 | `TicTacToeGame` |
 | `pet/game/twenty_questions.py` | 二十问游戏 — 用户心想一个东西，桌宠通过最多 20 个是/否问题猜出它。 | `TwentyQuestionsGame` |
@@ -107,7 +107,7 @@
 | `pet/ui/file_drop_handler.py` | 拖放判定层：悬停与放下两层的判定、回调分发。 | `paths_from_mime()` `busy_event_text()` `FileDropHandler` |
 | `pet/ui/food_window.py` | 觅食的食物悬浮窗 — 纯展示组件，生命周期由 FoodManager 管理。 | `FoodWindow` |
 | `pet/ui/game_panel.py` | 游戏面板基类 — 通用无边框窗口框架 + 统一渲染入口 + 用户手动收场。 | `GamePanelBase` |
-| `pet/ui/higher_lower_panel.py` | 猜高低面板 — 继承 GamePanelBase，负责牌堆展示与下注提交。 | `HigherLowerPanel` |
+| `pet/ui/higher_lower_panel.py` | 更大还是更小面板 — 继承 GamePanelBase，负责牌堆展示与下注提交。 | `HigherLowerPanel` |
 | `pet/ui/log_window.py` | 日志窗口 | `LogRelay` `LogWindowHandler` `LogWindow` |
 | `pet/ui/memory_window.py` | 记忆管理窗口 | `MemoryWindow` |
 | `pet/ui/music_bubble.py` | 桌宠音乐控制气泡 - 操控系统媒体播放 | `MusicBubble` |

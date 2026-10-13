@@ -1,4 +1,4 @@
-"""猜高低对赌游戏 — 0-9 十张牌，双方各押「更高/更低」，按赔率计分，先到 6 分者胜。
+"""更大还是更小对赌游戏 — 0-9 十张牌，双方各押「更高/更低」，按赔率计分，先得 6 分者获胜。
 
 桌宠经 game__play 传 hl_choice 先下注，用户在面板点击下注；抽牌在双方下注完成后发生，
 双方都无法预知结果。等待用户下注时阻塞脑线程（event.wait），主线程 UI 不受影响。
@@ -16,7 +16,7 @@ from pet.tools.context import TOOL_CTX
 logger = logging.getLogger(__name__)
 
 CHOICES = ("higher", "lower")
-TARGET_SCORE = 6   # 先到 6 分者获胜
+TARGET_SCORE = 6   # 先得 6 分者获胜
 ODDS_CAP = 5       # 单次得分封顶
 DECK_SIZE = 10     # 0-9 各一张
 
@@ -60,7 +60,7 @@ def judge(base: int, revealed: int, pet_choice: str, user_choice: str,
 
 
 class HigherLowerGame(Game):
-    """猜高低：桌宠先押、用户后押，抽牌后按赔率计分，先到 6 分者胜。"""
+    """更大还是更小：桌宠先押、用户后押，抽牌后按赔率计分，先得 6 分者获胜。"""
 
     MOVE_TIMEOUT = 15  # 用户下注超时（秒），超时结束本局，不算胜负
 
@@ -75,8 +75,8 @@ class HigherLowerGame(Game):
 
     def description(self) -> str:
         return (
-            "猜高低：0-9 十张牌，双方各自押下一张比基准更大还是更小，抽牌在双方下注后发生；"
-            f"押中按赔率得 1-{ODDS_CAP} 分，两边押不同时押错方扣 1 分，先到 {TARGET_SCORE} 分获胜；"
+            "更大还是更小：0-9 十张牌，双方各自押下一张牌比基准更大还是更小，抽牌在双方下注后发生；"
+            f"押中按赔率得 1-{ODDS_CAP} 分，两边押不同时押错方扣 1 分，先得 {TARGET_SCORE} 分者获胜；"
             f"轮到你时在面板点击下注，{self.MOVE_TIMEOUT} 秒内未下注则本局自动结束。"
         )
 
@@ -145,7 +145,7 @@ class HigherLowerGame(Game):
         if state.get("_cancelled"):
             if state.get("_forfeit"):
                 return {
-                    "summary": "用户主动结束了猜高低，不算胜负",
+                    "summary": "用户主动结束了更大还是更小，不算胜负",
                     "ended": True,
                     "won": None,
                     "forfeit": True,
@@ -257,7 +257,7 @@ class HigherLowerGame(Game):
     def _emit_panel(self, state: dict, waiting: bool, pet_choice: str | None = None,
                     revealed: int | None = None, outcome: str | None = None,
                     message: str = ""):
-        """通知 UI 渲染猜高低面板（Qt 队列连接，跨线程安全）。"""
+        """通知 UI 渲染更大还是更小面板（Qt 队列连接，跨线程安全）。"""
         above, below = side_counts(state["deck"], state["base"])
         try:
             TOOL_CTX.game_board(self.name(), {
