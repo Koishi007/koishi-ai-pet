@@ -16,7 +16,6 @@ from pet.brain.parsing import (
     BehaviorParser,
     InlineTagNormalizer,
     LineTagger,
-    mask_preview,
     parse_action_line,
     parse_behavior,
     parse_mood_line,
@@ -383,9 +382,9 @@ class TestFullWidthColon:
 
 
 class TestUntaggedContentDiag:
-    """未带标签的内容按格式契约整行丢弃，日志只记字符数、不记原文。"""
+    """未带标签的内容按格式契约整行丢弃，日志记字符数与正文原文。"""
 
-    def test_prose_only_logs_counts_without_raw(self, caplog):
+    def test_prose_only_logs_counts_with_body(self, caplog):
         parser = BehaviorParser(_Sink())
         with caplog.at_level(logging.WARNING, logger="pet.brain.parsing"):
             raw, _ = parser.collect_stream(
@@ -394,7 +393,7 @@ class TestUntaggedContentDiag:
         records = [r.getMessage() for r in caplog.records if "未解析出字段" in r.getMessage()]
         assert records
         assert all("字符" in m for m in records)
-        assert all("恋恋没有开始游戏哦" not in m for m in records)
+        assert all("恋恋没有开始游戏哦" in m for m in records)
 
     def test_tool_round_reasoning_only_is_not_warned(self, caplog):
         """工具轮次只带 reasoning、不带正文：空 raw 是预期形态，不按异常上报。"""
@@ -412,26 +411,6 @@ class TestUntaggedContentDiag:
         messages = [r.getMessage() for r in caplog.records]
         assert not [m for m in messages if "未解析出字段" in m]
         assert not [m for m in messages if "raw:" in m]
-
-
-class TestMaskPreview:
-    """结构预览要能看出格式怎么跑偏，同时不把正文写进日志。"""
-
-    def test_body_is_masked(self):
-        text = "恋恋没有开始游戏哦，要不现在来一局？"
-        assert mask_preview(text) == "·" * len(text)
-
-    def test_format_and_tag_words_survive(self):
-        assert mask_preview("**Speech:** 你好") == "**Speech:** ··"
-
-    def test_shows_code_fence_and_in_tags(self):
-        preview = mask_preview("```json\nSummary: 用户说要再来一局\n")
-        assert preview.startswith("```xxxx")
-        assert "Summary:" in preview
-        assert "用户说" not in preview
-
-    def test_limit_truncates(self):
-        assert len(mask_preview("甲乙丙丁" * 50, limit=10)) == 10
 
 
 class TestInlineTags:

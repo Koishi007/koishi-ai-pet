@@ -49,30 +49,6 @@ _VITALS_FIELDS = ("satiety", "energy")
 # 「字段±值」增量：字段名后允许空格，数字必须带符号
 _DELTA = re.compile(r"([A-Za-z]+)\s*([+-]\s*\d+)")
 
-# 结构预览的放行字符：格式符号足以判断模型怎么跑偏，其余一律遮盖
-_MASK_KEEP = set(" \t\r\n*_-#>`[]{}()/|=+~.,!?'\"") | set(":;：；")
-_MASK_TAG_WORD = re.compile(r"(?i)speech|summary|action|memory|emotion|mood|vitals")
-
-
-def mask_preview(text: str, limit: int = 120) -> str:
-    """压成结构预览：保留格式符号与已知标签词，正文一律遮盖。"""
-    text = text[:limit]
-    out: list[str] = []
-    pos = 0
-    for match in _MASK_TAG_WORD.finditer(text):
-        out.append(_mask_run(text[pos:match.start()]))
-        out.append(match.group())
-        pos = match.end()
-    out.append(_mask_run(text[pos:]))
-    return "".join(out)
-
-
-def _mask_run(chunk: str) -> str:
-    """遮盖一段字符：格式符号保留，拉丁字母压成 x，其余（含中文）压成 ·。"""
-    return "".join(c if c in _MASK_KEEP else ("·" if ord(c) > 127 else "x")
-                   for c in chunk)
-
-
 class BehaviorSink(Protocol):
     """解析依赖的编排方能力：进展上报。"""
 
@@ -430,8 +406,8 @@ class BehaviorParser:
         elif usable and (received or reasoning_len):
             logger.debug(f"[Behavior] [{tag}] 工具轮次无正文：{counts}")
         elif received or reasoning_len:
-            preview = f"；结构预览（正文已遮盖）：{mask_preview(''.join(received))!r}" if received else ""
-            logger.warning(f"[Behavior] [{tag}] 响应未解析出字段：{counts}{preview}")
+            body = f"；正文：{''.join(received)[:200]!r}" if received else ""
+            logger.warning(f"[Behavior] [{tag}] 响应未解析出字段：{counts}{body}")
         return raw, usable
 
     def iter_stream_with_timeout(self, stream, total_timeout: float,
