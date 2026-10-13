@@ -16,6 +16,7 @@ from pet.brain.parsing import (
     BehaviorParser,
     InlineTagNormalizer,
     LineTagger,
+    mask_preview,
     parse_action_line,
     parse_behavior,
     parse_mood_line,
@@ -411,6 +412,26 @@ class TestUntaggedContentDiag:
         messages = [r.getMessage() for r in caplog.records]
         assert not [m for m in messages if "未解析出字段" in m]
         assert not [m for m in messages if "raw:" in m]
+
+
+class TestMaskPreview:
+    """结构预览要能看出格式怎么跑偏，同时不把正文写进日志。"""
+
+    def test_body_is_masked(self):
+        text = "恋恋没有开始游戏哦，要不现在来一局？"
+        assert mask_preview(text) == "·" * len(text)
+
+    def test_format_and_tag_words_survive(self):
+        assert mask_preview("**Speech:** 你好") == "**Speech:** ··"
+
+    def test_shows_code_fence_and_in_tags(self):
+        preview = mask_preview("```json\nSummary: 用户说要再来一局\n")
+        assert preview.startswith("```xxxx")
+        assert "Summary:" in preview
+        assert "用户说" not in preview
+
+    def test_limit_truncates(self):
+        assert len(mask_preview("甲乙丙丁" * 50, limit=10)) == 10
 
 
 class TestInlineTags:

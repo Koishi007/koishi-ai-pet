@@ -21,17 +21,35 @@ from pet.tools.registry import TOOL_REGISTRY
 
 logger = logging.getLogger(__name__)
 
+# 空响应重试时追加的格式修复提示：上一次输出作废，只重述协议，不替模型想内容
+_EMPTY_RETRY_HINT = (
+    "上一次输出没有任何可解析的字段，已作废。重新输出时必须严格满足：\n"
+    "1. 一行一个字段，行首就是标签，标签后紧跟英文冒号，例如 `Speech: 你好`；\n"
+    "2. 不要加粗、不要编号、不要列表符号、不要代码块围栏，不要输出解释或推理过程；\n"
+    "3. 第一行必须是 `Summary:`；\n"
+    "4. 只输出字段行。"
+)
+# 空响应重试时降温：同样的 messages 与参数下再跑一次，只有采样随机性不同，
+# 对系统性格式跑偏几乎无效，降温 + 修复提示才可能把它拉回协议
+_RETRY_TEMPERATURE = 0.3
+
 
 def retry_if_empty(pipeline, tag: str = "") -> BehaviorOutput:
-    """跑一次决策，结果既无动作也无台词时再跑一次。
+    """跑一次决策，结果既无动作也无台词时按修复模式再跑一次。
 
     调用方必须让 pipeline 不做动作兜底，否则空响应会被补成 sit 而看不出为空。
+    第二次调用传 repair=True，pipeline 据此追加格式修复提示并降温。
     """
-    result = pipeline()
+    result = pipeline(repair=False)
     if not result.actions and not result.speech:
         logger.warning(f"[Behavior] empty LLM response (no actions, no speech), retrying once ({tag})")
-        result = pipeline()
+        result = pipeline(repair=True)
     return result
+
+
+def repair_messages(messages: list) -> list:
+    """空响应重试用的 messages：在末尾追加一条格式修复提示，不改动原列表。"""
+    return messages + [{"role": "system", "content": _EMPTY_RETRY_HINT}]
 
 
 class Behavior(BrainMixin):
@@ -164,8 +182,9 @@ class Behavior(BrainMixin):
         logger.info(f"[{t}] [Behavior]   history: {self.context_count()} entries")
 
         return retry_if_empty(
-            lambda: self._call_llm_and_parse(messages, messages[0]["content"], tag=tag,
-                                             max_tokens=config.LLM_MAX_TOKENS_AUTONOMOUS),
+            lambda repair=False: self._call_llm_and_parse(
+                messages, messages[0]["content"], tag=tag,
+                max_tokens=config.LLM_MAX_TOKENS_AUTONOMOUS, repair=repair),
             tag,
         )
 
@@ -182,10 +201,11 @@ class Behavior(BrainMixin):
             is_vision = isinstance(messages[-1]["content"], list)
             tag = "autonomous_decide_vision_stream" if is_vision else "autonomous_decide_stream"
             return retry_if_empty(
-                lambda: self._stream_and_build_output(messages, tag=tag, on_chunk=on_chunk,
-                                              on_stream_end=on_stream_end,
-                                              max_tokens=config.LLM_MAX_TOKENS_AUTONOMOUS,
-                                              cancel_check=cancel_check),
+                lambda repair=False: self._stream_and_build_output(
+                    messages, tag=tag, on_chunk=on_chunk,
+                    on_stream_end=on_stream_end,
+                    max_tokens=config.LLM_MAX_TOKENS_AUTONOMOUS,
+                    cancel_check=cancel_check, repair=repair),
                 tag,
             )
         finally:
@@ -196,8 +216,9 @@ class Behavior(BrainMixin):
             return interact_decide_local(event_hint)
         messages = self.ctx.build_interact(event_hint)
         return retry_if_empty(
-            lambda: self._call_llm_and_parse(messages, messages[0]["content"], tag="interact",
-                                             max_tokens=config.LLM_MAX_TOKENS_INTERACT),
+            lambda repair=False: self._call_llm_and_parse(
+                messages, messages[0]["content"], tag="interact",
+                max_tokens=config.LLM_MAX_TOKENS_INTERACT, repair=repair),
             "interact",
         )
 
@@ -217,11 +238,12 @@ class Behavior(BrainMixin):
             messages = self.ctx.build_interact(event_hint, attachment_text=attachment_text,
                                                attachment_image=attachment_image)
             return retry_if_empty(
-                lambda: self._stream_and_build_output(messages, tag="interact", on_chunk=on_chunk,
-                                              on_stream_end=on_stream_end,
-                                              max_tokens=config.LLM_MAX_TOKENS_INTERACT,
-                                              thinking=thinking, enable_tools=enable_tools,
-                                              cancel_check=cancel_check),
+                lambda repair=False: self._stream_and_build_output(
+                    messages, tag="interact", on_chunk=on_chunk,
+                    on_stream_end=on_stream_end,
+                    max_tokens=config.LLM_MAX_TOKENS_INTERACT,
+                    thinking=thinking, enable_tools=enable_tools,
+                    cancel_check=cancel_check, repair=repair),
                 "interact",
             )
         finally:
@@ -244,8 +266,9 @@ class Behavior(BrainMixin):
         logger.info(f"[{t}] [Behavior]   history: {self.context_count()} entries")
 
         return retry_if_empty(
-            lambda: self._call_llm_and_parse(messages, messages[0]["content"], tag=tag,
-                                             max_tokens=config.LLM_MAX_TOKENS_CHAT),
+            lambda repair=False: self._call_llm_and_parse(
+                messages, messages[0]["content"], tag=tag,
+                max_tokens=config.LLM_MAX_TOKENS_CHAT, repair=repair),
             tag,
         )
 
@@ -271,11 +294,12 @@ class Behavior(BrainMixin):
             is_vision = isinstance(messages[-1]["content"], list)
             tag = "chat_decide_vision_stream" if is_vision else "chat_decide_stream"
             return retry_if_empty(
-                lambda: self._stream_and_build_output(messages, tag=tag, on_chunk=on_chunk,
-                                              on_stream_end=on_stream_end,
-                                              max_tokens=config.LLM_MAX_TOKENS_CHAT,
-                                              thinking=thinking, enable_tools=enable_tools,
-                                              cancel_check=cancel_check),
+                lambda repair=False: self._stream_and_build_output(
+                    messages, tag=tag, on_chunk=on_chunk,
+                    on_stream_end=on_stream_end,
+                    max_tokens=config.LLM_MAX_TOKENS_CHAT,
+                    thinking=thinking, enable_tools=enable_tools,
+                    cancel_check=cancel_check, repair=repair),
                 tag,
             )
         finally:
@@ -303,11 +327,12 @@ class Behavior(BrainMixin):
             is_vision = isinstance(messages[-1]["content"], list)
             tag = "analyze_decide_vision_stream" if is_vision else "analyze_decide_stream"
             return retry_if_empty(
-                lambda: self._stream_and_build_output(messages, tag=tag, on_chunk=on_chunk,
-                                              on_stream_end=on_stream_end,
-                                              max_tokens=config.LLM_MAX_TOKENS_ANALYZE,
-                                              thinking=thinking, enable_tools=enable_tools,
-                                              cancel_check=cancel_check),
+                lambda repair=False: self._stream_and_build_output(
+                    messages, tag=tag, on_chunk=on_chunk,
+                    on_stream_end=on_stream_end,
+                    max_tokens=config.LLM_MAX_TOKENS_ANALYZE,
+                    thinking=thinking, enable_tools=enable_tools,
+                    cancel_check=cancel_check, repair=repair),
                 tag,
             )
         finally:
@@ -315,16 +340,22 @@ class Behavior(BrainMixin):
 
     def _call_llm_and_parse(self, messages: list, system_content: str, tag: str,
                             max_tokens: int = 4000, thinking: bool | None = None,
-                            enable_tools: bool | None = None) -> BehaviorOutput:
+                            enable_tools: bool | None = None,
+                            repair: bool = False) -> BehaviorOutput:
         t = datetime.now().strftime("%H:%M:%S")
+        if repair:
+            messages = repair_messages(messages)
+            if thinking is None:
+                thinking = False  # 答案留在 reasoning 里是常见跑偏源
         self._llm.reset_effective()  # 新请求链从首选方案开始
         self._apply_cache_control(messages)
         self._dump_context(tag, messages)
         self.gateway.log_prompt_size(messages, tag)
         try:
             tools_param = self._build_tools_param(enable_tools)
-            resp = self.gateway.completion(messages, max_tokens=max_tokens,
-                                           tools=tools_param, thinking=thinking)
+            resp = self.gateway.completion(messages, max_tokens=max_tokens, tools=tools_param,
+                                           thinking=thinking,
+                                           temperature=_RETRY_TEMPERATURE if repair else None)
             msg = resp.choices[0].message
             content = msg.content or ""
             logger.info(f"[{t}] [Behavior] === LLM RESPONSE ({tag}) ===")
@@ -359,15 +390,22 @@ class Behavior(BrainMixin):
                                  tag: str = "", max_tokens: int = 4000,
                                  thinking: bool | None = None,
                                  enable_tools: bool | None = None,
-                                 cancel_check: callable = None) -> BehaviorOutput:
+                                 cancel_check: callable = None,
+                                 repair: bool = False) -> BehaviorOutput:
         """跑一次流式管线；空响应的重试由调用方包 retry_if_empty 负责。"""
+        if repair:
+            messages = repair_messages(messages)
+            if thinking is None:
+                thinking = False
         self._llm.reset_effective()  # 新请求链从首选方案开始
         self._apply_cache_control(messages)
         self._dump_context(tag, messages)
         self.gateway.log_prompt_size(messages, tag)
         try:
             tools_param = self._build_tools_param(enable_tools)
-            stream = self.gateway.stream_chat(messages, max_tokens=max_tokens, tools=tools_param, thinking=thinking)
+            stream = self.gateway.stream_chat(messages, max_tokens=max_tokens, tools=tools_param,
+                                              thinking=thinking,
+                                              temperature=_RETRY_TEMPERATURE if repair else None)
             chunk_sent = [False]
 
             def _spy_chunk(delta: str):

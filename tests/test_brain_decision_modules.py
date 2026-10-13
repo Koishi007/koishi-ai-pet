@@ -32,8 +32,8 @@ class TestRetryIfEmpty:
     def test_retries_once_when_both_empty(self):
         calls = []
 
-        def pipeline():
-            calls.append(1)
+        def pipeline(repair=False):
+            calls.append(repair)
             return _empty() if len(calls) == 1 else _with_speech()
 
         assert retry_if_empty(pipeline, "t").speech == "你好"
@@ -42,8 +42,8 @@ class TestRetryIfEmpty:
     def test_returns_first_result_when_speech_present(self):
         calls = []
 
-        def pipeline():
-            calls.append(1)
+        def pipeline(repair=False):
+            calls.append(repair)
             return _with_speech()
 
         assert retry_if_empty(pipeline, "t").speech == "你好"
@@ -52,8 +52,8 @@ class TestRetryIfEmpty:
     def test_returns_first_result_when_actions_present(self):
         calls = []
 
-        def pipeline():
-            calls.append(1)
+        def pipeline(repair=False):
+            calls.append(repair)
             return BehaviorOutput(actions=[ActionStep("sit")])
 
         retry_if_empty(pipeline, "t")
@@ -62,12 +62,41 @@ class TestRetryIfEmpty:
     def test_still_empty_after_retry_is_returned(self):
         calls = []
 
-        def pipeline():
-            calls.append(1)
+        def pipeline(repair=False):
+            calls.append(repair)
             return _empty()
 
         assert retry_if_empty(pipeline, "t").speech is None
         assert len(calls) == 2
+
+    def test_retry_round_is_marked_as_repair(self):
+        """第二次调用必须带 repair=True，否则只是原样重跑、救不回格式跑偏。"""
+        flags = []
+
+        def pipeline(repair=False):
+            flags.append(repair)
+            return _empty()
+
+        retry_if_empty(pipeline, "t")
+        assert flags == [False, True]
+
+
+class TestRepairMessages:
+    def test_appends_single_system_hint(self):
+        messages = [{"role": "system", "content": "人格"}, {"role": "user", "content": "你好"}]
+
+        repaired = behavior_module.repair_messages(messages)
+
+        assert len(repaired) == 3
+        assert repaired[-1]["role"] == "system"
+        assert repaired[-1]["content"] == behavior_module._EMPTY_RETRY_HINT
+
+    def test_original_messages_untouched(self):
+        messages = [{"role": "user", "content": "你好"}]
+
+        behavior_module.repair_messages(messages)
+
+        assert messages == [{"role": "user", "content": "你好"}]
 
 
 class _FakeResult:
@@ -291,7 +320,7 @@ def _stream_behavior(monkeypatch, texts, stream_factory=None):
     behavior._llm = fake
     behavior.gateway._llm = fake
 
-    def fake_stream_chat(messages, max_tokens=4000, tools=None, thinking=None):
+    def fake_stream_chat(messages, max_tokens=4000, tools=None, thinking=None, temperature=None):
         fake.tags.append("stream")
         return (stream_factory or _StreamStub)(fake.texts.pop(0))
 

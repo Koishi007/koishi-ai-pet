@@ -76,17 +76,21 @@ class LlmGateway:
             return resp
 
     def completion(self, messages: list, max_tokens: int = 4000, tools: list = None,
-                   thinking: bool | None = None):
-        """非流式补全（含重试与备选方案切换）。"""
+                   thinking: bool | None = None, temperature: float | None = None):
+        """非流式补全（含重试与备选方案切换）。
+
+        temperature 非 None 时覆盖配置值（空响应重试靠它降温）。
+        """
         return retryer_for(tag="Behavior", on_retry=self._retry_hook)(self._completion_once)(
-            messages, max_tokens=max_tokens, tools=tools, thinking=thinking)
+            messages, max_tokens=max_tokens, tools=tools, thinking=thinking,
+            temperature=temperature)
 
     def _completion_once(self, messages: list, max_tokens: int = 4000, tools: list = None,
-                         thinking: bool | None = None):
+                         thinking: bool | None = None, temperature: float | None = None):
         self._stats.increment()
         t0 = time.perf_counter()
-        kwargs = {"model": self._llm.model, "messages": messages,
-                  "max_tokens": max_tokens, "temperature": config.LLM_TEMPERATURE}
+        kwargs = {"model": self._llm.model, "messages": messages, "max_tokens": max_tokens,
+                  "temperature": config.LLM_TEMPERATURE if temperature is None else temperature}
         if tools:
             kwargs["tools"] = tools
         self._apply_thinking_param(kwargs, thinking)
@@ -102,14 +106,18 @@ class LlmGateway:
         return resp
 
     def stream_chat(self, messages: list, max_tokens: int = 4000, tools: list = None,
-                    thinking: bool | None = None):
-        """建流（含建流看门狗与重试）；返回的流由解析器消费。"""
+                    thinking: bool | None = None, temperature: float | None = None):
+        """建流（含建流看门狗与重试）；返回的流由解析器消费。
+
+        temperature 非 None 时覆盖配置值（空响应重试靠它降温）。
+        """
 
         def _build_kwargs() -> dict:
             # 每次尝试都按当前生效方案重建参数，回退到备选后模型名随之更新
             kwargs = {"model": self._llm.model, "messages": messages, "max_tokens": max_tokens,
-                      "temperature": config.LLM_TEMPERATURE, "stream": True,
-                      "stream_options": {"include_usage": True}}
+                      "temperature": (config.LLM_TEMPERATURE if temperature is None
+                                      else temperature),
+                      "stream": True, "stream_options": {"include_usage": True}}
             if tools:
                 kwargs["tools"] = tools
             self._apply_thinking_param(kwargs, thinking)
