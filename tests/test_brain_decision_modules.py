@@ -70,7 +70,7 @@ class TestRetryIfEmpty:
         assert len(calls) == 2
 
     def test_retry_round_is_marked_as_repair(self):
-        """第二次调用必须带 repair=True，否则只是原样重跑、救不回格式跑偏。"""
+        """第二次调用带 repair=True。"""
         flags = []
 
         def pipeline(repair=False):

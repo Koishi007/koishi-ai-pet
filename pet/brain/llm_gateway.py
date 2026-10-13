@@ -79,7 +79,7 @@ class LlmGateway:
                    thinking: bool | None = None, temperature: float | None = None):
         """非流式补全（含重试与备选方案切换）。
 
-        temperature 非 None 时覆盖配置值（空响应重试靠它降温）。
+        temperature 非 None 时覆盖配置值。
         """
         return retryer_for(tag="Behavior", on_retry=self._retry_hook)(self._completion_once)(
             messages, max_tokens=max_tokens, tools=tools, thinking=thinking,
@@ -109,7 +109,7 @@ class LlmGateway:
                     thinking: bool | None = None, temperature: float | None = None):
         """建流（含建流看门狗与重试）；返回的流由解析器消费。
 
-        temperature 非 None 时覆盖配置值（空响应重试靠它降温）。
+        temperature 非 None 时覆盖配置值。
         """
 
         def _build_kwargs() -> dict:

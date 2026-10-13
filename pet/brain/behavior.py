@@ -21,7 +21,7 @@ from pet.tools.registry import TOOL_REGISTRY
 
 logger = logging.getLogger(__name__)
 
-# 空响应重试时追加的格式修复提示：上一次输出作废，只重述协议，不替模型想内容
+# 空响应重试时追加的格式修复提示
 _EMPTY_RETRY_HINT = (
     "上一次输出没有任何可解析的字段，已作废。重新输出时必须严格满足：\n"
     "1. 一行一个字段，行首就是标签，标签后紧跟英文冒号，例如 `Speech: 你好`；\n"
@@ -29,8 +29,7 @@ _EMPTY_RETRY_HINT = (
     "3. 第一行必须是 `Summary:`；\n"
     "4. 只输出字段行。"
 )
-# 空响应重试时降温：同样的 messages 与参数下再跑一次，只有采样随机性不同，
-# 对系统性格式跑偏几乎无效，降温 + 修复提示才可能把它拉回协议
+# 空响应重试时的采样温度
 _RETRY_TEMPERATURE = 0.3
 
 
@@ -38,7 +37,7 @@ def retry_if_empty(pipeline, tag: str = "") -> BehaviorOutput:
     """跑一次决策，结果既无动作也无台词时按修复模式再跑一次。
 
     调用方必须让 pipeline 不做动作兜底，否则空响应会被补成 sit 而看不出为空。
-    第二次调用传 repair=True，pipeline 据此追加格式修复提示并降温。
+    第二次调用带 repair=True。
     """
     result = pipeline(repair=False)
     if not result.actions and not result.speech:

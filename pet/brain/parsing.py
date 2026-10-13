@@ -55,12 +55,7 @@ _MASK_TAG_WORD = re.compile(r"(?i)speech|summary|action|memory|emotion|mood|vita
 
 
 def mask_preview(text: str, limit: int = 120) -> str:
-    """压成结构预览：只留格式符号与已知标签词，正文一律遮盖。
-
-    解析落空时要能看出模型是怎么跑偏的（加粗了？套了代码块？用了行内标签？），
-    但正文可能复述附件或用户说过的话，不能被写进日志，所以正文字母压成 x、
-    非 ASCII 压成 ·，标签词因属输出协议本身而保留。
-    """
+    """压成结构预览：保留格式符号与已知标签词，正文一律遮盖。"""
     text = text[:limit]
     out: list[str] = []
     pos = 0
