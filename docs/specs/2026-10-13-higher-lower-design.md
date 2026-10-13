@@ -17,7 +17,8 @@
 | 面板推送 | `TOOL_CTX.game_board` 经 Qt 队列信号送主线程 | `pet/game/rps.py:198-212` |
 | 面板基类 | 标题栏、倒计时、拖动、关闭即 `forfeit` | `pet/ui/game_panel.py:44-212` |
 | 面板路由 | app 层按游戏名映射到 `render` | `pet/app.py:311-321` |
-| 台词通道 | `win/lose/stop/forfeit_speech`，`summary` 兜底 | `pet/game/gamebase.py:361-394` |
+| 台词通道 | `win/lose/stop/forfeit_speech` 只在收尾事件出声；在途台词由模型的 aside/Speech 负责，`summary` 不播出 | `pet/game/gamebase.py:361-401` |
+| 指令通道 | 给模型的推进指令走 `model_hint` 字段，与 `summary` 各自单独成行 | `pet/tools/executor.py:164-172` |
 | 工具注册 | `game__list/init/play/stop` 元工具；`play` 参数由各游戏 `args_schema` 动态合并，统一降级为可选 | `pet/tools/registry.py:227-282`、`491-509` |
 | 轮次预算 | 游戏工具不消耗 `LLM_TOOL_MAX_ROUNDS`，受独立上限 99 约束 | `pet/brain/behavior.py:481-487` |
 | 看门狗豁免 | 有活跃对局时看门狗直接续命，等待用户不算挂死 | `pet/agent/scheduled_tasks.py:71-90` |

@@ -1,4 +1,4 @@
-"""游戏台词与 summary 兜底测试：只锁结构与边界，不锁具体文案。"""
+"""游戏台词与结果字段测试：只锁结构与边界，不锁具体文案。"""
 
 import pytest
 
@@ -7,6 +7,7 @@ from pet.game.guess_number import GuessNumberGame
 from pet.game.rps import RockPaperScissorsGame
 from pet.game.tic_tac_toe import TicTacToeGame, _board_text
 from pet.game.twenty_questions import TwentyQuestionsGame
+from pet.tools.executor import ToolExecutor
 
 
 class _CtxSpy:
@@ -32,14 +33,19 @@ class _CtxSpy:
         pass
 
 
-class _BoardGame:
-    """假游戏：钩子全空，逼出 summary 兜底路径。"""
+class _SilentGame:
+    """假游戏：钩子全空，用来验证无词可播时保持沉默。"""
 
     def name(self):
         return "fake"
 
     def win_speech(self):
         return None
+
+
+class _WinningGame(_SilentGame):
+    def win_speech(self):
+        return "fake-win-line"
 
 
 @pytest.fixture
@@ -49,18 +55,56 @@ def ctx(monkeypatch):
     return spy
 
 
-def test_summary_fallback_keeps_first_line_only(ctx):
-    """兜底台词只播首行，棋盘等多行细节不该进气泡。"""
+def test_summary_is_never_spoken(ctx):
+    """summary 只面向模型：即使内容完整也不播出，没有台词就保持沉默。"""
     board = [["O", "", "O"], ["", "X", ""], ["X", "X", ""]]
-    lead = "轮到谁了呢"
-    summary = f"{lead}\n{_board_text(board)}"
+    summary = f"轮到谁了呢\n{_board_text(board)}"
 
-    gamebase.GameBase()._emit_speech(_BoardGame(), {"summary": summary, "ended": False})
+    gamebase.GameBase()._emit_speech(_SilentGame(), {"summary": summary, "ended": False})
 
-    assert len(ctx.spoken) == 1
-    spoken = ctx.spoken[0]
-    assert spoken == lead  # 期望值取自输入首行，不依赖具体台词文案
-    assert "\n" not in spoken
+    assert ctx.spoken == []
+
+
+def test_end_event_still_speaks(ctx):
+    """收尾事件仍由游戏钩子出声（模型沉默时也有人说话）。"""
+    gamebase.GameBase()._emit_speech(
+        _WinningGame(), {"summary": "一行事实", "ended": True, "won": True})
+
+    assert ctx.spoken == ["fake-win-line"]
+
+
+def _started_base():
+    """起一局并固定成「轮到桌宠」的局面，避免 play 阻塞等用户落子。"""
+    base = gamebase.GameBase()
+    base.register(TicTacToeGame())
+    base.init("tic_tac_toe")
+    state = base._sessions["tic_tac_toe"]
+    state["turn"] = state["pet_mark"]
+    return base, state
+
+
+def test_running_round_hint(ctx):
+    """未结束的回合给继续推进的指令，summary 保持纯事实。"""
+    base, _ = _started_base()
+
+    result = base.play("tic_tac_toe")
+
+    assert result["model_hint"] is gamebase._MODEL_HINT_RUNNING
+    assert "（对模型）" not in result["summary"]
+    assert len(result["summary"].splitlines()) == 1
+
+
+def test_ended_round_hint(ctx):
+    """结束的回合给收尾结算指令（与未结束分支对称覆盖）。"""
+    base, state = _started_base()
+    pet = state["pet_mark"]
+    state["board"][0][0] = pet
+    state["board"][0][1] = pet
+
+    result = base.play("tic_tac_toe", ttt_move="A3")
+
+    assert result["ended"] and result["won"] is True
+    assert result["model_hint"] is gamebase._MODEL_HINT_ENDED
 
 
 def test_tic_tac_toe_summary_excludes_board(ctx):
@@ -75,9 +119,15 @@ def test_tic_tac_toe_summary_excludes_board(ctx):
     result = game.play(state, ttt_move="A3")
 
     assert result["ended"] and result["won"] is True
-    assert len(result["summary"].splitlines()) == 1
     for line in result["board_text"].splitlines():
         assert line not in result["summary"]
+
+
+def test_normalize_puts_hint_next_to_summary():
+    """工具结果里 model_hint 与 summary 并排打头，不被埋进 JSON。"""
+    text = ToolExecutor._normalize({"summary": "完成", "model_hint": "继续推进", "n": 1})
+
+    assert text == '完成\n继续推进\n{"n": 1}'
 
 
 @pytest.mark.parametrize(
@@ -86,7 +136,7 @@ def test_tic_tac_toe_summary_excludes_board(ctx):
     ids=lambda game: game.name(),
 )
 def test_speech_hooks_return_single_line(game):
-    """四类钩子都有词可播且是单行：多行会被兜底逻辑截成首行，这里提前拦住。"""
+    """四类钩子都有词可播且是单行。"""
     for hook in ("win_speech", "lose_speech", "stop_speech", "forfeit_speech"):
         text = getattr(game, hook)()
         assert isinstance(text, str) and text.strip()

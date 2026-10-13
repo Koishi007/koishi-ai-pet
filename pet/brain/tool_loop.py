@@ -244,7 +244,7 @@ def _exec_tool(tool_calls_map: dict, idx: int, executor: ToolExecutor, session: 
     finally:
         if tool_aside:
             session.end_aside()
-    # 在 _normalize 之前提取摘要（_normalize 会 pop summary）
+    # 摘要供日志与上下文使用；_normalize 不改动原 dict，顺序无所谓
     tool_brief = ""
     if result.success and isinstance(result.data, dict):
         tool_brief = result.data.get("summary", "")

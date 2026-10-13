@@ -7,19 +7,34 @@ from pet.tools.context import TOOL_CTX
 
 logger = logging.getLogger(__name__)
 
-# 用户超时未交互/主动结束时附加给模型的收场提示
-_FRIENDLY_END_HINT = (
-    "（对模型）游戏已结束，不算任何一方输赢，用户可能暂时没空；"
+# 面向模型的推进指令
+_MODEL_HINT_ENDED = (
+    "游戏已结束（ended=True），请总结本局结果并输出最终答复，不要继续调用游戏工具；"
+    "按本局胜负输出 Mood 变动范围（仅输出有变化的维度，输赢都增加，大小有别）："
+    "获胜 joy+2~5、affection+2~5；落败 joy+0~2、affection+0~1。"
+)
+# 超时未交互/主动结束/外部取消：不算胜负，Mood 免结算
+_MODEL_HINT_ENDED_NEUTRAL = (
+    "游戏已结束，不算任何一方输赢，用户可能暂时没空；"
     "请输出最终答复，不要继续调用游戏工具，"
     "Mood 无需按输赢结算（如有变化可给 joy+0~1）。"
 )
+_MODEL_HINT_RUNNING = (
+    "本回合尚未结束（ended=False），请立即继续调用 game__play 推进游戏并等待玩家动作，"
+    "不要输出最终答复；只有某次返回 ended=True 才结束并总结。"
+)
+# 本局无法继续（游戏不存在 / play 异常）
+_MODEL_HINT_ABORT = "本局无法继续，请直接输出最终答复，不要继续调用游戏工具。"
+# 会话不存在（未开始或已结束）：要续玩得先 init
+_MODEL_HINT_NEED_INIT = "若想继续玩请先调用 game__init 开启新对局，否则直接输出最终答复。"
 
 
 class Game:
     """回合制游戏接口。
 
     台词钩子（win_speech/lose_speech/stop_speech）默认返回 None，
-    由具体游戏覆写提供符合自身性格的台词；容器用 summary 兜底。
+    由具体游戏覆写提供符合自身性格的台词；钩子只在收尾事件上响，
+    在途台词由模型自己说（tool_call 的 aside / 最终 Speech）。
     """
 
     def name(self) -> str:
@@ -167,6 +182,7 @@ class GameBase:
         if game is None:
             return {
                 "summary": f"没有叫 {game_name} 的游戏，可玩：{', '.join(self._games) or '无'}",
+                "model_hint": _MODEL_HINT_ABORT,
                 "success": False,
                 "ended": True,
             }
@@ -186,9 +202,12 @@ class GameBase:
         except Exception:
             pass
         return {
-            "summary": f"{game_name} 游戏初始化完成，但游戏尚未开始。"
-                       f"（对模型）请立即继续调用 game__play(game_name=\"{game_name}\" 及该游戏出招参数) "
-                       f"开启第一回合并持续推进，不要在此输出最终答复；只有某次 game__play 返回 ended=True 才代表游戏结束。",
+            "summary": f"{game_name} 游戏初始化完成，但游戏尚未开始。",
+            "model_hint": (
+                f"请立即继续调用 game__play(game_name=\"{game_name}\" 及该游戏出招参数) "
+                f"开启第一回合并持续推进，不要在此输出最终答复；"
+                f"只有某次 game__play 返回 ended=True 才代表游戏结束。"
+            ),
             "success": True,
             "ended": False,
         }
@@ -198,6 +217,7 @@ class GameBase:
         if game is None:
             return {
                 "summary": f"没有叫 {game_name} 的游戏，可玩：{', '.join(self._games) or '无'}",
+                "model_hint": _MODEL_HINT_ABORT,
                 "success": False,
                 "ended": True,
             }
@@ -209,8 +229,8 @@ class GameBase:
         if unknown:
             return {
                 "summary": f"参数 {', '.join(unknown)} 不属于 {game_name}，"
-                           f"{game_name} 需要的参数：{', '.join(game_args) or '无'}。"
-                           f"（对模型）请用正确的参数重新调用 game__play 继续游戏，不要输出最终答复。",
+                           f"{game_name} 需要的参数：{', '.join(game_args) or '无'}。",
+                "model_hint": "请用正确的参数重新调用 game__play 继续游戏，不要输出最终答复。",
                 "success": False,
                 "ended": False,  # 本回合未执行，游戏状态不变，模型可纠正后重试
             }
@@ -223,7 +243,8 @@ class GameBase:
         if state is None:
             # 未开始或已结束：要求显式 game__init，避免模型误以为可续局/静默重开
             return {
-                "summary": f"{game_name} 游戏未开始或已结束，请先调用 game__init(game_name=\"{game_name}\") 开启新对局",
+                "summary": f"{game_name} 游戏未开始或已结束",
+                "model_hint": _MODEL_HINT_NEED_INIT,
                 "success": False,
                 "ended": True,
             }
@@ -239,7 +260,7 @@ class GameBase:
                 pass
             if state.get("_forfeit"):
                 result = {
-                    "summary": f"用户主动结束了 {game_name} 游戏。{_FRIENDLY_END_HINT}",
+                    "summary": f"用户主动结束了 {game_name} 游戏。",
                     "ended": True,
                     "won": None,
                     "forfeit": True,
@@ -251,6 +272,7 @@ class GameBase:
                     "won": None,
                     "suppress_speech": True,
                 }
+            result["model_hint"] = _MODEL_HINT_ENDED_NEUTRAL
             result.setdefault("success", True)
             result.setdefault("game_name", game_name)
             self._emit_speech(game, result)
@@ -263,30 +285,20 @@ class GameBase:
                 self._sessions.pop(game_name, None)
             return {
                 "summary": f"游戏 {game_name} 出错了：{e}",
+                "model_hint": _MODEL_HINT_ABORT,
                 "success": False,
                 "ended": True,
             }
-        if result.get("ended") and self._sessions.get(game_name) is state:
-            self._sessions.pop(game_name, None)
-            # 明确告知游戏已结束，避免模型继续调用 game__play/game__stop
-            if result.get("summary"):
-                if result.get("timeout") or result.get("forfeit"):
-                    # 用户超时未交互或主动结束：不算胜负，提示模型用户可能暂时没空
-                    result["summary"] = f"{result['summary']}{_FRIENDLY_END_HINT}"
-                else:
-                    result["summary"] = (
-                        f"{result['summary']}（对模型）游戏已结束（ended=True），"
-                        f"请总结本局结果并输出最终答复，不要继续调用游戏工具；"
-                        f"按本局胜负输出 Mood 变动范围（仅输出有变化的维度，输赢都增加，大小有别）："
-                        f"获胜 joy+2~5、affection+2~5；落败 joy+0~2、affection+0~1。"
-                    )
-        elif result.get("summary"):
-            # 游戏未结束：必须在 summary 里明确"继续推进"，否则模型可能提前输出最终答复
-            result["summary"] = (
-                f"{result['summary']}（对模型）本回合尚未结束（ended=False），"
-                f"请立即继续调用 game__play 推进游戏并等待玩家动作，不要输出最终答复；"
-                f"只有某次返回 ended=True 才结束并总结。"
-            )
+        # 明确告知游戏已结束，避免模型继续调用 game__play/game__stop
+        if result.get("ended"):
+            if self._sessions.get(game_name) is state:
+                self._sessions.pop(game_name, None)
+            # 超时未交互或主动结束：不算胜负，提示模型用户可能暂时没空
+            hint = (_MODEL_HINT_ENDED_NEUTRAL if result.get("timeout") or result.get("forfeit")
+                    else _MODEL_HINT_ENDED)
+        else:
+            hint = _MODEL_HINT_RUNNING
+        result.setdefault("model_hint", hint)  # 游戏自带更精细的指令优先
         result.setdefault("success", True)
         result.setdefault("game_name", game_name)
         self._emit_speech(game, result)
@@ -296,9 +308,8 @@ class GameBase:
         """主动结束（模型 game__stop / 面板闲置超时）：普通收场，不算胜负。"""
         if game_name not in self._sessions:
             return {
-                "summary": f"{game_name} 没有进行中的对局（已结束或未开始）。"
-                           f"若刚结束，请直接输出最终回复，无需调用 game__stop；"
-                           f"想再玩一局请调用 game__init",
+                "summary": f"{game_name} 没有进行中的对局（已结束或未开始）。",
+                "model_hint": "无需调用 game__stop；想再玩一局请先调用 game__init，否则直接输出最终回复。",
                 "success": False,
                 "ended": True,
             }
@@ -306,6 +317,7 @@ class GameBase:
         if TOOL_CTX.is_model_aside_pending():
             return {
                 "summary": f"已结束 {game_name} 游戏",
+                "model_hint": _MODEL_HINT_ENDED_NEUTRAL,
                 "success": True,
                 "ended": True,
             }
@@ -316,6 +328,7 @@ class GameBase:
         TOOL_CTX.speech(speech)
         return {
             "summary": f"已结束 {game_name} 游戏",
+            "model_hint": _MODEL_HINT_ENDED_NEUTRAL,
             "success": True,
             "ended": True,
         }
@@ -327,6 +340,7 @@ class GameBase:
             # 游戏已提前结束，用户只是关闭残留面板：不播台词、不回应 LLM
             return {
                 "summary": f"已结束 {game_name} 游戏",
+                "model_hint": _MODEL_HINT_ENDED_NEUTRAL,
                 "success": True,
                 "ended": True,
             }
@@ -341,6 +355,7 @@ class GameBase:
             pass
         return {
             "summary": f"你结束了 {game_name} 游戏",
+            "model_hint": _MODEL_HINT_ENDED_NEUTRAL,
             "success": True,
             "ended": True,
             "won": None,
@@ -359,11 +374,8 @@ class GameBase:
             pass
 
     def _emit_speech(self, game: Game, result: dict):
-        """按优先级输出桌宠台词：结果自带 speech → 游戏钩子 → summary 兜底。
-
-        模型已在 tool_call 里带 speech（由 _exec_tool 播出）时跳过，避免播两句。
-        外部取消导致 play 中断返回的（suppress_speech）同样跳过，收场词由调用方负责。
-        """
+        """按优先级输出桌宠台词"""
+        # suppress_speech（外部取消，收场词由调用方播）与模型已有 aside 时直接跳过
         if result.pop("suppress_speech", False):
             return
         speech = result.pop("speech", None)
@@ -389,11 +401,6 @@ class GameBase:
                 speech = game.lose_speech()
         if speech:
             TOOL_CTX.speech(speech)
-        elif result.get("summary"):
-            # 兜底只播首行：summary 面向模型，可能带棋盘等多行细节，不该出现在气泡里
-            lines = str(result["summary"]).split("（对模型）", 1)[0].strip().splitlines()
-            if lines:
-                TOOL_CTX.speech(lines[0].strip())
 
 
 GAME = GameBase()

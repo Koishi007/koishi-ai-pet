@@ -164,10 +164,10 @@ class ToolExecutor:
     @staticmethod
     def _normalize(data: Any) -> str:
         if isinstance(data, dict):
-            summary = data.get("summary")
-            clean = {k: v for k, v in data.items() if k != "summary"}
+            head = [str(data[key]) for key in ("summary", "model_hint") if data.get(key)]
+            clean = {k: v for k, v in data.items() if k not in ("summary", "model_hint")}
             json_str = json.dumps(clean, ensure_ascii=False)
-            return f"{summary}\n{json_str}" if summary else json_str
+            return "\n".join(head + [json_str])
         elif isinstance(data, str):
             return data
         return str(data)
