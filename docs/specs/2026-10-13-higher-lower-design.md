@@ -10,15 +10,15 @@
 
 | 能力 | 现状 | 位置 |
 |---|---|---|
-| 游戏接口 | `Game` 基类：`name`/`description`/`new_state`/`args_schema`/`play` 与四类台词钩子 | `pet/game/gamebase.py:18-55` |
-| 会话容器 | `GameBase`：`init`/`play`/`stop`/`forfeit`/`submit`，闲置清理 `SESSION_TTL = 120` | `pet/game/gamebase.py:58-397` |
-| 跨线程提交 | `submit` 在 UI 线程写 `pending_move` 并 `wait_event.set()` 唤醒脑线程 | `pet/game/gamebase.py:79-96` |
+| 游戏接口 | `Game` 基类：`name`/`description`/`new_state`/`args_schema`/`play` 与四类台词钩子 | `pet/game/gamebase.py:32-70` |
+| 会话容器 | `GameBase`：`init`/`play`/`stop`/`forfeit`/`submit`，闲置清理 `SESSION_TTL = 120` | `pet/game/gamebase.py:73-403` |
+| 跨线程提交 | `submit` 在 UI 线程写 `pending_move` 并 `wait_event.set()` 唤醒脑线程 | `pet/game/gamebase.py:94-111` |
 | 等待用户 | 脑线程分段等待（0.2 秒步长），轮询 `_cancelled` 退出 | `pet/game/rps.py:180-196`、`pet/game/tic_tac_toe.py:259-285` |
 | 面板推送 | `TOOL_CTX.game_board` 经 Qt 队列信号送主线程 | `pet/game/rps.py:198-212` |
 | 面板基类 | 标题栏、倒计时、拖动、关闭即 `forfeit` | `pet/ui/game_panel.py:44-212` |
-| 面板路由 | app 层按游戏名映射到 `render` | `pet/app.py:311-321` |
-| 台词通道 | `win/lose/stop/forfeit_speech` 只在收尾事件出声；在途台词由模型的 aside/Speech 负责，`summary` 不播出 | `pet/game/gamebase.py:361-401` |
-| 指令通道 | 给模型的推进指令走 `model_hint` 字段，与 `summary` 各自单独成行 | `pet/tools/executor.py:164-172` |
+| 面板路由 | app 层按游戏名映射到 `render` | `pet/app.py:315-325` |
+| 台词通道 | `win/lose/stop/forfeit_speech` 只在收尾事件出声；在途台词由模型的 aside/Speech 负责，`summary` 不播出 | `pet/game/gamebase.py:376-403` |
+| 指令通道 | 给模型的推进指令走 `model_hint` 字段，与 `summary` 各自单独成行 | `pet/tools/executor.py:165-172` |
 | 工具注册 | `game__list/init/play/stop` 元工具；`play` 参数由各游戏 `args_schema` 动态合并，统一降级为可选 | `pet/tools/registry.py:227-282`、`491-509` |
 | 轮次预算 | 游戏工具不消耗 `LLM_TOOL_MAX_ROUNDS`，受独立上限 99 约束 | `pet/brain/behavior.py:481-487` |
 | 看门狗豁免 | 有活跃对局时看门狗直接续命，等待用户不算挂死 | `pet/agent/scheduled_tasks.py:71-90` |
@@ -27,7 +27,7 @@
 
 ## §1 目标
 
-- 桌宠与用户各自独立下注，同边共进退、异边分胜负。
+- 桌宠与用户各自独立下注：双方押同一边时一起承担结果，押不同边时只有押中的一方得分、另一方扣 1 分。
 - 抽牌在双方下注完成后进行，双方都拿不到下一张牌的信息。
 - 剩余牌堆公开，得分与所选边的剩余张数挂钩（赔率制）。
 - 先到 6 分者获胜；牌堆耗尽按比分结算；同分平局。
@@ -46,12 +46,11 @@
 
 牌堆规则：
 
-- `new_state` 时把 0-9 十张牌洗匀为 `deck`，翻开首张作基准 `base` 并进入 `history`。
-- 每轮揭晓从 `deck` 中取一张不等于 `base` 的牌；等于 `base` 的牌留在堆里，对后续基准仍然有效。
-- 可用牌是 `deck` 中不等于 `base` 的牌；`above` 与 `below` 分别是其中大于、小于 `base` 的张数。
-- 每次揭晓后，揭晓数字成为下一轮的 `base`（无论双方是否命中），并进入 `history`。原规则只定义猜对时数字接续，对赌模式下猜错不结束，基准接续需要统一为「揭晓即接续」。
-- 可用牌为空（剩余牌全部等于 `base`）时牌堆耗尽，直接结算，不进入等待。
-- 面板公开 `deck` 全量；等于 `base` 的牌本轮不可能出现，以置灰呈现。
+- `new_state` 时把 0-9 十张牌洗匀为 `deck`，翻开首张作基准 `base`，该张移出牌堆并进入 `history`。
+- 点数两两不同，`base` 那张永远不在牌堆里：可用牌就是整个 `deck`，`above` 与 `below` 之和恒等于牌堆张数。
+- 每轮揭晓从 `deck` 随机取一张并移出牌堆；揭晓数字成为下一轮的 `base`（无论双方是否命中）并进入 `history`。对赌模式下猜错不结束，基准统一按「揭晓即接续」推进。
+- `deck` 抽空即牌堆耗尽，直接结算，不进入等待；首张作基准后剩 9 张，故单局最多 9 轮。
+- 面板公开 `deck` 全量，已揭晓的牌不再出现在牌堆里。
 
 赔率规则：
 
@@ -80,7 +79,7 @@
 
 - 下注顺序固定：模型先下注（每次 `play` 只传自己的 `hl_choice`），用户后下注且能看到桌宠的选择。抽牌发生在用户点击之后，因此双方都无法预知下一张牌。
 - 一次 `play` 推进一轮（一次揭晓）。模型在两次 `play` 之间说话，节奏与猜拳、井字棋一致。
-- 超时：20 秒未点击结束本局，不算胜负（`timeout=True`，附收场台词）。
+- 超时：15 秒未点击结束本局，不算胜负（`timeout=True`，附收场台词）。与猜拳、井字棋的 `MOVE_TIMEOUT` 一致。
 - 用户点面板 ×：`forfeit`，不算胜负。
 - `game__stop` 或脑线程被替换：外部取消路径，`suppress_speech=True`，由调用方播收场词。
 
@@ -97,17 +96,17 @@
 
 ## §5 判定与计分
 
-判定表（`s_user` 与 `s_pet` 是各自所选边的赔率，同边时相同）：
+判定表（`s_user` 与 `s_pet` 是各自所选边的赔率，双方押同一边时相同）：
 
 | 双方下注 | 揭晓 | 用户分 | 桌宠分 |
 |---|---|---|---|
-| 同边 | 命中 | `+s` | `+s` |
-| 同边 | 未中 | 不变 | 不变 |
-| 异边 | 用户命中 | `+s_user` | `-1` |
-| 异边 | 桌宠命中 | `-1` | `+s_pet` |
+| 押同一边 | 命中 | `+s` | `+s` |
+| 押同一边 | 未中 | 不变 | 不变 |
+| 押不同边 | 用户命中 | `+s_user` | `-1` |
+| 押不同边 | 桌宠命中 | `-1` | `+s_pet` |
 
 - 分数下限 0，单次得分封顶 5。
-- 先到 6 分：`user_score >= 6` 判用户胜，`pet_score >= 6` 判桌宠胜；同一次揭晓双方同时到 6 分（只可能发生在同边命中）判平局。
+- 先到 6 分：`user_score >= 6` 判用户胜，`pet_score >= 6` 判桌宠胜；同一次揭晓双方同时到 6 分（只可能发生在双方押同一边且命中）判平局。
 - 牌堆耗尽：比分高者胜，同分平局（`won=None`，与井字棋平局语义一致）。
 - 判定与计分写成模块级纯函数，输入为基准、揭晓数字、双方下注与两边张数，输出双方分数变化与结果键，供单测直接调用。
 
@@ -127,10 +126,10 @@
 | `pet_choice` | str | 桌宠本轮下注 |
 | `user_score` / `pet_score` / `target` | int | 计分区 |
 | `revealed` | int 或 None | 本轮揭晓数字，结果载荷使用 |
-| `outcome` | str 或 None | 结果键：同边命中、同边未中、异边用户命中、异边桌宠命中、耗尽、超时 |
+| `outcome` | str 或 None | 结果键：押同一边命中、押同一边未中、押不同边用户命中、押不同边桌宠命中、耗尽、超时 |
 | `waiting` / `message` / `timeout` | - | 基类约定字段 |
 
-交互：下注按钮点击调用 `GAME.submit(game_name, {"action": "higher" 或 "lower"})`，形态与二十问面板一致（`pet/ui/twenty_questions_panel.py:119-141`）。`waiting=False` 期间按钮禁用，点击不产生提交。
+交互：下注按钮点击调用 `GAME.submit(game_name, {"choice": "higher" 或 "lower"})`，形态与二十问面板一致（`pet/ui/twenty_questions_panel.py:119-141`）。`waiting=False` 期间按钮禁用，点击不产生提交。
 
 ## §7 工具参数
 
@@ -154,23 +153,24 @@
 | 项 | 次数 |
 |---|---|
 | `game__init` | 1 |
-| `game__play`（每轮下注 1 次，牌堆封顶 9 轮，6 分目标通常 5 到 8 轮分出胜负） | 5-9 |
+| `game__play`（每轮下注 1 次，牌堆封顶 9 轮，6 分目标通常 3 到 8 轮分出胜负） | 3-9 |
 | 无效下注重试 | 0-2 |
 | 合计 | 6-12（上限 99） |
 
-等待用户点击期间，看门狗检测到活跃对局即调用 `note_brain_progress` 续命（`pet/agent/scheduled_tasks.py:71-90`），不会按挂死回收脑线程。会话闲置清理（`SESSION_TTL = 120`）在正常交互节奏下不会触达：等待中的 20 秒超时会先把对局结束。
+等待用户点击期间，看门狗检测到活跃对局即调用 `note_brain_progress` 续命（`pet/agent/scheduled_tasks.py:71-90`），不会按挂死回收脑线程。会话闲置清理（`SESSION_TTL = 120`）在正常交互节奏下不会触达：等待中的 15 秒超时会先把对局结束。
 
 ## §9 文件改动清单
 
 | 文件 | 改动 |
 |---|---|
-| `pet/game/higher_lower.py`（新增） | 游戏实现：牌堆、赔率、判定纯函数、等待与提交、载荷推送、台词钩子 |
+| `pet/game/higher_lower.py`（新增） | 游戏实现：牌堆、赔率、判定纯函数、等待与提交、载荷推送、台词钩子（按恋恋口吻，与井字棋一致） |
 | `pet/ui/higher_lower_panel.py`（新增） | 面板：分数、桌宠下注、数字链、牌堆、下注按钮、结果文案 |
-| `pet/game/__init__.py` | 导出 `HigherLowerGame`，`register_all` 内注册 |
-| `pet/app.py` | `_game_panel_handlers` 增加 `higher_lower` 映射（`pet/app.py:311-316`） |
+| `pet/game/__init__.py` | 导出 `HigherLowerGame`，`register_all` 内注册；模块 docstring 与 `register_all` docstring 的「四个」改「五个」 |
+| `pet/app.py` | `_game_panel_handlers` 增加 `higher_lower` 映射（`pet/app.py:315-320`） |
 | `tests/test_game_registry.py` | `BUILTIN` 集合加入 `higher_lower`（`tests/test_game_registry.py:8`） |
 | `tests/test_higher_lower.py`（新增） | 纯逻辑单测与提交路径单测 |
-| `docs/README.md` | 文档地图登记本文档 |
+| `docs/reference/modules.md` | 由 `scripts/gen_docs.py` 生成，新增模块后需重跑（`tests/test_docs.py:52` 校验） |
+| `docs/README.md` | 文档地图登记本文档（已完成） |
 
 ## §10 验证方式
 
@@ -183,7 +183,7 @@ python -m pytest tests/test_docs.py
 
 `tests/test_higher_lower.py` 覆盖：
 
-- 牌堆：首张基准移出牌堆、抽取跳过等于基准的牌、只剩等于基准的牌时判耗尽；
+- 牌堆：首张基准移出牌堆且不留在牌堆里、牌堆抽空即结算耗尽；
 - 赔率：常规计算、张数 1 与封顶 5、某边 0 张返回不可选；
 - 判定：四种组合的分数变化、下限 0、封顶 5；
 - 结算：先到 6 分、同次揭晓同到 6 分平局、牌堆耗尽比分、同分平局；
@@ -193,9 +193,9 @@ python -m pytest tests/test_docs.py
 手动清单：
 
 1. 开局后桌宠下注可见，下注按钮显示两边张数与分值；
-2. 同边命中、同边未中、异边分胜负三类结果的分数变化与文案；
+2. 双方押同一边命中、押同一边未中、押不同边分出胜负三类结果的分数变化与文案；
 3. 某边 0 张时按钮置灰；
-4. 20 秒不点击，本局结束且不算胜负；
+4. 15 秒不点击，本局结束且不算胜负；
 5. 面板 × 结束游戏，不算胜负；
 6. 牌堆耗尽结算比分；先到 6 分结束；
 7. 倒计时、面板位置、拖动与现有游戏一致。
@@ -205,7 +205,9 @@ python -m pytest tests/test_docs.py
 - 判定依赖桌宠先下注：每次 `game__play` 必须先传 `hl_choice` 才进入等待，缺失即返回错误，不出现无桌宠立场的一轮。
 - 同一次模型回复里连续多次 `game__play` 由工具层串行执行（`pet/brain/tool_loop.py:198-204` 的 `has_game_tool` 分支），不会乱序；连发会跳过中间的台词插入，不影响对局正确性。
 - 模型押 0 张的边：返回错误并要求重押，`ended=False` 且会话保留，模型纠正后重试，与既有参数错误的处理路径同构（`pet/game/gamebase.py:204-216`）。
-- 必然命中轮：某边 0 张时该轮只能押另一边并必然命中（1 分），属于设计内节奏，不额外处理。
+- 必然命中轮：某边 0 张时该轮只能押另一边并必然命中（1 分），属于设计内节奏，不额外处理。首轮 `base` 为 0 或 9 时即属此种。
+- 等待竞态（框架级，既有行为）：`_wait_for_move` 先清 `pending_move` 再 `clear()` 事件，若提交恰好落在这两步之间，提交会被抹掉而 `submit` 仍返回 True，最终走到超时。猜拳与井字棋是同一写法，窗口为微秒级且需用户提前点击，实际概率趋近于零；根治要靠框架级轮次计数（epoch）统一处理三个游戏，另立任务。
+- 台词：五组钩子只在收尾事件出声，按恋恋口吻写（短句、≤20 字、省略号）；在途台词由模型的 aside 负责，工具层不代写。
 - 面板固定尺寸承载元素较多（分数、下注、数字、牌堆、按钮），实现时按约 360x400 排布，必要时裁减展示（如历史链只显示最近若干张）。
 - 平局语义：`won=None` 时容器不上报胜负事件（`pet/game/gamebase.py:370-380` 只处理 True 与 False），与井字棋平局一致。
 
