@@ -114,7 +114,7 @@
 | `pet/ui/pet_window.py` | 扁平圆角菜单基类 — Windows 下自绘圆角背景，macOS 走原生。 | `_FlatMenuBase` `StickyMenu` `_SpriteLabel` `PetWindow` |
 | `pet/ui/rps_panel.py` | 猜拳面板 — 继承 GamePanelBase，负责出拳展示与点击提交。 | `RpsPanel` |
 | `pet/ui/settings_window.py` | 设置界面 — 用户配置的图形界面。 | `_LLMTestWorker` `_EmbeddingTestWorker` `_ModelsFetchWorker` `_VoiceTestWorker` `MarkdownEdit` `SettingsWindow` |
-| `pet/ui/speech_bubble.py` | 桌宠对话气泡 | `SpeechBubble` |
+| `pet/ui/speech_bubble.py` | 桌宠对话气泡：同一时刻只讲一句，多出来的排队 | `SpeechBubble` |
 | `pet/ui/styles.py` | QSS 样式库 —— 扁平化圆角风格。 | `bubble_column_y()` `make_title_button()` `make_minimize_button()` `make_close_button()` `ensure_taskbar_icon()` |
 | `pet/ui/system_tray.py` | （模块未提供 docstring） | `SystemTrayManager` |
 | `pet/ui/tic_tac_toe_panel.py` | 井字棋棋盘面板 — 继承 GamePanelBase，负责棋盘渲染与点击落子。 | `TicTacToePanel` |

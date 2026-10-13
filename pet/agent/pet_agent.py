@@ -63,6 +63,7 @@ class PetAgent(QObject):
     speak_stream_start = Signal()
     speak_stream_chunk = Signal(str)
     speak_stream_end   = Signal(int)
+    speech_clear_requested = Signal()  # 抢占时清空气泡的待播队列与缓冲
     llm_loading        = Signal(bool)  # True=开始等待, False=结束
     notify_requested   = Signal(str, str, int)  # title, message, duration_ms
     game_board_requested = Signal(str, object)  # (game_name, board_payload)
@@ -310,7 +311,8 @@ class PetAgent(QObject):
 
             self.behavior.reset_user_interaction()
 
-            self.speak_stream_end.emit(0)
+            # 抢占：连队列一起清，否则旧台词会在稍后弹出来压住新输出
+            self.speech_clear_requested.emit()
 
             self.state_machine.transition(PetState.INTERACTING)
 
@@ -383,7 +385,8 @@ class PetAgent(QObject):
 
         self.behavior.reset_user_interaction()
 
-        self.speak_stream_end.emit(0)
+        # 同 _trigger_interact：连队列一起清
+        self.speech_clear_requested.emit()
 
         self.state_machine.transition(PetState.INTERACTING)
 

@@ -204,6 +204,44 @@ class TestToolLoopRounds:
         assert out.actions[0].name == "sit"  # 最后一轮无内容 → 兜底动作
 
 
+class TestToolLoopSpeechBoundaries:
+    """工具轮次必须逐轮断句。
+
+    每轮模型输出都是语义独立的一段：不在轮次边界收句，本轮最后一条 Speech 会
+    带着「未收尾」状态跨过整个工具执行空档，下一轮的 chunk 到达时气泡仍在同一句里，
+    两句就被拼进同一个气泡。
+    """
+
+    def test_each_tool_round_closes_its_sentence(self):
+        # 两轮工具 + 最后一轮收尾，每轮都吐一句 Speech
+        rounds = [("Speech: 第1句\n", _tool_calls("timer__set")),
+                  ("Speech: 第2句\n", _tool_calls("timer__set")),
+                  ("Speech: 收尾\n", {})]
+        session = _FakeSession(rounds)
+        ended = []
+
+        def on_chunk(delta):
+            pass
+
+        def on_stream_end():
+            ended.append(1)
+
+        out = run_tool_loop([], _tool_calls("timer__set"), "", session, max_rounds=5,
+                            on_chunk=on_chunk, on_stream_end=on_stream_end)
+
+        assert session.streams == len(rounds)
+        assert len(ended) == len(rounds)
+        assert out.speech == "收尾"
+
+    def test_round_boundary_flush_is_harmless_without_chunk_callback(self):
+        # 非流式路径（没有流式回调）不因断句插入而出错
+        rounds = [("Speech: 第1句\n", _tool_calls("timer__set")), ("Speech: 收尾\n", {})]
+        session = _FakeSession(rounds)
+        out = run_tool_loop([], _tool_calls("timer__set"), "", session, max_rounds=5)
+        assert session.streams == len(rounds)
+        assert out.speech == "收尾"
+
+
 class TestToolLoopCancellation:
     def test_cancelled_error_propagates(self):
         session = _FakeSession([], raise_on_stream=CancelledError("被新请求取消"))

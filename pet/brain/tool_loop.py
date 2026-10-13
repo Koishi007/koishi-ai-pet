@@ -173,6 +173,12 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
         if _chunk_invoked[0]:
             speech_streamed = True
 
+        # 每轮输出都是语义独立的一段：不在轮次边界断句，下一轮的 Speech
+        # 会接在没有收尾的上一句里，两句拼进同一个气泡。
+        # 调用方的 on_stream_end 自带「本句是否已开头」的守卫，没有副作用。
+        if on_stream_end:
+            on_stream_end()
+
         if not new_tool_calls:
             # LLM 不再请求工具，解析最终行为
             result = parse_behavior(content)

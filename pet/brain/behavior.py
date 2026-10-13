@@ -420,9 +420,8 @@ class Behavior(BrainMixin):
             speech_streamed = chunk_sent[0]
 
             if tool_calls_map:
-                # 不在此处调用 on_stream_end：保持气泡流不中断，
-                # on_stream_end 仅用于 speech 中断（多行 Speech 分开显示），
-                # 不在轮次间调用。
+                # 之后每轮由 tool_loop 在 stream 返回后调用 on_stream_end 断句，
+                # 否则下一轮的 Speech 会拼进上一句的气泡
                 return self._handle_tool_calls(
                     messages, tool_calls_map, raw,
                     on_chunk=on_chunk, on_stream_end=on_stream_end, tag=tag,
