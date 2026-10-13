@@ -390,8 +390,10 @@ class GameBase:
         if speech:
             TOOL_CTX.speech(speech)
         elif result.get("summary"):
-            # 剥离（对模型）指令段，只把自然内容播给用户
-            TOOL_CTX.speech(str(result["summary"]).split("（对模型）", 1)[0].strip())
+            # 兜底只播首行：summary 面向模型，可能带棋盘等多行细节，不该出现在气泡里
+            lines = str(result["summary"]).split("（对模型）", 1)[0].strip().splitlines()
+            if lines:
+                TOOL_CTX.speech(lines[0].strip())
 
 
 GAME = GameBase()
