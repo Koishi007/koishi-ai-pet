@@ -198,6 +198,15 @@ class TestParseActionLine:
         step = parse_action_line("SIT 3")
         assert step.name == "sit"
 
+    def test_punctuation_token_is_dropped(self):
+        # 模型常把表格竖线一起吐出来，纯标点不能当作位置参数
+        step = parse_action_line("walk left 100 |")
+        assert step.args == ("left", 100)
+
+    def test_junk_keyword_value_is_dropped(self):
+        step = parse_action_line("sit duration=|")
+        assert step.kwargs == {}
+
     def test_custom_whitelist_decides(self):
         assert parse_action_line("teleport", resolve=lambda _: True).name == "teleport"
 
