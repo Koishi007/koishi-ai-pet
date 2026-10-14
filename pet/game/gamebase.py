@@ -13,9 +13,9 @@ _MODEL_HINT_ENDED = (
     "按本局胜负输出 Mood 变动范围（仅输出有变化的维度，输赢都增加，大小有别）："
     "获胜 joy+2~5、affection+2~5；落败 joy+0~2、affection+0~1。"
 )
-# 超时未交互/主动结束/外部取消：不算胜负，Mood 免结算
+# 超时未交互/主动结束/外部取消/平局：不算胜负，Mood 免结算
 _MODEL_HINT_ENDED_NEUTRAL = (
-    "游戏已结束，不算任何一方输赢，用户可能暂时没空；"
+    "游戏已结束，不算任何一方输赢；"
     "请输出最终答复，不要继续调用游戏工具，"
     "Mood 无需按输赢结算（如有变化可给 joy+0~1）。"
 )
@@ -293,8 +293,9 @@ class GameBase:
         if result.get("ended"):
             if self._sessions.get(game_name) is state:
                 self._sessions.pop(game_name, None)
-            # 超时未交互或主动结束：不算胜负，提示模型用户可能暂时没空
+            # 超时未交互、主动结束或平局（won 为空）：不算胜负，Mood 免结算
             hint = (_MODEL_HINT_ENDED_NEUTRAL if result.get("timeout") or result.get("forfeit")
+                    or result.get("won") is None
                     else _MODEL_HINT_ENDED)
         else:
             hint = _MODEL_HINT_RUNNING
