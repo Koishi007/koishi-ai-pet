@@ -85,8 +85,8 @@ class SystemTrayManager(QObject):
         self._agent = agent
 
     def notify(self, title: str, message: str, duration: int = 5000):
-        """弹一条托盘通知；总开关关闭或无托盘图标时静默丢弃。"""
-        if self.tray_icon is None or not config.TRAY_NOTIFY_ENABLED:
+        """发送一条通知；总开关关闭或无托盘图标时静默丢弃。"""
+        if self.tray_icon is None or not config.NOTIFY_ENABLED:
             return
         self.tray_icon.showMessage(title, message,
                                    QSystemTrayIcon.MessageIcon.Information, duration)

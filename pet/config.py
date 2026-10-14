@@ -88,7 +88,7 @@ _KEY_META = {
     "BUBBLE_MAX_WIDTH":          {"type": "int",      "default": 300,           "category": "appearance", "needs_restart": True,  "hidden": False, "description": "气泡最大宽度(px)"},
     "BUBBLE_FONT_SIZE":          {"type": "int",      "default": 14,            "category": "appearance", "needs_restart": True,  "hidden": False, "description": "气泡字号"},
     "SHOW_TRAY":                 {"type": "bool",     "default": True,          "category": "appearance", "needs_restart": True,  "hidden": False, "description": "显示托盘图标"},
-    "TRAY_NOTIFY_ENABLED":       {"type": "bool",     "default": True,          "category": "appearance", "needs_restart": False, "hidden": False, "description": "允许程序弹出托盘通知（定时器、待办、来电等）"},
+    "NOTIFY_ENABLED":            {"type": "bool",     "default": True,          "category": "appearance", "needs_restart": False, "hidden": False, "description": "允许发送通知（定时器、待办、来电等）"},
     "AUTO_START_ON_BOOT":        {"type": "bool",     "default": False,         "category": "appearance", "needs_restart": False, "hidden": False, "description": "开机自动启动"},
     "HIDE_CONSOLE":              {"type": "bool",     "default": True,          "category": "appearance", "needs_restart": True,  "hidden": True,  "description": "启动时隐藏控制台窗口"},
     "LOG_LEVEL":                 {"type": "str",      "default": "DEBUG",       "category": "appearance", "needs_restart": False, "hidden": True,  "description": "日志级别(DEBUG/INFO/WARNING/ERROR)"},
