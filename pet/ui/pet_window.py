@@ -154,11 +154,12 @@ class _SpriteLabel(QLabel):
         painter.translate(anchor_x, anchor_y)
         painter.scale(scale_x, scale_y)
         painter.translate(-anchor_x, -anchor_y)
-        # 摆动绕头部抓取点旋转：加速度向右时身体左偏，窗口矩形不变
+        # 摆动绕头部抓取点旋转：θ 右偏为正；Qt 正角在屏幕上为顺时针，会把
+        # 锚点下方的身体转向左侧，因此绘制取负角
         if self._swing != 0.0:
             grab_y = top + pm_h * self.GRAB_ANCHOR_Y
             painter.translate(anchor_x, grab_y)
-            painter.rotate(self._swing)
+            painter.rotate(-self._swing)
             painter.translate(-anchor_x, -grab_y)
         # QPointF 重载支持亚像素定位：浮点呼吸位移平滑渲染，不取整成方波
         painter.drawPixmap(QPointF(left, top), pixmap)

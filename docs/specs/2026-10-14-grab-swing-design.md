@@ -93,14 +93,15 @@ ax = ax * (1 - ALPHA) + a * ALPHA    # ALPHA = 0.25，加速度低通
 painter.translate(anchor_foot); painter.scale(sx, sy); painter.translate(-anchor_foot)
 # 新增：摆动旋转，锚点 = 抓取点（水平居中, 0.16 * pm_h）
 if swing != 0:
-    painter.translate(anchor_grab); painter.rotate(swing); painter.translate(-anchor_grab)
+    painter.translate(anchor_grab); painter.rotate(-swing); painter.translate(-anchor_grab)
 painter.drawPixmap(QPointF(left, top), pixmap)
 ```
 
 | 项 | 约定 |
 |---|---|
 | 摆动锚点 | `(left + pm_w/2, top + pm_h * GRAB_ANCHOR_Y)`，`GRAB_ANCHOR_Y = 0.16` 定义在 `_SpriteLabel`，`PetWindow._GRAB_RATIO_Y` 引用同一常量 |
-| 信号单位 | `swing_changed` 发角度的度数值（Qt `rotate` 接口单位），控制器内部积分用弧度 |
+| 旋转方向 | Qt `rotate` 正角在屏幕上为顺时针，锚点下方的身体顺时针会向左偏，与 θ 右偏为正相反，绘制取负角 |
+| 信号单位 | `swing_changed` 发角度的度数值（右偏为正），控制器内部积分用弧度 |
 | 快速渲染路径 | 判定条件扩为 `pose == (0, 1.0, 1.0) and tap_scale == 1.0 and swing == 0`，静止后不产生额外重绘 |
 | 与帧动画的关系 | `setPixmap` 触发的重绘与 `set_swing` 触发的重绘走同一 `paintEvent`，`grabbed` 帧动画正常播出 |
 
@@ -142,7 +143,8 @@ python scripts/gen_docs.py --check
 1. `step_pendulum`：零激励下角度衰减回零；负向激励产生负向角度；角度到达上限时截断且 ω 归零；
 2. 控制器：`begin` 后注入匀加速位置序列，`swing_changed` 的角度非零且方向与加速度相反；匀速位置序列下角度稳定在滞后方向的非零值；`release` 后角度衰减至零并停表（定时器停止）；再次 `begin` 从零开始；
 3. 开关：`GRAB_SWING_ENABLED` 关闭时 `begin` 不启动定时器、不产生信号；
-4. 上限：注入高速位移序列，角度绝对值不超过 `GRAB_SWING_MAX_DEG`。
+4. 上限：注入高速位移序列，角度绝对值不超过 `GRAB_SWING_MAX_DEG`；
+5. 渲染方向：渲染 `swing = 0 / +10 / -10` 三档，下半部分黑色像素重心满足 `right > base > left`（θ 为正时绘制出的身体在垂线右侧）。
 
 手动检查清单：
 
