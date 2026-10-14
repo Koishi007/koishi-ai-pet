@@ -12,7 +12,7 @@
 | `pet/action/__init__.py` | 动作系统 — 动作定义与注册(action)、帧动画播放(action_queue)、重力特效(gravity)、注册表(registry)。 |  |
 | `pet/action/action.py` | 复合行为（移动、弹跳等），通过 PetAnimator 播放帧动画。 | `PetActions` |
 | `pet/action/action_queue.py` | 行为队列控制器。 | `ActionQueue` |
-| `pet/action/calling.py` | 来电通知：calling 动作开始时给用户弹一条系统通知。 | `notify_call()` |
+| `pet/action/calling.py` | 来电通知：calling 动作开始时给用户弹一条系统通知 | `notify_call()` |
 | `pet/action/fishing.py` | 钓鱼判定：桌宠执行 fishing 动作时掷一次骰子，决定这轮是否有收获。 | `roll_catch()` `format_result()` `_FishingOutcome` |
 | `pet/action/gravity.py` | 模拟桌宠受重力下落，可站立在其他窗口上。 | `GravitySystem` |
 | `pet/action/outcome.py` | 动作产出（outcome） | `Outcome` `register()` `outcome_for()` `registered_actions()` |

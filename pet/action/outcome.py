@@ -31,11 +31,7 @@ _OUTCOMES: dict[str, Outcome] = {}
 def register(action_name: str, handler: OutcomeHandler, once: bool = True,
              effect: Optional[EffectHandler] = None,
              timing: str = TIMING_END) -> None:
-    """为动作注册产出（同名后注册的覆盖先注册的）。
-
-    timing 决定结算时机：TIMING_END 在动作结束时，TIMING_START 在动作开始时就结算
-    （动作时长接近脑周期，默认等它跑完才结算）。
-    """
+    """为动作注册产出，同名后注册的覆盖先注册的"""
     if timing not in _TIMINGS:
         raise ValueError(f"未知结算时机 {timing!r}，应为 {TIMING_END!r} 或 {TIMING_START!r}")
     _OUTCOMES[action_name] = Outcome(handler, once, effect, timing)
