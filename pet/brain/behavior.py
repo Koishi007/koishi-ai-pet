@@ -11,7 +11,8 @@ from pet.brain.llm_gateway import LlmGateway
 from pet.brain.llm_stats import LlmStats
 from pet.brain.local_fallback import chat_decide_local, decide_local, interact_decide_local
 from pet.brain.output import ActionStep, BehaviorOutput, CancelledError
-from pet.brain.parsing import BehaviorParser, parse_behavior, parse_stream_chunks
+from pet.brain.parsing import (BehaviorParser, parse_behavior, parse_stream_chunks,
+                               _UNPARSED_SAMPLE_LIMIT)
 from pet.brain.summary import SummaryHooks, flush_summaries, summarize_with_llm
 from pet.brain.tool_loop import run_tool_loop
 from pet.tools.executor import ToolExecutor
@@ -370,7 +371,7 @@ class Behavior(BrainMixin):
                                            temperature=_RETRY_TEMPERATURE if repair else None)
             msg = resp.choices[0].message
             content = msg.content or ""
-            self._last_unparsed = content
+            self._last_unparsed = content[:_UNPARSED_SAMPLE_LIMIT]
             logger.info(f"[{t}] [Behavior] === LLM RESPONSE ({tag}) ===")
             logger.info(f"[{t}] [Behavior]   finish_reason: {resp.choices[0].finish_reason}")
             if content:
