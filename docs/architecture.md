@@ -119,7 +119,7 @@ flowchart TB
 4. **输出解析**：按行前缀分派 - `Summary` / `Speech` / `Action` / `Memory` / `Emotion` / `Mood` / `Vitals`
    （`pet/brain/parsing.py`，流式与非流式共用一套行标签，聚合为 `BehaviorOutput`）。
    同一字段出现多行时，`Summary` / `Memory` / `Mood` / `Vitals` 只取第一条，`Speech` 全部保留并拼接。
-   非流式解析器在没有 Action 时兜底 `sit 5s`，流式收尾不补（空响应由 `retry_if_empty` 重试一次）。
+   非流式解析器在没有 Action 时兜底 `sit 5s`，流式收尾不补（空响应由 `pet/brain/repair.py` 的 `retry_if_empty` 重试一次）。
 5. **工具轮次**：`pet/brain/tool_loop.py` 循环执行 LLM 请求的工具，最多 `LLM_TOOL_MAX_ROUNDS` 轮；
    元工具（`tool_search`、`recall` 等）不占配额。单个工具在 `pet/tools/executor.py` 里带超时执行。
 6. **动作执行**：`BehaviorOutput` 里的动作交给 `ActionQueue`（`pet/action/action_queue.py`）串行播放，
@@ -219,6 +219,7 @@ system prompt 由三段拼起来：
 | `behavior.py` | 编排中枢：六个决策入口、抢锁与降级、上下文与工具会话装配 |
 | `llm_gateway.py` | LLM 请求：非流式补全、流式建流、thinking 参数降级、prompt 规模统计 |
 | `parsing.py` | 输出解析：行标签、字段取值、流式消费（流式与非流式共用一套规则） |
+| `repair.py` | 空响应修复重试：无动作无台词时追加格式修复提示、改写 messages 再跑一次 |
 | `tool_loop.py` | 工具轮次：执行、分组激活、轮次预算与最终行为解析 |
 | `local_fallback.py` | 本地兜底：LLM 不可用或抢锁失败时的降级产出 |
 | `summary.py` | 摘要执行端：待摘要队列 → LLM 压缩或拼接 → 写回上下文 |

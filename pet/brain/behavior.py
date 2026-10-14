@@ -13,6 +13,7 @@ from pet.brain.local_fallback import chat_decide_local, decide_local, interact_d
 from pet.brain.output import ActionStep, BehaviorOutput, CancelledError
 from pet.brain.parsing import (BehaviorParser, parse_behavior, parse_stream_chunks,
                                _UNPARSED_SAMPLE_LIMIT)
+from pet.brain.repair import repair_messages, retry_if_empty, RETRY_TEMPERATURE
 from pet.brain.summary import SummaryHooks, flush_summaries, summarize_with_llm
 from pet.brain.tool_loop import run_tool_loop
 from pet.tools.executor import ToolExecutor
@@ -21,41 +22,6 @@ from pet.tools.context import TOOL_CTX
 from pet.tools.registry import TOOL_REGISTRY
 
 logger = logging.getLogger(__name__)
-
-# 空响应重试时追加的格式修复提示
-_EMPTY_RETRY_HINT = (
-    "上一次输出没有任何可解析的字段，已作废。重新输出前先确认本轮你要做的是哪一种：\n"
-    "A. 只想说话或行动 —— 严格按协议输出字段行：\n"
-    "   1. 一行一个字段，行首就是标签，标签后紧跟英文冒号，例如 `Speech: 你好`；\n"
-    "   2. 行首不要加时间戳、说话人、编号、列表符号、加粗或代码块围栏；\n"
-    "   3. 第一行必须是 `Summary:`；只输出字段行，不要输出解释或推理过程。\n"
-    "B. 要调用工具 —— 不要把工具名写成文字，直接按 OpenAI 格式发起函数调用，"
-    "工具名与参数以工具列表里的 schema 为准。"
-)
-# 空响应重试时的采样温度
-_RETRY_TEMPERATURE = 0.3
-
-
-def retry_if_empty(pipeline, tag: str = "") -> BehaviorOutput:
-    """跑一次决策，结果既无动作也无台词时按修复模式再跑一次。
-
-    调用方必须让 pipeline 不做动作兜底，否则空响应会被补成 sit 而看不出为空。
-    第二次调用带 repair=True。
-    """
-    result = pipeline(repair=False)
-    if not result.actions and not result.speech:
-        logger.warning(f"[Behavior] empty LLM response (no actions, no speech), retrying once ({tag})")
-        result = pipeline(repair=True)
-    return result
-
-
-def repair_messages(messages: list, sample: str = "") -> list:
-    """空响应重试用的 messages：末尾追加格式修复提示，带上被丢弃的原文，不改动原列表。"""
-    hint = _EMPTY_RETRY_HINT
-    if sample:
-        hint += (f"\n\n你上一次输出的是：\n---\n{sample}\n---\n"
-                 "它因为没有行首字段标签被整段丢弃。按上面的 A 或 B 重新输出。")
-    return messages + [{"role": "system", "content": hint}]
 
 
 class Behavior(BrainMixin):
@@ -71,7 +37,8 @@ class Behavior(BrainMixin):
         self._lock = threading.RLock()
         self._counter_lock = threading.Lock()  # 仅保护 _rounds_without_user，避免主线程等待 LLM 长锁
         self._rounds_without_user = 0
-        self._last_unparsed = ""  # 上一轮未解析出字段的正文，供重试时回传
+        # 未解析正文按线程隔离：脑线程被顶替后新旧请求并发，共享一份会互相覆盖
+        self._unparsed_local = threading.local()
 
         self.parser = BehaviorParser(self)
         self.ctx = ContextBuilder(
@@ -129,6 +96,15 @@ class Behavior(BrainMixin):
     def note_unparsed(self, text: str):
         """接住本轮未解析出字段的正文，供重试时回传给模型。"""
         self._last_unparsed = text
+
+    @property
+    def _last_unparsed(self) -> str:
+        """本轮未解析出字段的正文；按线程隔离，脑线程重叠时各请求各持一份。"""
+        return getattr(self._unparsed_local, "text", "")
+
+    @_last_unparsed.setter
+    def _last_unparsed(self, value: str):
+        self._unparsed_local.text = value
 
     def _build_tools_param(self, enable_tools: bool | None = None):
         """根据当前已激活的分组构建 tools 参数；enable_tools 非 None 时覆盖全局开关。"""
@@ -368,7 +344,7 @@ class Behavior(BrainMixin):
             tools_param = self._build_tools_param(enable_tools)
             resp = self.gateway.completion(messages, max_tokens=max_tokens, tools=tools_param,
                                            thinking=thinking,
-                                           temperature=_RETRY_TEMPERATURE if repair else None)
+                                           temperature=RETRY_TEMPERATURE if repair else None)
             msg = resp.choices[0].message
             content = msg.content or ""
             self._last_unparsed = content[:_UNPARSED_SAMPLE_LIMIT]
@@ -421,7 +397,7 @@ class Behavior(BrainMixin):
             tools_param = self._build_tools_param(enable_tools)
             stream = self.gateway.stream_chat(messages, max_tokens=max_tokens, tools=tools_param,
                                               thinking=thinking,
-                                              temperature=_RETRY_TEMPERATURE if repair else None)
+                                              temperature=RETRY_TEMPERATURE if repair else None)
             chunk_sent = [False]
 
             def _spy_chunk(delta: str):

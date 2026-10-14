@@ -207,6 +207,15 @@ class TestParseActionLine:
         step = parse_action_line("sit duration=|")
         assert step.kwargs == {}
 
+    def test_underscore_token_is_dropped(self):
+        # 下划线不是字母数字，单独成串时不能当作位置参数
+        step = parse_action_line("walk left __ _")
+        assert step.args == ("left",)
+
+    def test_underscore_keyword_value_is_dropped(self):
+        step = parse_action_line("sit duration=__")
+        assert step.kwargs == {}
+
     def test_custom_whitelist_decides(self):
         assert parse_action_line("teleport", resolve=lambda _: True).name == "teleport"
 

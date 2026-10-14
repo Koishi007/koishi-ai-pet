@@ -49,8 +49,8 @@ _VITALS_FIELDS = ("satiety", "energy")
 # 「字段±值」增量：字段名后允许空格，数字必须带符号
 _DELTA = re.compile(r"([A-Za-z]+)\s*([+-]\s*\d+)")
 
-# 无任何字母数字的 token
-_JUNK_TOKEN = re.compile(r"^\W+$", re.UNICODE)
+# 无任何字母数字的 token；下划线属于 \w，单独成串时也要算垃圾
+_JUNK_TOKEN = re.compile(r"^[\W_]+$", re.UNICODE)
 
 # 回传给模型重试的未解析正文上限
 _UNPARSED_SAMPLE_LIMIT = 200
