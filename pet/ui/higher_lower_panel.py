@@ -1,4 +1,4 @@
-"""更大还是更小面板 — 继承 GamePanelBase，负责牌堆展示与下注提交。"""
+"""猜高低面板 — 继承 GamePanelBase，负责牌堆展示与下注提交。"""
 
 import logging
 
@@ -32,15 +32,15 @@ _BTN_QSS = (
 
 
 class HigherLowerPanel(GamePanelBase):
-    """更大还是更小面板：分数、桌宠押注、基准与数字链、剩余牌堆、更高/更低按钮。"""
+    """猜高低面板：分数、桌宠下注、基准与数字链、剩余牌堆、高/低下注按钮。"""
 
-    TITLE = "更大还是更小 · 先得 6 分者获胜"
+    TITLE = "猜高低 · 先得 6 分者获胜"
     WIDTH = 360
     HEIGHT = 400
 
     def __init__(self, parent=None):
         self._score = None
-        self._pet_choice = None
+        self._pet_bet = None
         self._base_label = None
         self._history_label = None
         self._deck_label = None
@@ -59,11 +59,11 @@ class HigherLowerPanel(GamePanelBase):
         self._message.setFixedHeight(22)
         layout.addWidget(self._message)
 
-        self._pet_choice = QLabel("")
-        self._pet_choice.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._pet_choice.setStyleSheet("font-size: 15px; color: #e67e22;")
-        self._pet_choice.setFixedHeight(24)
-        layout.addWidget(self._pet_choice)
+        self._pet_bet = QLabel("")
+        self._pet_bet.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._pet_bet.setStyleSheet("font-size: 15px; color: #e67e22;")
+        self._pet_bet.setFixedHeight(24)
+        layout.addWidget(self._pet_bet)
 
         self._base_label = QLabel("")
         self._base_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -106,8 +106,12 @@ class HigherLowerPanel(GamePanelBase):
         target = payload.get("target", 6)
         self._score.setText(f"桌宠 {pet_score} - {user_score} 你（先得 {target} 分者获胜）")
 
+        # 用户下注前只提示「已下注」，下注后随揭晓公开桌宠押哪边
         pet_choice = payload.get("pet_choice")
-        self._pet_choice.setText(f"桌宠押：{_CN.get(pet_choice, '')}" if pet_choice else "")
+        if pet_choice:
+            self._pet_bet.setText(f"桌宠押：{_CN.get(pet_choice, '')}")
+        else:
+            self._pet_bet.setText("桌宠已下注" if payload.get("pet_bet") else "")
 
         base = payload.get("base")
         self._base_label.setText(f"{base}" if base is not None else "")

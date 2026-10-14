@@ -1,4 +1,4 @@
-"""更大还是更小对赌游戏 — 0-9 十张牌，双方各押「更高/更低」，按赔率计分，先得 6 分者获胜。
+"""猜高低对赌游戏 — 0-9 十张牌，双方各押「高/低」，按赔率计分，先得 6 分者获胜。
 
 桌宠经 game__play 传 hl_choice 先下注，用户在面板点击下注；抽牌在双方下注完成后发生，
 双方都无法预知结果。等待用户下注时阻塞脑线程（event.wait），主线程 UI 不受影响。
@@ -41,11 +41,7 @@ def odds(above: int, below: int) -> dict:
 
 def judge(base: int, revealed: int, pet_choice: str, user_choice: str,
           above: int, below: int) -> dict:
-    """判定一轮：返回双方分数变化与结果键。
-
-    outcome：same_hit 同边命中 / same_miss 同边未中 / user_hit 异边用户命中 /
-    pet_hit 异边桌宠命中。未命中方在异边时扣 1 分（下限 0 由调用方处理）。
-    """
+    """判定一轮：返回双方分数变化与结果键"""
     odds_map = odds(above, below)
     pet_hit = revealed > base if pet_choice == "higher" else revealed < base
     user_hit = revealed > base if user_choice == "higher" else revealed < base
@@ -60,7 +56,7 @@ def judge(base: int, revealed: int, pet_choice: str, user_choice: str,
 
 
 class HigherLowerGame(Game):
-    """更大还是更小：桌宠先押、用户后押，抽牌后按赔率计分，先得 6 分者获胜。"""
+    """猜高低：桌宠先押、用户后押，抽牌后按赔率计分，先得 6 分者获胜。"""
 
     MOVE_TIMEOUT = 15  # 用户下注超时（秒），超时结束本局，不算胜负
 
@@ -75,7 +71,7 @@ class HigherLowerGame(Game):
 
     def description(self) -> str:
         return (
-            "更大还是更小：0-9 十张牌，双方各自押下一张牌比基准更大还是更小，抽牌在双方下注后发生；"
+            "猜高低：0-9 十张牌，双方各自押下一张牌比基准高还是低，抽牌在双方下注后发生；"
             f"押中按赔率得 1-{ODDS_CAP} 分，两边押不同时押错方扣 1 分，先得 {TARGET_SCORE} 分者获胜；"
             f"轮到你时在面板点击下注，{self.MOVE_TIMEOUT} 秒内未下注则本局自动结束。"
         )
@@ -103,7 +99,7 @@ class HigherLowerGame(Game):
             "hl_choice": {
                 "type": "str",
                 "required": True,
-                "description": "桌宠本轮押注：higher（下一张比基准大）/ lower（下一张比基准小）；"
+                "description": "桌宠本轮押注：higher（下一张比基准高）/ lower（下一张比基准低）；"
                                "每次调用传自己押的边，用户通过面板点击下注，无需你传；"
                                "抽牌发生在用户点击之后，不要在台词里暗示已知道结果",
                 "enum": list(CHOICES),
@@ -139,13 +135,12 @@ class HigherLowerGame(Game):
                 "odds": odds_map,
             }
 
-        # 阶段：桌宠押注 → 等待用户押注 → 抽牌揭晓
-        self._emit_panel(state, waiting=True, pet_choice=choice, message="轮到你下注")
+        self._emit_panel(state, waiting=True, pet_bet=True, message="轮到你下注")
         move = self._wait_for_move(state)
         if state.get("_cancelled"):
             if state.get("_forfeit"):
                 return {
-                    "summary": "用户主动结束了更大还是更小，不算胜负",
+                    "summary": "用户主动结束了猜高低，不算胜负",
                     "ended": True,
                     "won": None,
                     "forfeit": True,
@@ -153,7 +148,7 @@ class HigherLowerGame(Game):
             return {"summary": "游戏已结束", "ended": True, "won": None,
                     "suppress_speech": True}
         if move is None:
-            self._emit_panel(state, waiting=False, pet_choice=choice,
+            self._emit_panel(state, waiting=False, pet_bet=True,
                              message="长时间未操作，本局结束")
             return {
                 "summary": f"你在 {self.MOVE_TIMEOUT} 秒内没有下注，本局结束",
@@ -200,8 +195,9 @@ class HigherLowerGame(Game):
             won = True if pet_score > user_score else (False if user_score > pet_score else None)
             detail = f"{detail}，牌堆已空"
 
-        self._emit_panel(state, waiting=False, pet_choice=choice, revealed=revealed,
-                         outcome=outcome, message=f"揭晓 {revealed}，{score_text}")
+        self._emit_panel(state, waiting=False, pet_bet=True, pet_choice=choice,
+                         revealed=revealed, outcome=outcome,
+                         message=f"揭晓 {revealed}，{score_text}")
         return {
             "summary": (f"基准 {base}，我押{_CN[choice]}，你押{_CN[user_choice]}，"
                         f"揭晓 {revealed}；{detail}。{score_text}"),
@@ -254,10 +250,11 @@ class HigherLowerGame(Game):
             if time.monotonic() >= deadline:
                 return None
 
-    def _emit_panel(self, state: dict, waiting: bool, pet_choice: str | None = None,
+    def _emit_panel(self, state: dict, waiting: bool, pet_bet: bool = False,
+                    pet_choice: str | None = None,
                     revealed: int | None = None, outcome: str | None = None,
                     message: str = ""):
-        """通知 UI 渲染更大还是更小面板（Qt 队列连接，跨线程安全）。"""
+        """通知 UI 渲染猜高低面板"""
         above, below = side_counts(state["deck"], state["base"])
         try:
             TOOL_CTX.game_board(self.name(), {
@@ -267,6 +264,7 @@ class HigherLowerGame(Game):
                 "above": above,
                 "below": below,
                 "odds": odds(above, below),
+                "pet_bet": pet_bet,
                 "pet_choice": pet_choice,
                 "user_score": state["user_score"],
                 "pet_score": state["pet_score"],
