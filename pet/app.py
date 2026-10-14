@@ -8,7 +8,7 @@ import sys
 import threading
 from logging.handlers import TimedRotatingFileHandler
 
-from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMessageBox
+from PySide6.QtWidgets import QApplication, QMessageBox
 from PySide6.QtGui import QIcon
 from PySide6.QtCore import QObject, QTimer, Qt, Signal, Slot
 
@@ -396,10 +396,7 @@ def main():
     tray = SystemTrayManager(app, window)
     logger.info("SystemTrayManager ready")
 
-    agent.notify_requested.connect(
-        lambda t, m, d: tray.tray_icon.showMessage(t, m, QSystemTrayIcon.MessageIcon.Information, d)
-        if tray.tray_icon else None
-    )
+    agent.notify_requested.connect(tray.notify)
 
     tray.set_agent(agent)
 
@@ -407,14 +404,12 @@ def main():
 
     def _on_update_available(latest_tag: str, local_ver: str):
         logger.info(f"[VersionCheck] 发现新版本: v{latest_tag}（当前 v{local_ver}）")
-        if tray.tray_icon:
-            tray.tray_icon.showMessage(
-                "发现新版本",
-                f"Koishi AI Pet v{latest_tag} 已发布（当前 v{local_ver}）。\n"
-                f"运行项目目录下的 update.bat / update.sh 即可更新。",
-                QSystemTrayIcon.MessageIcon.Information,
-                8000,
-            )
+        tray.notify(
+            "发现新版本",
+            f"Koishi AI Pet v{latest_tag} 已发布（当前 v{local_ver}）。\n"
+            f"运行项目目录下的 update.bat / update.sh 即可更新。",
+            8000,
+        )
 
     _updater.update_available.connect(_on_update_available, Qt.ConnectionType.QueuedConnection)
     QTimer.singleShot(5000, _updater.check)

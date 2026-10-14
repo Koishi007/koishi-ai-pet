@@ -9,6 +9,12 @@ OutcomeHandler = Callable[[], Optional[str]]
 # 特效处理器：返回要播放的粒子特效名；返回空串或 None 表示本次无特效
 EffectHandler = Callable[[], Optional[str]]
 
+# 结算时机
+TIMING_END = "end"      # 动作正常结束时结算（默认）
+TIMING_START = "start"  # 动作开始执行时立刻结算
+
+_TIMINGS = (TIMING_END, TIMING_START)
+
 
 @dataclass(frozen=True)
 class Outcome:
@@ -16,15 +22,23 @@ class Outcome:
     handler: OutcomeHandler
     once: bool = True  # True 只注入一轮；False 进入窗口期
     effect: Optional[EffectHandler] = None  # 命中时附带的粒子特效（可选）
+    timing: str = TIMING_END  # 结算时机：见 TIMING_END / TIMING_START
 
 
 _OUTCOMES: dict[str, Outcome] = {}
 
 
 def register(action_name: str, handler: OutcomeHandler, once: bool = True,
-             effect: Optional[EffectHandler] = None) -> None:
-    """为动作注册产出（同名后注册的覆盖先注册的）。"""
-    _OUTCOMES[action_name] = Outcome(handler, once, effect)
+             effect: Optional[EffectHandler] = None,
+             timing: str = TIMING_END) -> None:
+    """为动作注册产出（同名后注册的覆盖先注册的）。
+
+    timing 决定结算时机：TIMING_END 在动作结束时，TIMING_START 在动作开始时就结算
+    （动作时长接近脑周期，默认等它跑完才结算）。
+    """
+    if timing not in _TIMINGS:
+        raise ValueError(f"未知结算时机 {timing!r}，应为 {TIMING_END!r} 或 {TIMING_START!r}")
+    _OUTCOMES[action_name] = Outcome(handler, once, effect, timing)
 
 
 def outcome_for(action_name: str) -> Optional[Outcome]:

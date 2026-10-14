@@ -12,6 +12,7 @@
 | `pet/action/__init__.py` | 动作系统 — 动作定义与注册(action)、帧动画播放(action_queue)、重力特效(gravity)、注册表(registry)。 |  |
 | `pet/action/action.py` | 复合行为（移动、弹跳等），通过 PetAnimator 播放帧动画。 | `PetActions` |
 | `pet/action/action_queue.py` | 行为队列控制器。 | `ActionQueue` |
+| `pet/action/calling.py` | 来电通知：calling 动作开始时给用户弹一条系统通知。 | `notify_call()` |
 | `pet/action/fishing.py` | 钓鱼判定：桌宠执行 fishing 动作时掷一次骰子，决定这轮是否有收获。 | `roll_catch()` `format_result()` `_FishingOutcome` |
 | `pet/action/gravity.py` | 模拟桌宠受重力下落，可站立在其他窗口上。 | `GravitySystem` |
 | `pet/action/outcome.py` | 动作产出（outcome） | `Outcome` `register()` `outcome_for()` `registered_actions()` |
@@ -58,7 +59,7 @@
 | `pet/game/__init__.py` | 游戏层 — 五个回合制小游戏的导出与整包注册。 | `register_all()` |
 | `pet/game/gamebase.py` | 游戏对局基类与全局对局容器 GAME。 | `Game` `GameBase` |
 | `pet/game/guess_number.py` | 猜数字游戏 — 1-100 随机目标，7 次内猜中算赢。 | `GuessNumberGame` |
-| `pet/game/higher_lower.py` | 猜高低对赌游戏 — 0-9 十张牌，双方各押「更高/更低」，按赔率计分，先得 6 分者获胜。 | `side_counts()` `odds()` `judge()` `HigherLowerGame` |
+| `pet/game/higher_lower.py` | 猜高低对赌游戏 — 0-9 十张牌，双方各押「高/低」，按赔率计分，先得 6 分者获胜。 | `side_counts()` `odds()` `judge()` `HigherLowerGame` |
 | `pet/game/rps.py` | 猜拳游戏 — 石头剪刀布，三局两胜。 | `RockPaperScissorsGame` |
 | `pet/game/tic_tac_toe.py` | 井字棋游戏 — 3x3 棋盘，开局随机决定先后手（X 先手）。 | `TicTacToeGame` |
 | `pet/game/twenty_questions.py` | 二十问游戏 — 用户心想一个东西，桌宠通过最多 20 个是/否问题猜出它。 | `TwentyQuestionsGame` |
@@ -129,4 +130,4 @@
 | `pet/voice/voice_session.py` | 语音会话编排：麦克风采集 → 讯飞识别 | `VoiceSession` |
 | `pet/voice/xunfei_stt.py` | 讯飞语音听写 (iat) WebSocket API 封装 | `XunfeiSTT` |
 
-共 121 个模块。
+共 122 个模块。

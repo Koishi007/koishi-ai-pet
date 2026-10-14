@@ -182,7 +182,7 @@ def _build_duration_registry() -> dict[str, ActionDef]:
             "sit": "坐下",
             "sleep": "睡觉",
             "thinking": "沉思",
-            "calling": "打电话消磨时间",
+            "calling": "给用户打电话，也许能让用户注意你",
             "finger_heart": "表达喜欢的比心",
             "bathing": "放松地泡澡",
         }

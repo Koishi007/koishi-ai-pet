@@ -48,7 +48,7 @@
 | `sit` | 10-216秒 | 坐下 | `Action: sit 108` |
 | `thinking` | 5-108秒 | 沉思 | `Action: thinking 54` |
 | `sleep` | 10-216秒 | 睡觉 | `Action: sleep 108` |
-| `calling` | 5-108秒 | 打电话消磨时间 | `Action: calling 54` |
+| `calling` | 5-108秒 | 给用户打电话，也许能让用户注意你 | `Action: calling 54` |
 | `finger_heart` | 1-6秒 | 表达喜欢的比心 | `Action: finger_heart 2` |
 | `bathing` | 20-270秒 | 放松地泡澡 | `Action: bathing 135` |
 
@@ -82,7 +82,7 @@
 - sit [10-216秒] 坐下 | 示例: sit 108
 - thinking [5-108秒] 沉思 | 示例: thinking 54
 - sleep [10-216秒] 睡觉 | 示例: sleep 108
-- calling [5-108秒] 打电话消磨时间 | 示例: calling 54
+- calling [5-108秒] 给用户打电话，也许能让用户注意你 | 示例: calling 54
 - finger_heart [1-6秒] 表达喜欢的比心 | 示例: finger_heart 2
 - bathing [20-270秒] 放松地泡澡 | 示例: bathing 135
 - fade_in 无参数 显示自己的身形

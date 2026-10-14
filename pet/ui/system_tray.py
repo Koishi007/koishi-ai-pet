@@ -84,6 +84,13 @@ class SystemTrayManager(QObject):
     def set_agent(self, agent):
         self._agent = agent
 
+    def notify(self, title: str, message: str, duration: int = 5000):
+        """弹一条托盘通知；总开关关闭或无托盘图标时静默丢弃。"""
+        if self.tray_icon is None or not config.TRAY_NOTIFY_ENABLED:
+            return
+        self.tray_icon.showMessage(title, message,
+                                   QSystemTrayIcon.MessageIcon.Information, duration)
+
     def _update_tooltip(self):
         """定时更新托盘 tooltip，显示 pulse 参数 + 进程资源。"""
         local_ver = get_local_version() or "?"
