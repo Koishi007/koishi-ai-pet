@@ -35,7 +35,12 @@ def _allowed_roots() -> list[str]:
 class FileOpsTool:
     def _check_path(self, path: str) -> str:
         # realpath 解析 symlink / junction：否则允许目录内的链接可指向外部造成逃逸
-        abs_path = os.path.realpath(os.path.expanduser(path))
+        expanded = os.path.expanduser(path)
+        try:
+            abs_path = os.path.realpath(expanded)
+        except OSError as e:
+            # 解析失败（如路径含不受信任的装入点）时无法确认是否在允许目录内，按拒绝处理
+            raise PermissionError(f"不允许访问: {expanded}（路径无法解析: {e}）") from e
         for root in _allowed_roots():
             real_root = os.path.realpath(root)
             try:
