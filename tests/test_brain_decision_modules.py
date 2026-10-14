@@ -91,6 +91,22 @@ class TestRepairMessages:
         assert repaired[-1]["role"] == "system"
         assert repaired[-1]["content"] == behavior_module._EMPTY_RETRY_HINT
 
+    def test_sample_is_quoted_back(self):
+        """被丢弃的原文要回传给模型，否则它不知道自己错在哪。"""
+        messages = [{"role": "user", "content": "你好"}]
+
+        repaired = behavior_module.repair_messages(messages, "[09:24] 好呀，那恋恋开一局")
+
+        assert "[09:24] 好呀，那恋恋开一局" in repaired[-1]["content"]
+        assert repaired[-1]["content"].startswith(behavior_module._EMPTY_RETRY_HINT)
+
+    def test_hint_offers_protocol_and_tool_call_paths(self):
+        """提示要模型先确认是输出协议字段，还是发起 OpenAI 格式的函数调用。"""
+        hint = behavior_module._EMPTY_RETRY_HINT
+
+        assert "Speech: 你好" in hint
+        assert "OpenAI" in hint and "函数" in hint
+
     def test_original_messages_untouched(self):
         messages = [{"role": "user", "content": "你好"}]
 
@@ -138,6 +154,7 @@ class _FakeSession:
         self.contexts = []
         self.executor_obj = _FakeExecutor()
         self.activated = []
+        self.unparsed = []
 
     def tools_param(self, enable_tools):
         return None
@@ -147,6 +164,9 @@ class _FakeSession:
 
     def note_progress(self):
         self.progress += 1
+
+    def note_unparsed(self, text):
+        self.unparsed.append(text)
 
     def speak_aside(self, text):
         pass
@@ -420,9 +440,12 @@ class _HangingStream:
 
 
 class _ProgressSink:
-    """解析器只依赖进展上报。"""
+    """解析器只依赖进展上报与未解析正文回传。"""
 
     def note_progress(self):
+        pass
+
+    def note_unparsed(self, text):
         pass
 
 

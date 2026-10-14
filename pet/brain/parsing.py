@@ -49,10 +49,15 @@ _VITALS_FIELDS = ("satiety", "energy")
 # 「字段±值」增量：字段名后允许空格，数字必须带符号
 _DELTA = re.compile(r"([A-Za-z]+)\s*([+-]\s*\d+)")
 
+# 回传给模型重试的未解析正文上限：够看清跑偏形状即可
+_UNPARSED_SAMPLE_LIMIT = 200
+
 class BehaviorSink(Protocol):
-    """解析依赖的编排方能力：进展上报。"""
+    """解析依赖的编排方能力：进展上报与未解析正文回传。"""
 
     def note_progress(self) -> None: ...
+
+    def note_unparsed(self, text: str) -> None: ...
 
 
 def parse_deltas(raw: str, fields: tuple[str, ...]) -> Optional[dict]:
@@ -406,8 +411,10 @@ class BehaviorParser:
         elif usable and (received or reasoning_len):
             logger.debug(f"[Behavior] [{tag}] 工具轮次无正文：{counts}")
         elif received or reasoning_len:
-            body = f"；正文：{''.join(received)[:200]!r}" if received else ""
-            logger.warning(f"[Behavior] [{tag}] 响应未解析出字段：{counts}{body}")
+            body_text = "".join(received)
+            self._sink.note_unparsed(body_text[:_UNPARSED_SAMPLE_LIMIT])
+            logger.warning(f"[Behavior] [{tag}] 响应未解析出字段：{counts}"
+                           f"；正文：{body_text[:200]!r}")
         return raw, usable
 
     def iter_stream_with_timeout(self, stream, total_timeout: float,

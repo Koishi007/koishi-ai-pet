@@ -25,13 +25,17 @@ from pet.brain.parsing import (
 
 
 class _Sink:
-    """只记录进展上报次数的最小 sink。"""
+    """只记录进展上报与未解析正文的最小 sink。"""
 
     def __init__(self):
         self.progress = 0
+        self.unparsed = []
 
     def note_progress(self):
         self.progress += 1
+
+    def note_unparsed(self, text):
+        self.unparsed.append(text)
 
 
 @dataclass
@@ -394,6 +398,15 @@ class TestUntaggedContentDiag:
         assert records
         assert all("字符" in m for m in records)
         assert all("恋恋没有开始游戏哦" in m for m in records)
+
+    def test_unparsed_body_is_reported_to_sink(self):
+        """未解析的正文要回传给编排方，供重试时作为样本回传模型。"""
+        sink = _Sink()
+        parser = BehaviorParser(sink)
+
+        parser.collect_stream(_stream_text("[09:24] 好呀，那恋恋开一局"), 5.0, tag="test")
+
+        assert sink.unparsed == ["[09:24] 好呀，那恋恋开一局"]
 
     def test_tool_round_reasoning_only_is_not_warned(self, caplog):
         """工具轮次只带 reasoning、不带正文：空 raw 是预期形态，不按异常上报。"""
