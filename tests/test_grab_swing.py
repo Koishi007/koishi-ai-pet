@@ -17,12 +17,12 @@ def qcore_app():
 
 
 class _PosSeq:
-    """按 tick 推进的位置序列：匀加速（px/s²）。"""
+    """按 tick 推进的位置序列：初速 v0、匀加速 accel（px/s²）。"""
 
-    def __init__(self, accel: float):
+    def __init__(self, accel: float, v0: float = 0.0):
         self._accel = accel
         self._x = 0.0
-        self._v = 0.0
+        self._v = v0
 
     def __call__(self) -> float:
         x = self._x
@@ -36,20 +36,20 @@ class TestStepPendulum:
     def test_zero_input_decays_to_rest(self):
         theta, omega = 0.2, 0.0
         for _ in range(400):
-            theta, omega = step_pendulum(theta, omega, 0.0, DT, 25.0, 5.0, 4e-4, 0.21)
+            theta, omega = step_pendulum(theta, omega, 0.0, DT, 25.0, 5.0, 0.21)
         assert abs(theta) < math.radians(0.5)
         assert abs(omega) < math.radians(5.0)
 
-    def test_forward_accel_deflects_negative(self):
+    def test_negative_drive_deflects_negative(self):
         theta, omega = 0.0, 0.0
         for _ in range(30):
-            theta, omega = step_pendulum(theta, omega, 20000.0, DT, 25.0, 2.0, 4e-4, 0.21)
+            theta, omega = step_pendulum(theta, omega, -8.0, DT, 25.0, 2.0, 0.21)
         assert theta < 0
 
     def test_clamp_caps_angle_and_zeroes_omega(self):
         theta, omega = 0.0, 0.0
         for _ in range(50):
-            theta, omega = step_pendulum(theta, omega, 1e6, DT, 25.0, 2.0, 4e-4, 0.21)
+            theta, omega = step_pendulum(theta, omega, -100.0, DT, 25.0, 2.0, 0.21)
         assert theta == pytest.approx(-0.21)
         assert omega == 0.0
 
@@ -69,6 +69,15 @@ class TestSwingController:
             ctrl._tick()
         assert angles
         assert min(angles) < 0
+
+    def test_constant_velocity_holds_deflection(self, qcore_app):
+        # 匀速右移：无加速度，速度激励让身体保持左偏（600px/s 稳态约 -7°）
+        ctrl = SwingController(_PosSeq(0.0, v0=600.0))
+        angles = self._angles(ctrl)
+        ctrl.begin()
+        for _ in range(60):
+            ctrl._tick()
+        assert -12 < angles[-1] < -3
 
     def test_release_decays_and_stops(self, qcore_app):
         ctrl = SwingController(_PosSeq(20000.0))

@@ -7,14 +7,14 @@ from PySide6.QtCore import QObject, QTimer, Signal
 from pet.config import config
 
 
-def step_pendulum(theta: float, omega: float, ax: float, dt: float,
-                  k: float, c: float, gain: float, theta_max: float) -> tuple[float, float]:
+def step_pendulum(theta: float, omega: float, drive: float, dt: float,
+                  k: float, c: float, theta_max: float) -> tuple[float, float]:
     """阻尼单摆积分一步（半隐式欧拉）。角度单位弧度，右偏为正。
 
-    ax 是窗口水平加速度（px/s²），惯性力与加速度方向相反。
+    drive 是外部激励角加速度（rad/s²），正值为右偏方向；加速度与速度的换算由调用方完成。
     超过 theta_max 时截断角度并把角速度归零，防止贴上限抖动。
     """
-    omega += (-k * math.sin(theta) - c * omega - ax * gain) * dt
+    omega += (-k * math.sin(theta) - c * omega + drive) * dt
     theta += omega * dt
     if abs(theta) > theta_max:
         theta = math.copysign(theta_max, theta)
@@ -23,7 +23,7 @@ def step_pendulum(theta: float, omega: float, ax: float, dt: float,
 
 
 class SwingController(QObject):
-    """30ms tick 估计拖拽加速度并积分摆角，输出角度（度）。"""
+    """30ms tick 估计拖拽速度与加速度并积分摆角，输出角度（度）。"""
 
     swing_changed = Signal(float)  # 摆角，度；右偏为正
 
@@ -31,7 +31,8 @@ class SwingController(QObject):
     _K = 25.0              # 恢复系数（= g/L），固有周期约 1.26s
     _C_DRAG = 2.0          # 拖拽中阻尼
     _C_FREE = 5.0          # 松手后阻尼
-    _AX_GAIN = 4e-4        # px/s² → rad/s²
+    _AX_GAIN = 1e-3        # 加速度映射（px/s² → rad/s²）：加减速时的惯性甩动
+    _VX_GAIN = 5e-3        # 速度映射（px/s → rad/s²）：匀速拖动时身体保持滞后倾角
     _EMA_ALPHA = 0.25      # 加速度低通系数
     _REST_THETA = math.radians(0.5)    # 静止角度阈值
     _REST_OMEGA = math.radians(5.0)    # 静止角速度阈值（rad/s）
@@ -44,6 +45,7 @@ class SwingController(QObject):
         self._theta = 0.0
         self._omega = 0.0
         self._ax = 0.0
+        self._vx = 0.0
         self._last_x: float | None = None
         self._last_v: float | None = None
         self._dragging = False
@@ -59,6 +61,7 @@ class SwingController(QObject):
         self._theta = 0.0
         self._omega = 0.0
         self._ax = 0.0
+        self._vx = 0.0
         self._last_x = float(self._pos_getter())
         self._last_v = None
         self._dragging = True
@@ -69,6 +72,7 @@ class SwingController(QObject):
         """松手：断开激励，保留 θ/ω 继续衰减。"""
         self._dragging = False
         self._ax = 0.0
+        self._vx = 0.0
         self._last_x = None
         self._last_v = None
 
@@ -77,11 +81,16 @@ class SwingController(QObject):
         return self._timer.isActive()
 
     def _tick(self):
-        ax = self._estimate_ax() if self._dragging else 0.0
-        damping = self._C_DRAG if self._dragging else self._C_FREE
+        if self._dragging:
+            self._estimate_motion()
+            drive = -self._ax * self._AX_GAIN - self._vx * self._VX_GAIN
+            damping = self._C_DRAG
+        else:
+            drive = 0.0
+            damping = self._C_FREE
         self._theta, self._omega = step_pendulum(
-            self._theta, self._omega, ax, self._INTERVAL_MS / 1000.0,
-            self._K, damping, self._AX_GAIN, math.radians(config.GRAB_SWING_MAX_DEG),
+            self._theta, self._omega, drive, self._INTERVAL_MS / 1000.0,
+            self._K, damping, math.radians(config.GRAB_SWING_MAX_DEG),
         )
         self.swing_changed.emit(math.degrees(self._theta))
 
@@ -95,22 +104,22 @@ class SwingController(QObject):
         else:
             self._rest_ticks = 0
 
-    def _estimate_ax(self) -> float:
-        """两级差分求水平加速度并低通；首 tick 只建速度基准。"""
+    def _estimate_motion(self):
+        """两级差分：速度直接使用，加速度经 EMA 低通；首 tick 只建基准。"""
         x = float(self._pos_getter())
         dt = self._INTERVAL_MS / 1000.0
         if self._last_x is None:
             self._last_x = x
-            return self._ax
+            return
         v = (x - self._last_x) / dt
         self._last_x = x
+        self._vx = v
         if self._last_v is None:
             self._last_v = v
-            return self._ax
+            return
         a = (v - self._last_v) / dt
         self._last_v = v
         self._ax += (a - self._ax) * self._EMA_ALPHA
-        return self._ax
 
     def _at_rest(self) -> bool:
         return abs(self._theta) < self._REST_THETA and abs(self._omega) < self._REST_OMEGA

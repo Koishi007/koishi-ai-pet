@@ -39,7 +39,8 @@
 单摆角度 θ（弧度，右偏为正）与角速度 ω，30ms tick 半隐式欧拉积分：
 
 ```python
-omega += (-K * sin(theta) - C * omega - ax * AX_GAIN) * dt
+drive = -ax * AX_GAIN - vx * VX_GAIN   # 惯性甩动 + 移动滞后
+omega += (-K * sin(theta) - C * omega + drive) * dt
 theta += omega * dt
 theta, omega = clamp_pendulum(theta, omega, theta_max)
 ```
@@ -50,20 +51,21 @@ theta, omega = clamp_pendulum(theta, omega, theta_max)
 | `_K` | 25.0 | 恢复系数（= g/L），固有周期 2π/√K ≈ 1.26s |
 | `_C_DRAG` | 2.0 | 拖拽中阻尼，ζ = C/(2√K) ≈ 0.2 |
 | `_C_FREE` | 5.0 | 松手后阻尼，ζ ≈ 0.5，一次过冲后回正 |
-| `_AX_GAIN` | 4e-4 | 加速度映射系数（px/s² → rad/s²），以 1500px/s 的甩动逼近角度上限为校准基准 |
+| `_AX_GAIN` | 1e-3 | 加速度映射系数（px/s² → rad/s²）：加减速瞬间的惯性甩动 |
+| `_VX_GAIN` | 5e-3 | 速度映射系数（px/s → rad/s²）：匀速拖动时身体保持滞后倾角（600px/s 稳态约 7°） |
 
-激励项 `-ax·AX_GAIN`：窗口加速度向右时身体左偏，与惯性方向一致。`clamp_pendulum` 在 |θ| 超过 `theta_max` 时截断角度并将 ω 置零，防止贴上限抖动。
+两个激励分量方向都与运动方向相反（风阻模型）：加速度分量产生启动与急停的甩动，速度分量让匀速移动全程保持滞后倾角，快速甩动由上限截断。`clamp_pendulum` 在 |θ| 超过 `theta_max` 时截断角度并将 ω 置零，防止贴上限抖动。
 
-积分是模块级纯函数 `step_pendulum(theta, omega, ax, dt, k, c, gain, theta_max)`，不依赖 Qt，可脱离事件循环单测。
+积分是模块级纯函数 `step_pendulum(theta, omega, drive, dt, k, c, theta_max)`（`drive` 为换算后的激励角加速度），不依赖 Qt，可脱离事件循环单测。
 
 ### §3.2 激励估计
 
-`SwingController` 每个 tick 读取窗口 x 坐标（构造时注入取值回调），两级差分求加速度：
+`SwingController` 每个 tick 读取窗口 x 坐标（构造时注入取值回调），两级差分求速度与加速度：
 
 ```python
-v = (x_now - x_prev) / dt
+v = (x_now - x_prev) / dt            # 速度直接参与激励
 a = (v - v_prev) / dt
-ax = ax * (1 - ALPHA) + a * ALPHA    # ALPHA = 0.25
+ax = ax * (1 - ALPHA) + a * ALPHA    # ALPHA = 0.25，加速度低通
 ```
 
 差分在 tick 内完成，与鼠标事件频率无关。`begin()` 时速度、加速度、平滑值全部清零并以当前位置为基准，拖拽起始瞬间不产生虚假冲击。
@@ -137,15 +139,15 @@ python scripts/gen_docs.py --check
 
 `tests/test_grab_swing.py` 直接驱动控制器的 tick 方法（注入位置序列），不依赖事件循环时序；`QT_QPA_PLATFORM=offscreen` 由 `tests/conftest.py:23` 提供。覆盖：
 
-1. `step_pendulum`：零激励下角度衰减回零；恒定正向激励产生负向角度（惯性反向）；角度到达上限时截断且 ω 归零；
-2. 控制器：`begin` 后注入匀加速位置序列，`swing_changed` 的角度非零且方向与加速度相反；`release` 后角度单调衰减至零并停表（定时器停止）；再次 `begin` 从零开始；
+1. `step_pendulum`：零激励下角度衰减回零；负向激励产生负向角度；角度到达上限时截断且 ω 归零；
+2. 控制器：`begin` 后注入匀加速位置序列，`swing_changed` 的角度非零且方向与加速度相反；匀速位置序列下角度稳定在滞后方向的非零值；`release` 后角度衰减至零并停表（定时器停止）；再次 `begin` 从零开始；
 3. 开关：`GRAB_SWING_ENABLED` 关闭时 `begin` 不启动定时器、不产生信号；
 4. 上限：注入高速位移序列，角度绝对值不超过 `GRAB_SWING_MAX_DEG`。
 
 手动检查清单：
 
-1. 抓起后左右甩动，身体滞后偏转，急停时前甩再回摆；
-2. 抓起后缓慢移动，摆角接近零，无异响抖动；
+1. 抓起后匀速横向移动，身体向移动反方向保持滞后倾角；甩动时滞后加大，急停时前甩再回摆；
+2. 缓慢移动时倾角按速度比例减小，全程无抖动；
 3. 甩动中松手抛出，下落与落地过程中残余摆动自然衰减，落地后身体竖直；
 4. 静止抓持数秒后 CPU 占用无摆动相关开销（定时器已停）；
 5. 拖拽中呼吸与 Q 弹（先点一下再拖）不消失，三者叠加无跳变；
@@ -155,7 +157,7 @@ python scripts/gen_docs.py --check
 ## §8 风险与约束
 
 - **旋转裁剪**：贴图 1:1 撑满窗口，默认 12° 时脚部横向偏移约 `0.84 × 125 × sin(12°) ≈ 22px`；主体两侧透明边不足的素材会出现肢体边缘被裁。调小 `GRAB_SWING_MAX_DEG` 或调整素材透明边。
-- **参数手感**：`_AX_GAIN`、`_K`、阻尼取值为校准起点，实机手感偏硬或偏软时直接调常量，不新增配置键。
+- **参数手感**：`_AX_GAIN`、`_VX_GAIN`、`_K`、阻尼取值为校准起点，实机手感偏硬或偏软时直接调常量，不新增配置键。
 - **变换叠加**：呼吸 scale 应用于摆动锚点之前，锚点受呼吸缩放影响产生的偏差在亚像素级（呼吸缩放幅度 ≤ 4%），不构成视觉问题。
 - **线程与定时器**：控制器只活在 GUI 主线程；拖拽期间 `GravitySystem` 的定时器已停（`gravity.enable(False)`），两个 30ms 定时器不同时运转。
 - **平台覆盖**：绘制与定时器均为 Qt 通用接口，实测只覆盖 Windows。
