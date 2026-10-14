@@ -34,6 +34,7 @@ class SwingController(QObject):
     _AX_GAIN = 1e-3        # 加速度映射（px/s² → rad/s²）：加减速时的惯性甩动
     _VX_GAIN = 5e-3        # 速度映射（px/s → rad/s²）：匀速拖动时身体保持滞后倾角
     _EMA_ALPHA = 0.25      # 加速度低通系数
+    _LANDING_DECAY = 0.5   # 落地归正：每 tick 角度乘以该系数
     _REST_THETA = math.radians(0.5)    # 静止角度阈值
     _REST_OMEGA = math.radians(5.0)    # 静止角速度阈值（rad/s）
     _REST_TICKS = 12       # 静止持续 tick 数（约 0.36s）
@@ -49,6 +50,7 @@ class SwingController(QObject):
         self._last_x: float | None = None
         self._last_v: float | None = None
         self._dragging = False
+        self._relaxing = False
         self._rest_ticks = 0
 
         self._timer = QTimer(self)
@@ -65,6 +67,7 @@ class SwingController(QObject):
         self._last_x = float(self._pos_getter())
         self._last_v = None
         self._dragging = True
+        self._relaxing = False
         self._rest_ticks = 0
         self._timer.start(self._INTERVAL_MS)
 
@@ -76,11 +79,31 @@ class SwingController(QObject):
         self._last_x = None
         self._last_v = None
 
+    def land(self):
+        """落地：残余角度按指数快速归正，不拖到落地之后再摆完。"""
+        if not self._timer.isActive():
+            return
+        self._dragging = False
+        self._relaxing = True
+        self._ax = 0.0
+        self._vx = 0.0
+        self._last_x = None
+        self._last_v = None
+
     @property
     def active(self) -> bool:
         return self._timer.isActive()
 
     def _tick(self):
+        if self._relaxing:
+            self._theta *= self._LANDING_DECAY
+            self._omega = 0.0
+            self.swing_changed.emit(math.degrees(self._theta))
+            if abs(self._theta) < self._REST_THETA:
+                self._theta = 0.0
+                self._timer.stop()
+                self.swing_changed.emit(0.0)
+            return
         if self._dragging:
             self._estimate_motion()
             drive = -self._ax * self._AX_GAIN - self._vx * self._VX_GAIN

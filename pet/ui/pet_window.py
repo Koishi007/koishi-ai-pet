@@ -644,6 +644,7 @@ class PetWindow(TransparentWindow):
 
     def _on_landed(self):
         self.particles.spawn("dust")
+        self.swing_ctrl.land()  # 落地即归正，残余摆角不拖到落地之后
         fall_seconds = time.monotonic() - self._fall_started_at if self._fall_started_at else 0.0
         self._fall_started_at = None
         self._await_fall_down = False

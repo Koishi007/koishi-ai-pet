@@ -129,6 +129,30 @@ class TestSwingController:
             ctrl._tick()
         assert max(abs(a) for a in angles) <= config.GRAB_SWING_MAX_DEG + 1e-9
 
+    def test_land_relaxes_residual_swing(self, qt_app):
+        ctrl = SwingController(_PosSeq(20000.0))
+        angles = self._angles(ctrl)
+        ctrl.begin()
+        for _ in range(20):
+            ctrl._tick()
+        assert abs(ctrl._theta) > math.radians(1)  # 松手时有残余摆角
+        ctrl.release()
+        ctrl.land()
+        ticks = 0
+        for _ in range(100):
+            if not ctrl.active:
+                break
+            ctrl._tick()
+            ticks += 1
+        assert not ctrl.active
+        assert ticks <= 10  # 0.3s 内归正，不拖整段回正
+        assert angles[-1] == 0.0
+
+    def test_land_without_swing_is_noop(self, qt_app):
+        ctrl = SwingController(_PosSeq(0.0))
+        ctrl.land()
+        assert not ctrl.active
+
 
 def _bottom_half_centroid_x(swing: float) -> float:
     """渲染 `swing` 度后取下半部分黑色像素的 x 重心，用于判定身体偏向。
