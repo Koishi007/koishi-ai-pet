@@ -2,7 +2,8 @@
 
 __all__ = ["PetActions", "ActionQueue"]
 
-# 玩法装配：import 即完成动作产出注册。这些模块只用标准库，不会拖入 PySide6
+# 玩法装配：import 即完成动作产出注册。这些模块只用标准库与 TOOL_CTX，不会拖入 PySide6
+from pet.action import calling  # noqa: E402,F401
 from pet.action import fishing  # noqa: E402,F401
 
 

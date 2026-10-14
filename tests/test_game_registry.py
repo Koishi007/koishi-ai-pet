@@ -5,7 +5,7 @@ import pytest
 from pet.game import register_all
 from pet.game.gamebase import GameBase
 
-BUILTIN = {"guess_number", "tic_tac_toe", "rps", "twenty_questions"}
+BUILTIN = {"guess_number", "tic_tac_toe", "rps", "twenty_questions", "higher_lower"}
 
 
 @pytest.fixture

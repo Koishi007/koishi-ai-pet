@@ -32,8 +32,8 @@ class TestRetryIfEmpty:
     def test_retries_once_when_both_empty(self):
         calls = []
 
-        def pipeline():
-            calls.append(1)
+        def pipeline(repair=False):
+            calls.append(repair)
             return _empty() if len(calls) == 1 else _with_speech()
 
         assert retry_if_empty(pipeline, "t").speech == "你好"
@@ -42,8 +42,8 @@ class TestRetryIfEmpty:
     def test_returns_first_result_when_speech_present(self):
         calls = []
 
-        def pipeline():
-            calls.append(1)
+        def pipeline(repair=False):
+            calls.append(repair)
             return _with_speech()
 
         assert retry_if_empty(pipeline, "t").speech == "你好"
@@ -52,8 +52,8 @@ class TestRetryIfEmpty:
     def test_returns_first_result_when_actions_present(self):
         calls = []
 
-        def pipeline():
-            calls.append(1)
+        def pipeline(repair=False):
+            calls.append(repair)
             return BehaviorOutput(actions=[ActionStep("sit")])
 
         retry_if_empty(pipeline, "t")
@@ -62,12 +62,57 @@ class TestRetryIfEmpty:
     def test_still_empty_after_retry_is_returned(self):
         calls = []
 
-        def pipeline():
-            calls.append(1)
+        def pipeline(repair=False):
+            calls.append(repair)
             return _empty()
 
         assert retry_if_empty(pipeline, "t").speech is None
         assert len(calls) == 2
+
+    def test_retry_round_is_marked_as_repair(self):
+        """第二次调用带 repair=True。"""
+        flags = []
+
+        def pipeline(repair=False):
+            flags.append(repair)
+            return _empty()
+
+        retry_if_empty(pipeline, "t")
+        assert flags == [False, True]
+
+
+class TestRepairMessages:
+    def test_appends_single_system_hint(self):
+        messages = [{"role": "system", "content": "人格"}, {"role": "user", "content": "你好"}]
+
+        repaired = behavior_module.repair_messages(messages)
+
+        assert len(repaired) == 3
+        assert repaired[-1]["role"] == "system"
+        assert repaired[-1]["content"] == behavior_module._EMPTY_RETRY_HINT
+
+    def test_sample_is_quoted_back(self):
+        """被丢弃的原文要回传给模型，否则它不知道自己错在哪。"""
+        messages = [{"role": "user", "content": "你好"}]
+
+        repaired = behavior_module.repair_messages(messages, "[09:24] 好呀，那恋恋开一局")
+
+        assert "[09:24] 好呀，那恋恋开一局" in repaired[-1]["content"]
+        assert repaired[-1]["content"].startswith(behavior_module._EMPTY_RETRY_HINT)
+
+    def test_hint_offers_protocol_and_tool_call_paths(self):
+        """提示要模型先确认是输出协议字段，还是发起 OpenAI 格式的函数调用。"""
+        hint = behavior_module._EMPTY_RETRY_HINT
+
+        assert "Speech: 你好" in hint
+        assert "OpenAI" in hint and "函数" in hint
+
+    def test_original_messages_untouched(self):
+        messages = [{"role": "user", "content": "你好"}]
+
+        behavior_module.repair_messages(messages)
+
+        assert messages == [{"role": "user", "content": "你好"}]
 
 
 class _FakeResult:
@@ -109,6 +154,7 @@ class _FakeSession:
         self.contexts = []
         self.executor_obj = _FakeExecutor()
         self.activated = []
+        self.unparsed = []
 
     def tools_param(self, enable_tools):
         return None
@@ -118,6 +164,9 @@ class _FakeSession:
 
     def note_progress(self):
         self.progress += 1
+
+    def note_unparsed(self, text):
+        self.unparsed.append(text)
 
     def speak_aside(self, text):
         pass
@@ -173,6 +222,44 @@ class TestToolLoopRounds:
         out = run_tool_loop([], _tool_calls("recall__search"), "Speech: 兜底\n", session, max_rounds=3)
         assert session.streams <= session.meta_tool_max_rounds
         assert out.actions[0].name == "sit"  # 最后一轮无内容 → 兜底动作
+
+
+class TestToolLoopSpeechBoundaries:
+    """工具轮次必须逐轮断句。
+
+    每轮模型输出都是语义独立的一段：不在轮次边界收句，本轮最后一条 Speech 会
+    带着「未收尾」状态跨过整个工具执行空档，下一轮的 chunk 到达时气泡仍在同一句里，
+    两句就被拼进同一个气泡。
+    """
+
+    def test_each_tool_round_closes_its_sentence(self):
+        # 两轮工具 + 最后一轮收尾，每轮都吐一句 Speech
+        rounds = [("Speech: 第1句\n", _tool_calls("timer__set")),
+                  ("Speech: 第2句\n", _tool_calls("timer__set")),
+                  ("Speech: 收尾\n", {})]
+        session = _FakeSession(rounds)
+        ended = []
+
+        def on_chunk(delta):
+            pass
+
+        def on_stream_end():
+            ended.append(1)
+
+        out = run_tool_loop([], _tool_calls("timer__set"), "", session, max_rounds=5,
+                            on_chunk=on_chunk, on_stream_end=on_stream_end)
+
+        assert session.streams == len(rounds)
+        assert len(ended) == len(rounds)
+        assert out.speech == "收尾"
+
+    def test_round_boundary_flush_is_harmless_without_chunk_callback(self):
+        # 非流式路径（没有流式回调）不因断句插入而出错
+        rounds = [("Speech: 第1句\n", _tool_calls("timer__set")), ("Speech: 收尾\n", {})]
+        session = _FakeSession(rounds)
+        out = run_tool_loop([], _tool_calls("timer__set"), "", session, max_rounds=5)
+        assert session.streams == len(rounds)
+        assert out.speech == "收尾"
 
 
 class TestToolLoopCancellation:
@@ -291,7 +378,7 @@ def _stream_behavior(monkeypatch, texts, stream_factory=None):
     behavior._llm = fake
     behavior.gateway._llm = fake
 
-    def fake_stream_chat(messages, max_tokens=4000, tools=None, thinking=None):
+    def fake_stream_chat(messages, max_tokens=4000, tools=None, thinking=None, temperature=None):
         fake.tags.append("stream")
         return (stream_factory or _StreamStub)(fake.texts.pop(0))
 
@@ -353,9 +440,12 @@ class _HangingStream:
 
 
 class _ProgressSink:
-    """解析器只依赖进展上报。"""
+    """解析器只依赖进展上报与未解析正文回传。"""
 
     def note_progress(self):
+        pass
+
+    def note_unparsed(self, text):
         pass
 
 

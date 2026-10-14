@@ -10,8 +10,9 @@
 | `pet/__init__.py` | Koishi AI Pet 包分层说明。 |  |
 | `pet/__main__.py` | python -m pet 入口 |  |
 | `pet/action/__init__.py` | 动作系统 — 动作定义与注册(action)、帧动画播放(action_queue)、重力特效(gravity)、注册表(registry)。 |  |
-| `pet/action/action.py` | 复合行为（移动、弹跳等），通过 PetAnimator 播放帧动画。 | `PetActions` |
+| `pet/action/action.py` | 复合行为（移动、弹跳等），通过 PetAnimator 播放帧动画。 | `coerce_int()` `PetActions` |
 | `pet/action/action_queue.py` | 行为队列控制器。 | `ActionQueue` |
+| `pet/action/calling.py` | 来电通知：calling 动作开始时给用户弹一条系统通知 | `notify_call()` |
 | `pet/action/fishing.py` | 钓鱼判定：桌宠执行 fishing 动作时掷一次骰子，决定这轮是否有收获。 | `roll_catch()` `format_result()` `_FishingOutcome` |
 | `pet/action/gravity.py` | 模拟桌宠受重力下落，可站立在其他窗口上。 | `GravitySystem` |
 | `pet/action/outcome.py` | 动作产出（outcome） | `Outcome` `register()` `outcome_for()` `registered_actions()` |
@@ -26,7 +27,7 @@
 | `pet/auto_start.py` | 开机自启管理 — 跨平台支持 Windows / macOS / Linux。 | `set_auto_start()` |
 | `pet/brain/__init__.py` | Brain 层 — Behavior 自主/对话决策，LLMClient LLM封装，prompts 模板， |  |
 | `pet/brain/base.py` | 一条结构化的上下文记录。 | `ContextEntry` `BrainMixin` |
-| `pet/brain/behavior.py` | 与 AI 通信的一次决策编排：三条管线（自主/对话/交互）的入口、锁与降级。 | `retry_if_empty()` `Behavior` `_BehaviorToolSession` |
+| `pet/brain/behavior.py` | 与 AI 通信的一次决策编排：三条管线（自主/对话/交互）的入口、锁与降级。 | `retry_if_empty()` `repair_messages()` `Behavior` `_BehaviorToolSession` |
 | `pet/brain/context_builder.py` | LLM 请求上下文的构建 | `ContextBuilder` |
 | `pet/brain/conversation_store.py` | 对话历史持久化存储 — 记录所有 speech 输出和用户 chat 输入，按天切分，至多保存 7 天。 | `ConversationStore` |
 | `pet/brain/embedding_client.py` | OpenAI 兼容的嵌入向量客户端。 | `EmbeddingError` `EmbeddingClient` |
@@ -55,9 +56,10 @@
 | `pet/file_intake/types.py` | 拖入文件的数据结构。 | `FileRef` `DropVerdict` |
 | `pet/food/__init__.py` | food 层 — 需求驱动的本能行为（觅食）。 |  |
 | `pet/food/food.py` | 觅食本能 — 需求驱动的自主觅食行为（satiety 低时触发）。 | `pick_emoji()` `name_of()` `FoodManager` |
-| `pet/game/__init__.py` | 游戏层 — 四个回合制小游戏的导出与整包注册。 | `register_all()` |
+| `pet/game/__init__.py` | 游戏层 — 五个回合制小游戏的导出与整包注册。 | `register_all()` |
 | `pet/game/gamebase.py` | 游戏对局基类与全局对局容器 GAME。 | `Game` `GameBase` |
 | `pet/game/guess_number.py` | 猜数字游戏 — 1-100 随机目标，7 次内猜中算赢。 | `GuessNumberGame` |
+| `pet/game/higher_lower.py` | 猜高低对赌游戏 — 0-9 十张牌，双方各押「高/低」，按赔率计分，先得 6 分者获胜。 | `side_counts()` `odds()` `judge()` `HigherLowerGame` |
 | `pet/game/rps.py` | 猜拳游戏 — 石头剪刀布，三局两胜。 | `RockPaperScissorsGame` |
 | `pet/game/tic_tac_toe.py` | 井字棋游戏 — 3x3 棋盘，开局随机决定先后手（X 先手）。 | `TicTacToeGame` |
 | `pet/game/twenty_questions.py` | 二十问游戏 — 用户心想一个东西，桌宠通过最多 20 个是/否问题猜出它。 | `TwentyQuestionsGame` |
@@ -106,6 +108,7 @@
 | `pet/ui/file_drop_handler.py` | 拖放判定层：悬停与放下两层的判定、回调分发。 | `paths_from_mime()` `busy_event_text()` `FileDropHandler` |
 | `pet/ui/food_window.py` | 觅食的食物悬浮窗 — 纯展示组件，生命周期由 FoodManager 管理。 | `FoodWindow` |
 | `pet/ui/game_panel.py` | 游戏面板基类 — 通用无边框窗口框架 + 统一渲染入口 + 用户手动收场。 | `GamePanelBase` |
+| `pet/ui/higher_lower_panel.py` | 猜高低面板 — 继承 GamePanelBase，负责牌堆展示与下注提交。 | `HigherLowerPanel` |
 | `pet/ui/log_window.py` | 日志窗口 | `LogRelay` `LogWindowHandler` `LogWindow` |
 | `pet/ui/memory_window.py` | 记忆管理窗口 | `MemoryWindow` |
 | `pet/ui/music_bubble.py` | 桌宠音乐控制气泡 - 操控系统媒体播放 | `MusicBubble` |
@@ -114,7 +117,7 @@
 | `pet/ui/pet_window.py` | 扁平圆角菜单基类 — Windows 下自绘圆角背景，macOS 走原生。 | `_FlatMenuBase` `StickyMenu` `_SpriteLabel` `PetWindow` |
 | `pet/ui/rps_panel.py` | 猜拳面板 — 继承 GamePanelBase，负责出拳展示与点击提交。 | `RpsPanel` |
 | `pet/ui/settings_window.py` | 设置界面 — 用户配置的图形界面。 | `_LLMTestWorker` `_EmbeddingTestWorker` `_ModelsFetchWorker` `_VoiceTestWorker` `MarkdownEdit` `SettingsWindow` |
-| `pet/ui/speech_bubble.py` | 桌宠对话气泡 | `SpeechBubble` |
+| `pet/ui/speech_bubble.py` | 桌宠对话气泡：同一时刻只讲一句，多出来的排队 | `SpeechBubble` |
 | `pet/ui/styles.py` | QSS 样式库 —— 扁平化圆角风格。 | `bubble_column_y()` `make_title_button()` `make_minimize_button()` `make_close_button()` `ensure_taskbar_icon()` |
 | `pet/ui/system_tray.py` | （模块未提供 docstring） | `SystemTrayManager` |
 | `pet/ui/tic_tac_toe_panel.py` | 井字棋棋盘面板 — 继承 GamePanelBase，负责棋盘渲染与点击落子。 | `TicTacToePanel` |
@@ -127,4 +130,4 @@
 | `pet/voice/voice_session.py` | 语音会话编排：麦克风采集 → 讯飞识别 | `VoiceSession` |
 | `pet/voice/xunfei_stt.py` | 讯飞语音听写 (iat) WebSocket API 封装 | `XunfeiSTT` |
 
-共 119 个模块。
+共 122 个模块。

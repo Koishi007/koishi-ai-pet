@@ -173,6 +173,12 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
         if _chunk_invoked[0]:
             speech_streamed = True
 
+        # 每轮输出都是语义独立的一段：不在轮次边界断句，下一轮的 Speech
+        # 会接在没有收尾的上一句里，两句拼进同一个气泡。
+        # 调用方的 on_stream_end 自带「本句是否已开头」的守卫，没有副作用。
+        if on_stream_end:
+            on_stream_end()
+
         if not new_tool_calls:
             # LLM 不再请求工具，解析最终行为
             result = parse_behavior(content)
@@ -238,7 +244,7 @@ def _exec_tool(tool_calls_map: dict, idx: int, executor: ToolExecutor, session: 
     finally:
         if tool_aside:
             session.end_aside()
-    # 在 _normalize 之前提取摘要（_normalize 会 pop summary）
+    # 摘要供日志与上下文使用；_normalize 不改动原 dict，顺序无所谓
     tool_brief = ""
     if result.success and isinstance(result.data, dict):
         tool_brief = result.data.get("summary", "")

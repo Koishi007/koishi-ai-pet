@@ -45,6 +45,7 @@
 | [specs/2026-09-30-agent-oriented-architecture-feedback-design.md](specs/2026-09-30-agent-oriented-architecture-feedback-design.md) | 设计文档 | 手写 | 把架构红线做成面向 Agent 的契约测试：规则表、失败格式、误报缓解、allowlist 收敛边界 | 动手前写，落地后补齐结论 |
 | [specs/2026-10-06-file-drop-intake-design.md](specs/2026-10-06-file-drop-intake-design.md) | 设计文档 | 手写 | 拖入文件交互：可读判定与解码链、动作通道映射、拒绝与降级规则 | 动手前写，落地后补齐结论 |
 | [specs/2026-10-06-file-drop-intake-plan.md](specs/2026-10-06-file-drop-intake-plan.md) | 实施计划 | 手写 | 该改动拆成的七个任务：纯逻辑包、判定层、气泡、事件转发、附件参数、工具扩展点、收尾 | 执行时逐项勾选 |
+| [specs/2026-10-13-higher-lower-design.md](specs/2026-10-13-higher-lower-design.md) | 设计文档 | 手写 | 猜高低对赌：牌堆与赔率、双人下注的回合时序、判定与计分、面板载荷、轮次预算 | 动手前写，落地后补齐结论 |
 | [../CHANGELOG.md](../CHANGELOG.md) | 事实参考 | 生成 | 按版本分组的变更记录 | `python scripts/gen_changelog.py` |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | 操作指南 | 手写 | 开发流程、测试、提交与 PR 规范 | 流程变化时人工更新 |
 

@@ -281,6 +281,7 @@ class PetWindow(TransparentWindow):
         self.pet_actions.gravity.falling_started.connect(self._on_falling_started)
         self.pet_actions.gravity.landed.connect(self._on_landed)
         self.pet_anim.animation_finished.connect(self._on_anim_finished)
+        self.action_queue.action_started.connect(self._on_action_started)
         self.action_queue.action_finished.connect(self._on_action_finished)
         self.pet_actions.gravity.standing_lost.connect(self._on_standing_lost)
 
@@ -647,16 +648,23 @@ class PetWindow(TransparentWindow):
         """
         self._outcomes_done.clear()
 
-    def _on_action_finished(self, name: str):
-        """动作正常结束时结算它的产出（玩法见 pet.action.outcome）。
+    def _on_action_started(self, name: str):
+        """动作开始时结算声明了 timing=start 的产出（玩法见 pet.action.outcome）。"""
+        self._settle_outcome(name, outcome.TIMING_START)
 
-        挂结束而非开始：动作时长接近脑周期，常横跨到下一轮之后才跑完。
+    def _on_action_finished(self, name: str):
+        """动作正常结束时结算它的产出（默认时机，玩法见 pet.action.outcome）。
+
         每轮每个动作最多结算一次，注入方式由玩法声明（一次性 / 窗口期）。
         """
+        self._settle_outcome(name, outcome.TIMING_END)
+
+    def _settle_outcome(self, name: str, timing: str):
+        """按玩法声明的时机结算产出：时机对不上就留给另一个入口。"""
         if not self._agent or name in self._outcomes_done:
             return
         spec = outcome.outcome_for(name)
-        if spec is None:
+        if spec is None or spec.timing != timing:
             return
         self._outcomes_done.add(name)
         try:

@@ -10,6 +10,15 @@ from pet.action.gravity import GravitySystem
 logger = logging.getLogger(__name__)
 
 
+def coerce_int(value, default: int) -> int:
+    """把来自模型的数值参数转成 int，转不出来就回退到默认值"""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        logger.warning(f"[PetActions] 数值参数 {value!r} 非法，回退到 {default}")
+        return default
+
+
 def _target_screen(window: QWidget):
     """窗口所在屏幕；未挂到屏幕时退回主屏。"""
     from PySide6.QtWidgets import QApplication
@@ -84,6 +93,8 @@ class PetActions(QObject):
         if direction not in ("left", "right"):
             logger.warning(f"[PetActions] walk: invalid direction {direction!r}, fallback to 'right'")
             direction = "right"
+        distance = coerce_int(distance, 400)
+        bounce = coerce_int(bounce, 25)
 
         walk_action = f"walk_{direction}"
         self._anim.play(walk_action)
@@ -165,6 +176,7 @@ class PetActions(QObject):
         if direction not in ("left", "right"):
             logger.warning(f"[PetActions] drive: invalid direction {direction!r}, fallback to 'right'")
             direction = "right"
+        distance = coerce_int(distance, 400)
 
         walk_action = f"driving_{direction}"
         self._anim.play(walk_action)
@@ -379,6 +391,9 @@ class PetActions(QObject):
     
 
     def bounce(self, direction="right", distance=0, height=150, duration=800):
+        distance = coerce_int(distance, 0)
+        height = coerce_int(height, 150)
+        duration = coerce_int(duration, 800)
         self._cleanup_stopped_anims()
         self._anim.play("bounce")
         original_pos = self._window.pos()

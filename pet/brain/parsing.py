@@ -49,11 +49,18 @@ _VITALS_FIELDS = ("satiety", "energy")
 # 「字段±值」增量：字段名后允许空格，数字必须带符号
 _DELTA = re.compile(r"([A-Za-z]+)\s*([+-]\s*\d+)")
 
+# 无任何字母数字的 token
+_JUNK_TOKEN = re.compile(r"^\W+$", re.UNICODE)
+
+# 回传给模型重试的未解析正文上限
+_UNPARSED_SAMPLE_LIMIT = 200
 
 class BehaviorSink(Protocol):
-    """解析依赖的编排方能力：进展上报。"""
+    """解析依赖的编排方能力：进展上报与未解析正文回传。"""
 
     def note_progress(self) -> None: ...
+
+    def note_unparsed(self, text: str) -> None: ...
 
 
 def parse_deltas(raw: str, fields: tuple[str, ...]) -> Optional[dict]:
@@ -91,8 +98,12 @@ def parse_action_line(raw: str, resolve=ACTION_NAMES.__contains__) -> Optional[A
     args: list = []
     kwargs: dict = {}
     for token in parts[1:]:
+        if _JUNK_TOKEN.match(token):
+            continue
         if "=" in token:
             k, v = token.split("=", 1)
+            if _JUNK_TOKEN.match(v):
+                continue
             try:
                 v = int(v)
             except ValueError:
@@ -407,7 +418,10 @@ class BehaviorParser:
         elif usable and (received or reasoning_len):
             logger.debug(f"[Behavior] [{tag}] 工具轮次无正文：{counts}")
         elif received or reasoning_len:
-            logger.warning(f"[Behavior] [{tag}] 响应未解析出字段：{counts}")
+            body_text = "".join(received)
+            self._sink.note_unparsed(body_text[:_UNPARSED_SAMPLE_LIMIT])
+            logger.warning(f"[Behavior] [{tag}] 响应未解析出字段：{counts}"
+                           f"；正文：{body_text[:200]!r}")
         return raw, usable
 
     def iter_stream_with_timeout(self, stream, total_timeout: float,

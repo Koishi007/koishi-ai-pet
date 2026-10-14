@@ -8,7 +8,7 @@ import sys
 import threading
 from logging.handlers import TimedRotatingFileHandler
 
-from PySide6.QtWidgets import QApplication, QSystemTrayIcon, QMessageBox
+from PySide6.QtWidgets import QApplication, QMessageBox
 from PySide6.QtGui import QIcon
 from PySide6.QtCore import QObject, QTimer, Qt, Signal, Slot
 
@@ -302,17 +302,21 @@ def main():
     from pet.ui.tic_tac_toe_panel import TicTacToePanel
     from pet.ui.rps_panel import RpsPanel
     from pet.ui.twenty_questions_panel import TwentyQuestionsPanel
+    from pet.ui.higher_lower_panel import HigherLowerPanel
     tictac_panel = TicTacToePanel()
     tictac_panel.set_pet_window(window)
     rps_panel = RpsPanel()
     rps_panel.set_pet_window(window)
     tq_panel = TwentyQuestionsPanel()
     tq_panel.set_pet_window(window)
+    hl_panel = HigherLowerPanel()
+    hl_panel.set_pet_window(window)
     # 统一分发：按游戏名路由到对应面板，新游戏只需在此加一行映射
     _game_panel_handlers = {
         "tic_tac_toe": tictac_panel.render,
         "rps": rps_panel.render,
         "twenty_questions": tq_panel.render,
+        "higher_lower": hl_panel.render,
     }
     def _dispatch_game_board(game_name, payload):
         handler = _game_panel_handlers.get(game_name)
@@ -340,6 +344,7 @@ def main():
     agent.speak_stream_end.connect(
         lambda duration: speech_bubble.end_stream(duration) if window.isVisible() else None
     )
+    agent.speech_clear_requested.connect(lambda: speech_bubble.flush_pending())
     agent.llm_loading.connect(
         lambda loading: window.particles.start_loading() if window.isVisible() and loading else window.particles.stop_loading() if not loading else None
     )
@@ -391,10 +396,7 @@ def main():
     tray = SystemTrayManager(app, window)
     logger.info("SystemTrayManager ready")
 
-    agent.notify_requested.connect(
-        lambda t, m, d: tray.tray_icon.showMessage(t, m, QSystemTrayIcon.MessageIcon.Information, d)
-        if tray.tray_icon else None
-    )
+    agent.notify_requested.connect(tray.notify)
 
     tray.set_agent(agent)
 
@@ -402,14 +404,12 @@ def main():
 
     def _on_update_available(latest_tag: str, local_ver: str):
         logger.info(f"[VersionCheck] 发现新版本: v{latest_tag}（当前 v{local_ver}）")
-        if tray.tray_icon:
-            tray.tray_icon.showMessage(
-                "发现新版本",
-                f"Koishi AI Pet v{latest_tag} 已发布（当前 v{local_ver}）。\n"
-                f"运行项目目录下的 update.bat / update.sh 即可更新。",
-                QSystemTrayIcon.MessageIcon.Information,
-                8000,
-            )
+        tray.notify(
+            "发现新版本",
+            f"Koishi AI Pet v{latest_tag} 已发布（当前 v{local_ver}）。\n"
+            f"运行项目目录下的 update.bat / update.sh 即可更新。",
+            8000,
+        )
 
     _updater.update_available.connect(_on_update_available, Qt.ConnectionType.QueuedConnection)
     QTimer.singleShot(5000, _updater.check)
