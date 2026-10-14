@@ -205,7 +205,7 @@ system prompt 由三段拼起来：
 | `pet/pulse/` | 数值引擎：生理（饱食/精力）与心理（好感/愉悦/理智），含衰减、阈值与落库 | `vitals.py`、`mood.py` |
 | `pet/file_intake/` | 拖入文件的纯逻辑：类型嗅探、解码链、截断与额度、图片闸门与缩放、拒绝名单、目录摘要 | `sniff.py`、`text.py`、`image.py` |
 | `pet/tools/` | 工具层：注册表、执行器、上下文、加载器，以及各工具子包 | `registry.py`、`executor.py`、`context.py` |
-| `pet/ui/` | 界面层：宠物窗口、各类气泡、表情、粒子、设置/调试/记忆面板、托盘 | `pet_window.py`、`particle.py`、`settings_window.py` |
+| `pet/ui/` | 界面层：宠物窗口、各类气泡、表情、粒子、拖拽惯性钟摆、设置/调试/记忆面板、托盘 | `pet_window.py`、`particle.py`、`swing.py`、`settings_window.py` |
 | `pet/food/` | 觅食：需求驱动的地面食物生成与食用 | `food.py` |
 | `pet/game/` | 小游戏：猜数字、猜拳、井字棋、二十问 | `gamebase.py` 与各游戏 |
 | `pet/voice/` | 语音输入：热键、麦克风采集、讯飞听写 | `voice_session.py` |

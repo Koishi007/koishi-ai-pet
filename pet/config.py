@@ -67,6 +67,8 @@ _KEY_META = {
     "INTERACT_RELEASED_PROMPT":     {"type": "str",   "default": "",            "category": "behavior",   "needs_restart": False, "hidden": False, "description": "被放下时的自定义回复 prompt"},
     "INTERACT_WINDOW_DISAPPEARED_PROMPT": {"type": "str", "default": "",        "category": "behavior",   "needs_restart": False, "hidden": False, "description": "窗口消失时的自定义回复 prompt"},
     "INTERACT_FED_PROMPT":          {"type": "str",   "default": "",            "category": "behavior",   "needs_restart": False, "hidden": True,  "description": "喂食交互的自定义 prompt 模板"},
+    "GRAB_SWING_ENABLED":        {"type": "bool",     "default": True,          "category": "behavior",   "needs_restart": False, "hidden": False, "description": "拖拽时身体惯性摆动开关"},
+    "GRAB_SWING_MAX_DEG":        {"type": "int",      "default": 12,            "category": "behavior",   "needs_restart": False, "hidden": True,  "description": "拖拽摆角上限(度)"},
     "FILE_DROP_ENABLED":         {"type": "bool",     "default": True,          "category": "behavior",   "needs_restart": False, "hidden": True,  "description": "拖入文件交互总开关"},
     "FILE_DROP_READ_CONTENT":    {"type": "bool",     "default": True,          "category": "behavior",   "needs_restart": False, "hidden": True,  "description": "读取文件内容开关，关闭后所有文件只传元信息"},
     "FILE_DROP_MAX_CHARS":       {"type": "int",      "default": 1500,          "category": "behavior",   "needs_restart": False, "hidden": True,  "description": "单文件进入 prompt 的字符上限"},

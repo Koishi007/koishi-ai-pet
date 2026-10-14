@@ -63,6 +63,7 @@
 |---|---|---|---|---|
 | `PET_PERSONALITY` | str | `""` |  | 宠物人格描述(注入 system prompt) |
 | `PET_PERSONALITY_EXAMPLES` | str | `""` |  | 人格台词范例(每行一句,注入 system prompt 校准语感) |
+| `GRAB_SWING_ENABLED` | bool | true |  | 拖拽时身体惯性摆动开关 |
 | `INTERACT_GRABBED_PROMPT` | str | `""` |  | 被抓取时的自定义回复 prompt |
 | `INTERACT_RELEASED_PROMPT` | str | `""` |  | 被放下时的自定义回复 prompt |
 | `INTERACT_WINDOW_DISAPPEARED_PROMPT` | str | `""` |  | 窗口消失时的自定义回复 prompt |
@@ -120,6 +121,7 @@
 | `FILE_DROP_TASTE_CHARS` | int | 300 | 是 |  | 尝一口路径的字符上限 |
 | `FOOD_ENABLED` | bool | true |  | 是 | 觅食总开关（桌宠自主生成食物并吃掉），修改后需重启生效 |
 | `FOOD_TTL_SECONDS` | int | 300 |  |  | 觅食食物存活秒数，超时未吃自动消失 |
+| `GRAB_SWING_MAX_DEG` | int | 12 | 是 |  | 拖拽摆角上限(度) |
 | `INTERACT_FED_PROMPT` | str | `""` | 是 |  | 喂食交互的自定义 prompt 模板 |
 | `INTERACT_FILE_REJECT_PROMPT` | str | `""` | 是 |  | 拒收台词的自定义 prompt 模板 |
 | `INTERACT_TAKE_A_BITE_PROMPT` | str | `""` | 是 |  | 尝一口交互的自定义 prompt 模板 |
@@ -169,4 +171,4 @@
 - `hidden`：`true` 表示不在界面显示，只能直接编辑 `settings.json`
 - `enum` / `minimum` / `maximum`：取值约束，会写进 `settings-schema.json`
 
-共 105 项（其中 51 项未在界面列出）。
+共 107 项（其中 52 项未在界面列出）。

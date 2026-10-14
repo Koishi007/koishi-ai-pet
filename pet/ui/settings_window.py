@@ -930,6 +930,8 @@ class SettingsWindow(QWidget):
         sep.setFixedHeight(8)
         form.addWidget(sep)
 
+        form.addWidget(self._check("GRAB_SWING_ENABLED", "拖拽时身体惯性摆动"))
+
         form.addWidget(QLabel("交互提示词"))
         for label, key in [("抓取", "INTERACT_GRABBED_PROMPT"),
                            ("放下", "INTERACT_RELEASED_PROMPT"),

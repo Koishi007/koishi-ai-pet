@@ -1,0 +1,116 @@
+"""拖拽惯性钟摆：窗口加速度驱动贴图绕抓取点摆动，松手后自由衰减。"""
+
+import math
+
+from PySide6.QtCore import QObject, QTimer, Signal
+
+from pet.config import config
+
+
+def step_pendulum(theta: float, omega: float, ax: float, dt: float,
+                  k: float, c: float, gain: float, theta_max: float) -> tuple[float, float]:
+    """阻尼单摆积分一步（半隐式欧拉）。角度单位弧度，右偏为正。
+
+    ax 是窗口水平加速度（px/s²），惯性力与加速度方向相反。
+    超过 theta_max 时截断角度并把角速度归零，防止贴上限抖动。
+    """
+    omega += (-k * math.sin(theta) - c * omega - ax * gain) * dt
+    theta += omega * dt
+    if abs(theta) > theta_max:
+        theta = math.copysign(theta_max, theta)
+        omega = 0.0
+    return theta, omega
+
+
+class SwingController(QObject):
+    """30ms tick 估计拖拽加速度并积分摆角，输出角度（度）。"""
+
+    swing_changed = Signal(float)  # 摆角，度；右偏为正
+
+    _INTERVAL_MS = 30
+    _K = 25.0              # 恢复系数（= g/L），固有周期约 1.26s
+    _C_DRAG = 2.0          # 拖拽中阻尼
+    _C_FREE = 5.0          # 松手后阻尼
+    _AX_GAIN = 4e-4        # px/s² → rad/s²
+    _EMA_ALPHA = 0.25      # 加速度低通系数
+    _REST_THETA = math.radians(0.5)    # 静止角度阈值
+    _REST_OMEGA = math.radians(5.0)    # 静止角速度阈值（rad/s）
+    _REST_TICKS = 12       # 静止持续 tick 数（约 0.36s）
+
+    def __init__(self, pos_getter, parent=None):
+        super().__init__(parent)
+        self._pos_getter = pos_getter
+
+        self._theta = 0.0
+        self._omega = 0.0
+        self._ax = 0.0
+        self._last_x: float | None = None
+        self._last_v: float | None = None
+        self._dragging = False
+        self._rest_ticks = 0
+
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._tick)
+
+    def begin(self):
+        """抓取：记录基准位置并启动定时器。"""
+        if not config.GRAB_SWING_ENABLED:
+            return
+        self._theta = 0.0
+        self._omega = 0.0
+        self._ax = 0.0
+        self._last_x = float(self._pos_getter())
+        self._last_v = None
+        self._dragging = True
+        self._rest_ticks = 0
+        self._timer.start(self._INTERVAL_MS)
+
+    def release(self):
+        """松手：断开激励，保留 θ/ω 继续衰减。"""
+        self._dragging = False
+        self._ax = 0.0
+        self._last_x = None
+        self._last_v = None
+
+    @property
+    def active(self) -> bool:
+        return self._timer.isActive()
+
+    def _tick(self):
+        ax = self._estimate_ax() if self._dragging else 0.0
+        damping = self._C_DRAG if self._dragging else self._C_FREE
+        self._theta, self._omega = step_pendulum(
+            self._theta, self._omega, ax, self._INTERVAL_MS / 1000.0,
+            self._K, damping, self._AX_GAIN, math.radians(config.GRAB_SWING_MAX_DEG),
+        )
+        self.swing_changed.emit(math.degrees(self._theta))
+
+        if self._at_rest():
+            self._rest_ticks += 1
+            if self._rest_ticks >= self._REST_TICKS:
+                self._theta = 0.0
+                self._omega = 0.0
+                self._timer.stop()
+                self.swing_changed.emit(0.0)
+        else:
+            self._rest_ticks = 0
+
+    def _estimate_ax(self) -> float:
+        """两级差分求水平加速度并低通；首 tick 只建速度基准。"""
+        x = float(self._pos_getter())
+        dt = self._INTERVAL_MS / 1000.0
+        if self._last_x is None:
+            self._last_x = x
+            return self._ax
+        v = (x - self._last_x) / dt
+        self._last_x = x
+        if self._last_v is None:
+            self._last_v = v
+            return self._ax
+        a = (v - self._last_v) / dt
+        self._last_v = v
+        self._ax += (a - self._ax) * self._EMA_ALPHA
+        return self._ax
+
+    def _at_rest(self) -> bool:
+        return abs(self._theta) < self._REST_THETA and abs(self._omega) < self._REST_OMEGA
