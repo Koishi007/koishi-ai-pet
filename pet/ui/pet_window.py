@@ -680,13 +680,16 @@ class PetWindow(TransparentWindow):
         self._settle_outcome(name, outcome.TIMING_END)
 
     def _settle_outcome(self, name: str, timing: str):
-        """按玩法声明的时机结算产出：时机对不上就留给另一个入口。"""
+        """按玩法声明的时机结算产出：时机对不上就留给另一个入口。
+
+        去重按「有事件文本产出」计数：只做副作用、不注入事件的玩法（如 calling 的通知）
+        每次触发都结算。
+        """
         if not self._agent or name in self._outcomes_done:
             return
         spec = outcome.outcome_for(name)
         if spec is None or spec.timing != timing:
             return
-        self._outcomes_done.add(name)
         try:
             text = spec.handler()
         except Exception:
@@ -695,6 +698,7 @@ class PetWindow(TransparentWindow):
             return
         if not text:
             return
+        self._outcomes_done.add(name)
         if spec.once:
             self._agent.note_once_event(name, text)
         else:

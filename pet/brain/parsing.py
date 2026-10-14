@@ -421,7 +421,7 @@ class BehaviorParser:
             body_text = "".join(received)
             self._sink.note_unparsed(body_text[:_UNPARSED_SAMPLE_LIMIT])
             logger.warning(f"[Behavior] [{tag}] 响应未解析出字段：{counts}"
-                           f"；正文：{body_text[:200]!r}")
+                           f"；正文：{body_text[:_UNPARSED_SAMPLE_LIMIT]!r}")
         return raw, usable
 
     def iter_stream_with_timeout(self, stream, total_timeout: float,

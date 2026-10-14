@@ -1,10 +1,9 @@
 """气泡队列：多轮工具调用下「一句一泡、不丢句、不叠句」。
 
 这几个回归点不看成品 UI 也能判定：句子是否独立成泡、句子之间的过渡期是否会被抢占、
-抢占时是否真把队列清空。宿主窗口用几何桩替代，不依赖真实桌面。
+抢占时是否真把队列清空。宿主窗口用几何桩替代，不依赖真实桌面；
+播放进度由测试手动驱动（打字、收尾、过渡定时器），不依赖真实时钟与事件循环调度。
 """
-
-import time
 
 import pytest
 from PySide6.QtCore import QPoint
@@ -22,24 +21,29 @@ def qt_app():
 
 
 @pytest.fixture
-def bubble(qt_app, monkeypatch):
-    """过渡期压到 30ms、打字 1ms/字：保留真实的定时器时序，只是把尺度缩小。"""
-    monkeypatch.setattr(speech_bubble_mod, "_GAP_MS", 30)
+def bubble(qt_app):
     b = SpeechBubble()
-    b._type_interval = 1
     yield b
     b.flush_pending()
 
 
-def _pump(qt_app, condition, timeout_s: float = 5.0) -> bool:
-    """驱动事件循环直到条件成立或超时。"""
-    deadline = time.monotonic() + timeout_s
-    while time.monotonic() < deadline:
-        qt_app.processEvents()
-        if condition():
-            return True
-        time.sleep(0.005)
-    return condition()
+def _fire(timer):
+    """手动触发单次定时器：先停表，等价于真实到期。"""
+    timer.stop()
+    timer.timeout.emit()
+
+
+def _finish_typing(bubble):
+    """手动打完当前这句话（含收尾），不等真实打字定时器。"""
+    while bubble._char_queue or bubble._stream_ending:
+        bubble._type_next_char()
+
+
+def _advance(bubble):
+    """播完下一句：收尾定时器 → 过渡定时器 → 取队首 → 打完。"""
+    _fire(bubble._hide_timer)
+    _fire(bubble._gap_timer)
+    _finish_typing(bubble)
 
 
 def _finished_sentences(bubble, monkeypatch) -> list:
@@ -55,7 +59,7 @@ def _finished_sentences(bubble, monkeypatch) -> list:
     return seen
 
 
-def test_missing_start_stream_starts_a_new_bubble(qt_app, bubble, monkeypatch):
+def test_missing_start_stream_starts_a_new_bubble(bubble, monkeypatch):
     """调用方漏发 start（工具轮次之间常见）时，新句子必须另起一个气泡。
 
     修之前这里会变成一句：「第一轮的话第二轮的话」——下一轮的 chunk 直接
@@ -71,21 +75,24 @@ def test_missing_start_stream_starts_a_new_bubble(qt_app, bubble, monkeypatch):
     bubble.append_stream("第二轮的话")
     bubble.end_stream(10)
 
-    assert _pump(qt_app, lambda: len(seen) == 2), f"两句各自收尾，实际：{seen}"
+    _finish_typing(bubble)
+    _advance(bubble)
     assert seen == ["第一轮的话", "第二轮的话"]
 
 
-def test_append_alone_shows_and_then_hides(qt_app, bubble):
+def test_append_alone_shows_and_then_hides(bubble):
     """完全没有 start_stream 时也能显示一句话（调用方忘发首帧也不丢输出）。"""
     bubble.append_stream("单独一句")
     bubble.end_stream(10)
 
     assert bubble.isVisible()
-    assert _pump(qt_app, lambda: bubble.text() == "单独一句")
-    assert _pump(qt_app, lambda: not bubble.isVisible())
+    _finish_typing(bubble)
+    assert bubble.text() == "单独一句"
+    _fire(bubble._hide_timer)
+    assert not bubble.isVisible()
 
 
-def test_queued_sentence_is_not_preempted(qt_app, bubble, monkeypatch):
+def test_queued_sentence_is_not_preempted(bubble, monkeypatch):
     """句子之间的过渡期也算占用：晚到的句子不许插到队首。
 
     修之前这里会变成「第一句 → 第三句 → 第二句」：第三句在 300ms 的空档里
@@ -103,15 +110,19 @@ def test_queued_sentence_is_not_preempted(qt_app, bubble, monkeypatch):
     bubble.show_text("第一句", 10, _PARENT_POS)
     bubble.show_text("第二句", 10)  # 气泡忙 → 入队
 
-    assert _pump(qt_app, lambda: bubble._gap_timer.isActive()), "过渡期应处于占用状态"
+    _finish_typing(bubble)
+    _fire(bubble._hide_timer)  # 收尾到期 → 进入过渡期
+    assert bubble._gap_timer.isActive(), "过渡期应处于占用状态"
 
     bubble.show_text("第三句", 10)  # 过渡期到达 → 排在队尾
 
-    assert _pump(qt_app, lambda: len(played) == 3), f"三句都应播出，实际：{played}"
+    _fire(bubble._gap_timer)  # 过渡结束 → 播第二句
+    _finish_typing(bubble)
+    _advance(bubble)
     assert played == ["第一句", "第二句", "第三句"]
 
 
-def test_flush_pending_drops_queue_and_buffer(qt_app, bubble):
+def test_flush_pending_drops_queue_and_buffer(bubble):
     """抢占时必须连队列一起清：旧台词不能再弹出来压住新输出。"""
     bubble.start_stream(_PARENT_POS)
     bubble.append_stream("旧输出")
@@ -129,11 +140,12 @@ def test_flush_pending_drops_queue_and_buffer(qt_app, bubble):
     assert not bubble.is_busy()
 
     # 清空之后不该再被任何回调唤醒
-    qt_app.processEvents()
+    _fire(bubble._hide_timer)
+    _fire(bubble._gap_timer)
     assert not bubble.isVisible()
 
 
-def test_hide_clears_pending_so_nothing_pops_up_later(qt_app, bubble):
+def test_hide_clears_pending_so_nothing_pops_up_later(bubble):
     """宠物窗口隐去后，积压的句子不能再把独立气泡弹出来。"""
     bubble.show_text("正在播", 500, _PARENT_POS)
     bubble.show_text("排队中", 500)
@@ -141,12 +153,11 @@ def test_hide_clears_pending_so_nothing_pops_up_later(qt_app, bubble):
     bubble.hide()
 
     assert bubble._speech_queue == []
-    bubble._hide_timer.timeout.emit()
-    qt_app.processEvents()
+    _fire(bubble._hide_timer)
     assert not bubble.isVisible()
 
 
-def test_queue_is_capped_so_backlog_cannot_pile_up(qt_app, bubble):
+def test_queue_is_capped_so_backlog_cannot_pile_up(bubble):
     """多轮工具链会攒下大量 aside，超出上限丢最旧的而不是无限积压。"""
     bubble.show_text("占位", 1000, _PARENT_POS)  # 长时间占用，后续统统入队
     extra = 6
@@ -158,7 +169,7 @@ def test_queue_is_capped_so_backlog_cannot_pile_up(qt_app, bubble):
     assert queued[-1] == f"台词{speech_bubble_mod._QUEUE_MAX + extra - 1}"  # 保留最新的
 
 
-def test_buffered_sentence_survives_queued_playback(qt_app, bubble, monkeypatch):
+def test_buffered_sentence_survives_queued_playback(bubble, monkeypatch):
     """气泡忙时攒下的缓冲句，不能被随后播出的排队句抹掉。"""
     played: list = []
     original = bubble._play_text
@@ -173,13 +184,16 @@ def test_buffered_sentence_survives_queued_playback(qt_app, bubble, monkeypatch)
     bubble.start_stream(_PARENT_POS)           # 气泡忙 → 进入缓冲
     bubble.append_stream("缓冲中的话")
     bubble.end_stream(10)                      # 缓冲句入队
-    bubble.show_text("后来的静态句", 10)          # 排在缓冲句之后
+    bubble.show_text("后来的静态句", 10)         # 排在缓冲句之后
 
-    assert _pump(qt_app, lambda: len(played) == 3), f"三句都应播出，实际：{played}"
+    _finish_typing(bubble)
+    _advance(bubble)
+    _advance(bubble)
     assert played.index("缓冲中的话") < played.index("后来的静态句")
+    assert len(played) == 3
 
 
-def test_parallel_tool_asides_play_in_order(qt_app, bubble, monkeypatch):
+def test_parallel_tool_asides_play_in_order(bubble, monkeypatch):
     """工具 aside 与流式台词混排时保持先后顺序，不被后来者顶替。"""
     played: list = []
     original = bubble._play_text
@@ -194,5 +208,7 @@ def test_parallel_tool_asides_play_in_order(qt_app, bubble, monkeypatch):
     bubble.show_text("aside 一", 10)
     bubble.show_text("aside 二", 10)
 
-    assert _pump(qt_app, lambda: len(played) == 3), f"三句都应播出，实际：{played}"
+    _finish_typing(bubble)
+    _advance(bubble)
+    _advance(bubble)
     assert played == ["第一句", "aside 一", "aside 二"]
