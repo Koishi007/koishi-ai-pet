@@ -356,7 +356,7 @@ class Behavior(BrainMixin):
         if repair:
             messages = repair_messages(messages, self._last_unparsed)
             if thinking is None:
-                thinking = False  # 答案留在 reasoning 里是常见跑偏源
+                thinking = False
         else:
             self._last_unparsed = ""
         self._llm.reset_effective()  # 新请求链从首选方案开始
