@@ -148,6 +148,46 @@ def test_recover_stuck_brain_resets_groups_and_notifies():
     assert stub.notify_requested.emitted
 
 
+class _Deletable:
+    def __init__(self):
+        self.deleted = False
+
+    def deleteLater(self):
+        self.deleted = True
+
+
+class _CleanupStub:
+    """承载 _cleanup_thread 所需的 agent 最小面。"""
+
+    def __init__(self, thread, worker):
+        self._thread = thread
+        self._worker = worker
+        self.sender_obj = thread
+
+    def sender(self):
+        return self.sender_obj
+
+
+def test_cleanup_retires_current_thread_and_worker():
+    thread, worker = _Deletable(), _Deletable()
+    stub = _CleanupStub(thread, worker)
+
+    PetAgent._cleanup_thread(stub)
+    assert thread.deleted and worker.deleted
+    assert stub._thread is None and stub._worker is None
+
+
+def test_cleanup_keeps_current_worker_on_old_thread_signal():
+    # 旧线程的 finished 后到时，当前 worker 不能被顺带销毁：它的回调还要用 sender
+    old_thread, thread, worker = _Deletable(), _Deletable(), _Deletable()
+    stub = _CleanupStub(thread, worker)
+    stub.sender_obj = old_thread
+
+    PetAgent._cleanup_thread(stub)
+    assert not thread.deleted and not worker.deleted
+    assert stub._thread is thread and stub._worker is worker
+
+
 class _DispatchStub:
     """承载 _dispatch_result / _dispatch_error 所需的 agent 最小面。"""
 

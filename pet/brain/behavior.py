@@ -11,7 +11,8 @@ from pet.brain.llm_gateway import LlmGateway
 from pet.brain.llm_stats import LlmStats
 from pet.brain.local_fallback import chat_decide_local, decide_local, interact_decide_local
 from pet.brain.output import ActionStep, BehaviorOutput, CancelledError
-from pet.brain.parsing import BehaviorParser, parse_behavior, parse_stream_chunks
+from pet.brain.parsing import (BehaviorParser, parse_behavior, parse_stream_chunks,
+                               _UNPARSED_SAMPLE_LIMIT)
 from pet.brain.summary import SummaryHooks, flush_summaries, summarize_with_llm
 from pet.brain.tool_loop import run_tool_loop
 from pet.tools.executor import ToolExecutor
@@ -23,11 +24,13 @@ logger = logging.getLogger(__name__)
 
 # 空响应重试时追加的格式修复提示
 _EMPTY_RETRY_HINT = (
-    "上一次输出没有任何可解析的字段，已作废。重新输出时必须严格满足：\n"
-    "1. 一行一个字段，行首就是标签，标签后紧跟英文冒号，例如 `Speech: 你好`；\n"
-    "2. 不要加粗、不要编号、不要列表符号、不要代码块围栏，不要输出解释或推理过程；\n"
-    "3. 第一行必须是 `Summary:`；\n"
-    "4. 只输出字段行。"
+    "上一次输出没有任何可解析的字段，已作废。重新输出前先确认本轮你要做的是哪一种：\n"
+    "A. 只想说话或行动 —— 严格按协议输出字段行：\n"
+    "   1. 一行一个字段，行首就是标签，标签后紧跟英文冒号，例如 `Speech: 你好`；\n"
+    "   2. 行首不要加时间戳、说话人、编号、列表符号、加粗或代码块围栏；\n"
+    "   3. 第一行必须是 `Summary:`；只输出字段行，不要输出解释或推理过程。\n"
+    "B. 要调用工具 —— 不要把工具名写成文字，直接按 OpenAI 格式发起函数调用，"
+    "工具名与参数以工具列表里的 schema 为准。"
 )
 # 空响应重试时的采样温度
 _RETRY_TEMPERATURE = 0.3
@@ -46,9 +49,13 @@ def retry_if_empty(pipeline, tag: str = "") -> BehaviorOutput:
     return result
 
 
-def repair_messages(messages: list) -> list:
-    """空响应重试用的 messages：在末尾追加一条格式修复提示，不改动原列表。"""
-    return messages + [{"role": "system", "content": _EMPTY_RETRY_HINT}]
+def repair_messages(messages: list, sample: str = "") -> list:
+    """空响应重试用的 messages：末尾追加格式修复提示，带上被丢弃的原文，不改动原列表。"""
+    hint = _EMPTY_RETRY_HINT
+    if sample:
+        hint += (f"\n\n你上一次输出的是：\n---\n{sample}\n---\n"
+                 "它因为没有行首字段标签被整段丢弃。按上面的 A 或 B 重新输出。")
+    return messages + [{"role": "system", "content": hint}]
 
 
 class Behavior(BrainMixin):
@@ -64,6 +71,7 @@ class Behavior(BrainMixin):
         self._lock = threading.RLock()
         self._counter_lock = threading.Lock()  # 仅保护 _rounds_without_user，避免主线程等待 LLM 长锁
         self._rounds_without_user = 0
+        self._last_unparsed = ""  # 上一轮未解析出字段的正文，供重试时回传
 
         self.parser = BehaviorParser(self)
         self.ctx = ContextBuilder(
@@ -117,6 +125,10 @@ class Behavior(BrainMixin):
             self._progress_fn()
         except Exception:
             pass
+
+    def note_unparsed(self, text: str):
+        """接住本轮未解析出字段的正文，供重试时回传给模型。"""
+        self._last_unparsed = text
 
     def _build_tools_param(self, enable_tools: bool | None = None):
         """根据当前已激活的分组构建 tools 参数；enable_tools 非 None 时覆盖全局开关。"""
@@ -343,9 +355,11 @@ class Behavior(BrainMixin):
                             repair: bool = False) -> BehaviorOutput:
         t = datetime.now().strftime("%H:%M:%S")
         if repair:
-            messages = repair_messages(messages)
+            messages = repair_messages(messages, self._last_unparsed)
             if thinking is None:
-                thinking = False  # 答案留在 reasoning 里是常见跑偏源
+                thinking = False
+        else:
+            self._last_unparsed = ""
         self._llm.reset_effective()  # 新请求链从首选方案开始
         self._apply_cache_control(messages)
         self._dump_context(tag, messages)
@@ -357,6 +371,7 @@ class Behavior(BrainMixin):
                                            temperature=_RETRY_TEMPERATURE if repair else None)
             msg = resp.choices[0].message
             content = msg.content or ""
+            self._last_unparsed = content[:_UNPARSED_SAMPLE_LIMIT]
             logger.info(f"[{t}] [Behavior] === LLM RESPONSE ({tag}) ===")
             logger.info(f"[{t}] [Behavior]   finish_reason: {resp.choices[0].finish_reason}")
             if content:
@@ -393,9 +408,11 @@ class Behavior(BrainMixin):
                                  repair: bool = False) -> BehaviorOutput:
         """跑一次流式管线；空响应的重试由调用方包 retry_if_empty 负责。"""
         if repair:
-            messages = repair_messages(messages)
+            messages = repair_messages(messages, self._last_unparsed)
             if thinking is None:
                 thinking = False
+        else:
+            self._last_unparsed = ""
         self._llm.reset_effective()  # 新请求链从首选方案开始
         self._apply_cache_control(messages)
         self._dump_context(tag, messages)
@@ -420,9 +437,8 @@ class Behavior(BrainMixin):
             speech_streamed = chunk_sent[0]
 
             if tool_calls_map:
-                # 不在此处调用 on_stream_end：保持气泡流不中断，
-                # on_stream_end 仅用于 speech 中断（多行 Speech 分开显示），
-                # 不在轮次间调用。
+                # 之后每轮由 tool_loop 在 stream 返回后调用 on_stream_end 断句，
+                # 否则下一轮的 Speech 会拼进上一句的气泡
                 return self._handle_tool_calls(
                     messages, tool_calls_map, raw,
                     on_chunk=on_chunk, on_stream_end=on_stream_end, tag=tag,

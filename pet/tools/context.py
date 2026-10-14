@@ -35,6 +35,10 @@ class ToolContext:
         return True
 
     def speech(self, text: str, duration: int = 5000):
+        """工具播出台词；可从任意线程调用（信号跨线程安全）。
+
+        已知限制：工具线程没有调用令牌，抢占清理之后才跑完的工具仍会弹出旧台词。
+        """
         if not self._check_agent():
             return
         self._agent.speak_requested.emit(text, duration)
@@ -47,7 +51,7 @@ class ToolContext:
                 pass
 
     def speech_random(self, texts: list[str], duration: int = 3000):
-        """随机选择一条台词发射；模型已在 tool_call 里带 aside 时跳过（避免两句）。"""
+        """随机选择一条台词发射；模型已在 tool_call 里带 aside 时跳过。"""
         if self.is_model_aside_pending():
             return
         import random

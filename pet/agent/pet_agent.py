@@ -63,6 +63,7 @@ class PetAgent(QObject):
     speak_stream_start = Signal()
     speak_stream_chunk = Signal(str)
     speak_stream_end   = Signal(int)
+    speech_clear_requested = Signal()  # 抢占时清空气泡的待播队列与缓冲
     llm_loading        = Signal(bool)  # True=开始等待, False=结束
     notify_requested   = Signal(str, str, int)  # title, message, duration_ms
     game_board_requested = Signal(str, object)  # (game_name, board_payload)
@@ -310,7 +311,8 @@ class PetAgent(QObject):
 
             self.behavior.reset_user_interaction()
 
-            self.speak_stream_end.emit(0)
+            # 抢占：连队列一起清，否则旧台词会在稍后弹出来压住新输出
+            self.speech_clear_requested.emit()
 
             self.state_machine.transition(PetState.INTERACTING)
 
@@ -383,7 +385,8 @@ class PetAgent(QObject):
 
         self.behavior.reset_user_interaction()
 
-        self.speak_stream_end.emit(0)
+        # 同 _trigger_interact：连队列一起清
+        self.speech_clear_requested.emit()
 
         self.state_machine.transition(PetState.INTERACTING)
 
@@ -598,9 +601,10 @@ class PetAgent(QObject):
 
     def _cleanup_thread(self):
         sender = self.sender()
-        if self._thread is not None and self._thread is sender:  # 仅清理当前线程，忽略旧线程延迟信号
-            self._thread.deleteLater()
-            self._thread = None
+        if self._thread is None or self._thread is not sender:  # 旧线程延迟信号：当前线程与 worker 都不动
+            return
+        self._thread.deleteLater()
+        self._thread = None
         if self._worker is not None:
             self._worker.deleteLater()
             self._worker = None

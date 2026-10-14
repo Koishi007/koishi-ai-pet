@@ -46,7 +46,7 @@ def _is_full(board) -> bool:
 
 
 def _board_text(board) -> str:
-    """棋盘文本视图，供模型读取当前局势（X/O 即盘面标记）。"""
+    """棋盘文本视图，供模型读取当前局势（X/O 即盘面标记）"""
     lines = ["  1 2 3"]
     for i, row in enumerate(board):
         cells = [c or "." for c in row]
@@ -59,11 +59,11 @@ class TicTacToeGame(Game):
 
     MOVE_TIMEOUT = 15  # 用户落子超时（秒），超时结束本局，不算胜负
 
-    _WIN_SPEECH = ["嘿嘿，三连了，我赢了…", "我赢了…这局拿下…", "三连，赢了…"]
-    _LOSE_SPEECH = ["被你赢了呢…", "呜，你赢了…", "这局是你赢了…"]
-    _STOP_SPEECH = ["不下棋了…", "棋盘收起来了…", "下次再战…"]
-    _FORFEIT_SPEECH = ["这么久没动静，这局先到这吧…", "你可能在忙，棋盘先收起来了…"]
-    _TIMEOUT_SPEECH = ["这么久没动静，这局先到这吧…", "你可能在忙，棋盘先收起来了…"]
+    _WIN_SPEECH = ["诶～？三个连成一条线了…", "是恋恋赢了…嘿嘿ー", "唔…什么时候连上的呢"]
+    _LOSE_SPEECH = ["唔…被你连成线了", "输掉了…诶～这样的", "你赢了呀…有点不可思议"]
+    _STOP_SPEECH = ["不下棋了…棋子们要回去睡了", "棋盘折起来…下次再摊开ー", "嗯～不玩了ー"]
+    _FORFEIT_SPEECH = ["人不见了…棋盘也一起收起来", "唔…那就藏起来好了"]
+    _TIMEOUT_SPEECH = ["等不到你…先收起来了", "唔…棋子凉了呀"]
 
     def name(self) -> str:
         return "tic_tac_toe"
@@ -157,7 +157,7 @@ class TicTacToeGame(Game):
             if winner == pet_mark:
                 self._finish(state, "我获胜")
                 return {
-                    "summary": _s(f"我落子 {params['ttt_move']} 连成三子，我获胜。\n{_board_text(board)}"),
+                    "summary": _s(f"我落子 {params['ttt_move']} 连成三子，我获胜。"),
                     "ended": True,
                     "won": True,
                     "pet_mark": pet_mark,
@@ -169,7 +169,7 @@ class TicTacToeGame(Game):
             if _is_full(board):
                 self._finish(state, "平局")
                 return {
-                    "summary": _s(f"我落子 {params['ttt_move']} 后棋盘已满，平局。\n{_board_text(board)}"),
+                    "summary": _s(f"我落子 {params['ttt_move']} 后棋盘已满，平局。"),
                     "ended": True,
                     "won": None,
                     "pet_mark": pet_mark,
@@ -186,7 +186,7 @@ class TicTacToeGame(Game):
             if state.get("_forfeit"):
                 # 用户主动关闭棋盘结束游戏：不算胜负
                 return {
-                    "summary": _s(f"用户主动结束了游戏，不算胜负。\n{_board_text(board)}"),
+                    "summary": _s("用户主动结束了游戏，不算胜负。"),
                     "ended": True,
                     "won": None,
                     "forfeit": True,
@@ -204,7 +204,7 @@ class TicTacToeGame(Game):
             # 用户超时未落子 → 结束本局，不算胜负
             self._emit_board(state, waiting=False, message="长时间未操作，本局结束")
             return {
-                "summary": _s(f"你在 {self.MOVE_TIMEOUT} 秒内没有落子，本局结束。\n{_board_text(board)}"),
+                "summary": _s(f"你在 {self.MOVE_TIMEOUT} 秒内没有落子，本局结束。"),
                 "speech": random.choice(self._TIMEOUT_SPEECH),
                 "ended": True,
                 "won": None,
@@ -223,7 +223,7 @@ class TicTacToeGame(Game):
         if winner == user_mark:
             self._emit_board(state, waiting=False, message="你获胜")
             return {
-                "summary": _s(f"你落子 {_GRID_LABELS[r][c]} 连成三子，你获胜。\n{_board_text(board)}"),
+                "summary": _s(f"你落子 {_GRID_LABELS[r][c]} 连成三子，你获胜。"),
                 "ended": True,
                 "won": False,
                 "pet_mark": pet_mark,
@@ -235,7 +235,7 @@ class TicTacToeGame(Game):
         if _is_full(board):
             self._emit_board(state, waiting=False, message="平局")
             return {
-                "summary": _s(f"你落子 {_GRID_LABELS[r][c]} 后棋盘已满，平局。\n{_board_text(board)}"),
+                "summary": _s(f"你落子 {_GRID_LABELS[r][c]} 后棋盘已满，平局。"),
                 "ended": True,
                 "won": None,
                 "pet_mark": pet_mark,
@@ -247,7 +247,7 @@ class TicTacToeGame(Game):
 
         self._emit_board(state, waiting=False, message="轮到我")
         return {
-            "summary": _s(f"你落子 {_GRID_LABELS[r][c]}，轮到我。\n{_board_text(board)}"),
+            "summary": _s(f"你落子 {_GRID_LABELS[r][c]}，轮到我。"),
             "ended": False,
             "pet_mark": pet_mark,
             "user_mark": user_mark,

@@ -77,6 +77,7 @@
 | `BUBBLE_FONT_SIZE` | int | 14 | 是 | 气泡字号 |
 | `TOOLS_ENABLED` | str_list | ["*"] | 是 | 启用的工具插件(逗号分隔, *=全部) |
 | `SHOW_TRAY` | bool | true | 是 | 显示托盘图标 |
+| `NOTIFY_ENABLED` | bool | true |  | 允许发送通知（定时器、待办、来电等） |
 | `AUTO_START_ON_BOOT` | bool | false |  | 开机自动启动 |
 | `VOICE_INPUT_ENABLED` | bool | false |  | 启用语音输入 |
 | `VOICE_HOTKEY` | str | `"F8"` |  | 语音输入全局热键 |
@@ -168,4 +169,4 @@
 - `hidden`：`true` 表示不在界面显示，只能直接编辑 `settings.json`
 - `enum` / `minimum` / `maximum`：取值约束，会写进 `settings-schema.json`
 
-共 104 项（其中 51 项未在界面列出）。
+共 105 项（其中 51 项未在界面列出）。

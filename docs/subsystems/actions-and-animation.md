@@ -9,7 +9,7 @@
 | 步骤 | 位置 |
 |---|---|
 | 行识别（流式 / 非流式） | `pet/brain/parsing.py`：流式走 `BehaviorParser.collect_stream`，非流式走 `parse_behavior`，共用同一套行标签 |
-| 动作名与参数校验 | `parse_action_line`：名字不在 `ACTION_NAMES` 里直接丢弃并告警；`k=v` 与位置参数会尝试转 int |
+| 动作名与参数校验 | `parse_action_line`：名字不在 `ACTION_NAMES` 里直接丢弃并告警；不含字母数字的 token 直接丢弃；`k=v` 与位置参数会尝试转 int，动作入口再用 `coerce_int` 保护（非法值回退默认值） |
 | 无动作兜底 | 非流式解析器会在一条 `Action` 都没有时补 `sit 5s`；流式路径没有这个兜底 |
 | 批量下发 | `PetAgent._on_brain_result`：先发 `action_batch_started`（重置本轮产出去重），再逐条 `_emit_action` |
 | 时长注入 | `PetAgent._emit_action`：`has_duration()` 为真且没给秒数时用 `default_duration()` |
@@ -17,7 +17,7 @@
 | 调度与执行 | `ActionQueue._run_next`：`getattr(self._actions, name)` 反射调用；找不到方法静默跳过；方法抛异常时不发开始信号直接推进 |
 | 结束判定 | 见下表 |
 | 超时兜底 | `_anim_timeout_ms()` / `_on_action_timeout()`：**超时算正常结束**并继续结算 |
-| 产出结算 | `_settle_current` → `PetWindow._on_action_finished` → `outcome.outcome_for()` → 写事件 / 播特效 |
+| 产出结算 | 时机由玩法声明（`outcome.register(..., timing=)`）：默认 `end`，`_settle_current` → `PetWindow._on_action_finished`；`start` 走 `ActionQueue.action_started` → `PetWindow._on_action_started`。两者都过 `_settle_outcome()` → `outcome.outcome_for()` → 写事件 / 播特效 |
 | 事件进上下文 | `note_event` / `note_once_event` → 注入 Behavior 的近期事件与一次性事件 |
 
 ### 三类结束条件
@@ -32,6 +32,9 @@
 超时时长：`max(1000, ACTION_TIMEOUT_MS)`，带 `duration` 的动作是 `duration*1000 + 2000`。
 `clear()` / `stop()` / `pause()` **不算完成**，不会发 `action_finished`（拖拽打断即走这条）；
 但「动作播完的瞬间正在下落」时必须先结算再挂起，否则产出会随 pause 丢失。
+
+产出的结算时机由玩法声明：`timing="end"`（默认）等动作播完，`timing="start"` 在动作开始时就
+结算，用于「一响就该发生」的产出（如 `calling` 的来电通知），因此不受超时兜底与打断影响。
 
 ## 2. 动作类型的实现差异
 
@@ -98,7 +101,7 @@
 | 放素材 `assets/actions/<name>/` + 同名 json（契约与检查清单见 [assets-pipeline.md](assets-pipeline.md) §2、§3） | `play()` 返回 False，动作被队列跳过（打 warning） |
 | 在 `PetActions` 写方法 | 反射取不到 → 静默跳过（不报错） |
 | 在 `pet/action/registry.py` 注册（带时长还要进 `_DURATION_ACTION_DEFS`） | 模型输出这个动作名会被丢弃 |
-| 可选：`_ACTION_PARTICLES`（特效）、`ACTION_VITALS_DELTA`（消耗）、`outcome.register()`（产出） | 无特效 / 不消耗 / 无事件 |
+| 可选：`_ACTION_PARTICLES`（特效）、`ACTION_VITALS_DELTA`（消耗）、`outcome.register()`（产出，`timing="start"` 表示动作开始就结算） | 无特效 / 不消耗 / 无事件（产出时机不对则通知之类会迟到） |
 | 运行 `python scripts/gen_docs.py` | `tests/test_docs.py` 的漂移检查会失败 |
 
 **新增粒子特效**只需登记 `_SPAWNERS`（需要非默认位置再补 `_DEFAULT_Y`），调试面板自动列出；

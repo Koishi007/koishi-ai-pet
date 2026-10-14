@@ -831,6 +831,7 @@ class SettingsWindow(QWidget):
         tools_edit.setPlaceholderText("* 表示全部，多个用逗号分隔")
         form.addRow("启用工具:", tools_edit)
         form.addRow("", self._check("SHOW_TRAY", "显示托盘图标"))
+        form.addRow("", self._check("NOTIFY_ENABLED", "允许发送通知"))
         form.addRow("", self._check("AUTO_START_ON_BOOT", "开机自动启动"))
 
         inner.addLayout(form)
