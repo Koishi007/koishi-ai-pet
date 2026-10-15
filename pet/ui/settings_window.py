@@ -833,6 +833,7 @@ class SettingsWindow(QWidget):
         form.addRow("", self._check("SHOW_TRAY", "显示托盘图标"))
         form.addRow("", self._check("NOTIFY_ENABLED", "允许发送通知"))
         form.addRow("", self._check("AUTO_START_ON_BOOT", "开机自动启动"))
+        form.addRow("", self._check("GRAB_SWING_ENABLED", "拖拽时身体惯性摆动"))
 
         inner.addLayout(form)
 
@@ -929,8 +930,6 @@ class SettingsWindow(QWidget):
         sep = QLabel()
         sep.setFixedHeight(8)
         form.addWidget(sep)
-
-        form.addWidget(self._check("GRAB_SWING_ENABLED", "拖拽时身体惯性摆动"))
 
         form.addWidget(QLabel("交互提示词"))
         for label, key in [("抓取", "INTERACT_GRABBED_PROMPT"),
