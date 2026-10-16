@@ -7,7 +7,109 @@
 发布前刷新一次：`python scripts/gen_changelog.py`，流程见
 [docs/operations/release.md](https://github.com/Koishi007/koishi-ai-pet/blob/master/docs/operations/release.md)。
 
-## v1.6.0 — 2026-10-02
+## v1.6.1 — 2026-10-16
+
+**新功能**
+- **brain**: 输出预算收归代码，按模式/思考/工具配额并只在 length 截断时关思考（64835e7）
+- **ui**: 拖拽惯性摆动设置移到通用页签，category 同步改 appearance（c098860）
+- **ui**: 拖拽惯性钟摆，抓起时贴图绕抓取点摆动（0beebb4）
+- **notify**: 托盘通知总开关，并给动作产出增加开始即结算的时机（calling 来电通知）（baf852f）
+- **brain**: 重试提示回传被丢弃的原文，并让模型先确认走协议输出还是函数调用（156e9ca）
+- **game**: 新增猜高低对赌游戏（11f47ca）
+- **action**: 新增 hug 拥抱动作（e57f304）
+- **agent**: 右键菜单新增「中断当前调用」（27149d4）
+- **ui**: 调试面板新增状态机流转展示（8fcce72）
+- **brain**: system prompt 注入非元工具清单，弱模型先 tool_search 再调用（7666ba2）
+- **filedrop**: 拖入文件交互全链路接入（9b1dec3）
+- **ui**: 单击摸头加 Q 弹形变（b05a599）
+- **anim**: fall_down 落地时注入事件「你摔了一跤」（2e6d3f1）
+- **anim**: 新增 fall_down 动作，下落超时后落地跌倒、播完再恢复队列（71ddbb6）
+- **anim**: 新增无意识化动作，待机超时自动播放并停留在末帧（6ae9fa3）
+
+**修复**
+- **brain**: 空响应兜底补 sit 时保留已解析字段（254f6e0）
+- **ui**: 摆动开关即时生效，拖拽中途停顿不再停表（b7c0c3d）
+- **ui**: 落地时残余摆角快速归正，不再拖到落地之后（eb13824）
+- **ui**: 摆动绘制取负角，修正身体偏向与惯性一致（6f72f2f）
+- **file_ops**: 路径无法解析时按拒绝处理（c7c4e49）
+- **ui**: calling 来电通知不再被事件去重抑制（969ce5a）
+- **brain**: 未解析正文回传限制样本长度（c68c932）
+- **game**: 平局改用中性结束提示（637a56f）
+- **action**: 丢弃模型带出的标点参数，并给动作数值参数兜底，修掉 walk 的 TypeError 崩溃（dd64d56）
+- **game**: 井字棋台词不再把棋盘带进气泡（903573d）
+- **ui/speech**: 修复多轮 tool_call 下气泡串行与顶替（59ff5b9）
+- **agent**: _cleanup_thread 只清理发出 finished 的当前线程（fb4fde2）
+- **brain**: 未解析响应直接打印正文，去掉遮盖（30e72f6）
+- **brain**: 空响应重试改为纠错重试，未解析响应留遮盖式结构预览（80857f1）
+- **agent**: _cleanup_thread 只清理发出 finished 的当前线程（f294a05）
+- **agent/action**: 调用令牌替代共享取消标志，修复队列 start 后暂停态残留（42f7ddd）
+- **action**: 修复清空队列后暂停态残留导致的动作永久冻结（500c0ba）
+- **agent**: 取消调用不再走错误分支，只留一条 INFO（883cb36）
+- **brain**: 兼容无换行的内嵌字段标签解析（fe51514）
+- **prompt/test**: analyze 示例补齐 3 个 Action，游戏注册测试隔离共享 GAME（e67f7e8）
+- **review**: 按 CodeRabbit 的 4 条 request change 修正（34f05e4）
+- **ui**: 取不到系统音量端点时降级，音乐气泡构造不再失败（e9f3282）
+- **brain**: 标签冒号容错全角，空解析在日志留下原文（16c27c1）
+- **action**: walk/drive 参数范围与实现对齐（2729fd7）
+- **food**: food__status 引导给出实际距离，去掉误导性的 500-1000 范围（1312ff1）
+- mid 定时任务向自主管线传窗口快照（a43d6f8）
+- 修气泡列重叠与窗口尺寸越界，窗口上下文改主线程取快照（9e2f954）
+- **ui**: 分辨率与 DPI 缩放兼容性修复（904b8f5）
+- **anim**: 校准 fall_down 四帧水平对齐（f0f59bb）
+- **anim**: 无意识化判定改用 LLM 交互状态，不再依赖 loading 点点（f27c02a）
+
+**调优**
+- **ui**: 拖拽摆动加入速度分量并调大加速度增益（d88ea40）
+- **brain**: 工具轮次的空 raw 与未解析字段提示改按预期形态静默（978b774）
+- **prompt**: 各任务放开多句 Speech，analyze 动作对齐 chat，输出上限统一 30 字（a598bfe）
+- **food**: 需要跳跃时按距离分段引导，避免 walk+bounce 的横向叠加误差（84e32d3）
+- **anim**: fall_down 跌倒事件改为只注入一轮（1af75a0）
+- **action**: 调整fall_down动作时长（ef59c56）
+- **anim**: 无意识化待机阈值默认改为 60 秒（bede885）
+
+**重构**
+- **brain**: 空响应修复重试拆出 repair 模块，并修正审查意见（1dd00f0）
+- **config**: 通知开关概念去托盘化，设置项改为允许发送通知（37b0bf1）
+- **game**: 指令通道独立为 model_hint，summary 不再播出（ce14a82）
+- **agent**: 结果与错误改由绑定槽排队回 PetAgent 所在线程（5cc94eb）
+- **arch**: 清偿 allowlist 41 条债务，装配入口与惰性化收敛（9decc21）
+- **anim**: fall_down 事件文案改走事件表，note_once_event 支持留空查表（2e6cee8）
+
+**样式**
+- **filedrop**: 文件气泡文案调整（6129ba3）
+- **ui**: 调试面板与记忆窗口滚动条统一为设置页样式（ff0262c）
+
+**文档**
+- **game**: 猜高低设计文档下注公开时机对齐实现（bd04086）
+- **readme**: 补上猜高低游戏与托盘通知开关（17c7649）
+- 同步 calling 描述改动并精简产出文档串（5f70bca）
+- 重新生成 modules.md 与代码对齐（8cdc7ce）
+- 新增猜高低对赌游戏设计文档（4374772）
+- README 菜单表补「中断当前调用」，粒子映射补 hug（89ad608）
+- 测试表述统一为「全量测试通过」，清理违反规范的注释（482f331）
+- 文档和注释的治理（d9988b0）
+- **assets**: 补充全量素材对比图（82e901e）
+
+**测试**
+- **ui**: 气泡队列测试改手动驱动定时器（becbee0）
+
+**杂项**
+- 去掉多余注释（91e0618）
+- 精简注释，只保留做什么（55d16cd）
+- **anim**: 替换 look_around 两帧素材（034771d）
+- 合入 CodeRabbit 配置（818e3e6）
+- 开启 CodeRabbit request_changes_workflow（d82aa5f）
+- .coderabbit.yaml 加入 export-ignore，不进源码包分发（cb873be）
+- 新增 CodeRabbit 配置，base 为 master 或 dev 时启用自动 review（4cc4027）
+- **anim**: 替换 fall_down 四帧素材（4ee70da）
+- **anim**: 调整 fall_down 首帧素材（3f7ab1c）
+- **anim**: 调整fall_down部分素材（d38db25）
+- **anim**: 调整fall_down部分素材（6a77a57）
+- **anim**: 调整fall_down首帧图片（5bb4fdc）
+- **anim**: 更新 idle、rotate、shake_arms、sit 的部分帧素材（d170e45）
+- **anim**: 替换全部动作素材为最新渲染版（9006f62）
+
+## v1.6.0 — 2026-10-03
 
 **新功能**
 - **scripts**: 变更记录的待发布小节按 pyproject 版本号渲染（eb377ca）
@@ -98,6 +200,7 @@
 - 新增单元测试套件与 pytest 配置（dev 可选依赖）（a852d0a）
 
 **杂项**
+- 版本号 1.6.0，刷新变更记录（923f764）
 - **anim**: 呼吸缩放只留给 sleep，其余动作回到纯位移（323254b）
 - 测试目录改用 export-ignore 排除，移除 .gitignore 中的 test 规则（c3df1b0）
 
