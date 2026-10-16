@@ -483,10 +483,10 @@ class Behavior(BrainMixin):
                            f"内容被思考占满 max_tokens")
 
     def _decide_with_repair(self, pipeline, tag: str) -> BehaviorOutput:
-        """非流式入口的空响应修复"""
+        """非流式入口的空响应修复：补 sit 兜底，已解析的摘要、记忆与增量都保留。"""
         output = retry_if_empty(pipeline, tag)
         if not output.actions and not output.speech:
-            return BehaviorOutput(actions=[ActionStep("sit", kwargs={"duration": 5})])
+            output.actions = [ActionStep("sit", kwargs={"duration": 5})]
         return output
 
     def flush_summaries(self):

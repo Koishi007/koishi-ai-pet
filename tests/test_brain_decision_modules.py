@@ -428,6 +428,26 @@ class TestUnparsedIsolation:
         assert behavior._last_unparsed == "主线程的原文"
 
 
+class TestDecideWithRepair:
+    """两轮都空时的 sit 兜底：不能再丢掉第二轮解析出来的字段。"""
+
+    def test_fallback_sit_keeps_parsed_fields(self, monkeypatch):
+        behavior, _fake = _stream_behavior(monkeypatch, [])
+
+        def pipeline(repair=False):
+            if repair:
+                return BehaviorOutput(summary="只有摘要", memory_line="记住的事",
+                                      mood_deltas={"joy": 2})
+            return _empty()
+
+        out = behavior._decide_with_repair(pipeline, "t")
+
+        assert [a.name for a in out.actions] == ["sit"]
+        assert out.summary == "只有摘要"
+        assert out.memory_line == "记住的事"
+        assert out.mood_deltas == {"joy": 2}
+
+
 class TestEntrypointRetry:
     """决策入口的空响应重试：整轮既无动作也无台词时再跑一次。"""
 
