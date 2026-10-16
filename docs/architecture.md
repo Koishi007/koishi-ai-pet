@@ -114,12 +114,15 @@ flowchart TB
 2. **上下文组装**：`pet/brain/context_builder.py`。三个入口 `build_autonomous_decide` / `build_chat_decide` /
    `build_interact`，内部按「静态块 + 运行时块 + 记忆」拼装，详见第 5 节。
 3. **LLM 调用**：`pet/brain/behavior.py` 的流式路径 `*_decide_stream`（首选）与非流式 `*_decide`（回退），
-   请求本身经 `pet/brain/llm_gateway.py` 发出。客户端 `pet/brain/llm_client.py` 维护首选/备选两套方案，
-   重试与降级策略在 `pet/brain/llm_retry.py`。
+   请求本身经 `pet/brain/llm_gateway.py` 发出，输出上限由 `pet/brain/budget.py` 按模式/思考/工具算
+   （基线 + 思考预留 + 工具预留，统一硬上限封顶，用户不参与）。客户端 `pet/brain/llm_client.py`
+   维护首选/备选两套方案，重试与降级策略在 `pet/brain/llm_retry.py`。
 4. **输出解析**：按行前缀分派 - `Summary` / `Speech` / `Action` / `Memory` / `Emotion` / `Mood` / `Vitals`
    （`pet/brain/parsing.py`，流式与非流式共用一套行标签，聚合为 `BehaviorOutput`）。
    同一字段出现多行时，`Summary` / `Memory` / `Mood` / `Vitals` 只取第一条，`Speech` 全部保留并拼接。
-   非流式解析器在没有 Action 时兜底 `sit 5s`，流式收尾不补（空响应由 `pet/brain/repair.py` 的 `retry_if_empty` 重试一次）。
+   结束原因（`finish_reason`）由解析器回传给编排方，空响应由 `pet/brain/repair.py` 的 `retry_if_empty`
+   重试一次：只有上一轮 `length`（上限被思考占满）才在修复轮关掉思考，其余失败保持调用方与用户设定。
+   两次都为空时，非流式入口补 `sit 5s`（`Behavior._decide_with_repair`），流式收尾不补。
 5. **工具轮次**：`pet/brain/tool_loop.py` 循环执行 LLM 请求的工具，最多 `LLM_TOOL_MAX_ROUNDS` 轮；
    元工具（`tool_search`、`recall` 等）不占配额。单个工具在 `pet/tools/executor.py` 里带超时执行。
 6. **动作执行**：`BehaviorOutput` 里的动作交给 `ActionQueue`（`pet/action/action_queue.py`）串行播放，
@@ -218,6 +221,7 @@ system prompt 由三段拼起来：
 |---|---|
 | `behavior.py` | 编排中枢：六个决策入口、抢锁与降级、上下文与工具会话装配 |
 | `llm_gateway.py` | LLM 请求：非流式补全、流式建流、thinking 参数降级、prompt 规模统计 |
+| `budget.py` | 输出预算：按模式/思考/工具算 `max_tokens`，统一封顶（不给用户自定义） |
 | `parsing.py` | 输出解析：行标签、字段取值、流式消费（流式与非流式共用一套规则） |
 | `repair.py` | 空响应修复重试：无动作无台词时追加格式修复提示、改写 messages 再跑一次 |
 | `tool_loop.py` | 工具轮次：执行、分组激活、轮次预算与最终行为解析 |

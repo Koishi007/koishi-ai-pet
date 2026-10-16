@@ -28,6 +28,7 @@
 | `pet/brain/__init__.py` | Brain 层 — Behavior 自主/对话决策，LLMClient LLM封装，prompts 模板， |  |
 | `pet/brain/base.py` | 一条结构化的上下文记录。 | `ContextEntry` `BrainMixin` |
 | `pet/brain/behavior.py` | 与 AI 通信的一次决策编排：三条管线（自主/对话/交互）的入口、锁与降级。 | `Behavior` `_BehaviorToolSession` |
+| `pet/brain/budget.py` | 单次请求的输出预算：统一硬上限 + 动态配额（基线 / 思考预留 / 工具预留） | `thinking_active()` `output_budget()` |
 | `pet/brain/context_builder.py` | LLM 请求上下文的构建 | `ContextBuilder` |
 | `pet/brain/conversation_store.py` | 对话历史持久化存储 — 记录所有 speech 输出和用户 chat 输入，按天切分，至多保存 7 天。 | `ConversationStore` |
 | `pet/brain/embedding_client.py` | OpenAI 兼容的嵌入向量客户端。 | `EmbeddingError` `EmbeddingClient` |
@@ -132,4 +133,4 @@
 | `pet/voice/voice_session.py` | 语音会话编排：麦克风采集 → 讯飞识别 | `VoiceSession` |
 | `pet/voice/xunfei_stt.py` | 讯飞语音听写 (iat) WebSocket API 封装 | `XunfeiSTT` |
 
-共 124 个模块。
+共 125 个模块。

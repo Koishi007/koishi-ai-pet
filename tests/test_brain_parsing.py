@@ -25,17 +25,21 @@ from pet.brain.parsing import (
 
 
 class _Sink:
-    """只记录进展上报与未解析正文的最小 sink。"""
+    """只记录进展上报、未解析正文与结束原因的最小 sink。"""
 
     def __init__(self):
         self.progress = 0
         self.unparsed = []
+        self.finish_reasons = []
 
     def note_progress(self):
         self.progress += 1
 
     def note_unparsed(self, text):
         self.unparsed.append(text)
+
+    def note_finish_reason(self, reason):
+        self.finish_reasons.append(reason)
 
 
 @dataclass
@@ -286,6 +290,19 @@ class TestStreamPath:
         sink = _Sink()
         _collect("Speech: 你好\n", sink=sink)
         assert sink.progress > 0
+
+    def test_finish_reason_reported_to_sink(self):
+        """结束原因回传给编排方：length 是判断预算耗尽的唯一依据。"""
+        sink = _Sink()
+        stream = _chunks("Speech: 你好\n")
+        stream.append(_Chunk([_Choice(_Delta(), finish_reason="length")]))
+        _collect("", sink=sink, stream=stream)
+        assert sink.finish_reasons == ["length"]
+
+    def test_missing_finish_reason_stays_unreported(self):
+        sink = _Sink()
+        _collect("Speech: 你好\n", sink=sink)
+        assert sink.finish_reasons == []
 
     def test_speech_streamed_to_on_chunk(self):
         _, _, chunks, _ = _collect("Speech: 你好呀\n")

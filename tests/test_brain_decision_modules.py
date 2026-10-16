@@ -354,9 +354,9 @@ class _Usage:
 class _StreamStub:
     """消费侧只用到 choices / delta.content / usage / finish_reason。"""
 
-    def __init__(self, text, with_usage=True):
+    def __init__(self, text, with_usage=True, finish_reason=None):
         delta = SimpleNamespace(content=text, tool_calls=None)
-        choice = SimpleNamespace(delta=delta, finish_reason=None)
+        choice = SimpleNamespace(delta=delta, finish_reason=finish_reason)
         self._chunks = [SimpleNamespace(choices=[choice], usage=None)]
         if with_usage:
             self._chunks.append(SimpleNamespace(choices=[], usage=_Usage()))
@@ -366,11 +366,14 @@ class _StreamStub:
 
 
 class _FakeStreamLlm:
-    """流式建流：按调用次数返回预置文本，记录每次的 tag。"""
+    """流式建流：按调用次数返回预置文本，记录每次的 tag、thinking、温度与预算。"""
 
     def __init__(self, texts):
         self.texts = list(texts)
         self.tags = []
+        self.thinkings = []
+        self.temperatures = []
+        self.max_tokens = []
         self.model = "fake-model"
         self.client = None  # stream_chat 被替换，不经过真实 client
 
@@ -394,6 +397,9 @@ def _stream_behavior(monkeypatch, texts, stream_factory=None):
 
     def fake_stream_chat(messages, max_tokens=4000, tools=None, thinking=None, temperature=None):
         fake.tags.append("stream")
+        fake.thinkings.append(thinking)
+        fake.temperatures.append(temperature)
+        fake.max_tokens.append(max_tokens)
         return (stream_factory or _StreamStub)(fake.texts.pop(0))
 
     behavior.gateway.stream_chat = fake_stream_chat
@@ -444,6 +450,90 @@ class TestEntrypointRetry:
         assert len(fake.tags) == 2
         assert out.actions == [] and out.speech is None
 
+    def test_repair_round_keeps_thinking(self, monkeypatch):
+        """修复重试只纠格式：thinking 沿用调用方设定，不降级也不强塞。"""
+        behavior, fake = _stream_behavior(monkeypatch, ["Summary: 发呆\n", "Speech: 回来了\n"])
+        behavior.chat_decide_stream("在吗", "")
+        assert fake.thinkings == [None, None]
+
+    def test_repair_round_keeps_explicit_thinking(self, monkeypatch):
+        """调用方显式指定 thinking 时，修复轮同样不被改写。"""
+        behavior, fake = _stream_behavior(monkeypatch, ["Summary: 发呆\n", "Speech: 回来了\n"])
+        behavior.chat_decide_stream("在吗", "", thinking=True)
+        assert fake.thinkings == [True, True]
+
+    def test_repair_round_still_lowers_temperature(self, monkeypatch):
+        """纠格式的两个手段保留：追加修复提示与降温。"""
+        behavior, fake = _stream_behavior(monkeypatch, ["Summary: 发呆\n", "Speech: 回来了\n"])
+        behavior.chat_decide_stream("在吗", "")
+        assert fake.temperatures == [None, repair_module.RETRY_TEMPERATURE]
+
+    def test_length_truncation_disables_thinking_on_repair(self, monkeypatch):
+        """预算被思考吃光（finish_reason=length）时，修复轮才关思考并随之降预算。"""
+        reasons = ["length", None]
+
+        def factory(text):
+            return _StreamStub(text, finish_reason=reasons.pop(0))
+
+        behavior, fake = _stream_behavior(monkeypatch, ["", "Speech: 回来了\n"],
+                                          stream_factory=factory)
+        out = behavior.chat_decide_stream("在吗", "")
+        assert out.speech == "回来了"
+        assert fake.thinkings == [None, False]
+        assert fake.max_tokens[1] < fake.max_tokens[0]
+
+
+class _CompletionResponse:
+    """非流式补全的最小返回：choices[0] 的 message 与 finish_reason。"""
+
+    def __init__(self, content="", finish_reason="stop"):
+        message = SimpleNamespace(content=content, tool_calls=None)
+        self.choices = [SimpleNamespace(message=message, finish_reason=finish_reason)]
+
+
+class TestNonStreamDecide:
+    """非流式入口：空响应同样进入修复轮，sit 兜底只在两次都为空时补。"""
+
+    @staticmethod
+    def _behavior(monkeypatch, responses):
+        behavior, _fake = _stream_behavior(monkeypatch, [])
+        seen = []
+
+        def fake_completion(messages, max_tokens=4000, tools=None, thinking=None, temperature=None):
+            seen.append((thinking, max_tokens))
+            return responses.pop(0)
+
+        behavior.gateway.completion = fake_completion
+        return behavior, seen
+
+    def test_length_truncation_retries_without_thinking(self, monkeypatch):
+        behavior, seen = self._behavior(monkeypatch, [
+            _CompletionResponse("", "length"),
+            _CompletionResponse("Speech: 回来了\n"),
+        ])
+        out = behavior.chat_decide("在吗")
+        assert out.speech == "回来了"
+        assert [thinking for thinking, _ in seen] == [None, False]
+        assert seen[1][1] < seen[0][1]
+
+    def test_still_empty_falls_back_to_sit(self, monkeypatch):
+        behavior, seen = self._behavior(monkeypatch, [
+            _CompletionResponse("", "stop"),
+            _CompletionResponse("", "stop"),
+        ])
+        out = behavior.chat_decide("在吗")
+        assert [(a.name, a.kwargs) for a in out.actions] == [("sit", {"duration": 5})]
+        assert len(seen) == 2
+
+    def test_truncation_warning_names_budget(self, monkeypatch, caplog):
+        behavior, _seen = self._behavior(monkeypatch, [
+            _CompletionResponse("", "length"),
+            _CompletionResponse("", "length"),
+        ])
+        with caplog.at_level(logging.WARNING):
+            behavior.chat_decide("在吗")
+        assert "预算耗尽" in caplog.text
+
 
 class _ToolCallStream:
     """首轮流只产出一条 tool_calls，把编排推进工具轮次。"""
@@ -476,12 +566,15 @@ class _HangingStream:
 
 
 class _ProgressSink:
-    """解析器只依赖进展上报与未解析正文回传。"""
+    """解析器只依赖进展上报、未解析正文与结束原因回传。"""
 
     def note_progress(self):
         pass
 
     def note_unparsed(self, text):
+        pass
+
+    def note_finish_reason(self, reason):
         pass
 
 

@@ -25,3 +25,4 @@
 | [0007](0007-action-timeout-settles.md) | 动作超时算正常结束并结算产出 | 宁可能量条少扣一次，也不能丢失玩法产出 |
 | [0008](0008-generated-reference-docs.md) | 参考文档由代码生成 + CI 校验 | 文档失效的主因是手抄与漂移 |
 | [0009](0009-layering-by-singletons-and-deferred-imports.md) | 分层靠单例与延迟导入维系 | 不引入依赖注入，也不追求零环 |
+| [0010](0010-output-budget-in-code.md) | 输出上限收归代码并按请求形态配额 | 用户无法判断 token 额度，且思考占满额度会让整段输出作废 |

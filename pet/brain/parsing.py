@@ -56,11 +56,13 @@ _JUNK_TOKEN = re.compile(r"^[\W_]+$", re.UNICODE)
 _UNPARSED_SAMPLE_LIMIT = 200
 
 class BehaviorSink(Protocol):
-    """解析依赖的编排方能力：进展上报与未解析正文回传。"""
+    """解析依赖的编排方能力：进展上报、未解析正文与结束原因回传。"""
 
     def note_progress(self) -> None: ...
 
     def note_unparsed(self, text: str) -> None: ...
+
+    def note_finish_reason(self, reason: str) -> None: ...
 
 
 def parse_deltas(raw: str, fields: tuple[str, ...]) -> Optional[dict]:
@@ -405,13 +407,16 @@ class BehaviorParser:
             self.consume_line(tagger, tagger.line, acc)
 
         _log_stream_done(tag, time.perf_counter() - t0, finish_reason, stream_usage)
+        if finish_reason:
+            self._sink.note_finish_reason(finish_reason)
         # 缺 function name 的调用既执行不了，也拼不出合法的 assistant.tool_calls
         usable = {idx: tc for idx, tc in tool_calls_map.items() if tc["name"]}
         if len(usable) != len(tool_calls_map):
             logger.warning(f"[Behavior] dropped {len(tool_calls_map) - len(usable)} tool call(s) "
                            f"without function name ({tag})")
         raw = build_raw_text(acc)
-        counts = f"content {sum(map(len, received))} 字符、reasoning {reasoning_len} 字符"
+        counts = (f"content {sum(map(len, received))} 字符、reasoning {reasoning_len} 字符"
+                  f"、finish_reason {finish_reason}")
         if raw:
             logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] [Behavior] === LLM RESPONSE ({tag}) ===")
             logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] [Behavior]   raw: {raw}")
@@ -497,6 +502,9 @@ class _NullSink:
     """不需要进展上报的调用方（整段解析）用的空实现。"""
 
     def note_progress(self) -> None:
+        pass
+
+    def note_finish_reason(self, reason: str) -> None:
         pass
 
 

@@ -25,9 +25,6 @@
 | `LLM_RETRY_DELAY` | float | 1 |  | 重试延迟(秒) |
 | `LLM_RETRY_MAX_DELAY` | float | 4 |  | 最大重试延迟(秒) |
 | `LLM_TEMPERATURE` | float | 0.7 |  | LLM 采样温度 |
-| `LLM_MAX_TOKENS_INTERACT` | int | 1024 |  | 交互模式LLM输出Token上限 |
-| `LLM_MAX_TOKENS_CHAT` | int | 4096 |  | 聊天模式LLM输出Token上限 |
-| `LLM_MAX_TOKENS_AUTONOMOUS` | int | 4096 |  | 自主模式LLM输出Token上限 |
 | `LLM_TOOLS_ENABLED` | bool | true |  | 是否可使用工具 |
 | `LLM_TOOL_MAX_ROUNDS` | int | 30 |  | 工具调用最大轮次（二十问等长流程游戏需要 ≥22 轮）（≥10, ≤99） |
 | `LLM_CACHE_PROMPT` | bool | false |  | 启用 Prompt 缓存 |
@@ -146,8 +143,6 @@
 | `LLM_ACTION_MIN_DIVISOR` | int | 25 | 是 |  | 动作权重最小除数 |
 | `LLM_ACTIVE_PROFILE` | str | `"primary"` |  |  | 当前启用的模型方案（可选：primary / alternative） |
 | `LLM_CREATE_TIMEOUT` | float | 30 |  |  | 建流超时(秒)：等待响应头超过该时长即放弃，避免服务端无响应时卡死 |
-| `LLM_MAX_TOKENS_ANALYZE` | int | 4096 |  |  | 分析模式LLM输出Token上限 |
-| `LLM_MAX_TOKENS_SUMMARY` | int | 1024 | 是 |  | 上下文摘要LLM输出Token上限 |
 | `LLM_STREAM_TIMEOUT` | float | 120 |  |  | 流式调用总超时(秒)，超过后降级到本地决策 |
 | `LLM_TOOL_PARALLEL` | bool | true | 是 |  | LLM 工具并行调用 |
 
@@ -171,4 +166,4 @@
 - `hidden`：`true` 表示不在界面显示，只能直接编辑 `settings.json`
 - `enum` / `minimum` / `maximum`：取值约束，会写进 `settings-schema.json`
 
-共 107 项（其中 52 项未在界面列出）。
+共 102 项（其中 50 项未在界面列出）。
