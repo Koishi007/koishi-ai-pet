@@ -94,15 +94,27 @@ class SwingController(QObject):
     def active(self) -> bool:
         return self._timer.isActive()
 
+    def _stop(self):
+        """结束摆动：归零角度与角速度、停表，并发一次零角度让贴图回正。"""
+        self._theta = 0.0
+        self._omega = 0.0
+        self._rest_ticks = 0
+        self._timer.stop()
+        self.swing_changed.emit(0.0)
+
     def _tick(self):
+        if not config.GRAB_SWING_ENABLED:
+            # 开关即时生效：拖拽中或衰减中关掉就立刻收起摆动
+            self.release()
+            self._relaxing = False
+            self._stop()
+            return
         if self._relaxing:
             self._theta *= self._LANDING_DECAY
             self._omega = 0.0
             self.swing_changed.emit(math.degrees(self._theta))
             if abs(self._theta) < self._REST_THETA:
-                self._theta = 0.0
-                self._timer.stop()
-                self.swing_changed.emit(0.0)
+                self._stop()
             return
         if self._dragging:
             self._estimate_motion()
@@ -117,13 +129,11 @@ class SwingController(QObject):
         )
         self.swing_changed.emit(math.degrees(self._theta))
 
-        if self._at_rest():
+        # 拖拽中不因静止停表：松手前随时可能继续移动，停表会让后续移动不再摆动
+        if not self._dragging and self._at_rest():
             self._rest_ticks += 1
             if self._rest_ticks >= self._REST_TICKS:
-                self._theta = 0.0
-                self._omega = 0.0
-                self._timer.stop()
-                self.swing_changed.emit(0.0)
+                self._stop()
         else:
             self._rest_ticks = 0
 

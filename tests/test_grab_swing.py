@@ -121,6 +121,29 @@ class TestSwingController:
         assert not ctrl.active
         assert angles == []
 
+    def test_disabling_stops_active_swing(self, qt_app, monkeypatch):
+        # 开关即时生效：拖拽中途关掉也要立刻收起摆动
+        ctrl = SwingController(_PosSeq(20000.0))
+        angles = self._angles(ctrl)
+        ctrl.begin()
+        for _ in range(20):
+            ctrl._tick()
+        assert ctrl.active
+
+        monkeypatch.setattr(config, "GRAB_SWING_ENABLED", False)
+        ctrl._tick()
+
+        assert not ctrl.active
+        assert angles[-1] == 0.0
+
+    def test_timer_survives_idle_during_drag(self, qt_app):
+        # 拖拽中途停顿：停表会让后续移动不再摆动，只有松手后才按静止收尾
+        ctrl = SwingController(_PosSeq(0.0))
+        ctrl.begin()
+        for _ in range(60):  # 2 秒不动，远超静止阈值
+            ctrl._tick()
+        assert ctrl.active
+
     def test_angle_respects_max_deg(self, qt_app):
         ctrl = SwingController(_PosSeq(1e6))
         angles = self._angles(ctrl)
