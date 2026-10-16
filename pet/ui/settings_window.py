@@ -486,13 +486,6 @@ class SettingsWindow(QWidget):
         self._temperature_edit.setMaxLength(4)
         form.addRow("采样温度:", self._temperature_edit)
 
-        self._tokens_interact_edit = self._line("LLM_MAX_TOKENS_INTERACT", "1024", QIntValidator(100, 8000))
-        form.addRow("交互模式输出Token上限:", self._tokens_interact_edit)
-        self._tokens_chat_edit = self._line("LLM_MAX_TOKENS_CHAT", "4096", QIntValidator(100, 8000))
-        form.addRow("聊天模式输出Token上限:", self._tokens_chat_edit)
-        self._tokens_auto_edit = self._line("LLM_MAX_TOKENS_AUTONOMOUS", "4096", QIntValidator(100, 8000))
-        form.addRow("自主模式输出Token上限:", self._tokens_auto_edit)
-
         form.addRow("", self._check("LLM_TOOLS_ENABLED", "启用工具调用"))
         hint = QLabel("模型不支持 tools 参数时请关闭此选项")
         hint.setStyleSheet(f"color:{_COLOR_TEXT_MUTED}; font-size:11px;")
@@ -607,8 +600,6 @@ class SettingsWindow(QWidget):
                          self._timeout_edit, self._retries_edit,
                          self._retry_delay_edit, self._retry_max_delay_edit,
                          self._temperature_edit,
-                         self._tokens_interact_edit, self._tokens_chat_edit,
-                         self._tokens_auto_edit,
                          self._tool_rounds_edit,
                          self._thinking_check, self._thinking_hint,
                          self._btn_test, self._label_test, self._test_output]
@@ -833,6 +824,7 @@ class SettingsWindow(QWidget):
         form.addRow("", self._check("SHOW_TRAY", "显示托盘图标"))
         form.addRow("", self._check("NOTIFY_ENABLED", "允许发送通知"))
         form.addRow("", self._check("AUTO_START_ON_BOOT", "开机自动启动"))
+        form.addRow("", self._check("GRAB_SWING_ENABLED", "拖拽时身体惯性摆动"))
 
         inner.addLayout(form)
 

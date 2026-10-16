@@ -11,6 +11,7 @@ from pet.agent.state import PetState
 from pet.ui.base_window import TransparentWindow
 from pet.ui.pet_animations import PetAnimator
 from pet.ui.particle import ParticleWidget
+from pet.ui.swing import SwingController
 from pet.ui.styles import MENU_QSS
 from pet.ui.settings_window import SettingsWindow
 from pet.ui.file_drop_handler import FileDropHandler, paths_from_mime
@@ -73,6 +74,9 @@ class StickyMenu(_FlatMenuBase):
 class _SpriteLabel(QLabel):
     """宠物贴图：按呼吸姿态绘制（上抬 + 缩放），不动窗口以免干扰重力判定。"""
 
+    # 摆动旋转锚点在贴图内的纵向比例（头部抓取点），PetWindow 的抓取偏移共用
+    GRAB_ANCHOR_Y = 0.16
+
     dpr_outdated = Signal(float)  # 窗口 DPR 与帧贴图生成时不一致时发出
 
     # 点击 Q 弹的形变幅度
@@ -83,6 +87,7 @@ class _SpriteLabel(QLabel):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._pose: tuple[float, float, float] = (0, 1.0, 1.0)
+        self._swing: float = 0.0
         self._tap_scale: float = 1.0
         self._tap_anim: QPropertyAnimation | None = None
 
@@ -90,6 +95,11 @@ class _SpriteLabel(QLabel):
         pose = (dy, scale_x, scale_y)
         if pose != self._pose:
             self._pose = pose
+            self.update()
+
+    def set_swing(self, angle_deg: float):
+        if angle_deg != self._swing:
+            self._swing = angle_deg
             self.update()
 
     def play_tap_bounce(self):
@@ -122,7 +132,7 @@ class _SpriteLabel(QLabel):
         if pixmap is not None and not pixmap.isNull():
             if abs(pixmap.devicePixelRatio() - self.devicePixelRatioF()) > 0.01:
                 self.dpr_outdated.emit(self.devicePixelRatioF())
-        if pixmap is None or (self._pose == (0, 1.0, 1.0) and self._tap_scale == 1.0):
+        if pixmap is None or (self._pose == (0, 1.0, 1.0) and self._tap_scale == 1.0 and self._swing == 0.0):
             super().paintEvent(event)
             return
 
@@ -144,15 +154,22 @@ class _SpriteLabel(QLabel):
         painter.translate(anchor_x, anchor_y)
         painter.scale(scale_x, scale_y)
         painter.translate(-anchor_x, -anchor_y)
+        # 摆动绕头部抓取点旋转：θ 右偏为正；Qt 正角在屏幕上为顺时针，会把
+        # 锚点下方的身体转向左侧，因此绘制取负角
+        if self._swing != 0.0:
+            grab_y = top + pm_h * self.GRAB_ANCHOR_Y
+            painter.translate(anchor_x, grab_y)
+            painter.rotate(-self._swing)
+            painter.translate(-anchor_x, -grab_y)
         # QPointF 重载支持亚像素定位：浮点呼吸位移平滑渲染，不取整成方波
         painter.drawPixmap(QPointF(left, top), pixmap)
         painter.end()
 
 
 class PetWindow(TransparentWindow):
-    # 拖拽抓取点在窗口内的相对位置：水平居中、纵向 16%（头部）
+    # 拖拽抓取点在窗口内的相对位置：水平居中、纵向与摆动锚点同高（头部）
     _GRAB_RATIO_X = 0.5
-    _GRAB_RATIO_Y = 0.16
+    _GRAB_RATIO_Y = _SpriteLabel.GRAB_ANCHOR_Y
 
     def __init__(self):
         super().__init__()
@@ -274,6 +291,8 @@ class PetWindow(TransparentWindow):
         self.pet_anim.frame_changed.connect(self.pet_label.setPixmap)
         self.pet_anim.pose_changed.connect(self.pet_label.set_pose)
         self.pet_label.dpr_outdated.connect(self._on_frame_dpr_outdated)
+        self.swing_ctrl = SwingController(self.x, parent=self)
+        self.swing_ctrl.swing_changed.connect(self.pet_label.set_swing)
         self.particles = ParticleWidget(self)
         self.pet_actions = PetActions(self, self.pet_anim, parent=self)
         self.action_queue = ActionQueue(self.pet_actions, parent=self)
@@ -337,6 +356,7 @@ class PetWindow(TransparentWindow):
         # 先清空再暂停：clear 会复位暂停态，按住期间的新动作靠 pause 只入队不执行
         self.action_queue.clear()
         self.action_queue.pause()
+        self.swing_ctrl.begin()
         self.pet_actions.grabbed()
         logger.info("[PetWindow] grabbed")
         if self._agent:
@@ -381,6 +401,7 @@ class PetWindow(TransparentWindow):
             return
         self._grab_local = None
         self.action_queue.resume()
+        self.swing_ctrl.release()
         vx, vy = 0.0, 0.0
         # 只使用最近 100ms 内的采样帧，过期帧视为停顿（避免释放前停顿导致速度为 0）
         now = QDateTime.currentMSecsSinceEpoch()
@@ -623,6 +644,7 @@ class PetWindow(TransparentWindow):
 
     def _on_landed(self):
         self.particles.spawn("dust")
+        self.swing_ctrl.land()  # 落地即归正，残余摆角不拖到落地之后
         fall_seconds = time.monotonic() - self._fall_started_at if self._fall_started_at else 0.0
         self._fall_started_at = None
         self._await_fall_down = False

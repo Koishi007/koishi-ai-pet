@@ -7,6 +7,7 @@ from datetime import datetime
 from openai import BadRequestError
 
 from pet.config import config
+from pet.brain.budget import thinking_active
 from pet.brain.llm_retry import llm_stream_with_retry, retryer_for
 
 logger = logging.getLogger(__name__)
@@ -43,19 +44,12 @@ class LlmGateway:
         """按配置注入思考模式参数；thinking 非 None 时覆盖全局开关。"""
         if _thinking_unsupported:
             return
-        if thinking is None:
-            state = "disabled" if config.LLM_THINKING_DISABLED else "enabled"
-        else:
-            state = "enabled" if thinking else "disabled"
+        state = "enabled" if thinking_active(thinking) else "disabled"
         kwargs.setdefault("extra_body", {})["thinking"] = {"type": state}
 
     @staticmethod
     def _is_thinking_reject(exc: BaseException) -> bool:
-        """400 是否指向 thinking 参数。
-
-        拒绝原因在 body 里：指向 thinking 才值得摘掉 extra_body 重试，参数结构类
-        错误重试也是同样结果。拿不到 body 时无从判断，保持原有的降级重试。
-        """
+        """400 是否指向 thinking 参数"""
         body = getattr(exc, "body", None)
         if body is None:
             return True

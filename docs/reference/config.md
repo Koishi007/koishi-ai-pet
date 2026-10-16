@@ -25,9 +25,6 @@
 | `LLM_RETRY_DELAY` | float | 1 |  | 重试延迟(秒) |
 | `LLM_RETRY_MAX_DELAY` | float | 4 |  | 最大重试延迟(秒) |
 | `LLM_TEMPERATURE` | float | 0.7 |  | LLM 采样温度 |
-| `LLM_MAX_TOKENS_INTERACT` | int | 1024 |  | 交互模式LLM输出Token上限 |
-| `LLM_MAX_TOKENS_CHAT` | int | 4096 |  | 聊天模式LLM输出Token上限 |
-| `LLM_MAX_TOKENS_AUTONOMOUS` | int | 4096 |  | 自主模式LLM输出Token上限 |
 | `LLM_TOOLS_ENABLED` | bool | true |  | 是否可使用工具 |
 | `LLM_TOOL_MAX_ROUNDS` | int | 30 |  | 工具调用最大轮次（二十问等长流程游戏需要 ≥22 轮）（≥10, ≤99） |
 | `LLM_CACHE_PROMPT` | bool | false |  | 启用 Prompt 缓存 |
@@ -79,6 +76,7 @@
 | `SHOW_TRAY` | bool | true | 是 | 显示托盘图标 |
 | `NOTIFY_ENABLED` | bool | true |  | 允许发送通知（定时器、待办、来电等） |
 | `AUTO_START_ON_BOOT` | bool | false |  | 开机自动启动 |
+| `GRAB_SWING_ENABLED` | bool | true |  | 拖拽时身体惯性摆动开关 |
 | `VOICE_INPUT_ENABLED` | bool | false |  | 启用语音输入 |
 | `VOICE_HOTKEY` | str | `"F8"` |  | 语音输入全局热键 |
 | `XF_APPID` | str | `""` |  | 讯飞语音听写 APPID |
@@ -94,6 +92,7 @@
 | 键 | 类型 | 默认 | 高级 | 需重启 | 说明 |
 |---|---|---|---|---|---|
 | `CRASH_REPORT_ENABLED` | bool | true | 是 | 是 | 启用崩溃信息收集(写入 logs/crash 目录) |
+| `GRAB_SWING_MAX_DEG` | int | 12 | 是 |  | 拖拽摆角上限(度) |
 | `HIDE_CONSOLE` | bool | true | 是 | 是 | 启动时隐藏控制台窗口 |
 | `LOG_LEVEL` | str | `"DEBUG"` | 是 |  | 日志级别(DEBUG/INFO/WARNING/ERROR) |
 | `PET_FPS` | int | 15 | 是 | 是 | 动画帧率 |
@@ -144,8 +143,6 @@
 | `LLM_ACTION_MIN_DIVISOR` | int | 25 | 是 |  | 动作权重最小除数 |
 | `LLM_ACTIVE_PROFILE` | str | `"primary"` |  |  | 当前启用的模型方案（可选：primary / alternative） |
 | `LLM_CREATE_TIMEOUT` | float | 30 |  |  | 建流超时(秒)：等待响应头超过该时长即放弃，避免服务端无响应时卡死 |
-| `LLM_MAX_TOKENS_ANALYZE` | int | 4096 |  |  | 分析模式LLM输出Token上限 |
-| `LLM_MAX_TOKENS_SUMMARY` | int | 1024 | 是 |  | 上下文摘要LLM输出Token上限 |
 | `LLM_STREAM_TIMEOUT` | float | 120 |  |  | 流式调用总超时(秒)，超过后降级到本地决策 |
 | `LLM_TOOL_PARALLEL` | bool | true | 是 |  | LLM 工具并行调用 |
 
@@ -169,4 +166,4 @@
 - `hidden`：`true` 表示不在界面显示，只能直接编辑 `settings.json`
 - `enum` / `minimum` / `maximum`：取值约束，会写进 `settings-schema.json`
 
-共 105 项（其中 51 项未在界面列出）。
+共 102 项（其中 50 项未在界面列出）。

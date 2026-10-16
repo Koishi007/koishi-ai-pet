@@ -57,6 +57,12 @@
 若恰好进入下落则「先结算、再挂起」；拖拽时 `pause + clear + grabbed()`，松手 `resume()`，
 速度超过 80px/s 会以 `apply_impulse()` 抛出。
 
+**拖拽惯性钟摆**：拖拽期间贴图绕头部抓取点按窗口加速度摆动（`pet/ui/swing.py` 的
+`SwingController`，30ms tick 差分位置求激励），松手后自由衰减回正；
+摆动是 `_SpriteLabel` 绘制期变换，窗口矩形与重力判定不受影响，
+开关与角度上限见 `GRAB_SWING_ENABLED` / `GRAB_SWING_MAX_DEG`，
+模型与参数见 [specs/2026-10-14-grab-swing-design.md](../specs/2026-10-14-grab-swing-design.md)。
+
 ## 3. 帧动画的加载与运行
 
 素材侧契约（目录、命名、json 字段与取值）见 [assets-pipeline.md](assets-pipeline.md) §2；

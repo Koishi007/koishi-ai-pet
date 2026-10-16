@@ -7,7 +7,7 @@ import logging
 from dataclasses import dataclass
 from typing import Callable, List, Optional
 
-from pet.config import config
+from pet.brain.budget import output_budget
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +52,7 @@ def summarize_with_llm(messages: list, item_count: int, call_llm: Callable[..., 
 
     call_llm(messages, max_tokens) 由编排方提供（含重试与备选方案切换）。
     """
-    resp = call_llm(messages, max_tokens=config.LLM_MAX_TOKENS_SUMMARY)
+    resp = call_llm(messages, max_tokens=output_budget("summary"))
     raw = resp.choices[0].message.content
     result = (raw or "").strip()
     if not result:
