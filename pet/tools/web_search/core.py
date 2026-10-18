@@ -253,14 +253,16 @@ def _search_tavily(query: str, count: int, language: str, cfg: dict, page: int =
 
 
 def check_connectivity() -> bool:
-    """检测后端连通性，至少一个可用返回 True。"""
+    """检测已配置的后端连通性，至少一个可用返回 True。
+
+    配置了多个后端时全部探测；探测按调用优先级进行，DeepSeek 与 Tavily 会消耗额度。
+    """
     cfg = _load_config()
-    backend = cfg.get("backend", "auto")
     any_ok = False
 
     # 检测 SearXNG
     searxng_url = cfg.get("searxng_url", "").rstrip("/").removesuffix("/search")
-    if searxng_url and backend in ("searxng", "auto"):
+    if searxng_url:
         api_key = cfg.get("searxng_key", "")
         headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         try:
@@ -293,29 +295,29 @@ def check_connectivity() -> bool:
                 f"[web_search] ✗ SearXNG 无法连接 → {searxng_url} ({e})"
             )
 
-    # 检测 Bing
-    bing_key = cfg.get("bing_search_key", "")
-    if bing_key and backend in ("bing", "auto"):
+    # 检测 Tavily
+    tavily_key = cfg.get("tavily_api_key", "")
+    if tavily_key:
         try:
-            resp = requests.get(
-                _BING_ENDPOINT,
-                headers={"Ocp-Apim-Subscription-Key": bing_key},
-                params={"q": "test", "count": 1, "mkt": "en-US"},
-                timeout=5,
+            resp = requests.post(
+                _TAVILY_SEARCH_ENDPOINT,
+                headers={"Authorization": f"Bearer {tavily_key}"},
+                json={"query": "test", "max_results": 1, "search_depth": "basic"},
+                timeout=10,
             )
             if resp.status_code == 200:
-                logger.info("[web_search] ✓ Bing API 连通正常")
+                logger.info("[web_search] ✓ Tavily 搜索 API 连通正常")
                 any_ok = True
             else:
                 logger.warning(
-                    f"[web_search] ✗ Bing API 响应异常 (HTTP {resp.status_code})"
+                    f"[web_search] ✗ Tavily 搜索 API 响应异常 (HTTP {resp.status_code})"
                 )
         except requests.RequestException as e:
-            logger.warning(f"[web_search] ✗ Bing API 无法连接 ({e})")
+            logger.warning(f"[web_search] ✗ Tavily 搜索 API 无法连接 ({e})")
 
-    # 检测 DeepSeek（成功请求会计费，只在选用该后端时探测）
+    # 检测 DeepSeek
     deepseek_key = cfg.get("deepseek_search_key", "")
-    if deepseek_key and backend in ("deepseek", "auto"):
+    if deepseek_key:
         try:
             resp = requests.post(
                 _DEEPSEEK_SEARCH_ENDPOINT,
@@ -333,25 +335,25 @@ def check_connectivity() -> bool:
         except requests.RequestException as e:
             logger.warning(f"[web_search] ✗ DeepSeek 搜索 API 无法连接 ({e})")
 
-    # 检测 Tavily（成功请求消耗 credit，只在选用该后端时探测）
-    tavily_key = cfg.get("tavily_api_key", "")
-    if tavily_key and backend in ("tavily", "auto"):
+    # 检测 Bing
+    bing_key = cfg.get("bing_search_key", "")
+    if bing_key:
         try:
-            resp = requests.post(
-                _TAVILY_SEARCH_ENDPOINT,
-                headers={"Authorization": f"Bearer {tavily_key}"},
-                json={"query": "test", "max_results": 1, "search_depth": "basic"},
-                timeout=10,
+            resp = requests.get(
+                _BING_ENDPOINT,
+                headers={"Ocp-Apim-Subscription-Key": bing_key},
+                params={"q": "test", "count": 1, "mkt": "en-US"},
+                timeout=5,
             )
             if resp.status_code == 200:
-                logger.info("[web_search] ✓ Tavily 搜索 API 连通正常")
+                logger.info("[web_search] ✓ Bing API 连通正常")
                 any_ok = True
             else:
                 logger.warning(
-                    f"[web_search] ✗ Tavily 搜索 API 响应异常 (HTTP {resp.status_code})"
+                    f"[web_search] ✗ Bing API 响应异常 (HTTP {resp.status_code})"
                 )
         except requests.RequestException as e:
-            logger.warning(f"[web_search] ✗ Tavily 搜索 API 无法连接 ({e})")
+            logger.warning(f"[web_search] ✗ Bing API 无法连接 ({e})")
 
     if not any_ok:
         if not searxng_url and not bing_key and not deepseek_key and not tavily_key:
@@ -384,17 +386,7 @@ def search(query: str, count: int = 5, language: str = "zh-CN", page: int = 1) -
                 result["has_next"] = len(result.get("summary", "").split("\n")) > 1
                 result["__context__"] = f"搜索「{query}」（第{page}页）"
                 return result
-            logger.info("[web_search] SearXNG failed, falling back to DeepSeek")
-
-    deepseek_key = cfg.get("deepseek_search_key", "")
-    if backend in ("deepseek", "auto") and deepseek_key:
-        result = _search_deepseek(query, count, language, cfg, page)
-        if "搜索失败" not in str(result.get("summary", "")):
-            result["page"] = page
-            result["has_next"] = False
-            result["__context__"] = f"搜索「{query}」"
-            return result
-        logger.info("[web_search] DeepSeek failed, falling back to Tavily")
+            logger.info("[web_search] SearXNG failed, falling back to Tavily")
 
     tavily_key = cfg.get("tavily_api_key", "")
     if backend in ("tavily", "auto") and tavily_key:
@@ -404,7 +396,17 @@ def search(query: str, count: int = 5, language: str = "zh-CN", page: int = 1) -
             result["has_next"] = False
             result["__context__"] = f"搜索「{query}」"
             return result
-        logger.info("[web_search] Tavily failed, falling back to Bing")
+        logger.info("[web_search] Tavily failed, falling back to DeepSeek")
+
+    deepseek_key = cfg.get("deepseek_search_key", "")
+    if backend in ("deepseek", "auto") and deepseek_key:
+        result = _search_deepseek(query, count, language, cfg, page)
+        if "搜索失败" not in str(result.get("summary", "")):
+            result["page"] = page
+            result["has_next"] = False
+            result["__context__"] = f"搜索「{query}」"
+            return result
+        logger.info("[web_search] DeepSeek failed, falling back to Bing")
 
     bing_key = cfg.get("bing_search_key", "")
     if backend in ("bing", "auto") and bing_key:
@@ -485,10 +487,10 @@ def fetch(url: str, max_chars: int = 10000) -> dict:
     backend = cfg.get("backend", "auto")
 
     providers = []
-    if backend in ("deepseek", "auto") and cfg.get("deepseek_search_key"):
-        providers.append(_fetch_deepseek)
     if backend in ("tavily", "auto") and cfg.get("tavily_api_key"):
         providers.append(_fetch_tavily)
+    if backend in ("deepseek", "auto") and cfg.get("deepseek_search_key"):
+        providers.append(_fetch_deepseek)
 
     for provider in providers:
         page = provider(url, cfg)

@@ -246,7 +246,7 @@ Playwright 及浏览器二进制缺失时，工具加载直接报错。
 
 ### web_search
 
-通过 SearXNG、DeepSeek、Tavily 或 Bing API 搜索网页；`fetch` 抓取指定网页正文时按后端顺序尝试 DeepSeek Fetch、Tavily Extract，未配置时用 trafilatura 本地提取。
+通过 SearXNG、Tavily、DeepSeek 或 Bing API 搜索网页；`fetch` 抓取指定网页正文时按后端顺序尝试 Tavily Extract、DeepSeek Fetch，未配置时用 trafilatura 本地提取。
 
 **配置**（`pet/tools/web_search/config.json`）：
 
@@ -259,7 +259,7 @@ Playwright 及浏览器二进制缺失时，工具加载直接报错。
 | `tavily_api_key` | str | `""` | Tavily API Key（[搜索](https://docs.tavily.com/documentation/api-reference/endpoint/search) / [抓取](https://docs.tavily.com/documentation/api-reference/endpoint/extract) 接口文档） |
 | `bing_search_key` | str | `""` | Bing Web Search API Key |
 
-`backend: "auto"` 按 SearXNG → DeepSeek → Tavily → Bing 的顺序尝试，显式指定后端时只用该后端。至少配置一个后端，否则工具加载失败。
+`backend: "auto"` 按 SearXNG → Tavily → DeepSeek → Bing 的顺序调用；配置了多个后端时启动会逐个探测，显式指定后端时只用该后端。至少配置一个后端，否则工具加载失败。
 
 计费与限速：
 

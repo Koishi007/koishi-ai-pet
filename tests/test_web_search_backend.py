@@ -148,9 +148,12 @@ def test_tavily_result_format(monkeypatch):
     assert "[Tue, 11 Mar 2025 17:00:00 GMT]" in summary
 
 
-def test_auto_uses_tavily_after_deepseek_missing(monkeypatch):
-    monkeypatch.setattr(core, "_load_config",
-                        lambda: {"backend": "auto", "tavily_api_key": "tvly-test"})
+def test_auto_prefers_tavily_over_deepseek(monkeypatch):
+    monkeypatch.setattr(core, "_load_config", lambda: {
+        "backend": "auto",
+        "deepseek_search_key": "ds-key",
+        "tavily_api_key": "tvly-test",
+    })
     monkeypatch.setattr(core.requests, "post",
                         lambda *a, **kw: _Resp(200, _tavily_payload()))
     assert "https://tavily.example" in core.search("测试")["summary"]
@@ -171,3 +174,22 @@ def test_connectivity_detects_tavily(monkeypatch):
                         lambda: {"backend": "tavily", "tavily_api_key": "tvly-test"})
     monkeypatch.setattr(core.requests, "post", lambda *a, **kw: _Resp(200, {}))
     assert core.check_connectivity() is True
+
+
+def test_connectivity_probes_all_configured(monkeypatch):
+    """backend 显式指定时仍探测其他已配置的后端。"""
+    urls = []
+
+    def _post(*a, **kw):
+        urls.append(a[0])
+        return _Resp(200, {})
+
+    monkeypatch.setattr(core, "_load_config", lambda: {
+        "backend": "bing",
+        "tavily_api_key": "tvly-test",
+        "deepseek_search_key": "ds-key",
+    })
+    monkeypatch.setattr(core.requests, "post", _post)
+    assert core.check_connectivity() is True
+    assert core._TAVILY_SEARCH_ENDPOINT in urls
+    assert core._DEEPSEEK_SEARCH_ENDPOINT in urls
