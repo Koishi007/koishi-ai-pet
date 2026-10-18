@@ -123,6 +123,20 @@ class TestToolGuide:
             if tool.meta:
                 assert f"- {tool.name} " not in guide
 
+    def test_web_search_hint_follows_loaded_state(self, monkeypatch):
+        """web_search 加载后才下发优先使用引导。"""
+        from pet.tools.registry import TOOL_REGISTRY
+        monkeypatch.setattr(config, "LLM_TOOLS_ENABLED", True)
+        saved = TOOL_REGISTRY._tools.pop("web_search", None)
+        try:
+            assert "搜索网页优先用 web_search" not in prompts._tool_list()
+            TOOL_REGISTRY.register("web_search", "测试：直连搜索 API", group="web")
+            assert "搜索网页优先用 web_search" in prompts._tool_list()
+        finally:
+            TOOL_REGISTRY._tools.pop("web_search", None)
+            if saved is not None:
+                TOOL_REGISTRY._tools["web_search"] = saved
+
     def test_disabled_tools_falls_back_to_aside(self, monkeypatch):
         monkeypatch.setattr(config, "LLM_TOOLS_ENABLED", False)
         guide = prompts._tool_guide()

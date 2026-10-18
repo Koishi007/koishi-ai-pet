@@ -107,11 +107,16 @@ _TOOL_DISCOVERY_GUIDE = (
 def _tool_list() -> str:
     """已启用的非元工具渲染成最小清单：名称 [分组] 首句用途"""
     lines = []
+    has_web_search = False
     for t in TOOL_REGISTRY.enabled_tools:
         if t.meta:
             continue
+        if t.name == "web_search":
+            has_web_search = True
         head, sep, _ = t.description.partition("。")
         lines.append(f"- {t.name} [{t.group}] {head + '。' if sep else head}")
+    if has_web_search:
+        lines.append("- 搜索网页优先用 web_search")
     return "\n".join(lines)
 
 

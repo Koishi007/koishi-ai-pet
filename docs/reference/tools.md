@@ -22,11 +22,11 @@
 
 - 目录：`pet/tools/browser/`
 - 分组：`web`
-- 说明：无头浏览器（Playwright）：读取网页正文、截图；搜索靠加载搜索引擎页面解析结果，需要搜索时优先用 web_search
+- 说明：无头浏览器（Playwright）：读取网页正文、截图；搜索靠加载搜索引擎页面解析结果，较慢
 
 | 方法 | 参数 | 说明 |
 |---|---|---|
-| `search` | `query`（str, 必需） 搜索关键词<br>`count`（int, 默认 10） 返回结果数量(1-10) | 打开 DuckDuckGo / Bing / 百度页面解析搜索结果（标题、URL、摘要，最多10条），较慢，优先用 web_search__search |
+| `search` | `query`（str, 必需） 搜索关键词<br>`count`（int, 默认 10） 返回结果数量(1-10) | 打开 DuckDuckGo / Bing / 百度页面解析搜索结果（标题、URL、摘要，最多10条），比直连搜索 API 慢 |
 | `read_url` | `url`（str, 必需） 要读取的网页地址（包含 http/https）<br>`max_chars`（int, 默认 10000） 最大提取字符数<br>`wait_seconds`（float, 默认 3.0） 页面加载等待时间(秒)<br>`page`（int, 默认 1） 分页页码，从1开始<br>`page_size`（int, 默认 3000） 每页字符数 | 用无头浏览器打开URL并提取页面正文文本，支持分页（默认每页3000字），返回当前页内容及总页数 |
 | `screenshot_url` | `url`（str, 必需） 要截图的网页地址（包含 http/https）<br>`width`（int, 默认 1280） 视口宽度(px)<br>`height`（int, 默认 800） 视口高度(px)<br>`wait_seconds`（float, 默认 3.0） 页面加载等待时间(秒)<br>`full_page`（bool, 默认 False） 是否截取整页（默认仅可视区域） | 用无头浏览器打开URL并截图，可以'看到'网页外观 |
 | `close` | 无参数 | 关闭浏览器，释放内存（所有网页操作完成后调用） |
@@ -110,12 +110,12 @@
 
 - 目录：`pet/tools/web_search/`
 - 分组：`web`
-- 说明：网络搜索 API（SearXNG / DeepSeek / Bing）：直接请求搜索服务返回标题与摘要，速度快，需要搜索时优先使用
+- 说明：网络搜索 API（SearXNG / DeepSeek / Bing）：直接请求搜索服务返回标题与摘要，速度快
 
 | 方法 | 参数 | 说明 |
 |---|---|---|
-| `search` | `query`（str, 必需） 搜索关键词<br>`count`（int, 默认 5） 返回结果数量（1-10）<br>`language`（str, 默认 "zh-CN", 可选：zh-CN/en-US/ja-JP） 语言/区域代码（zh-CN / en-US / ja-JP 等）<br>`page`（int, 默认 1） 页码，从1开始（结果不够时翻页获取更多） | 搜索网络获取最新信息（返回标题和摘要），直接请求搜索 API，优先于 browser__search |
-| `deep_search` | `query`（str, 必需） 搜索关键词<br>`count`（int, 默认 5） 搜索结果数量（1-10）<br>`language`（str, 默认 "zh-CN", 可选：zh-CN/en-US/ja-JP） 语言/区域代码<br>`extract_top`（int, 默认 2） 抓取正文的结果条数（1-3，越多越慢）<br>`page`（int, 默认 1） 页码，从1开始 | 深度搜索：搜索后抓取前几条结果的页面正文（trafilatura 提取，比 search 慢）；正文需要 JS 渲染时用 browser__read_url |
+| `search` | `query`（str, 必需） 搜索关键词<br>`count`（int, 默认 5） 返回结果数量（1-10）<br>`language`（str, 默认 "zh-CN", 可选：zh-CN/en-US/ja-JP） 语言/区域代码（zh-CN / en-US / ja-JP 等）<br>`page`（int, 默认 1） 页码，从1开始（结果不够时翻页获取更多） | 搜索网络获取最新信息（返回标题和摘要），直接请求搜索 API，速度快 |
+| `deep_search` | `query`（str, 必需） 搜索关键词<br>`count`（int, 默认 5） 搜索结果数量（1-10）<br>`language`（str, 默认 "zh-CN", 可选：zh-CN/en-US/ja-JP） 语言/区域代码<br>`extract_top`（int, 默认 2） 抓取正文的结果条数（1-3，越多越慢）<br>`page`（int, 默认 1） 页码，从1开始 | 深度搜索：搜索后抓取前几条结果的页面正文（trafilatura 提取，比 search 慢） |
 
 ## 元工具（注册在 `pet/tools/registry.py`）
 
