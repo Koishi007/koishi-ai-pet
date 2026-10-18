@@ -13,6 +13,7 @@ _CONFIG_FILE = _TOOL_DIR / "config.json"
 
 _BING_ENDPOINT = "https://api.bing.microsoft.com/v7.0/search"
 _DEEPSEEK_SEARCH_ENDPOINT = "https://api.deepseek.com/v1/tools/search"
+_DEEPSEEK_FETCH_ENDPOINT = "https://api.deepseek.com/v1/tools/fetch"
 
 
 def _load_config() -> dict:
@@ -341,48 +342,54 @@ def search(query: str, count: int = 5, language: str = "zh-CN", page: int = 1) -
     }
 
 
-def deep_search(query: str, count: int = 5, language: str = "zh-CN",
-                extract_top: int = 2, max_chars: int = 2000, page: int = 1) -> dict:
-    """深度搜索 — 先搜索，再抓取前 N 条结果的正文摘要。
+def _fetch_deepseek(url: str, cfg: dict) -> dict:
+    """DeepSeek 抓取 API：POST /v1/tools/fetch，返回标题与 Markdown 正文。"""
+    api_key = cfg.get("deepseek_search_key", "")
+    if not api_key:
+        return {}
+    try:
+        resp = requests.post(
+            _DEEPSEEK_FETCH_ENDPOINT,
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={"url": url},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.RequestException as e:
+        logger.info(f"[web_search] DeepSeek fetch failed for {url}: {e}")
+        return {}
+    content = data.get("content", "")
+    if not content:
+        return {}
+    return {"title": data.get("title", ""), "content": content}
 
-    相比 search() 只返回标题+snippet，deep_search 会访问搜索结果页面，
-    提取正文文本，信息密度更高，适合需要具体细节的查询。
+
+def fetch(url: str, max_chars: int = 10000) -> dict:
+    """抓取网页正文 — 优先 DeepSeek Fetch，未配置或失败时回退 trafilatura。
 
     Args:
-        query:       搜索关键词
-        count:       搜索结果数量（1-10）
-        language:    语言/区域代码
-        extract_top: 抓取正文的结果条数（1-3，越多越慢）
-        max_chars:   每条正文最大字符数
-        page:        页码，从1开始
+        url:       网页地址（含 http:// 或 https://）
+        max_chars: 正文最大字符数
     """
-    base_result = search(query, count, language, page)
-    summary = base_result.get("summary", "")
-    if "搜索失败" in summary:
-        return base_result
+    if not url.startswith(("http://", "https://")):
+        return {"summary": "抓取失败：url 必须是以 http:// 或 https:// 开头的地址"}
 
-    urls = []
-    for line in summary.split("\n"):
-        line = line.strip()
-        if line.startswith("http://") or line.startswith("https://"):
-            urls.append(line)
+    cfg = _load_config()
+    backend = cfg.get("backend", "auto")
 
-    if not urls:
-        return base_result
+    if backend in ("deepseek", "auto") and cfg.get("deepseek_search_key"):
+        page = _fetch_deepseek(url, cfg)
+        if page:
+            text = page["content"]
+            if len(text) > max_chars:
+                text = text[:max_chars] + "…"
+            title = page["title"]
+            head = f"{title}\n{url}" if title else url
+            return {"summary": f"{head}\n{text}",
+                    "__context__": f"抓取网页「{title or url}」"}
 
-    extract_top = max(1, min(extract_top, 3, len(urls)))
-    extra_lines = ["\n--- 深度搜索：页面正文 ---"]
-    extracted = 0
-    for url in urls:
-        if extracted >= extract_top:
-            break
-        text = _extract_text(url, max_chars)
-        if text:
-            extra_lines.append(f"[{url}]\n{text}")
-            extracted += 1
-
-    if extracted == 0:
-        extra_lines.append("(未能提取任何页面正文，请参考搜索摘要)")
-
-    return {"summary": summary + "\n".join(extra_lines),
-            "__context__": f"深度搜索「{query}」（提取{extracted}条正文）"}
+    text = _extract_text(url, max_chars)
+    if not text:
+        return {"summary": f"抓取失败：未能从 {url} 提取正文"}
+    return {"summary": f"{url}\n{text}", "__context__": f"抓取网页 {url}"}

@@ -98,3 +98,25 @@ def test_connectivity_detects_deepseek(monkeypatch):
                         lambda: {"backend": "deepseek", "deepseek_search_key": "k"})
     monkeypatch.setattr(core.requests, "post", lambda *a, **kw: _Resp(200, {}))
     assert core.check_connectivity() is True
+
+
+def test_fetch_uses_deepseek(config, monkeypatch):
+    monkeypatch.setattr(core.requests, "post",
+                        lambda *a, **kw: _Resp(200, {"title": "页面标题", "content": "正文内容"}))
+    summary = core.fetch("https://example.com")["summary"]
+    assert "页面标题" in summary
+    assert "https://example.com" in summary
+    assert "正文内容" in summary
+
+
+def test_fetch_falls_back_to_local_extract(config, monkeypatch):
+    def _post(*a, **kw):
+        raise requests.ConnectionError("boom")
+
+    monkeypatch.setattr(core.requests, "post", _post)
+    monkeypatch.setattr(core, "_extract_text", lambda url, max_chars: "本地提取正文")
+    assert "本地提取正文" in core.fetch("https://example.com")["summary"]
+
+
+def test_fetch_rejects_bad_scheme(config):
+    assert "抓取失败" in core.fetch("ftp://example.com/file")["summary"]

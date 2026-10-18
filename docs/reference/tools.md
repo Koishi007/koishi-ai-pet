@@ -110,12 +110,12 @@
 
 - 目录：`pet/tools/web_search/`
 - 分组：`web`
-- 说明：网络搜索 API（SearXNG / DeepSeek / Bing）：直接请求搜索服务返回标题与摘要，速度快
+- 说明：网络搜索与网页抓取 API（SearXNG / DeepSeek / Bing）：搜索直连服务商，抓取网页转纯文本
 
 | 方法 | 参数 | 说明 |
 |---|---|---|
 | `search` | `query`（str, 必需） 搜索关键词<br>`count`（int, 默认 5） 返回结果数量（1-10）<br>`language`（str, 默认 "zh-CN", 可选：zh-CN/en-US/ja-JP） 语言/区域代码（zh-CN / en-US / ja-JP 等）<br>`page`（int, 默认 1） 页码，从1开始（结果不够时翻页获取更多） | 搜索网络获取最新信息（返回标题和摘要），直接请求搜索 API，速度快 |
-| `deep_search` | `query`（str, 必需） 搜索关键词<br>`count`（int, 默认 5） 搜索结果数量（1-10）<br>`language`（str, 默认 "zh-CN", 可选：zh-CN/en-US/ja-JP） 语言/区域代码<br>`extract_top`（int, 默认 2） 抓取正文的结果条数（1-3，越多越慢）<br>`page`（int, 默认 1） 页码，从1开始 | 深度搜索：搜索后抓取前几条结果的页面正文（trafilatura 提取，比 search 慢） |
+| `fetch` | `url`（str, 必需） 要抓取的网页地址（含 http:// 或 https://）<br>`max_chars`（int, 默认 10000） 正文最大字符数 | 抓取指定 URL 的网页正文并转为纯文本（优先 DeepSeek Fetch，失败回退本地提取），不支持 JS 渲染页面 |
 
 ## 元工具（注册在 `pet/tools/registry.py`）
 
