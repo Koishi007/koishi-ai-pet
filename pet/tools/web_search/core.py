@@ -54,11 +54,11 @@ class _PinnedHTTPSAdapter(HTTPAdapter):
 
 
 def _is_public_ip(ip) -> bool:
-    """全局可路由地址返回 True；6to4 地址按内嵌的 IPv4 再判一次。"""
-    if not ip.is_global or ip.is_reserved or ip.is_multicast:
-        return False
+    """全局可路由地址返回 True；6to4 地址只按内嵌的 IPv4 判定。"""
     if isinstance(ip, ipaddress.IPv6Address) and ip.sixtofour is not None:
         return _is_public_ip(ip.sixtofour)
+    if not ip.is_global or ip.is_reserved or ip.is_multicast:
+        return False
     return True
 
 
