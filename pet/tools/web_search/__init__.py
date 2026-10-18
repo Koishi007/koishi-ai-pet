@@ -4,7 +4,7 @@ from pet.tools.web_search.core import search, fetch, check_connectivity
 from pet.tools.context import TOOL_CTX
 
 TOOL_NAME = "web_search"
-TOOL_DESCRIPTION = "网络搜索与网页抓取 API（SearXNG / DeepSeek / Tavily / Bing）：搜索直连服务商，抓取网页转纯文本"
+TOOL_DESCRIPTION = "网络搜索与网页抓取：搜索直接请求搜索服务返回标题与摘要，抓取网页正文转为纯文本"
 TOOL_GROUP = "web"
 
 
@@ -58,7 +58,7 @@ def register(registry):
     )
     registry.add_method(
         TOOL_NAME, "fetch",
-        "抓取指定 URL 的网页正文并转为纯文本（优先 DeepSeek Fetch，失败回退本地提取），不支持 JS 渲染页面",
+        "抓取指定 URL 的网页正文并转为纯文本，不支持 JS 渲染页面",
         handler=_fetch,
         timeout=30.0,
         args={
