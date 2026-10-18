@@ -101,7 +101,7 @@ def test_connectivity_detects_deepseek(monkeypatch):
 
 
 def test_fetch_uses_deepseek(config, monkeypatch):
-    monkeypatch.setattr(core, "_host_is_public", lambda host, port: True)
+    monkeypatch.setattr(core, "_resolve_public_ips", lambda host, port: ["93.184.216.34"])
     monkeypatch.setattr(core.requests, "post",
                         lambda *a, **kw: _Resp(200, {"title": "页面标题", "content": "正文内容"}))
     summary = core.fetch("https://example.com")["summary"]
@@ -114,7 +114,7 @@ def test_fetch_falls_back_to_local_extract(config, monkeypatch):
     def _post(*a, **kw):
         raise requests.ConnectionError("boom")
 
-    monkeypatch.setattr(core, "_host_is_public", lambda host, port: True)
+    monkeypatch.setattr(core, "_resolve_public_ips", lambda host, port: ["93.184.216.34"])
     monkeypatch.setattr(core.requests, "post", _post)
     monkeypatch.setattr(core, "_extract_text", lambda url, max_chars: "本地提取正文")
     assert "本地提取正文" in core.fetch("https://example.com")["summary"]
@@ -129,17 +129,46 @@ def test_fetch_rejects_loopback(config):
 
 
 def test_fetch_rejects_private_host(config, monkeypatch):
-    monkeypatch.setattr(core, "_host_is_public", lambda host, port: False)
+    monkeypatch.setattr(core, "_resolve_public_ips", lambda host, port: [])
     assert "内网" in core.fetch("https://intranet.example")["summary"]
 
 
+def test_pin_target_replaces_host_with_resolved_ip(monkeypatch):
+    monkeypatch.setattr(core, "_resolve_public_ips", lambda host, port: ["93.184.216.34"])
+    pinned, host = core._pin_target("https://example.com/a?b=1")
+    assert pinned == "https://93.184.216.34:443/a?b=1"
+    assert host == "example.com"
+
+
+def test_pin_target_rejects_private_host(monkeypatch):
+    monkeypatch.setattr(core, "_resolve_public_ips", lambda host, port: [])
+    assert core._pin_target("http://intranet.example/a") == ("", "")
+
+
 def test_download_html_blocks_private_redirect(monkeypatch):
+    """首跳公网、重定向到内网时中断下载。"""
+
     class _RedirectResp:
         status_code = 302
         is_redirect = True
         headers = {"Location": "http://127.0.0.1/admin"}
+        encoding = "utf-8"
+        apparent_encoding = "utf-8"
+        text = ""
 
-    monkeypatch.setattr(core.requests, "get", lambda *a, **kw: _RedirectResp())
+    class _FakeSession:
+        def mount(self, *a, **kw):
+            pass
+
+        def get(self, url, **kw):
+            return _RedirectResp()
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(core, "_resolve_public_ips",
+                        lambda host, port: ["93.184.216.34"] if host == "example.com" else [])
+    monkeypatch.setattr(core.requests, "Session", _FakeSession)
     assert core._download_html("https://example.com") == ""
 
 

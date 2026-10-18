@@ -5,9 +5,10 @@ import json
 import logging
 import socket
 from pathlib import Path
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import requests
+from requests.adapters import HTTPAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -36,23 +37,53 @@ def _load_config() -> dict:
     return {}
 
 
-def _host_is_public(host: str, port: int) -> bool:
-    """主机解析出的所有地址都是公网地址时返回 True。"""
+class _PinnedHTTPSAdapter(HTTPAdapter):
+    """HTTPS 连接固定到已校验的 IP，SNI 与证书校验保留原主机名。"""
+
+    def __init__(self, server_hostname: str, **kwargs):
+        self._server_hostname = server_hostname
+        super().__init__(**kwargs)
+
+    def init_poolmanager(self, connections, maxsize, block=False, **pool_kwargs):
+        pool_kwargs["server_hostname"] = self._server_hostname
+        super().init_poolmanager(connections, maxsize, block, **pool_kwargs)
+
+
+def _resolve_public_ips(host: str, port: int) -> list[str]:
+    """主机解析出的地址全部为公网时返回地址列表，否则返回空列表。"""
     try:
         infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
     except (socket.gaierror, UnicodeError):
-        return False
-    if not infos:
-        return False
+        return []
+    ips = []
     for info in infos:
         try:
             ip = ipaddress.ip_address(info[4][0])
         except ValueError:
-            return False
+            return []
         if (ip.is_private or ip.is_loopback or ip.is_link_local
                 or ip.is_reserved or ip.is_multicast or ip.is_unspecified):
-            return False
-    return True
+            return []
+        ips.append(str(ip))
+    return ips
+
+
+def _pin_target(url: str) -> tuple[str, str]:
+    """把 URL 的主机换成解析出的公网 IP，返回 (固定后的 URL, 原主机)；不可抓取返回 ("", "")。"""
+    try:
+        parts = urlsplit(url)
+        port = parts.port or (443 if parts.scheme == "https" else 80)
+    except ValueError:
+        return "", ""
+    host = parts.hostname or ""
+    if parts.scheme not in ("http", "https") or not host:
+        return "", ""
+    ips = _resolve_public_ips(host, port)
+    if not ips:
+        return "", ""
+    ip = f"[{ips[0]}]" if ":" in ips[0] else ips[0]
+    pinned = urlunsplit((parts.scheme, f"{ip}:{port}", parts.path or "/", parts.query, ""))
+    return pinned, host
 
 
 def _url_reject_reason(url: str) -> str:
@@ -66,33 +97,38 @@ def _url_reject_reason(url: str) -> str:
         return "url 必须是以 http:// 或 https:// 开头的地址"
     if not parts.hostname:
         return "url 缺少主机名"
-    if not _host_is_public(parts.hostname, port):
+    if not _resolve_public_ips(parts.hostname, port):
         return "url 指向内网或本机地址，已拒绝"
     return ""
 
 
 def _download_html(url: str, timeout: int = 20) -> str:
-    """下载网页 HTML，重定向逐跳校验目标；命中内网或失败返回空字符串。"""
+    """下载网页 HTML：连接固定为校验过的公网 IP，重定向逐跳校验。"""
     for _ in range(4):
+        pinned, host = _pin_target(url)
+        if not pinned:
+            logger.warning(f"[web_search] url rejected: {url}")
+            return ""
+        session = requests.Session()
         try:
-            resp = requests.get(
-                url,
+            if pinned.startswith("https://"):
+                session.mount("https://", _PinnedHTTPSAdapter(host))
+            resp = session.get(
+                pinned,
                 timeout=timeout,
                 allow_redirects=False,
-                headers={"User-Agent": _USER_AGENT},
+                headers={"User-Agent": _USER_AGENT, "Host": host},
             )
         except requests.RequestException as e:
             logger.debug(f"[web_search] download failed for {url}: {e}")
             return ""
+        finally:
+            session.close()
         if resp.is_redirect:
             location = resp.headers.get("Location", "")
             if not location:
                 return ""
             url = urljoin(url, location)
-            reason = _url_reject_reason(url)
-            if reason:
-                logger.warning(f"[web_search] redirect rejected: {reason} → {url}")
-                return ""
             continue
         if resp.status_code != 200:
             return ""
