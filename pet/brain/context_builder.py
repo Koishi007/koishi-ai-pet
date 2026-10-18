@@ -134,7 +134,7 @@ class ContextBuilder:
         "fall":      "你从窗口上掉了下来",
         "fall_down": "你摔了一跤",
         "dock":      "用户把你放到了屏幕侧边，你下不来了",
-        "undock":    "用户把你从屏幕侧面放下来了",
+        "undock":    "用户把你从屏幕侧边放下来了",
     }
     _MAX_EVENT_LINES = 5  # 每次最多注入的最近事件条数
 
@@ -150,7 +150,7 @@ class ContextBuilder:
         "bedtime":  "困了",
         "drowsy":   "犯困",
     }
-    
+
     _NEED_HINTS = {
         "hungry":   "肚子空空的，总想弄点吃的（跟你讨一口，或者自己生成食物走过去吃）",
         "tired":    "浑身发沉，想找个地方睡一会儿（或者让你把我放下）",
