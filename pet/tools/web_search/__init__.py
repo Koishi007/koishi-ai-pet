@@ -1,10 +1,10 @@
-"""支持 SearXNG（自建）、DeepSeek 搜索 API 和 Bing Web Search API。"""
+"""支持 SearXNG（自建）、DeepSeek 搜索 API、Tavily 和 Bing Web Search API。"""
 
 from pet.tools.web_search.core import search, fetch, check_connectivity
 from pet.tools.context import TOOL_CTX
 
 TOOL_NAME = "web_search"
-TOOL_DESCRIPTION = "网络搜索与网页抓取 API（SearXNG / DeepSeek / Bing）：搜索直连服务商，抓取网页转纯文本"
+TOOL_DESCRIPTION = "网络搜索与网页抓取 API（SearXNG / DeepSeek / Tavily / Bing）：搜索直连服务商，抓取网页转纯文本"
 TOOL_GROUP = "web"
 
 

@@ -1,4 +1,4 @@
-"""支持 SearXNG（自建）、DeepSeek 搜索 API 和 Bing Web Search API 三种后端。"""
+"""支持 SearXNG（自建）、DeepSeek 搜索 API、Tavily 和 Bing Web Search API 四种后端。"""
 
 import json
 import logging
@@ -14,6 +14,10 @@ _CONFIG_FILE = _TOOL_DIR / "config.json"
 _BING_ENDPOINT = "https://api.bing.microsoft.com/v7.0/search"
 _DEEPSEEK_SEARCH_ENDPOINT = "https://api.deepseek.com/v1/tools/search"
 _DEEPSEEK_FETCH_ENDPOINT = "https://api.deepseek.com/v1/tools/fetch"
+_TAVILY_SEARCH_ENDPOINT = "https://api.tavily.com/search"
+_TAVILY_EXTRACT_ENDPOINT = "https://api.tavily.com/extract"
+# Tavily 的 language 只做排序加权，接受 ISO 639-1
+_TAVILY_LANG = {"zh-CN": "zh-cn", "en-US": "en", "ja-JP": "ja"}
 
 
 def _load_config() -> dict:
@@ -200,6 +204,54 @@ def _search_deepseek(query: str, count: int, language: str, cfg: dict, page: int
     return {"summary": "\n".join(lines)}
 
 
+def _search_tavily(query: str, count: int, language: str, cfg: dict, page: int = 1) -> dict:
+    """Tavily 搜索 API：POST /search。
+
+    接口用 max_results 控制条数、没有页码，page 不下发；language 只做排序加权。
+    """
+    api_key = cfg.get("tavily_api_key", "")
+    if not api_key:
+        return {"summary": "搜索失败：未配置 tavily_api_key，请在 web_search/config.json 中设置"}
+
+    payload = {
+        "query": query,
+        "max_results": max(1, min(count, 20)),
+        "search_depth": "basic",
+        "include_published_date": True,
+    }
+    lang = _TAVILY_LANG.get(language)
+    if lang:
+        payload["language"] = lang
+
+    try:
+        resp = requests.post(
+            _TAVILY_SEARCH_ENDPOINT,
+            headers={"Authorization": f"Bearer {api_key}"},
+            json=payload,
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.RequestException as e:
+        logger.warning(f"[web_search] Tavily API error: {e}")
+        return {"summary": f"搜索失败：Tavily 请求异常 ({type(e).__name__})"}
+
+    results = data.get("results", [])
+    if not results:
+        return {"summary": f"「{query}」未找到相关结果"}
+
+    lines = [f"「{query}」搜索结果（{len(results)}条）："]
+    for i, item in enumerate(results, 1):
+        title = item.get("title", "")
+        url = item.get("url", "")
+        snippet = item.get("content", "")
+        date = item.get("published_date") or ""
+        date_tag = f" [{date}]" if date else ""
+        lines.append(f"  {i}. {title}{date_tag}\n     {snippet}\n     {url}")
+
+    return {"summary": "\n".join(lines)}
+
+
 def check_connectivity() -> bool:
     """检测后端连通性，至少一个可用返回 True。"""
     cfg = _load_config()
@@ -281,8 +333,28 @@ def check_connectivity() -> bool:
         except requests.RequestException as e:
             logger.warning(f"[web_search] ✗ DeepSeek 搜索 API 无法连接 ({e})")
 
+    # 检测 Tavily（成功请求消耗 credit，只在选用该后端时探测）
+    tavily_key = cfg.get("tavily_api_key", "")
+    if tavily_key and backend in ("tavily", "auto"):
+        try:
+            resp = requests.post(
+                _TAVILY_SEARCH_ENDPOINT,
+                headers={"Authorization": f"Bearer {tavily_key}"},
+                json={"query": "test", "max_results": 1, "search_depth": "basic"},
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                logger.info("[web_search] ✓ Tavily 搜索 API 连通正常")
+                any_ok = True
+            else:
+                logger.warning(
+                    f"[web_search] ✗ Tavily 搜索 API 响应异常 (HTTP {resp.status_code})"
+                )
+        except requests.RequestException as e:
+            logger.warning(f"[web_search] ✗ Tavily 搜索 API 无法连接 ({e})")
+
     if not any_ok:
-        if not searxng_url and not bing_key and not deepseek_key:
+        if not searxng_url and not bing_key and not deepseek_key and not tavily_key:
             logger.warning("[web_search] ⚠ 未配置任何搜索后端，搜索功能不可用")
         else:
             logger.warning("[web_search] ⚠ 所有搜索后端均不可达")
@@ -322,7 +394,17 @@ def search(query: str, count: int = 5, language: str = "zh-CN", page: int = 1) -
             result["has_next"] = False
             result["__context__"] = f"搜索「{query}」"
             return result
-        logger.info("[web_search] DeepSeek failed, falling back to Bing")
+        logger.info("[web_search] DeepSeek failed, falling back to Tavily")
+
+    tavily_key = cfg.get("tavily_api_key", "")
+    if backend in ("tavily", "auto") and tavily_key:
+        result = _search_tavily(query, count, language, cfg, page)
+        if "搜索失败" not in str(result.get("summary", "")):
+            result["page"] = page
+            result["has_next"] = False
+            result["__context__"] = f"搜索「{query}」"
+            return result
+        logger.info("[web_search] Tavily failed, falling back to Bing")
 
     bing_key = cfg.get("bing_search_key", "")
     if backend in ("bing", "auto") and bing_key:
@@ -365,8 +447,32 @@ def _fetch_deepseek(url: str, cfg: dict) -> dict:
     return {"title": data.get("title", ""), "content": content}
 
 
+def _fetch_tavily(url: str, cfg: dict) -> dict:
+    """Tavily 抓取 API：POST /extract，返回 Markdown 正文。"""
+    api_key = cfg.get("tavily_api_key", "")
+    if not api_key:
+        return {}
+    try:
+        resp = requests.post(
+            _TAVILY_EXTRACT_ENDPOINT,
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={"urls": [url], "extract_depth": "basic", "format": "markdown"},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.RequestException as e:
+        logger.info(f"[web_search] Tavily extract failed for {url}: {e}")
+        return {}
+    for item in data.get("results", []):
+        content = item.get("raw_content")
+        if content:
+            return {"content": content}
+    return {}
+
+
 def fetch(url: str, max_chars: int = 10000) -> dict:
-    """抓取网页正文 — 优先 DeepSeek Fetch，未配置或失败时回退 trafilatura。
+    """抓取网页正文 — 按 backend 依次尝试 DeepSeek Fetch、Tavily Extract，失败回退 trafilatura。
 
     Args:
         url:       网页地址（含 http:// 或 https://）
@@ -378,13 +484,19 @@ def fetch(url: str, max_chars: int = 10000) -> dict:
     cfg = _load_config()
     backend = cfg.get("backend", "auto")
 
+    providers = []
     if backend in ("deepseek", "auto") and cfg.get("deepseek_search_key"):
-        page = _fetch_deepseek(url, cfg)
+        providers.append(_fetch_deepseek)
+    if backend in ("tavily", "auto") and cfg.get("tavily_api_key"):
+        providers.append(_fetch_tavily)
+
+    for provider in providers:
+        page = provider(url, cfg)
         if page:
             text = page["content"]
             if len(text) > max_chars:
                 text = text[:max_chars] + "…"
-            title = page["title"]
+            title = page.get("title", "")
             head = f"{title}\n{url}" if title else url
             return {"summary": f"{head}\n{text}",
                     "__context__": f"抓取网页「{title or url}」"}

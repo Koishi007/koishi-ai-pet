@@ -246,20 +246,25 @@ Playwright 及浏览器二进制缺失时，工具加载直接报错。
 
 ### web_search
 
-通过 SearXNG、DeepSeek 或 Bing API 搜索网页；`fetch` 抓取指定网页正文时优先使用 DeepSeek Fetch，未配置时用 trafilatura 本地提取。
+通过 SearXNG、DeepSeek、Tavily 或 Bing API 搜索网页；`fetch` 抓取指定网页正文时按后端顺序尝试 DeepSeek Fetch、Tavily Extract，未配置时用 trafilatura 本地提取。
 
 **配置**（`pet/tools/web_search/config.json`）：
 
 | 字段 | 类型 | 默认 | 说明 |
 |------|------|------|------|
-| `backend` | str | `"auto"` | 搜索后端：`"auto"` 自动选 / `"searxng"` / `"deepseek"` / `"bing"` |
+| `backend` | str | `"auto"` | 搜索后端：`"auto"` 自动选 / `"searxng"` / `"deepseek"` / `"tavily"` / `"bing"` |
 | `searxng_url` | str | `""` | SearXNG 实例地址 |
 | `searxng_key` | str | `""` | SearXNG API Key（如需要） |
 | `deepseek_search_key` | str | `""` | DeepSeek API Key，与模型调用共用同一套（[搜索接口文档](https://api-docs.deepseek.com/zh-cn/guides/search)） |
+| `tavily_api_key` | str | `""` | Tavily API Key（[搜索](https://docs.tavily.com/documentation/api-reference/endpoint/search) / [抓取](https://docs.tavily.com/documentation/api-reference/endpoint/extract) 接口文档） |
 | `bing_search_key` | str | `""` | Bing Web Search API Key |
 
-`backend: "auto"` 按 SearXNG → DeepSeek → Bing 的顺序尝试，显式指定后端时只用该后端。至少配置一个后端，否则工具加载失败。
-DeepSeek 的搜索与抓取都按成功请求计费（每千次 5 元）、限速 5 QPS；搜索不支持翻页。
+`backend: "auto"` 按 SearXNG → DeepSeek → Tavily → Bing 的顺序尝试，显式指定后端时只用该后端。至少配置一个后端，否则工具加载失败。
+
+计费与限速：
+
+- DeepSeek：搜索与抓取都按成功请求计费（每千次 5 元），限速 5 QPS。
+- Tavily：搜索 `basic` 深度每次 1 credit，抓取每 5 次成功 1 credit，免费额度 1000 credits/月。
 
 ### knowledge
 

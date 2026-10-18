@@ -110,7 +110,7 @@
 
 - 目录：`pet/tools/web_search/`
 - 分组：`web`
-- 说明：网络搜索与网页抓取 API（SearXNG / DeepSeek / Bing）：搜索直连服务商，抓取网页转纯文本
+- 说明：网络搜索与网页抓取 API（SearXNG / DeepSeek / Tavily / Bing）：搜索直连服务商，抓取网页转纯文本
 
 | 方法 | 参数 | 说明 |
 |---|---|---|

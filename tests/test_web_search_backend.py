@@ -120,3 +120,54 @@ def test_fetch_falls_back_to_local_extract(config, monkeypatch):
 
 def test_fetch_rejects_bad_scheme(config):
     assert "抓取失败" in core.fetch("ftp://example.com/file")["summary"]
+
+
+def _tavily_payload() -> dict:
+    return {
+        "results": [
+            {
+                "title": "Tavily 结果",
+                "url": "https://tavily.example",
+                "content": "相关片段",
+                "published_date": "Tue, 11 Mar 2025 17:00:00 GMT",
+                "score": 0.81,
+            }
+        ]
+    }
+
+
+def test_tavily_result_format(monkeypatch):
+    monkeypatch.setattr(core, "_load_config",
+                        lambda: {"backend": "tavily", "tavily_api_key": "tvly-test"})
+    monkeypatch.setattr(core.requests, "post",
+                        lambda *a, **kw: _Resp(200, _tavily_payload()))
+    summary = core.search("测试")["summary"]
+    assert "Tavily 结果" in summary
+    assert "相关片段" in summary
+    assert "https://tavily.example" in summary
+    assert "[Tue, 11 Mar 2025 17:00:00 GMT]" in summary
+
+
+def test_auto_uses_tavily_after_deepseek_missing(monkeypatch):
+    monkeypatch.setattr(core, "_load_config",
+                        lambda: {"backend": "auto", "tavily_api_key": "tvly-test"})
+    monkeypatch.setattr(core.requests, "post",
+                        lambda *a, **kw: _Resp(200, _tavily_payload()))
+    assert "https://tavily.example" in core.search("测试")["summary"]
+
+
+def test_fetch_uses_tavily(monkeypatch):
+    monkeypatch.setattr(core, "_load_config",
+                        lambda: {"backend": "tavily", "tavily_api_key": "tvly-test"})
+    monkeypatch.setattr(core.requests, "post", lambda *a, **kw: _Resp(200, {
+        "results": [{"url": "https://example.com", "raw_content": "Tavily 正文"}],
+        "failed_results": [],
+    }))
+    assert "Tavily 正文" in core.fetch("https://example.com")["summary"]
+
+
+def test_connectivity_detects_tavily(monkeypatch):
+    monkeypatch.setattr(core, "_load_config",
+                        lambda: {"backend": "tavily", "tavily_api_key": "tvly-test"})
+    monkeypatch.setattr(core.requests, "post", lambda *a, **kw: _Resp(200, {}))
+    assert core.check_connectivity() is True
