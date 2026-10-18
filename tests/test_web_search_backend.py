@@ -101,6 +101,7 @@ def test_connectivity_detects_deepseek(monkeypatch):
 
 
 def test_fetch_uses_deepseek(config, monkeypatch):
+    monkeypatch.setattr(core, "_host_is_public", lambda host, port: True)
     monkeypatch.setattr(core.requests, "post",
                         lambda *a, **kw: _Resp(200, {"title": "页面标题", "content": "正文内容"}))
     summary = core.fetch("https://example.com")["summary"]
@@ -113,6 +114,7 @@ def test_fetch_falls_back_to_local_extract(config, monkeypatch):
     def _post(*a, **kw):
         raise requests.ConnectionError("boom")
 
+    monkeypatch.setattr(core, "_host_is_public", lambda host, port: True)
     monkeypatch.setattr(core.requests, "post", _post)
     monkeypatch.setattr(core, "_extract_text", lambda url, max_chars: "本地提取正文")
     assert "本地提取正文" in core.fetch("https://example.com")["summary"]
@@ -120,6 +122,25 @@ def test_fetch_falls_back_to_local_extract(config, monkeypatch):
 
 def test_fetch_rejects_bad_scheme(config):
     assert "抓取失败" in core.fetch("ftp://example.com/file")["summary"]
+
+
+def test_fetch_rejects_loopback(config):
+    assert "抓取失败" in core.fetch("http://127.0.0.1/admin")["summary"]
+
+
+def test_fetch_rejects_private_host(config, monkeypatch):
+    monkeypatch.setattr(core, "_host_is_public", lambda host, port: False)
+    assert "内网" in core.fetch("https://intranet.example")["summary"]
+
+
+def test_download_html_blocks_private_redirect(monkeypatch):
+    class _RedirectResp:
+        status_code = 302
+        is_redirect = True
+        headers = {"Location": "http://127.0.0.1/admin"}
+
+    monkeypatch.setattr(core.requests, "get", lambda *a, **kw: _RedirectResp())
+    assert core._download_html("https://example.com") == ""
 
 
 def _tavily_payload() -> dict:

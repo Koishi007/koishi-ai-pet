@@ -1,8 +1,11 @@
 """支持 SearXNG（自建）、DeepSeek 搜索 API、Tavily 和 Bing Web Search API 四种后端。"""
 
+import ipaddress
 import json
 import logging
+import socket
 from pathlib import Path
+from urllib.parse import urljoin, urlsplit
 
 import requests
 
@@ -10,6 +13,9 @@ logger = logging.getLogger(__name__)
 
 _TOOL_DIR = Path(__file__).parent
 _CONFIG_FILE = _TOOL_DIR / "config.json"
+
+_USER_AGENT = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+               "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
 
 _BING_ENDPOINT = "https://api.bing.microsoft.com/v7.0/search"
 _DEEPSEEK_SEARCH_ENDPOINT = "https://api.deepseek.com/v1/tools/search"
@@ -30,8 +36,74 @@ def _load_config() -> dict:
     return {}
 
 
+def _host_is_public(host: str, port: int) -> bool:
+    """主机解析出的所有地址都是公网地址时返回 True。"""
+    try:
+        infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
+    except (socket.gaierror, UnicodeError):
+        return False
+    if not infos:
+        return False
+    for info in infos:
+        try:
+            ip = ipaddress.ip_address(info[4][0])
+        except ValueError:
+            return False
+        if (ip.is_private or ip.is_loopback or ip.is_link_local
+                or ip.is_reserved or ip.is_multicast or ip.is_unspecified):
+            return False
+    return True
+
+
+def _url_reject_reason(url: str) -> str:
+    """URL 不可抓取时返回原因，可抓取返回空字符串。"""
+    try:
+        parts = urlsplit(url)
+        port = parts.port or (443 if parts.scheme == "https" else 80)
+    except ValueError:
+        return "url 格式无效"
+    if parts.scheme not in ("http", "https"):
+        return "url 必须是以 http:// 或 https:// 开头的地址"
+    if not parts.hostname:
+        return "url 缺少主机名"
+    if not _host_is_public(parts.hostname, port):
+        return "url 指向内网或本机地址，已拒绝"
+    return ""
+
+
+def _download_html(url: str, timeout: int = 20) -> str:
+    """下载网页 HTML，重定向逐跳校验目标；命中内网或失败返回空字符串。"""
+    for _ in range(4):
+        try:
+            resp = requests.get(
+                url,
+                timeout=timeout,
+                allow_redirects=False,
+                headers={"User-Agent": _USER_AGENT},
+            )
+        except requests.RequestException as e:
+            logger.debug(f"[web_search] download failed for {url}: {e}")
+            return ""
+        if resp.is_redirect:
+            location = resp.headers.get("Location", "")
+            if not location:
+                return ""
+            url = urljoin(url, location)
+            reason = _url_reject_reason(url)
+            if reason:
+                logger.warning(f"[web_search] redirect rejected: {reason} → {url}")
+                return ""
+            continue
+        if resp.status_code != 200:
+            return ""
+        if not resp.encoding or resp.encoding.lower() == "iso-8859-1":
+            resp.encoding = resp.apparent_encoding
+        return resp.text
+    return ""
+
+
 def _extract_text(url: str, max_chars: int = 2000) -> str:
-    """从 URL 抓取正文文本（使用 trafilatura），失败返回空字符串。"""
+    """从 URL 抓取正文文本（使用 trafilatura 解析），失败返回空字符串。"""
     try:
         import trafilatura
     except ImportError:
@@ -40,24 +112,24 @@ def _extract_text(url: str, max_chars: int = 2000) -> str:
     # 首次用到时才调低它自己的日志级别
     logging.getLogger("trafilatura").setLevel(logging.ERROR)
 
+    html = _download_html(url)
+    if not html:
+        return ""
     try:
-        downloaded = trafilatura.fetch_url(url)
-        if not downloaded:
-            return ""
         result = trafilatura.extract(
-            downloaded,
+            html,
             include_comments=False,
             include_tables=True,
             favor_precision=True,
         )
-        if not result:
-            return ""
-        if len(result) > max_chars:
-            result = result[:max_chars] + "…"
-        return result
     except Exception as e:
         logger.debug(f"[web_search] trafilatura extract failed for {url}: {e}")
         return ""
+    if not result:
+        return ""
+    if len(result) > max_chars:
+        result = result[:max_chars] + "…"
+    return result
 
 
 
@@ -421,7 +493,7 @@ def search(query: str, count: int = 5, language: str = "zh-CN", page: int = 1) -
         "summary": (
             "搜索失败：所有后端均不可用。"
             + ("SearXNG 已配置但请求失败。" if searxng_ok else "")
-            + " 请在 web_search/config.json 中配置 searxng_url、deepseek_search_key 或 bing_search_key"
+            + " 请在 web_search/config.json 中配置 searxng_url、tavily_api_key、deepseek_search_key 或 bing_search_key"
         ),
     }
 
@@ -480,8 +552,9 @@ def fetch(url: str, max_chars: int = 10000) -> dict:
         url:       网页地址（含 http:// 或 https://）
         max_chars: 正文最大字符数
     """
-    if not url.startswith(("http://", "https://")):
-        return {"summary": "抓取失败：url 必须是以 http:// 或 https:// 开头的地址"}
+    reason = _url_reject_reason(url)
+    if reason:
+        return {"summary": f"抓取失败：{reason}"}
 
     cfg = _load_config()
     backend = cfg.get("backend", "auto")

@@ -128,7 +128,9 @@ class TestToolGuide:
         from pet.tools.registry import TOOL_REGISTRY
         monkeypatch.setattr(config, "LLM_TOOLS_ENABLED", True)
         saved = TOOL_REGISTRY._tools.pop("web_search", None)
+        saved_enabled = TOOL_REGISTRY.is_enabled("web_search")
         try:
+            TOOL_REGISTRY.set_enabled("web_search", True)
             assert "搜索网页优先用 web_search" not in prompts._tool_list()
             TOOL_REGISTRY.register("web_search", "测试：直连搜索 API", group="web")
             assert "搜索网页优先用 web_search" in prompts._tool_list()
@@ -136,6 +138,7 @@ class TestToolGuide:
             TOOL_REGISTRY._tools.pop("web_search", None)
             if saved is not None:
                 TOOL_REGISTRY._tools["web_search"] = saved
+            TOOL_REGISTRY.set_enabled("web_search", saved_enabled)
 
     def test_disabled_tools_falls_back_to_aside(self, monkeypatch):
         monkeypatch.setattr(config, "LLM_TOOLS_ENABLED", False)
