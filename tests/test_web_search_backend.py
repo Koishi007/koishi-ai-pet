@@ -1,5 +1,7 @@
 """web_search 后端：DeepSeek 搜索与 auto 回退顺序。"""
 
+import socket
+
 import requests
 import pytest
 
@@ -243,3 +245,58 @@ def test_connectivity_probes_all_configured(monkeypatch):
     assert core.check_connectivity() is True
     assert core._TAVILY_SEARCH_ENDPOINT in urls
     assert core._DEEPSEEK_SEARCH_ENDPOINT in urls
+
+
+def test_resolve_public_ips_rejects_cgnat(monkeypatch):
+    monkeypatch.setattr(core.socket, "getaddrinfo",
+                        lambda *a, **kw: [(socket.AF_INET, socket.SOCK_STREAM, 6, "",
+                                           ("100.64.0.1", 80))])
+    assert core._resolve_public_ips("example.com", 80) == []
+
+
+def test_resolve_public_ips_accepts_global(monkeypatch):
+    monkeypatch.setattr(core.socket, "getaddrinfo",
+                        lambda *a, **kw: [(socket.AF_INET, socket.SOCK_STREAM, 6, "",
+                                           ("93.184.216.34", 80))])
+    assert core._resolve_public_ips("example.com", 80) == ["93.184.216.34"]
+
+
+def test_pinned_adapter_passes_hostname_to_proxy_manager(monkeypatch):
+    captured = {}
+
+    def _proxy_manager_for(self, proxy, **kwargs):
+        captured.update(kwargs)
+        return None
+
+    monkeypatch.setattr(core.HTTPAdapter, "proxy_manager_for", _proxy_manager_for)
+    core._PinnedHTTPSAdapter("example.com").proxy_manager_for("http://proxy:8080")
+    assert captured["server_hostname"] == "example.com"
+
+
+def test_resolve_public_ips_rejects_nat64_mapped_private(monkeypatch):
+    monkeypatch.setattr(core.socket, "getaddrinfo",
+                        lambda *a, **kw: [(socket.AF_INET6, socket.SOCK_STREAM, 6, "",
+                                           ("64:ff9b::a9fe:a9fe", 80))])
+    assert core._resolve_public_ips("example.com", 80) == []
+
+
+def test_resolve_public_ips_rejects_6to4_mapped_private(monkeypatch):
+    monkeypatch.setattr(core.socket, "getaddrinfo",
+                        lambda *a, **kw: [(socket.AF_INET6, socket.SOCK_STREAM, 6, "",
+                                           ("2002:a9fe:a9fe::1", 80))])
+    assert core._resolve_public_ips("example.com", 80) == []
+
+
+def test_resolve_public_ips_accepts_public_ipv6(monkeypatch):
+    monkeypatch.setattr(core.socket, "getaddrinfo",
+                        lambda *a, **kw: [(socket.AF_INET6, socket.SOCK_STREAM, 6, "",
+                                           ("2400:3200::1", 80))])
+    assert core._resolve_public_ips("example.com", 80) == ["2400:3200::1"]
+
+
+def test_resolve_public_ips_accepts_public_6to4(monkeypatch):
+    # 2002:0808:0808::/48 内嵌 8.8.8.8
+    monkeypatch.setattr(core.socket, "getaddrinfo",
+                        lambda *a, **kw: [(socket.AF_INET6, socket.SOCK_STREAM, 6, "",
+                                           ("2002:0808:0808::1", 80))])
+    assert core._resolve_public_ips("example.com", 80) != []

@@ -48,6 +48,19 @@ class _PinnedHTTPSAdapter(HTTPAdapter):
         pool_kwargs["server_hostname"] = self._server_hostname
         super().init_poolmanager(connections, maxsize, block, **pool_kwargs)
 
+    def proxy_manager_for(self, proxy, **proxy_kwargs):
+        proxy_kwargs["server_hostname"] = self._server_hostname
+        return super().proxy_manager_for(proxy, **proxy_kwargs)
+
+
+def _is_public_ip(ip) -> bool:
+    """全局可路由地址返回 True；6to4 地址按内嵌的 IPv4 再判一次。"""
+    if not ip.is_global or ip.is_reserved or ip.is_multicast:
+        return False
+    if isinstance(ip, ipaddress.IPv6Address) and ip.sixtofour is not None:
+        return _is_public_ip(ip.sixtofour)
+    return True
+
 
 def _resolve_public_ips(host: str, port: int) -> list[str]:
     """主机解析出的地址全部为公网时返回地址列表，否则返回空列表。"""
@@ -61,8 +74,7 @@ def _resolve_public_ips(host: str, port: int) -> list[str]:
             ip = ipaddress.ip_address(info[4][0])
         except ValueError:
             return []
-        if (ip.is_private or ip.is_loopback or ip.is_link_local
-                or ip.is_reserved or ip.is_multicast or ip.is_unspecified):
+        if not _is_public_ip(ip):
             return []
         ips.append(str(ip))
     return ips
