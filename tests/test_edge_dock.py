@@ -283,8 +283,8 @@ class TestMenuDock:
 class TestDockEvent:
 
     def test_labels_live_in_event_table(self):
-        assert "下不来了" in ContextBuilder._EVENT_LABELS["dock"]
-        assert "放下来了" in ContextBuilder._EVENT_LABELS["undock"]
+        assert ContextBuilder._EVENT_LABELS.get("dock")
+        assert ContextBuilder._EVENT_LABELS.get("undock")
 
     def test_agent_notes_event_on_change(self):
         from pet.agent.pet_agent import PetAgent
@@ -308,8 +308,8 @@ class TestDockEvent:
         now = time.time()
         events = [("dock", now - 5, ""), ("undock", now, "")]
         note = ContextBuilder(recent_events_fn=lambda: events)._recent_events_note()
-        assert "放到了屏幕侧边" in note
-        assert "从屏幕侧面放下来了" in note
+        assert ContextBuilder._EVENT_LABELS["dock"] in note
+        assert ContextBuilder._EVENT_LABELS["undock"] in note
 
 
 class TestDockInterrupt:

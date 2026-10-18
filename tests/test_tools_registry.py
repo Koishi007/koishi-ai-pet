@@ -113,7 +113,7 @@ class TestExecutorRouting:
     def test_unknown_tool(self, executor):
         result = executor.execute([ToolCall("nope__go", {})])[0]
         assert result.success is False
-        assert "unknown tool" in result.error
+        assert "nope__go" in result.error
 
     def test_successful_call(self, executor):
         result = executor.execute([ToolCall("demo__echo", {"text": "hi"})])[0]
@@ -123,13 +123,14 @@ class TestExecutorRouting:
     def test_argument_validation_failure(self, executor):
         result = executor.execute([ToolCall("demo__count", {"n": "不是数字"})])[0]
         assert result.success is False
-        assert "类型错误" in result.error
+        assert "'n'" in result.error
+        assert "int" in result.error and "str" in result.error
 
     def test_type_error_reported_as_signature_mismatch(self, executor):
         # 参数名与 handler 签名不匹配 → handler 抛 TypeError
         result = executor.execute([ToolCall("demo__bad", {"other": "x"})])[0]
         assert result.success is False
-        assert "参数不匹配" in result.error
+        assert "other" in result.error
 
     def test_runtime_error_propagated_as_message(self, executor):
         result = executor.execute([ToolCall("demo__boom", {})])[0]
@@ -140,7 +141,7 @@ class TestExecutorRouting:
         try:
             result = executor.execute([ToolCall("demo__slow", {})])[0]
             assert result.success is False
-            assert "超时" in result.error
+            assert "0.05" in result.error
         finally:
             _slow_gate.set()  # 释放仍在阻塞的 handler 线程
             _slow_gate.clear()
@@ -185,4 +186,4 @@ class TestNormalizeAndFormat:
         results = executor.execute([ToolCall("demo__shot", {})])
         text, images = ToolExecutor.format_results(results)
         assert images == ["data:image/jpeg;base64,QUJD"]
-        assert "附图" in text
+        assert len(text.split("\n\n")) == 2

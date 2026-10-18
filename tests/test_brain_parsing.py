@@ -424,14 +424,15 @@ class TestUntaggedContentDiag:
     """未带标签的内容按格式契约整行丢弃，日志记字符数与正文原文。"""
 
     def test_prose_only_logs_counts_with_body(self, caplog):
+        raw_text = "恋恋没有开始游戏哦，要不现在来一局？\n"
         parser = BehaviorParser(_Sink())
         with caplog.at_level(logging.WARNING, logger="pet.brain.parsing"):
-            raw, _ = parser.collect_stream(
-                _stream_text("恋恋没有开始游戏哦，要不现在来一局？\n"), 5.0, tag="test")
+            raw, _ = parser.collect_stream(_stream_text(raw_text), 5.0, tag="test")
         assert raw == ""
-        records = [r.getMessage() for r in caplog.records if "未解析出字段" in r.getMessage()]
+        records = [r.getMessage() for r in caplog.records
+                   if r.levelno >= logging.WARNING and r.name == "pet.brain.parsing"]
         assert records
-        assert all("字符" in m for m in records)
+        assert all(str(len(raw_text)) in m for m in records)
         assert all("恋恋没有开始游戏哦" in m for m in records)
 
     def test_unparsed_body_is_reported_to_sink(self):
@@ -456,9 +457,9 @@ class TestUntaggedContentDiag:
         with caplog.at_level(logging.INFO, logger="pet.brain.parsing"):
             raw, tool_calls = parser.collect_stream(stream, 5.0, tag="test")
         assert raw == "" and tool_calls
-        messages = [r.getMessage() for r in caplog.records]
-        assert not [m for m in messages if "未解析出字段" in m]
-        assert not [m for m in messages if "raw:" in m]
+        warnings = [r for r in caplog.records
+                    if r.levelno >= logging.WARNING and r.name == "pet.brain.parsing"]
+        assert not warnings
 
 
 class TestInlineTags:

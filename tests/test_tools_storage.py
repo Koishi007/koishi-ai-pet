@@ -152,7 +152,7 @@ class TestSetTimer:
         tool = TimerTool(storage=timer_storage)
         result = tool.set_timer(90, "泡茶")
         assert result["label"] == "泡茶"
-        assert "1分30秒" in result["summary"]
+        assert TimerTool._format_duration(90) in result["summary"]
         assert len(timer_storage.load_all()) == 1
         assert len(fake_ctx.alarms) == 1
 

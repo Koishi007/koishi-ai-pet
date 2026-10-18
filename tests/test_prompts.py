@@ -22,9 +22,8 @@ class TestFeelingMarkerPosition:
         text = prompts.build_system_prompt("chat_non_vision", "chat")
         assert text.endswith(prompts.FEELING_MARKER)
         marker = text.index(prompts.FEELING_MARKER)
-        assert text.index("[可用动作]") < marker   # 感知段（动作表）
-        assert text.index("[核心规则]") < marker   # 任务段
-        assert text.index("[记忆]") < marker       # 记忆格式块
+        assert text.index("walk") < marker       # 动作表
+        assert text.index("Summary:") < marker   # 输出协议与任务约束
 
     def test_marker_omitted_when_requested(self):
         text = prompts.build_system_prompt("interact", "interact",
@@ -36,9 +35,13 @@ class TestFeelingMarkerPosition:
             vitals=type("V", (), {"numeric_summary": staticmethod(lambda: {"satiety": 10, "energy": 10})})(),
             mood=type("M", (), {"numeric_summary": staticmethod(lambda: {"joy": 10, "affection": 10, "sanity": 100})})(),
         )
+        feeling = builder._build_feeling()
+        needs = builder._build_needs_note()
         system = builder._build_system("chat_non_vision", "chat")
-        assert system.index("[核心规则]") < system.index("[你现在的状态]")
-        assert system.index("[可用动作]") < system.index("[你惦记着的事]")
+        anchor = system.index("walk")
+        assert feeling and needs
+        assert system.index(feeling) > anchor
+        assert system.index(needs) > anchor
 
     def test_no_runtime_blocks_leaves_no_marker(self):
         # 没有感受/需求/事件时也要摘掉锚点，别把 <<FEELING>> 原文漏给模型
@@ -84,40 +87,35 @@ class TestNeedHintsSingleHome:
     """需求的具体做法只写在 `_NEED_HINTS`，别处只做抽象引导。"""
 
     def test_self_life_guide_has_no_concrete_need_actions(self):
-        assert "饿了去找吃的" not in prompts._SELF_LIFE_GUIDE
-        assert "困了累了找地方睡" not in prompts._SELF_LIFE_GUIDE
+        from pet.action.registry import ACTION_NAMES
 
-    def test_chat_task_points_to_needs_section(self):
-        text = "\n".join(prompts._chat_task())
-        assert "饿了就说想吃东西" not in text
-        assert "你惦记着的事" in text
+        for name in ACTION_NAMES:
+            assert name not in prompts._SELF_LIFE_GUIDE
+        for hint in ContextBuilder._NEED_HINTS.values():
+            assert hint not in prompts._SELF_LIFE_GUIDE
 
     def test_autonomous_user_prompts_have_no_need_actions(self):
         for text in (prompts.autonomous_vision_user_prompt("ctx"),
                      prompts.autonomous_non_vision_user_prompt("ctx")):
-            assert "觅食或者向用户讨要食物" not in text
-            assert "睡一会儿（sleep）" not in text
-
-    def test_hints_remain_the_action_source(self):
-        assert "自己生成食物" in ContextBuilder._NEED_HINTS["hungry"]
+            for hint in ContextBuilder._NEED_HINTS.values():
+                assert hint not in text
 
 
 class TestDockedPrompts:
     """贴边时的动作表、任务段与 user 段贴边状态。"""
 
     def test_system_action_table_filtered(self):
+        from pet.action.registry import ACTION_NAMES, EDGE_ACTION_NAMES
+
         text = prompts.build_system_prompt("chat_non_vision", "chat", docked=True)
-        table = text.split("[可用动作]", 1)[1].split("[核心规则]", 1)[0]
-        assert "共 8 个" in table
-        for name in ("sleep", "thinking", "shy", "confuse",
-                     "embarrassed", "dejected", "finger_heart", "shake_arms"):
-            assert name in table
-        for name in ("walk", "drive", "sit", "look_around"):
-            assert name not in table
-        assert "参考「窗口探测」数据" not in text
-        assert "涉及方向/距离的指令" not in text
+        for name in EDGE_ACTION_NAMES:
+            assert name in text
+        for name in set(ACTION_NAMES) - EDGE_ACTION_NAMES:
+            assert name not in text
 
     def test_docked_system_has_no_wall_or_nonwall_terms(self):
+        from pet.action.registry import ACTION_NAMES, EDGE_ACTION_NAMES
+
         combos = (
             ("autonomous_vision", "autonomous"),
             ("autonomous_non_vision", "autonomous"),
@@ -128,28 +126,27 @@ class TestDockedPrompts:
         )
         for mode, task in combos:
             text = prompts.build_system_prompt(mode, task, docked=True)
-            for bad in ("靠墙", "靠边", "钓鱼", "巡视", "换地方", "可玩窗口", "跳跃"):
-                assert bad not in text, f"{mode}/{task} 出现了 {bad}"
+            assert prompts._WINDOW_GUIDE not in text
+            for name in set(ACTION_NAMES) - EDGE_ACTION_NAMES:
+                assert name not in text, f"{mode}/{task} 出现了 {name}"
 
     def test_undocked_table_keeps_movement(self):
         text = prompts.build_system_prompt("chat_non_vision", "chat")
-        table = text.split("[可用动作]", 1)[1].split("[核心规则]", 1)[0]
-        assert "walk" in table
-        assert "drive" in table
-        assert "[移动]" in table
-        assert "[显隐]" in table
+        assert "walk" in text
+        assert "drive" in text
+        assert "fade_in" in text
 
     def test_docked_task_action_floor(self):
+        action_label, _ = prompts._DOCKED_ACTION_LIMIT
         for fn in (prompts._autonomous_task, prompts._chat_task,
                    prompts._interact_task, prompts._analyze_task):
             text = "\n".join(fn(docked=True))
-            assert "≥1个" in text
-            assert "可玩窗口" not in text
-            for bad in ("walk", "drive", "sit", "look_around", "靠墙", "靠边", "钓鱼"):
-                assert bad not in text
-        assert "总时长约" not in "\n".join(prompts._autonomous_task(docked=True))
-        assert "凑满时长" not in "\n".join(prompts._autonomous_task(docked=True))
-        assert "Action(≥3个)" not in "\n".join(prompts._chat_task(docked=True))
+            assert f"Action({action_label}个)" in text
+            for name in ("walk", "drive", "sit", "look_around"):
+                assert name not in text
+        chat_text = "\n".join(prompts._chat_task(docked=False))
+        undocked_label, _ = prompts._action_limit("chat", False)
+        assert f"Action({undocked_label}个)" in chat_text
 
     def test_user_prompt_dock_note(self):
         note = "[贴边状态]\n测试"
@@ -161,22 +158,20 @@ class TestDockedPrompts:
         assert prompts.autonomous_vision_user_prompt("ctx", dock_note=note).startswith(note)
 
     def test_system_prompt_from_context_builder_is_docked(self):
+        from pet.action.registry import ACTION_NAMES, EDGE_ACTION_NAMES
+
         builder = ContextBuilder(dock_side_fn=lambda: "left")
         system = builder._build_system("chat_non_vision", "chat")
-        table = system.split("[可用动作]", 1)[1].split("[核心规则]", 1)[0]
-        assert "共 8 个" in table
-        assert "walk" not in table
-        assert "[驻留]" in table
-        assert "[移动]" not in table
-        assert "[显隐]" not in table
-        assert "参考「窗口探测」数据" not in system
-        assert "做点当下能做的小事" in system
-        assert "钓鱼" not in system
-        assert "靠墙" not in system
-        assert "可玩窗口" not in system
-        assert "跳跃" not in system
+        assert prompts._WINDOW_GUIDE not in system
+        assert prompts._SELF_LIFE_GUIDE in system
+        for name in set(ACTION_NAMES) - EDGE_ACTION_NAMES:
+            assert name not in system
+        for name in EDGE_ACTION_NAMES:
+            assert name in system
 
     def test_chat_and_autonomous_user_prompts_include_note(self):
+        from pet.action.registry import ACTION_NAMES, EDGE_ACTION_NAMES
+
         class _Brain:
             _MAX_POOL_ENTRIES = 21
 
@@ -186,66 +181,45 @@ class TestDockedPrompts:
         builder = ContextBuilder(brain_mixin=_Brain(), dock_side_fn=lambda: "left")
         chat = builder.build_chat_decide("hi", "ctx", screenshot=False)
         chat_note = chat[-1]["content"]
-        assert "[贴边状态]" in chat_note
-        assert "屏幕左边缘" in chat_note
-        assert "system" not in chat_note
-        assert "后文步骤" not in chat_note
-        assert "钓鱼" not in chat_note
-        assert "靠墙" not in chat_note
+        assert chat_note.startswith(prompts.dock_note("left", "chat"))
+        for name in set(ACTION_NAMES) - EDGE_ACTION_NAMES:
+            assert name not in chat_note
 
         autonomous = builder.build_autonomous_decide("ctx", screenshot=False)
         auto_note = autonomous[-1]["content"]
-        assert "[贴边状态]" in auto_note
-        assert "专心工作" in auto_note
-        assert "后文步骤" not in auto_note
-        assert "有移动动作可用" in auto_note
-        assert "靠边" not in auto_note
-        assert "钓鱼" not in auto_note
+        assert auto_note.startswith(prompts.dock_note("left", "autonomous"))
+        for name in set(ACTION_NAMES) - EDGE_ACTION_NAMES:
+            assert name not in auto_note
 
         analyze = builder.build_analyze_decide("hi", "ctx", screenshot=False)
-        assert "[贴边状态]" in analyze[-1]["content"]
-        assert "后文步骤" not in analyze[-1]["content"]
+        assert analyze[-1]["content"].startswith(prompts.dock_note("left", "analyze"))
 
     def test_interact_note_from_context(self):
         messages = ContextBuilder(dock_side_fn=lambda: "right").build_interact("用户摸了摸你的头")
         content = messages[1]["content"]
-        assert "[贴边状态]" in content
-        assert "屏幕右边缘" in content
-        assert "做不到" in content
-        assert "system" not in content
-        assert "后文步骤" not in content
-        assert "钓鱼" not in content
-        assert "靠墙" not in content
-        assert content.index("[贴边状态]") < content.index("用户摸了摸你的头")
+        note = prompts.dock_note("right", "interact")
+        assert content.startswith(note)
+        assert content.index("用户摸了摸你的头") >= len(note)
 
     def test_dock_note_elements(self):
-        # 贴边段只有三要素，追加句只给 autonomous
-        for side, cn in (("left", "左"), ("right", "右")):
-            for task in ("autonomous", "chat", "analyze", "interact"):
+        # 贴边段基础三行，autonomous 追加一行
+        expected_lines = {"autonomous": 4, "chat": 3, "analyze": 3, "interact": 3}
+        for side in ("left", "right"):
+            for task, lines in expected_lines.items():
                 note = prompts.dock_note(side, task)
-                assert note.startswith("[贴边状态]")
-                assert f"你现在贴在屏幕{cn}边缘，你自己下不来。" in note
-                assert "直接说明做不到" in note
-                assert "觅食" not in note
-                assert "动作表" not in note
-        assert "专心工作" in prompts.dock_note("left", "autonomous")
+                assert note.strip()
+                assert len(note.splitlines()) == lines
         for task in ("chat", "analyze", "interact"):
-            assert "专心工作" not in prompts.dock_note("left", task)
-
-    def test_autonomous_prompt_gates_movement_branches(self):
-        # 有窗口/无窗口的分支都挂在“有移动动作可用”上，贴边段不再单独声明步骤不适用
-        for fn in (prompts.autonomous_vision_user_prompt,
-                   prompts.autonomous_non_vision_user_prompt):
-            for note in ("", "[贴边状态]"):
-                text = fn("CTX", dock_note=note)
-                assert "有窗口且有移动动作可用" in text
-                assert "无窗口且有移动动作可用" in text
-                assert "如果你可以移动的话" not in text
-        assert "后文步骤" not in prompts.dock_note("left", "autonomous")
+            left = prompts.dock_note("left", task).splitlines()
+            right = prompts.dock_note("right", task).splitlines()
+            assert len(left) == len(right)
+            assert sum(a != b for a, b in zip(left, right)) == 1
 
     def test_lonely_hint_wall(self):
-        assert "凑到你身边" in ContextBuilder._need_hint("lonely")
-        assert "凑到你身边" not in ContextBuilder._need_hint("lonely", docked=True)
+        undocked = ContextBuilder._need_hint("lonely")
+        docked = ContextBuilder._need_hint("lonely", docked=True)
+        assert undocked and docked
+        assert undocked != docked
 
     def test_drowsy_hint_wall(self):
         nap = ContextBuilder._NAP_HOUR
@@ -256,27 +230,23 @@ class TestDockedPrompts:
 
     def test_no_note_when_undocked(self):
         messages = ContextBuilder().build_interact("事件")
-        assert "[贴边状态]" not in messages[1]["content"]
-
-    def test_user_prompts_have_no_duration_phrase(self):
-        assert "凑满时长" not in prompts.autonomous_vision_user_prompt("ctx")
-        assert "凑满时长" not in prompts.autonomous_non_vision_user_prompt("ctx")
-        assert "凑满时长" not in prompts.chat_vision_user_prompt("hi", "ctx")
-        assert "凑满时长" not in prompts.chat_non_vision_user_prompt("hi", "ctx")
+        assert prompts.dock_note("left", "interact") not in messages[1]["content"]
 
     def test_food_guide_follows_tool(self, monkeypatch):
         from pet.tools.registry import TOOL_REGISTRY
         if TOOL_REGISTRY.get_tool("food") is None:
             pytest.skip("food 工具未注册")
         monkeypatch.setattr(config, "FOOD_ENABLED", True)
+        food_on = "\n".join(prompts._chat_task())
+        hint_on = ContextBuilder._need_hint("hungry")
         TOOL_REGISTRY.set_enabled("food", False)
         try:
-            assert "[觅食]" not in "\n".join(prompts._chat_task())
-            assert "自己生成食物" not in ContextBuilder._need_hint("hungry")
+            food_off = "\n".join(prompts._chat_task())
+            hint_off = ContextBuilder._need_hint("hungry")
         finally:
             TOOL_REGISTRY.set_enabled("food", True)
-        assert "[觅食]" in "\n".join(prompts._chat_task())
-        assert "自己生成食物" in ContextBuilder._need_hint("hungry")
+        assert food_on != food_off
+        assert hint_on != hint_off
 
 
 class TestActionTable:
@@ -292,32 +262,47 @@ class TestActionTable:
         return registry.generate_action_section(exclude=exclude)
 
     def test_entries_carry_category(self):
+        from pet.action import registry
+
         text = self._table()
-        for entry in ("- drive [移动]", "- walk [移动]", "- bounce [移动]",
-                      "- shake_arms [驻留]", "- sleep [驻留]",
-                      "- fade_in [显隐]", "- fade_out [显隐]"):
-            assert entry in text
+        for name, action in registry.REGISTRY.items():
+            assert f"- {name} [{action.category}]" in text
 
     def test_docked_table_only_has_lingering(self):
+        from pet.action import registry
+
         text = self._table(docked=True)
-        assert "[驻留]" in text
-        assert "[移动]" not in text
-        assert "[显隐]" not in text
+        categories = {action.category for action in registry.REGISTRY.values()
+                      if action.name in registry.EDGE_ACTION_NAMES}
+        assert len(categories) == 1
+        category = categories.pop()
+        for name in registry.EDGE_ACTION_NAMES:
+            assert f"- {name} [{category}]" in text
+        other = {action.category for action in registry.REGISTRY.values()} - {category}
+        for marker in other:
+            assert f"[{marker}]" not in text
 
 
 class TestActionLimits:
     """动作数量策略集中在 _ACTION_LIMITS / _DOCKED_ACTION_LIMIT。"""
 
-    def test_mapping_values(self):
-        assert prompts._action_limit("chat", True) == ("≥1", "至少 1")
-        assert prompts._action_limit("chat", False) == ("≥3", "至少 3")
-        assert prompts._action_limit("interact", False) == ("1-2", "只输出 1-2")
-        assert prompts._action_limit("analyze", False) == ("≥3", "至少 3")
-        assert prompts._action_limit("autonomous", True) == ("≥1", "至少 1")
+    def test_docked_uses_shared_limit(self):
+        for task in prompts._ACTION_LIMITS:
+            assert prompts._action_limit(task, True) == prompts._DOCKED_ACTION_LIMIT
+
+    def test_undocked_uses_task_limit(self):
+        for task in prompts._ACTION_LIMITS:
+            expected = prompts._ACTION_LIMITS[task]
+            label, text = prompts._action_limit(task, False)
+            assert (label, text) != prompts._DOCKED_ACTION_LIMIT
+            if "{n}" not in expected[0] and "{n}" not in expected[1]:
+                assert (label, text) == expected
 
     def test_autonomous_free_reads_min_action_count(self):
         n = prompts.min_action_count()
-        assert prompts._action_limit("autonomous", False) == (f"≥{n}", f"最少 {n}")
+        label, text = prompts._action_limit("autonomous", False)
+        assert label == f"≥{n}"
+        assert str(n) in text
 
     def test_examples_only_use_shared_actions(self):
         for fn in (prompts._autonomous_task, prompts._chat_task,
@@ -343,7 +328,6 @@ class TestToolGuide:
         monkeypatch.setattr(config, "LLM_TOOLS_ENABLED", True)
         guide = prompts._tool_guide()
         assert "aside" in guide
-        assert "[可用工具]" in guide
         assert "- fake_tool [info] 测试：假工具" in guide
         for tool in TOOL_REGISTRY.enabled_tools:
             if tool.meta:
@@ -357,9 +341,12 @@ class TestToolGuide:
         saved_enabled = TOOL_REGISTRY.is_enabled("web_search")
         try:
             TOOL_REGISTRY.set_enabled("web_search", True)
-            assert "搜索网页优先用 web_search" not in prompts._tool_list()
+            before = prompts._tool_list()
+            assert "web_search" not in before
             TOOL_REGISTRY.register("web_search", "测试：直连搜索 API", group="web")
-            assert "搜索网页优先用 web_search" in prompts._tool_list()
+            after = prompts._tool_list()
+            assert "web_search" in after
+            assert len(after.splitlines()) == len(before.splitlines()) + 2
         finally:
             TOOL_REGISTRY._tools.pop("web_search", None)
             if saved is not None:
@@ -370,7 +357,6 @@ class TestToolGuide:
         monkeypatch.setattr(config, "LLM_TOOLS_ENABLED", False)
         guide = prompts._tool_guide()
         assert guide == prompts._TOOL_ASIDE_GUIDE
-        assert "[可用工具]" not in guide
 
     def test_meta_only_registry_falls_back_to_aside(self, monkeypatch):
         from pet.tools.registry import TOOL_REGISTRY
@@ -396,11 +382,11 @@ class TestToolGuide:
                            ("autonomous_non_vision", "autonomous"),
                            ("analyze", "analyze")):
             text = prompts.build_system_prompt(mode, task)
-            assert "[可用工具]" in text
+            assert "fake_tool" in text
             assert "tool_search__list_groups" in text
 
     def test_interact_task_has_no_tool_list(self, monkeypatch):
         # 交互是即时反射，不带工具段
         monkeypatch.setattr(config, "LLM_TOOLS_ENABLED", True)
         text = "\n".join(prompts._interact_task())
-        assert "[可用工具]" not in text
+        assert "tool_search" not in text

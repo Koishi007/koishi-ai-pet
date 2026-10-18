@@ -90,7 +90,7 @@ def test_running_round_hint(ctx):
     result = base.play("tic_tac_toe")
 
     assert result["model_hint"] is gamebase._MODEL_HINT_RUNNING
-    assert "（对模型）" not in result["summary"]
+    assert result["model_hint"] not in result["summary"]
     assert len(result["summary"].splitlines()) == 1
 
 

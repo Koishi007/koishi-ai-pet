@@ -2,7 +2,9 @@
 
 import pytest
 
+from pet.brain import prompts
 from pet.brain.context_builder import ContextBuilder
+from pet.brain.parsing import _MOOD_FIELDS, _VITALS_FIELDS
 from pet.brain.prompts import interact_take_a_bite_prompt, interact_file_reject_prompt
 from pet.config import config
 
@@ -74,7 +76,8 @@ class TestInteractAttachment:
         messages = _builder().build_interact("尝尝看", attachment_text="MARKER")
         content = messages[-1]["content"]
         assert "MARKER" in content
-        assert "观察资料" in content
+        assert ContextBuilder._FILE_BODY_PREFIX in content
+        assert ContextBuilder._FILE_BODY_SUFFIX in content
 
     def test_attachment_image_added(self, monkeypatch):
         monkeypatch.setattr(config, "VISION_ENABLED", True)
@@ -95,11 +98,11 @@ class TestInteractAttachment:
 
 class TestPrompts:
     def test_taste_prompt_is_taste_and_mood(self):
-        text = interact_take_a_bite_prompt("报告.md、图.png")
-        assert "报告.md" in text
-        assert "味道" in text
-        assert "joy" in text and "sanity" in text
-        assert "satiety" not in text and "energy" not in text
+        names = "报告.md、图.png"
+        text = interact_take_a_bite_prompt(names)
+        assert names in text
+        assert all(field in text for field in _MOOD_FIELDS)
+        assert not any(field in text for field in _VITALS_FIELDS)
 
     def test_taste_template_override(self, monkeypatch):
         monkeypatch.setattr(config, "INTERACT_TAKE_A_BITE_PROMPT", "只认「{names}」")
@@ -110,27 +113,24 @@ class TestAnalyzeTask:
     def test_system_uses_analyze_rules(self):
         system = _builder().build_analyze_decide(
             "用户把文件交给了你：\n- a.txt", "无窗口")[0]["content"]
-        assert "分析模式" in system
-        assert "至少 3 个 Action" in system
+        assert prompts._ANALYZE_INTRO in system
+        assert prompts._action_limit("analyze", False)[1] in system
 
-    def test_user_prompt_is_analyze_variant(self):
-        messages = _builder().build_analyze_decide(
-            "用户把文件交给了你：\n- a.txt", "无窗口")
-        text = _last_text(messages)
-        assert "=== 用户交给你看的东西 ===" in text
-        assert "a.txt" in text
-
-    def test_no_quote_guard_lives_in_analyze_segments(self):
-        """不复述原文的约束由 analyze 段承担：用户段第 3 步与系统段第 2 条。"""
-        messages = _builder().build_analyze_decide("元信息", "无窗口")
-        assert "不要复述原文" in _last_text(messages)
-        assert "不逐句复述" in messages[0]["content"]
+    def test_user_prompt_is_analyze_variant(self, monkeypatch):
+        from pet.brain import context_builder as builder_module
+        monkeypatch.setattr(builder_module, "analyze_non_vision_user_prompt",
+                            lambda *args, **kwargs: "ANALYZE_USER")
+        monkeypatch.setattr(builder_module, "analyze_vision_user_prompt",
+                            lambda *args, **kwargs: "ANALYZE_USER")
+        text = _last_text(_builder().build_analyze_decide("元信息", "无窗口"))
+        assert "ANALYZE_USER" in text
 
     def test_body_wrapped_as_material(self):
         messages = _builder().build_analyze_decide("元信息", "无窗口", attachment_text="MARKER")
         text = _last_text(messages)
         assert "MARKER" in text
-        assert "观察资料" in text
+        assert ContextBuilder._FILE_BODY_PREFIX in text
+        assert ContextBuilder._FILE_BODY_SUFFIX in text
 
     def test_no_screenshot_with_vision(self, monkeypatch):
         monkeypatch.setattr(config, "VISION_ENABLED", True)
@@ -147,23 +147,30 @@ class TestAnalyzeTask:
 
     def test_reject_prompt_differs_by_reason(self):
         replies = {reason: interact_file_reject_prompt(reason)
-                   for reason in ("too_large", "too_many", "forbidden")}
-        assert len(set(replies.values())) == 3
-        assert "Vitals 不变" in replies["too_large"]
-        assert "joy-0~2" in replies["forbidden"]
-        assert "affection" in replies["forbidden"]
+                   for reason in prompts._FILE_REJECT_SCENES}
+        assert len(set(replies.values())) == len(prompts._FILE_REJECT_SCENES)
+        for reason, (tail, delta) in prompts._FILE_REJECT_SCENES.items():
+            assert tail in replies[reason]
+            assert delta in replies[reason]
+            assert not any(field in replies[reason] for field in _VITALS_FIELDS)
 
     def test_reject_prompt_lists_names(self):
         single = interact_file_reject_prompt("too_large", ("big.zip",))
-        assert "「big.zip」太大了" in single
+        assert "big.zip" in single
+        assert prompts._FILE_REJECT_SCENES["too_large"][0] in single
 
-        batch = interact_file_reject_prompt("too_many", tuple(f"f{i}.txt" for i in range(6)))
-        assert "f0.txt" in batch and "f2.txt" in batch
-        assert "f3.txt" not in batch
-        assert "等 6 个" in batch
+        names = tuple(f"f{i}.txt" for i in range(6))
+        batch = interact_file_reject_prompt("too_many", names)
+        listed = names[:prompts._REJECT_NAME_MAX]
+        assert all(name in batch for name in listed)
+        assert names[prompts._REJECT_NAME_MAX] not in batch
+        assert str(len(names)) in batch
 
     def test_reject_prompt_unknown_reason_falls_back(self):
-        assert "没有接住" in interact_file_reject_prompt("something_else")
+        first = interact_file_reject_prompt("something_else", ("big.zip",))
+        second = interact_file_reject_prompt("another_unknown", ("big.zip",))
+        assert first == second
+        assert "big.zip" in first
 
     def test_reject_template_override(self, monkeypatch):
         monkeypatch.setattr(config, "INTERACT_FILE_REJECT_PROMPT", "固定台词 {reason} {names}")

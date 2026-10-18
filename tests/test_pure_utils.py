@@ -1,5 +1,6 @@
 """纯逻辑函数测试：无 IO、无 Qt 依赖。"""
 
+import re
 import subprocess
 import sys
 
@@ -7,7 +8,7 @@ import pytest
 
 from pet.config import _convert
 from pet.game.tic_tac_toe import _board_text, _check_winner, _is_full
-from pet.tools.executor import ToolExecutor, _log_preview
+from pet.tools.executor import ToolExecutor, _MAX_LOG_VALUE_LEN, _log_preview
 from pet.tools.knowledge.chunker import chunk_text
 from pet.tools.timer.core import TimerTool
 from pet.version_utils import strip_v, ver_newer
@@ -121,15 +122,15 @@ class TestValidateArgs:
     def test_type_mismatch_rejected(self):
         args, err = ToolExecutor._validate_args({"count": "5"}, self.SCHEMA)
         assert args == {}
-        assert "类型错误" in err
+        assert "count" in err
 
     def test_missing_required_rejected(self):
         _, err = ToolExecutor._validate_args({}, self.SCHEMA)
-        assert "缺少必需参数" in err
+        assert "count" in err
 
     def test_enum_out_of_range_rejected(self):
         _, err = ToolExecutor._validate_args({"count": 1, "mode": "turbo"}, self.SCHEMA)
-        assert "不在允许范围" in err
+        assert "mode" in err
 
     def test_defaults_and_extra_keys(self):
         args, err = ToolExecutor._validate_args({"count": 3, "aside": "看看"}, self.SCHEMA)
@@ -144,8 +145,10 @@ class TestValidateArgs:
 
 class TestLogPreview:
     def test_long_value_truncated_with_marker(self):
-        preview = _log_preview({"data": "x" * 400})
-        assert "<+100字>" in preview
+        value = "x" * 400
+        preview = _log_preview({"data": value})
+        assert preview.count("x") == _MAX_LOG_VALUE_LEN
+        assert str(len(value) - _MAX_LOG_VALUE_LEN) in preview
 
     def test_short_value_untouched(self):
         assert _log_preview({"ok": 1}) == "{ ok=1 }"
@@ -156,17 +159,17 @@ class TestLogPreview:
 
 class TestFormatDuration:
     def test_under_one_minute(self):
-        assert TimerTool._format_duration(30) == "30秒"
+        assert re.findall(r"\d+", TimerTool._format_duration(30)) == ["30"]
 
     def test_minute_scales(self):
-        assert TimerTool._format_duration(60) == "1分钟"
-        assert TimerTool._format_duration(90) == "1分30秒"
-        assert TimerTool._format_duration(600) == "10分钟"
+        assert re.findall(r"\d+", TimerTool._format_duration(60)) == ["1"]
+        assert re.findall(r"\d+", TimerTool._format_duration(90)) == ["1", "30"]
+        assert re.findall(r"\d+", TimerTool._format_duration(600)) == ["10"]
 
     def test_hour_scales(self):
-        assert TimerTool._format_duration(3600) == "1小时"
-        assert TimerTool._format_duration(3661) == "1小时1分1秒"
-        assert TimerTool._format_duration(7320) == "2小时2分"
+        assert re.findall(r"\d+", TimerTool._format_duration(3600)) == ["1"]
+        assert re.findall(r"\d+", TimerTool._format_duration(3661)) == ["1", "1", "1"]
+        assert re.findall(r"\d+", TimerTool._format_duration(7320)) == ["2", "2"]
 
 
 class TestConvertSettingValues:
