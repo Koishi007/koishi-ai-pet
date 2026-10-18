@@ -184,6 +184,7 @@ class PetWindow(TransparentWindow):
     # 拖拽抓取点在窗口内的相对位置：水平居中、纵向与摆动锚点同高（头部）
     _GRAB_RATIO_X = 0.5
     _GRAB_RATIO_Y = _SpriteLabel.GRAB_ANCHOR_Y
+    _GRAB_GUARD_MS = 100  # 抓取守卫轮询间隔
 
     dock_changed = Signal(object)  # "left" / "right" / None
 
@@ -218,6 +219,9 @@ class PetWindow(TransparentWindow):
         self._click_timer.setSingleShot(True)
         self._click_timer.setInterval(200)      # 200ms 内无移动 → 判定为单击
         self._click_timer.timeout.connect(self._on_click_confirmed)
+        self._grab_guard = QTimer(self)         # 左键释放事件丢失时补结算抓取
+        self._grab_guard.setInterval(self._GRAB_GUARD_MS)
+        self._grab_guard.timeout.connect(self._check_grab_button)
         self._PROMPT_GRABBED = INTERACT_GRABBED
         self._PROMPT_RELEASED = INTERACT_RELEASED
         self._PROMPT_WINDOW_DISAPPEARED = INTERACT_WINDOW_DISAPPEARED
@@ -465,6 +469,7 @@ class PetWindow(TransparentWindow):
         self.action_queue.pause()
         self.swing_ctrl.begin()
         self.pet_actions.grabbed()
+        self._grab_guard.start()
         logger.info("[PetWindow] grabbed")
         if self._agent:
             self._agent.note_event("grabbed")  # 事件记录独立于 LLM 反应开关
@@ -506,20 +511,37 @@ class PetWindow(TransparentWindow):
             return
         if self._grab_local is None:
             return
+        self._end_grab(*self._release_velocity())
+
+    def _check_grab_button(self):
+        """抓取守卫：左键已松开但释放事件没到，补结算。"""
+        if self._grab_local is None:
+            self._grab_guard.stop()
+            return
+        if QApplication.mouseButtons() & Qt.MouseButton.LeftButton:
+            return
+        logger.info("[PetWindow] 左键释放事件丢失，按当前状态结束抓取")
+        self._end_grab(*self._release_velocity())
+
+    def _release_velocity(self) -> tuple[float, float]:
+        """最近 150ms 的拖拽速度（px/s）；采样不足或停顿时为 0。"""
+        now = QDateTime.currentMSecsSinceEpoch()
+        recent = [(p, t) for p, t in self._drag_history if now - t <= 150]
+        if len(recent) < 2:
+            return 0.0, 0.0
+        p1, t1 = recent[0]
+        p2, t2 = recent[-1]
+        dt = (t2 - t1) / 1000.0
+        if dt <= 0.005:
+            return 0.0, 0.0
+        return (p2.x() - p1.x()) / dt, (p2.y() - p1.y()) / dt
+
+    def _end_grab(self, vx: float = 0.0, vy: float = 0.0):
+        """结束抓取：恢复队列与重力，按速度决定贴边或抛出。"""
+        self._grab_guard.stop()
         self._grab_local = None
         self.action_queue.resume()
         self.swing_ctrl.release()
-        vx, vy = 0.0, 0.0
-        # 只使用最近 150ms 内的采样帧，过期帧视为停顿（避免释放前停顿导致速度为 0）
-        now = QDateTime.currentMSecsSinceEpoch()
-        recent = [(p, t) for p, t in self._drag_history if now - t <= 150]
-        if len(recent) >= 2:
-            p1, t1 = recent[0]
-            p2, t2 = recent[-1]
-            dt = (t2 - t1) / 1000.0
-            if dt > 0.005:
-                vx = (p2.x() - p1.x()) / dt
-                vy = (p2.y() - p1.y()) / dt
         self._drag_history.clear()
         speed = (vx ** 2 + vy ** 2) ** 0.5
         side = None
@@ -610,6 +632,9 @@ class PetWindow(TransparentWindow):
 
     def _show_context_menu(self, pos):
         """右键菜单。"""
+        if self._grab_local is not None:
+            # 菜单会接管鼠标，抓取无法继续跟随；先结束抓取，避免桌宠停在半空
+            self._end_grab()
         menu = _FlatMenuBase()
 
         if self._agent:
@@ -873,6 +898,7 @@ class PetWindow(TransparentWindow):
 
     def shutdown(self):
         # 先断队列再停动画：stop 会发 animation_finished，避免队列在退出途中又推进一个动作
+        self._grab_guard.stop()
         if self._dock_anim is not None:
             self._dock_anim.stop()
             self._dock_anim = None

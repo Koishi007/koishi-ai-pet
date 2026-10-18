@@ -125,3 +125,5 @@
 2. **动作名 ≠ 素材目录名**：`walk` → `walk_left/right`、`drive` → `driving_left/right`；
    `fade_in/fade_out` 没有素材；`idle` / `falling` / `grim` / `grabbed` / `unconsciousness` 是系统动画，不在动作注册表里。
 3. **`grim` 不是模型能输出的动作**，由理智驱动切换。
+4. **抓取状态必须与左键实际状态同步**：打开桌宠右键菜单时直接结束抓取；其余丢失释放的场景由
+   `PetWindow._grab_guard` 每 100ms 核对 `QApplication.mouseButtons()` 补结算（恢复动作队列与重力）。
