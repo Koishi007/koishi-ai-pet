@@ -102,6 +102,232 @@ class TestNeedHintsSingleHome:
         assert "自己生成食物" in ContextBuilder._NEED_HINTS["hungry"]
 
 
+class TestDockedPrompts:
+    """贴边时的动作表、任务段与 user 段贴边状态。"""
+
+    def test_system_action_table_filtered(self):
+        text = prompts.build_system_prompt("chat_non_vision", "chat", docked=True)
+        table = text.split("[可用动作]", 1)[1].split("[核心规则]", 1)[0]
+        assert "共 8 个" in table
+        for name in ("sleep", "thinking", "shy", "confuse",
+                     "embarrassed", "dejected", "finger_heart", "shake_arms"):
+            assert name in table
+        for name in ("walk", "drive", "sit", "look_around"):
+            assert name not in table
+        assert "参考「窗口探测」数据" not in text
+        assert "涉及方向/距离的指令" not in text
+
+    def test_docked_system_has_no_wall_or_nonwall_terms(self):
+        combos = (
+            ("autonomous_vision", "autonomous"),
+            ("autonomous_non_vision", "autonomous"),
+            ("chat_vision", "chat"),
+            ("chat_non_vision", "chat"),
+            ("interact", "interact"),
+            ("analyze", "analyze"),
+        )
+        for mode, task in combos:
+            text = prompts.build_system_prompt(mode, task, docked=True)
+            for bad in ("靠墙", "靠边", "钓鱼", "巡视", "换地方", "可玩窗口", "跳跃"):
+                assert bad not in text, f"{mode}/{task} 出现了 {bad}"
+
+    def test_undocked_table_keeps_movement(self):
+        text = prompts.build_system_prompt("chat_non_vision", "chat")
+        table = text.split("[可用动作]", 1)[1].split("[核心规则]", 1)[0]
+        assert "walk" in table
+        assert "drive" in table
+        assert "[移动]" in table
+        assert "[显隐]" in table
+
+    def test_docked_task_action_floor(self):
+        for fn in (prompts._autonomous_task, prompts._chat_task,
+                   prompts._interact_task, prompts._analyze_task):
+            text = "\n".join(fn(docked=True))
+            assert "≥1个" in text
+            assert "可玩窗口" not in text
+            for bad in ("walk", "drive", "sit", "look_around", "靠墙", "靠边", "钓鱼"):
+                assert bad not in text
+        assert "总时长约" not in "\n".join(prompts._autonomous_task(docked=True))
+        assert "凑满时长" not in "\n".join(prompts._autonomous_task(docked=True))
+        assert "Action(≥3个)" not in "\n".join(prompts._chat_task(docked=True))
+
+    def test_user_prompt_dock_note(self):
+        note = "[贴边状态]\n测试"
+        assert prompts.chat_non_vision_user_prompt("hi", "ctx", dock_note=note).startswith(note)
+        assert prompts.chat_vision_user_prompt("hi", "ctx", dock_note=note).startswith(note)
+        assert prompts.analyze_non_vision_user_prompt("hi", "ctx", dock_note=note).startswith(note)
+        assert prompts.analyze_vision_user_prompt("hi", "ctx", dock_note=note).startswith(note)
+        assert prompts.autonomous_non_vision_user_prompt("ctx", dock_note=note).startswith(note)
+        assert prompts.autonomous_vision_user_prompt("ctx", dock_note=note).startswith(note)
+
+    def test_system_prompt_from_context_builder_is_docked(self):
+        builder = ContextBuilder(dock_side_fn=lambda: "left")
+        system = builder._build_system("chat_non_vision", "chat")
+        table = system.split("[可用动作]", 1)[1].split("[核心规则]", 1)[0]
+        assert "共 8 个" in table
+        assert "walk" not in table
+        assert "[驻留]" in table
+        assert "[移动]" not in table
+        assert "[显隐]" not in table
+        assert "参考「窗口探测」数据" not in system
+        assert "做点当下能做的小事" in system
+        assert "钓鱼" not in system
+        assert "靠墙" not in system
+        assert "可玩窗口" not in system
+        assert "跳跃" not in system
+
+    def test_chat_and_autonomous_user_prompts_include_note(self):
+        class _Brain:
+            _MAX_POOL_ENTRIES = 21
+
+            def get_multi_turn_messages(self, **_kw):
+                return []
+
+        builder = ContextBuilder(brain_mixin=_Brain(), dock_side_fn=lambda: "left")
+        chat = builder.build_chat_decide("hi", "ctx", screenshot=False)
+        chat_note = chat[-1]["content"]
+        assert "[贴边状态]" in chat_note
+        assert "屏幕左边缘" in chat_note
+        assert "system" not in chat_note
+        assert "后文步骤" not in chat_note
+        assert "钓鱼" not in chat_note
+        assert "靠墙" not in chat_note
+
+        autonomous = builder.build_autonomous_decide("ctx", screenshot=False)
+        auto_note = autonomous[-1]["content"]
+        assert "[贴边状态]" in auto_note
+        assert "专心工作" in auto_note
+        assert "后文步骤" not in auto_note
+        assert "有移动动作可用" in auto_note
+        assert "靠边" not in auto_note
+        assert "钓鱼" not in auto_note
+
+        analyze = builder.build_analyze_decide("hi", "ctx", screenshot=False)
+        assert "[贴边状态]" in analyze[-1]["content"]
+        assert "后文步骤" not in analyze[-1]["content"]
+
+    def test_interact_note_from_context(self):
+        messages = ContextBuilder(dock_side_fn=lambda: "right").build_interact("用户摸了摸你的头")
+        content = messages[1]["content"]
+        assert "[贴边状态]" in content
+        assert "屏幕右边缘" in content
+        assert "做不到" in content
+        assert "system" not in content
+        assert "后文步骤" not in content
+        assert "钓鱼" not in content
+        assert "靠墙" not in content
+        assert content.index("[贴边状态]") < content.index("用户摸了摸你的头")
+
+    def test_dock_note_elements(self):
+        # 贴边段只有三要素，追加句只给 autonomous
+        for side, cn in (("left", "左"), ("right", "右")):
+            for task in ("autonomous", "chat", "analyze", "interact"):
+                note = prompts.dock_note(side, task)
+                assert note.startswith("[贴边状态]")
+                assert f"你现在贴在屏幕{cn}边缘，你自己下不来。" in note
+                assert "直接说明做不到" in note
+                assert "觅食" not in note
+                assert "动作表" not in note
+        assert "专心工作" in prompts.dock_note("left", "autonomous")
+        for task in ("chat", "analyze", "interact"):
+            assert "专心工作" not in prompts.dock_note("left", task)
+
+    def test_autonomous_prompt_gates_movement_branches(self):
+        # 有窗口/无窗口的分支都挂在“有移动动作可用”上，贴边段不再单独声明步骤不适用
+        for fn in (prompts.autonomous_vision_user_prompt,
+                   prompts.autonomous_non_vision_user_prompt):
+            for note in ("", "[贴边状态]"):
+                text = fn("CTX", dock_note=note)
+                assert "有窗口且有移动动作可用" in text
+                assert "无窗口且有移动动作可用" in text
+                assert "如果你可以移动的话" not in text
+        assert "后文步骤" not in prompts.dock_note("left", "autonomous")
+
+    def test_lonely_hint_wall(self):
+        assert "凑到你身边" in ContextBuilder._need_hint("lonely")
+        assert "凑到你身边" not in ContextBuilder._need_hint("lonely", docked=True)
+
+    def test_drowsy_hint_wall(self):
+        nap = ContextBuilder._NAP_HOUR
+        undocked = ContextBuilder._circadian_need(nap)
+        docked = ContextBuilder._circadian_need(nap, docked=True)
+        assert undocked is not None and "sit" in undocked[2]
+        assert docked is not None and "sit" not in docked[2]
+
+    def test_no_note_when_undocked(self):
+        messages = ContextBuilder().build_interact("事件")
+        assert "[贴边状态]" not in messages[1]["content"]
+
+    def test_user_prompts_have_no_duration_phrase(self):
+        assert "凑满时长" not in prompts.autonomous_vision_user_prompt("ctx")
+        assert "凑满时长" not in prompts.autonomous_non_vision_user_prompt("ctx")
+        assert "凑满时长" not in prompts.chat_vision_user_prompt("hi", "ctx")
+        assert "凑满时长" not in prompts.chat_non_vision_user_prompt("hi", "ctx")
+
+    def test_food_guide_follows_tool(self, monkeypatch):
+        from pet.tools.registry import TOOL_REGISTRY
+        if TOOL_REGISTRY.get_tool("food") is None:
+            pytest.skip("food 工具未注册")
+        monkeypatch.setattr(config, "FOOD_ENABLED", True)
+        TOOL_REGISTRY.set_enabled("food", False)
+        try:
+            assert "[觅食]" not in "\n".join(prompts._chat_task())
+            assert "自己生成食物" not in ContextBuilder._need_hint("hungry")
+        finally:
+            TOOL_REGISTRY.set_enabled("food", True)
+        assert "[觅食]" in "\n".join(prompts._chat_task())
+        assert "自己生成食物" in ContextBuilder._need_hint("hungry")
+
+
+class TestActionTable:
+    """动作表每行带类型标记：移动 / 驻留 / 显隐。"""
+
+    @staticmethod
+    def _table(docked: bool = False) -> str:
+        from pet.action import registry
+        exclude = []
+        if docked:
+            exclude = [name for name in registry.ACTION_NAMES
+                       if name not in registry.EDGE_ACTION_NAMES]
+        return registry.generate_action_section(exclude=exclude)
+
+    def test_entries_carry_category(self):
+        text = self._table()
+        for entry in ("- drive [移动]", "- walk [移动]", "- bounce [移动]",
+                      "- shake_arms [驻留]", "- sleep [驻留]",
+                      "- fade_in [显隐]", "- fade_out [显隐]"):
+            assert entry in text
+
+    def test_docked_table_only_has_lingering(self):
+        text = self._table(docked=True)
+        assert "[驻留]" in text
+        assert "[移动]" not in text
+        assert "[显隐]" not in text
+
+
+class TestActionLimits:
+    """动作数量策略集中在 _ACTION_LIMITS / _DOCKED_ACTION_LIMIT。"""
+
+    def test_mapping_values(self):
+        assert prompts._action_limit("chat", True) == ("≥1", "至少 1")
+        assert prompts._action_limit("chat", False) == ("≥3", "至少 3")
+        assert prompts._action_limit("interact", False) == ("1-2", "只输出 1-2")
+        assert prompts._action_limit("analyze", False) == ("≥3", "至少 3")
+        assert prompts._action_limit("autonomous", True) == ("≥1", "至少 1")
+
+    def test_autonomous_free_reads_min_action_count(self):
+        n = prompts.min_action_count()
+        assert prompts._action_limit("autonomous", False) == (f"≥{n}", f"最少 {n}")
+
+    def test_examples_only_use_shared_actions(self):
+        for fn in (prompts._autonomous_task, prompts._chat_task,
+                   prompts._interact_task, prompts._analyze_task):
+            for docked in (False, True):
+                example = fn(docked=docked)[0]  # 任务段的输出格式块，即 few-shot 示例
+                for name in ("walk", "drive", "sit", "look_around", "stretch"):
+                    assert name not in example, f"{fn.__name__} docked={docked} 出现 {name}"
+
+
 class TestToolGuide:
     """_tool_guide：aside 指南 + 非元工具清单；元工具始终可见，不进清单。"""
 

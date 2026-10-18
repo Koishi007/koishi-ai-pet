@@ -175,7 +175,7 @@ class TestNeedsNote:
         夜里会凭空多出「熬夜太久了」。需要测作息的用例自行覆盖 _circadian_need。
         """
         monkeypatch.setattr(ContextBuilder, "_circadian_need",
-                            staticmethod(lambda hour: None))
+                            staticmethod(lambda hour, docked=False: None))
 
     def _builder(self, satiety=100, energy=100, joy=100, affection=100, sanity=100):
         return ContextBuilder(
@@ -251,26 +251,26 @@ class TestNeedsNote:
 
     def test_bedtime_line_wired_into_note(self, monkeypatch):
         monkeypatch.setattr(ContextBuilder, "_circadian_need",
-                            staticmethod(lambda hour: ("bedtime", "困了", "去睡")))
+                            staticmethod(lambda hour, docked=False: ("bedtime", "困了", "去睡")))
         assert "困了（刚起念）→ 去睡" in self._builder()._build_needs_note()
 
     def test_bedtime_suppresses_tired(self, monkeypatch):
         monkeypatch.setattr(ContextBuilder, "_circadian_need",
-                            staticmethod(lambda hour: ("bedtime", "困了", "去睡")))
+                            staticmethod(lambda hour, docked=False: ("bedtime", "困了", "去睡")))
         note = self._builder(energy=10)._build_needs_note()
         assert "困了" in note
         assert "歇一歇" not in note
 
     def test_tired_kept_outside_bedtime(self, monkeypatch):
-        monkeypatch.setattr(ContextBuilder, "_circadian_need", staticmethod(lambda hour: None))
+        monkeypatch.setattr(ContextBuilder, "_circadian_need", staticmethod(lambda hour, docked=False: None))
         assert "歇一歇" in self._builder(energy=10)._build_needs_note()
 
     def test_bedtime_cleared_after_window(self, monkeypatch):
         builder = self._builder()
         monkeypatch.setattr(ContextBuilder, "_circadian_need",
-                            staticmethod(lambda hour: ("bedtime", "困了", "去睡")))
+                            staticmethod(lambda hour, docked=False: ("bedtime", "困了", "去睡")))
         assert "困了" in builder._build_needs_note()
-        monkeypatch.setattr(ContextBuilder, "_circadian_need", staticmethod(lambda hour: None))
+        monkeypatch.setattr(ContextBuilder, "_circadian_need", staticmethod(lambda hour, docked=False: None))
         assert builder._build_needs_note() == ""
         assert builder._active_needs == {}
 

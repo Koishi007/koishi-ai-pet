@@ -8,9 +8,22 @@ from pet.config import config
 
 __all__ = [
     "ActionDef", "REGISTRY", "ACTION_NAMES",  # noqa: F822  惰性导出，由 __getattr__ 提供
+    "EDGE_ACTION_NAMES", "edge_asset",
     "target_sequence_duration", "min_action_count", "default_duration",
     "has_duration", "duration_range", "generate_action_section",
 ]
+
+
+# 贴边可用动作：素材 <name>_edge，左右两侧共用同一套帧；动作表由 generate_action_section(exclude=...) 过滤得到
+EDGE_ACTION_NAMES = frozenset({
+    "sleep", "thinking", "shy", "confuse",
+    "embarrassed", "dejected", "finger_heart", "shake_arms",
+})
+
+
+def edge_asset(name: str) -> str:
+    """动作对应的贴边素材名。"""
+    return f"{name}_edge"
 
 
 # 动作时长参数定义：(名称, 最小秒数, 占 target_sequence_duration 的比例)
@@ -242,9 +255,9 @@ def generate_action_section(exclude: list[str] | None = None) -> str:
         if name in _exclude:
             continue
         if a.params:
-            entry = f"- {a.name} [{' '.join(a.params)}] {a.description}"
+            entry = f"- {a.name} [{a.category}] [{' '.join(a.params)}] {a.description}"
         else:
-            entry = f"- {a.name} 无参数 {a.description}"
+            entry = f"- {a.name} [{a.category}] 无参数 {a.description}"
         # 示例去掉 "Action: " 前缀；无参数动作示例与动作名相同，省略
         ex = a.usage_example
         if ex.startswith("Action: "):

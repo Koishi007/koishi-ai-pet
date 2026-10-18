@@ -48,6 +48,7 @@
 | [specs/2026-10-13-higher-lower-design.md](specs/2026-10-13-higher-lower-design.md) | 设计文档 | 手写 | 猜高低对赌：牌堆与赔率、双人下注的回合时序、判定与计分、面板载荷、轮次预算 | 动手前写，落地后补齐结论 |
 | [specs/2026-10-14-grab-swing-design.md](specs/2026-10-14-grab-swing-design.md) | 设计文档 | 手写 | 拖拽惯性钟摆：阻尼单摆模型、激励估计、渲染接入与裁剪约束 | 动手前写，落地后补齐结论 |
 | [specs/2026-10-16-output-budget-design.md](specs/2026-10-16-output-budget-design.md) | 设计文档 | 手写 | 输出预算与截断处理：三段配额与数值依据、结束原因链路、只在 length 截断时关闭思考 | 动手前写，落地后补齐结论 |
+| [specs/2026-10-18-screen-edge-dock-design.md](specs/2026-10-18-screen-edge-dock-design.md) | 设计文档 | 手写 | 屏幕边缘吸附：贴边状态与触发、镜像与点击掩膜、动作本地路由、贴边 user 提示词与觅食工具开关 | 动手前写，落地后补齐结论 |
 | [../CHANGELOG.md](../CHANGELOG.md) | 事实参考 | 生成 | 按版本分组的变更记录 | `python scripts/gen_changelog.py` |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | 操作指南 | 手写 | 开发流程、测试、提交与 PR 规范 | 流程变化时人工更新 |
 

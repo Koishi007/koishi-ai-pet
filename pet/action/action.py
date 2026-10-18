@@ -6,6 +6,7 @@ from PySide6.QtCore import QPoint, QTimer, QPropertyAnimation, QEasingCurve, QOb
 from PySide6.QtWidgets import QWidget
 from pet.config import config
 from pet.action.gravity import GravitySystem
+from pet.action.registry import EDGE_ACTION_NAMES, edge_asset
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,24 @@ class PetActions(QObject):
         self._walk_start_x: int = 0
         self._walk_timer = QTimer(self)
         self._walk_timer.setInterval(30)
+        self._dock_side: str = ""
+
+    def set_dock_side(self, side: str):
+        """设置贴边侧别；影响 idle/grim 与八个贴边动作的素材名。"""
+        self._dock_side = side if side in ("left", "right") else ""
+
+    def _asset(self, name: str) -> str:
+        if self._dock_side and (name in EDGE_ACTION_NAMES or name in ("idle", "grim")):
+            return edge_asset(name)
+        return name
+
+    @property
+    def idle_animation(self) -> str:
+        return self._asset("idle")
+
+    @property
+    def grim_animation(self) -> str:
+        return self._asset("grim")
 
     def _clamp_pos(self, pos: QPoint) -> QPoint:
         """将坐标限制在屏幕可用范围内。"""
@@ -423,13 +442,13 @@ class PetActions(QObject):
         self._anim.play("sit", duration=duration)
 
     def sleep(self, duration=None):
-        self._anim.play("sleep", duration=duration)
+        self._anim.play(self._asset("sleep"), duration=duration)
 
     def idle(self, *_, **_kw):
-        self._anim.play("idle")
+        self._anim.play(self._asset("idle"))
 
     def shake_arms(self, *_, **_kw):
-        self._anim.play("shake_arms")
+        self._anim.play(self._asset("shake_arms"))
 
     def look_around(self, *_, **_kw):
         self._anim.play("look_around")
@@ -438,10 +457,10 @@ class PetActions(QObject):
         self._anim.play("stretch")
 
     def thinking(self, duration=None):
-        self._anim.play("thinking", duration=duration)
+        self._anim.play(self._asset("thinking"), duration=duration)
 
     def grim(self, *_, **_kw):
-        self._anim.play("grim")
+        self._anim.play(self._asset("grim"))
 
     def grabbed(self, *_, **_kw):
         self._cleanup_stopped_anims()
@@ -454,7 +473,7 @@ class PetActions(QObject):
         self._anim.play("calling", duration=duration)
 
     def finger_heart(self, duration=None):
-        self._anim.play("finger_heart", duration=duration)
+        self._anim.play(self._asset("finger_heart"), duration=duration)
 
     def rotate(self, *_, **_kw):
         self._anim.play("rotate")
@@ -463,16 +482,16 @@ class PetActions(QObject):
         self._anim.play("bathing", duration=duration)
 
     def confuse(self, *_, **_kw):
-        self._anim.play("confuse")
+        self._anim.play(self._asset("confuse"))
 
     def embarrassed(self, *_, **_kw):
-        self._anim.play("embarrassed")
+        self._anim.play(self._asset("embarrassed"))
 
     def shy(self, *_, **_kw):
-        self._anim.play("shy")
+        self._anim.play(self._asset("shy"))
 
     def dejected(self, *_, **_kw):
-        self._anim.play("dejected")
+        self._anim.play(self._asset("dejected"))
 
     def hug(self, *_, **_kw):
         self._anim.play("hug")

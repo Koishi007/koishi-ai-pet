@@ -4,6 +4,7 @@ from PySide6.QtWidgets import QLabel, QWidget
 from PySide6.QtCore import Qt, QTimer, QPoint, QPropertyAnimation, QParallelAnimationGroup, QEasingCurve
 from PySide6.QtGui import QPainter, QColor, QPen, QPolygon
 from pet.config import config
+from pet.ui.edge_dock import edge_mask_rect
 from pet.ui.styles import _COLOR_BUBBLE_PET
 
 TAIL_HEIGHT = 10
@@ -53,6 +54,7 @@ class SpeechBubble(QLabel):
         self._buffering = False
         self._incoming_chunks: list[str] = []
         self._stream_open = False  # 已开句、尚未收到 end_stream
+        self._tail_x_cache = -1    # 上一次画尾巴的横坐标，贴边变化时触发重绘
 
         self.hide()
 
@@ -72,7 +74,7 @@ class SpeechBubble(QLabel):
         painter.setPen(QPen(QColor(200, 200, 200), 1))
         painter.drawRoundedRect(body_rect.adjusted(0, 0, -1, -1), 12, 12)
 
-        cx = w // 2
+        cx = self._tail_x()
         tail_top = body_h - 1
         tail = QPolygon([
             QPoint(cx - 6, tail_top),
@@ -85,6 +87,25 @@ class SpeechBubble(QLabel):
 
         painter.end()
         super().paintEvent(event)
+
+    def _tail_x(self) -> int:
+        """尾巴的横坐标：对准宠物可见主体，贴边时偏向贴边的那一侧。"""
+        w = self.width()
+        cx = w // 2
+        pet = self.parent()
+        if isinstance(pet, QWidget):
+            side = getattr(pet, "dock_side", "") or ""
+            if side in ("left", "right"):
+                x0, _, visible, _ = edge_mask_rect(side, pet.width(), pet.height())
+                cx = pet.x() + x0 + visible // 2 - self.x()
+        return max(12, min(cx, w - 12))
+
+    def _sync_tail(self):
+        """贴边侧变化后尾巴位置会变，位置没变时也要重绘。"""
+        tail = self._tail_x()
+        if tail != self._tail_x_cache:
+            self._tail_x_cache = tail
+            self.update()
 
     def _resize_to_text(self):
         text = self.text()
@@ -104,6 +125,7 @@ class SpeechBubble(QLabel):
             target = pet.geometry().center()
             final = self._final_position(target)
             self.move(final)
+            self._sync_tail()
 
     def _start_tracking(self):
         self._follow_timer.start(50)
@@ -396,3 +418,4 @@ class SpeechBubble(QLabel):
             target = pet.geometry().center()
             final = self._final_position(target)
             self.move(final)
+            self._sync_tail()

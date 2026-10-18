@@ -618,3 +618,8 @@ class ToolRegistry:
         return tools
 
 TOOL_REGISTRY = ToolRegistry()
+
+
+def food_tool_available() -> bool:
+    """觅食工具是否已注册且启用；贴边时该工具被禁用。"""
+    return TOOL_REGISTRY.get_tool("food") is not None and TOOL_REGISTRY.is_enabled("food")

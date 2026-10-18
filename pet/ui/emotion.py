@@ -5,6 +5,7 @@ import re
 from PySide6.QtWidgets import QLabel, QWidget
 from PySide6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve
 from pet.config import config
+from pet.ui.edge_dock import edge_mask_rect
 
 # 情绪名 → emoji 映射
 EMOTION_MAP = {
@@ -135,11 +136,16 @@ class EmotionBubble(QLabel):
         super().hide()
 
     def _final_position(self, target_pos) -> tuple:
-        """定位在宠物右上角，避免与 speech 气泡（上方居中）重叠。"""
+        """定位在宠物上方靠边一侧，避免与 speech 气泡（上方居中）重叠"""
         pet = self.parent()
         if isinstance(pet, QWidget):
-            # 右上角：pet 右边缘靠近，pet 上边缘对齐
-            x = pet.x() + config.PET_WIDTH - 16
+            side = getattr(pet, "dock_side", "") or ""
+            if side in ("left", "right"):
+                x0, _, visible, _ = edge_mask_rect(side, pet.width(), pet.height())
+                x = pet.x() + x0 if side == "right" else pet.x() + x0 + visible - self.width()
+            else:
+                # 右上角：pet 右边缘靠近，pet 上边缘对齐
+                x = pet.x() + config.PET_WIDTH - 16
             y = pet.y() - 8
         else:
             x = target_pos.x() + config.PET_WIDTH // 2 - 16

@@ -28,10 +28,12 @@ logger = logging.getLogger(__name__)
 class Behavior(BrainMixin):
 
     def __init__(self, memory_store=None, screen_reader=None, vitals=None, mood=None,
-                 recent_events_fn=None, once_events_fn=None, progress_fn=None):
+                 recent_events_fn=None, once_events_fn=None, progress_fn=None,
+                 dock_side_fn=None):
         db_path = memory_store.db_path if memory_store else None
         super().__init__(db_path=db_path)
         self._llm = LLMClient()
+        self._dock_side_fn = dock_side_fn or (lambda: "")
         # 进展心跳回调：每产生一次实质进展（chunk / 工具轮次 / LLM 返回）通知一次，
         # 供看门狗区分「跑得慢」与「挂死」，避免长流程被误判
         self._progress_fn = progress_fn
@@ -46,6 +48,7 @@ class Behavior(BrainMixin):
             memory_store=memory_store, screen_reader=screen_reader,
             vitals=vitals, mood=mood, brain_mixin=self,
             recent_events_fn=recent_events_fn, once_events_fn=once_events_fn,
+            dock_side_fn=self._dock_side_fn,
         )
         self.llm_stats = LlmStats()
         self.gateway = LlmGateway(self._llm, self.llm_stats,
@@ -84,6 +87,13 @@ class Behavior(BrainMixin):
     @property
     def has_vision(self) -> bool:
         return self._llm.has_vision
+
+    def _docked(self) -> bool:
+        """当前是否贴边；供本地兜底选择动作池。"""
+        try:
+            return bool(self._dock_side_fn())
+        except Exception:
+            return False
 
     def note_progress(self):
         """上报一次管线进展（best-effort，回调异常不影响主流程）。"""
@@ -172,7 +182,7 @@ class Behavior(BrainMixin):
     def autonomous_decide(self, context: str = "", screenshot: bool = True) -> BehaviorOutput:
         t = datetime.now().strftime("%H:%M:%S")
         if not self._llm:
-            return decide_local()
+            return decide_local(docked=self._docked())
 
         messages = self.ctx.build_autonomous_decide(context, screenshot=screenshot)
         is_vision = isinstance(messages[-1]["content"], list)
@@ -193,10 +203,10 @@ class Behavior(BrainMixin):
                       on_chunk=None, on_stream_end=None,
                       cancel_check: callable = None) -> BehaviorOutput:
         if not self._llm:
-            return decide_local()
+            return decide_local(docked=self._docked())
         if not self._lock.acquire(timeout=0.5):
             logger.warning("[Behavior] autonomous_decide_stream: busy, skip")
-            return decide_local()
+            return decide_local(docked=self._docked())
         try:
             messages = self.ctx.build_autonomous_decide(context, screenshot=screenshot)
             is_vision = isinstance(messages[-1]["content"], list)
@@ -213,7 +223,7 @@ class Behavior(BrainMixin):
 
     def interact_decide(self, event_hint: str) -> BehaviorOutput:
         if not self._llm:
-            return interact_decide_local(event_hint)
+            return interact_decide_local(event_hint, docked=self._docked())
         messages = self.ctx.build_interact(event_hint)
         return self._decide_with_repair(
             lambda repair=False: self._call_llm_and_parse(
@@ -230,10 +240,10 @@ class Behavior(BrainMixin):
                                attachment_text: str | None = None,
                                attachment_image=None) -> BehaviorOutput:
         if not self._llm:
-            return interact_decide_local(event_hint)
+            return interact_decide_local(event_hint, docked=self._docked())
         if not self._lock.acquire(timeout=2):
             logger.warning("[Behavior] interact_decide_stream: busy, skip")
-            return interact_decide_local(event_hint)
+            return interact_decide_local(event_hint, docked=self._docked())
         try:
             messages = self.ctx.build_interact(event_hint, attachment_text=attachment_text,
                                                attachment_image=attachment_image)
@@ -255,7 +265,7 @@ class Behavior(BrainMixin):
         logger.info(f"[{t}] [Behavior] chat_decide(msg={user_message[:50]}, ctx={context[:30]})")
 
         if not self._llm:
-            return chat_decide_local(user_message)
+            return chat_decide_local(user_message, docked=self._docked())
 
         messages = self.ctx.build_chat_decide(user_message, context, screenshot=screenshot)
         is_vision = isinstance(messages[-1]["content"], list)
@@ -279,7 +289,7 @@ class Behavior(BrainMixin):
                            attachment_text: str | None = None,
                            attachment_image=None) -> BehaviorOutput:
         if not self._llm:
-            return chat_decide_local(user_message)
+            return chat_decide_local(user_message, docked=self._docked())
         if not self._lock.acquire(timeout=5):
             logger.warning("[Behavior] chat_decide_stream: busy, timeout")
             return BehaviorOutput(
@@ -311,7 +321,7 @@ class Behavior(BrainMixin):
                               attachment_text: str | None = None,
                               attachment_image=None) -> BehaviorOutput:
         if not self._llm:
-            return chat_decide_local(user_message)
+            return chat_decide_local(user_message, docked=self._docked())
         if not self._lock.acquire(timeout=5):
             logger.warning("[Behavior] analyze_decide_stream: busy, timeout")
             return BehaviorOutput(
@@ -387,7 +397,7 @@ class Behavior(BrainMixin):
         except Exception as e:
             logger.exception(f"[{t}] [Behavior]   {tag} LLM call failed: {type(e).__name__}: {e}")
             logger.warning(f"[{t}] [Behavior]   falling back to local")
-            return decide_local()
+            return decide_local(docked=self._docked())
 
     def _stream_and_build_output(self, messages: list, on_chunk=None, on_stream_end=None,
                                  tag: str = "", mode: str = "chat",
@@ -447,7 +457,7 @@ class Behavior(BrainMixin):
             raise
         except Exception as e:
             logger.exception(f"[{tag}] stream failed: {type(e).__name__}: {e}")
-            return decide_local()
+            return decide_local(docked=self._docked())
 
     def tool_session(self, cancel_check=None) -> "_BehaviorToolSession":
         """工具轮次需要的能力：按当前管线参数注入取消检查。"""

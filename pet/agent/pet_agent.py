@@ -15,6 +15,7 @@ from pet.agent.screen_reader import ScreenReader
 from pet.brain.memory import get_memory_store
 from pet.brain.conversation_store import ConversationStore
 from pet.action.registry import default_duration, has_duration
+from pet.tools.registry import TOOL_REGISTRY
 from pet.game.gamebase import GAME
 from pet.pulse.vitals import Vitals
 from pet.pulse.mood import Mood
@@ -82,7 +83,9 @@ class PetAgent(QObject):
         self.screen_reader.enable()
         self.vitals = Vitals(parent=self)
         self.mood = Mood(parent=self)
-        self.behavior = Behavior(memory_store=self.memory_store, screen_reader=self.screen_reader, vitals=self.vitals, mood=self.mood, recent_events_fn=self.recent_events, once_events_fn=self.take_once_events, progress_fn=self.note_brain_progress)
+        self._dock_side = ""
+        self._food_tool_was_enabled = False
+        self.behavior = Behavior(memory_store=self.memory_store, screen_reader=self.screen_reader, vitals=self.vitals, mood=self.mood, recent_events_fn=self.recent_events, once_events_fn=self.take_once_events, progress_fn=self.note_brain_progress, dock_side_fn=lambda: self._dock_side)
         self.scheduler = Scheduler(self)
         self.state_machine = StateMachine(parent=self)
         self.state_machine.state_changed.connect(self.state_changed)
@@ -137,6 +140,35 @@ class PetAgent(QObject):
 
     def set_pet_window(self, window):
         self._pet_window = window
+        self._dock_side = window.dock_side
+        window.dock_changed.connect(self._on_dock_changed)
+        self._sync_food_tool()
+
+    @property
+    def dock_side(self) -> str:
+        return self._dock_side
+
+    def _on_dock_changed(self, side):
+        """贴边状态变化：同步提示词状态、禁用觅食工具，并中断在途调用"""
+        side = side or ""
+        if side == self._dock_side:
+            return
+        self._dock_side = side
+        self._sync_food_tool()
+        self.note_event("dock" if side else "undock")
+        if self.can_interrupt():
+            self.interrupt_current_call(reason="dock state change")
+
+    def _sync_food_tool(self):
+        if TOOL_REGISTRY.get_tool("food") is None:
+            return
+        if self._dock_side:
+            if TOOL_REGISTRY.is_enabled("food"):
+                self._food_tool_was_enabled = True
+                TOOL_REGISTRY.set_enabled("food", False)
+        elif self._food_tool_was_enabled:
+            TOOL_REGISTRY.set_enabled("food", True)
+            self._food_tool_was_enabled = False
 
     def start(self):
         self.scheduler.init(
@@ -500,8 +532,8 @@ class PetAgent(QObject):
         """token 是否仍属于当前调用；被中断或被新调用顶替即为 False。"""
         return self._call_token is token
 
-    def interrupt_current_call(self) -> bool:
-        """用户主动中断当前调用：取消脑线程并回到 IDLE；没有可中断的调用时返回 False。"""
+    def interrupt_current_call(self, reason: str = "user") -> bool:
+        """中断当前调用：取消脑线程并回到 IDLE；没有可中断的调用时返回 False"""
         if not self.can_interrupt():
             return False
         ts = datetime.now().strftime("%H:%M:%S")
@@ -513,7 +545,7 @@ class PetAgent(QObject):
         self.state_machine.force(PetState.IDLE)
         self._set_llm_loading(False)
         self.behavior.reset_active_tool_groups()
-        logger.info(f"[{ts}] [PetAgent] current call interrupted by user")
+        logger.info(f"[{ts}] [PetAgent] current call interrupted by {reason}")
         return True
 
     def _cancel_running_thread(self, ts: str = ""):

@@ -825,6 +825,7 @@ class SettingsWindow(QWidget):
         form.addRow("", self._check("NOTIFY_ENABLED", "允许发送通知"))
         form.addRow("", self._check("AUTO_START_ON_BOOT", "开机自动启动"))
         form.addRow("", self._check("GRAB_SWING_ENABLED", "拖拽时身体惯性摆动"))
+        form.addRow("", self._check("EDGE_DOCK_ENABLED", "开启贴边吸附（拖到屏幕边缘松手贴住）"))
 
         inner.addLayout(form)
 

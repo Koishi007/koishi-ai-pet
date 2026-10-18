@@ -63,6 +63,12 @@
 开关与角度上限见 `GRAB_SWING_ENABLED` / `GRAB_SWING_MAX_DEG`，
 模型与参数见 [specs/2026-10-14-grab-swing-design.md](../specs/2026-10-14-grab-swing-design.md)。
 
+**贴边路由**：贴边时 system 动作表只保留 `EDGE_ACTION_NAMES`（`sleep` / `thinking` / `shy` /
+`confuse` / `embarrassed` / `dejected` / `finger_heart` / `shake_arms`）；`PetActions` 把同名动作
+映射到 `*_edge`，`idle` / `grim` 同样映射。`PetWindow.queue_enqueue_action` 丢弃表外动作，
+解析层仍按完整 `ACTION_NAMES` 校验。贴边不播放 `unconsciousness`，设计见
+[specs/2026-10-18-screen-edge-dock-design.md](../specs/2026-10-18-screen-edge-dock-design.md)。
+
 ## 3. 帧动画的加载与运行
 
 素材侧契约（目录、命名、json 字段与取值）见 [assets-pipeline.md](assets-pipeline.md) §2；

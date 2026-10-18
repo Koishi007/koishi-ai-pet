@@ -77,6 +77,7 @@
 | `NOTIFY_ENABLED` | bool | true |  | 允许发送通知（定时器、待办、来电等） |
 | `AUTO_START_ON_BOOT` | bool | false |  | 开机自动启动 |
 | `GRAB_SWING_ENABLED` | bool | true |  | 拖拽时身体惯性摆动开关 |
+| `EDGE_DOCK_ENABLED` | bool | true |  | 贴边吸附总开关（拖拽松手或甩飞撞边时贴住屏幕左右边缘） |
 | `VOICE_INPUT_ENABLED` | bool | false |  | 启用语音输入 |
 | `VOICE_HOTKEY` | str | `"F8"` |  | 语音输入全局热键 |
 | `XF_APPID` | str | `""` |  | 讯飞语音听写 APPID |
@@ -107,6 +108,7 @@
 | `CONTEXT_HALF_LIFE_S` | int | 1800 | 是 |  | 上下文评分半衰期(秒) |
 | `CONTEXT_PERSIST_ENABLED` | bool | true | 是 |  | 启用上下文持久化 |
 | `CONTEXT_TOKEN_BUDGET` | int | 8192 | 是 |  | 上下文token预算上限 |
+| `EDGE_DOCK_SNAP_PX` | int | 24 | 是 |  | 拖拽松手判定贴边的距离阈值(px) |
 | `FALL_DOWN_SECONDS` | float | 1.5 | 是 |  | 下落超过该秒数，落地先播放 fall_down 动作再恢复队列 |
 | `FILE_DROP_BUBBLE_TIMEOUT_S` | int | 12 | 是 |  | 文件气泡无操作收起秒数 |
 | `FILE_DROP_DENY_PATTERNS` | str_list | [".env*", "*.key", "*.pem", "*.pfx", "*.p12", ".npmrc", ".netrc", ".pgpass", ".git-credentials", "id_rsa*", "id_ed25519*"] | 是 |  | 拒收名单，按文件名 glob 匹配 |
@@ -166,4 +168,4 @@
 - `hidden`：`true` 表示不在界面显示，只能直接编辑 `settings.json`
 - `enum` / `minimum` / `maximum`：取值约束，会写进 `settings-schema.json`
 
-共 102 项（其中 50 项未在界面列出）。
+共 104 项（其中 51 项未在界面列出）。

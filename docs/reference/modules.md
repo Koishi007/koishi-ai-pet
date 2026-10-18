@@ -16,7 +16,7 @@
 | `pet/action/fishing.py` | 钓鱼判定：桌宠执行 fishing 动作时掷一次骰子，决定这轮是否有收获。 | `roll_catch()` `format_result()` `_FishingOutcome` |
 | `pet/action/gravity.py` | 模拟桌宠受重力下落，可站立在其他窗口上。 | `GravitySystem` |
 | `pet/action/outcome.py` | 动作产出（outcome） | `Outcome` `register()` `outcome_for()` `registered_actions()` |
-| `pet/action/registry.py` | 可被 LLM 调用的动作定义。 | `target_sequence_duration()` `min_action_count()` `default_duration()` `has_duration()` `duration_range()` `ActionDef` |
+| `pet/action/registry.py` | 可被 LLM 调用的动作定义。 | `edge_asset()` `target_sequence_duration()` `min_action_count()` `default_duration()` `has_duration()` `duration_range()` |
 | `pet/agent/__init__.py` | Agent 调度层 — PetAgent 编排全流程，Scheduler 三速定时调度，StateMachine 状态机，ScreenReader 截图采集。 |  |
 | `pet/agent/pet_agent.py` | PetAgent — 编排 Brain，通过 Signal 驱动 UI。 | `BrainWorker` `PetAgent` |
 | `pet/agent/scheduled_tasks.py` | 定时任务注册与回调 | `ScheduledTasks` |
@@ -42,7 +42,7 @@
 | `pet/brain/memory.py` | SQLite 持久化记忆存储 | `LightweightDeduplicator` `_MemoryRetriever` `KeywordRetriever` `VectorRetriever` `MemoryStore` `get_memory_store()` |
 | `pet/brain/output.py` | LLM 决策的输出契约：行为输出与取消信号，供解析、工具轮次与编排共同引用。 | `CancelledError` `ActionStep` `BehaviorOutput` |
 | `pet/brain/parsing.py` | LLM 输出解析：把文本行 / 流式 chunk 收敛成 BehaviorOutput。 | `BehaviorSink` `parse_deltas()` `parse_mood_line()` `parse_vitals_line()` `parse_action_line()` `InlineTagNormalizer` |
-| `pet/brain/prompts.py` | 系统提示词分层组装 | `_Lazy` `invalidate_action_section()` `build_attention_hint()` `build_system_prompt()` `autonomous_vision_user_prompt()` `autonomous_non_vision_user_prompt()` |
+| `pet/brain/prompts.py` | 系统提示词分层组装 | `_Lazy` `invalidate_action_section()` `build_attention_hint()` `build_system_prompt()` `dock_note()` `autonomous_vision_user_prompt()` |
 | `pet/brain/repair.py` | 空响应修复重试：一次决策无动作无台词时，改写 messages 再跑一次。 | `retry_if_empty()` `repair_messages()` |
 | `pet/brain/summary.py` | 摘要流水线的执行端：把上下文淘汰产生的待摘要条目压成一句写回上下文。 | `SummaryHooks` `flush_summaries()` `summarize_with_llm()` |
 | `pet/brain/tool_loop.py` | 工具轮次：执行 LLM 请求的工具并循环，直到模型不再请求工具。 | `ToolSession` `run_tool_loop()` |
@@ -82,7 +82,7 @@
 | `pet/tools/knowledge/chunker.py` | 轻量文本分块器 — 按段落 + 字数窗口切分。 | `chunk_text()` |
 | `pet/tools/knowledge/panel.py` | 知识库管理面板 — 添加、导入文件、搜索、删除。 | `KnowledgePanel` `show_panel()` |
 | `pet/tools/knowledge/storage.py` | 知识库存储层 — SQLite + sqlite-vec 向量检索。 | `KnowledgeStorage` |
-| `pet/tools/registry.py` | 工具注册表 — 自动发现、注册、描述可用工具。 | `ToolMethod` `ToolDef` `ToolRegistry` |
+| `pet/tools/registry.py` | 工具注册表 — 自动发现、注册、描述可用工具。 | `ToolMethod` `ToolDef` `ToolRegistry` `food_tool_available()` |
 | `pet/tools/system_monitor/__init__.py` | （模块未提供 docstring） | `register()` |
 | `pet/tools/system_monitor/core.py` | （模块未提供 docstring） | `get_overview()` `get_top_processes()` `get_memory_detail()` `get_network()` |
 | `pet/tools/timer/__init__.py` | timer 工具 — 倒计时定时器，到时间宠物主动提醒。支持持久化重启后恢复。 | `register()` |
@@ -104,6 +104,7 @@
 | `pet/ui/chat_history.py` | 对话历史窗口 — 以对话气泡形式展示用户与桌宠的对话记录。 | `ChatBubbleDelegate` `ChatHistoryWindow` |
 | `pet/ui/debounce.py` | 按钮与提交的防抖：一次物理操作只产生一次请求。 | `Debounce` |
 | `pet/ui/debug_window.py` | 调试面板 | `DebugWindow` |
+| `pet/ui/edge_dock.py` | 屏幕边缘贴边的纯几何与策略计算。 | `pick_dock_side()` `dock_x()` `edge_mask_rect()` |
 | `pet/ui/emotion.py` | 桌宠情绪气泡显示 emoji 表情 | `emotion_to_emoji()` `EmotionBubble` |
 | `pet/ui/feed_bubble.py` | 桌宠喂食交互组件 | `FeedBubble` |
 | `pet/ui/file_bubble.py` | 文件气泡 - 拖入文件后显示摘要与动作按钮，单例复用。 | `describe_ref()` `FileBubble` |
@@ -133,4 +134,4 @@
 | `pet/voice/voice_session.py` | 语音会话编排：麦克风采集 → 讯飞识别 | `VoiceSession` |
 | `pet/voice/xunfei_stt.py` | 讯飞语音听写 (iat) WebSocket API 封装 | `XunfeiSTT` |
 
-共 125 个模块。
+共 126 个模块。
