@@ -175,7 +175,7 @@ chmod +x update.sh && ./update.sh
 | `default` | `game` | `list` / `init` / `play` / `stop` | 回合制小游戏：列出游戏、开局、玩一回合、主动结束 |
 | `default` | `recall` | `search` / `browse` | 回忆：主动检索桌宠关于用户的长期记忆（语义回忆、分页翻阅） |
 | `web` | `browser` | `search` / `read_url` / `screenshot_url` / `close` | 多引擎网页搜索、读取网页正文（分页）、截图 |
-| `web` | `web_search` | `search` / `deep_search` | SearXNG / Bing API 搜索，深度搜索自动抓取全文 |
+| `web` | `web_search` | `search` / `deep_search` | SearXNG / DeepSeek / Bing 搜索，深度搜索自动抓取全文 |
 | `info` | `weather` | `get_current` / `get_forecast` | 基于 Open-Meteo 的免费天气查询 |
 | `info` | `system_monitor` | `get_overview` / `get_top_processes` / `get_memory_detail` / `get_network` | CPU、内存、磁盘、电池、进程 |
 | `file` | `file_ops` | `list_dir` / `read_file` / `write_note` / `write_file` | 列目录、读写文件（限桌面/文档） |
@@ -246,18 +246,20 @@ Playwright 及浏览器二进制缺失时，工具加载直接报错。
 
 ### web_search
 
-通过 SearXNG 或 Bing API 搜索网页，`deep_search` 自动抓取结果页面全文。
+通过 SearXNG、DeepSeek 或 Bing API 搜索网页，`deep_search` 自动抓取结果页面全文。
 
 **配置**（`pet/tools/web_search/config.json`）：
 
 | 字段 | 类型 | 默认 | 说明 |
 |------|------|------|------|
-| `backend` | str | `"auto"` | 搜索后端：`"auto"` 自动选 / `"searxng"` / `"bing"` |
+| `backend` | str | `"auto"` | 搜索后端：`"auto"` 自动选 / `"searxng"` / `"deepseek"` / `"bing"` |
 | `searxng_url` | str | `""` | SearXNG 实例地址 |
 | `searxng_key` | str | `""` | SearXNG API Key（如需要） |
+| `deepseek_search_key` | str | `""` | DeepSeek API Key，与模型调用共用同一套（[搜索接口文档](https://api-docs.deepseek.com/zh-cn/guides/search)） |
 | `bing_search_key` | str | `""` | Bing Web Search API Key |
 
-`backend: "auto"` 模式下优先 SearXNG，不可用时自动回退 Bing。至少配置一个后端，否则工具加载失败。
+`backend: "auto"` 按 SearXNG → DeepSeek → Bing 的顺序尝试，显式指定后端时只用该后端。至少配置一个后端，否则工具加载失败。
+DeepSeek 搜索按成功请求计费（每千次 5 元）、限速 5 QPS，且不支持翻页。
 
 ### knowledge
 

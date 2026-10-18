@@ -96,8 +96,8 @@
 | `pet/tools/todo/style.py` | （模块未提供 docstring） |  |
 | `pet/tools/weather/__init__.py` | （模块未提供 docstring） | `register()` |
 | `pet/tools/weather/core.py` | 通过 Open-Meteo 免费 API 获取实时天气和预报。 | `get_current()` `get_forecast()` |
-| `pet/tools/web_search/__init__.py` | 支持 SearXNG（自建）和 Bing Web Search API。 | `register()` |
-| `pet/tools/web_search/core.py` | 支持 SearXNG（自建）和 Bing Web Search API 两种后端。 | `check_connectivity()` `search()` `deep_search()` |
+| `pet/tools/web_search/__init__.py` | 支持 SearXNG（自建）、DeepSeek 搜索 API 和 Bing Web Search API。 | `register()` |
+| `pet/tools/web_search/core.py` | 支持 SearXNG（自建）、DeepSeek 搜索 API 和 Bing Web Search API 三种后端。 | `check_connectivity()` `search()` `deep_search()` |
 | `pet/ui/__init__.py` | UI 层 — pet_window 宠物主窗口，speech_bubble/chat_bubble/feed_bubble/file_bubble 气泡组件，file_drop_handler 拖放判定， |  |
 | `pet/ui/base_window.py` | （模块未提供 docstring） | `TransparentWindow` |
 | `pet/ui/chat_bubble.py` | 桌宠聊天交互组件 | `ChatBubble` |

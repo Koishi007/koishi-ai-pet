@@ -1,10 +1,10 @@
-"""支持 SearXNG（自建）和 Bing Web Search API。"""
+"""支持 SearXNG（自建）、DeepSeek 搜索 API 和 Bing Web Search API。"""
 
 from pet.tools.web_search.core import search, deep_search, check_connectivity
 from pet.tools.context import TOOL_CTX
 
 TOOL_NAME = "web_search"
-TOOL_DESCRIPTION = "网络搜索，获取实时信息、新闻、百科知识"
+TOOL_DESCRIPTION = "网络搜索 API（SearXNG / DeepSeek / Bing）：直接请求搜索服务返回标题与摘要，速度快，需要搜索时优先使用"
 TOOL_GROUP = "web"
 
 
@@ -26,7 +26,7 @@ def register(registry):
 
     registry.add_method(
         TOOL_NAME, "search",
-        "搜索网络获取最新信息（返回标题和摘要，速度快）",
+        "搜索网络获取最新信息（返回标题和摘要），直接请求搜索 API，优先于 browser__search",
         handler=_search,
         timeout=15.0,
         args={
@@ -58,7 +58,7 @@ def register(registry):
     )
     registry.add_method(
         TOOL_NAME, "deep_search",
-        "深度搜索：搜索后自动抓取前几条结果的页面正文，信息更完整详细（比 search 慢）",
+        "深度搜索：搜索后抓取前几条结果的页面正文（trafilatura 提取，比 search 慢）；正文需要 JS 渲染时用 browser__read_url",
         handler=_deep_search,
         timeout=60.0,
         args={

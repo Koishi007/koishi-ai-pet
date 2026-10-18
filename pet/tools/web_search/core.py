@@ -1,4 +1,4 @@
-"""支持 SearXNG（自建）和 Bing Web Search API 两种后端。"""
+"""支持 SearXNG（自建）、DeepSeek 搜索 API 和 Bing Web Search API 三种后端。"""
 
 import json
 import logging
@@ -12,6 +12,7 @@ _TOOL_DIR = Path(__file__).parent
 _CONFIG_FILE = _TOOL_DIR / "config.json"
 
 _BING_ENDPOINT = "https://api.bing.microsoft.com/v7.0/search"
+_DEEPSEEK_SEARCH_ENDPOINT = "https://api.deepseek.com/v1/tools/search"
 
 
 def _load_config() -> dict:
@@ -153,6 +154,51 @@ def _search_bing(query: str, count: int, market: str, cfg: dict, page: int = 1) 
     return {"summary": "\n".join(lines)}
 
 
+def _search_deepseek(query: str, count: int, language: str, cfg: dict, page: int = 1) -> dict:
+    """DeepSeek 搜索 API：POST /v1/tools/search。
+
+    接口不带页码与语言参数，page / language 不下发；需要限定语言时在 query 里写 lang: 操作符。
+    """
+    api_key = cfg.get("deepseek_search_key", "")
+    if not api_key:
+        return {"summary": "搜索失败：未配置 deepseek_search_key，请在 web_search/config.json 中设置"}
+
+    count = max(1, min(count, 50))
+    payload = {"query": query, "count": count, "need_content": False}
+
+    try:
+        resp = requests.post(
+            _DEEPSEEK_SEARCH_ENDPOINT,
+            headers={"Authorization": f"Bearer {api_key}"},
+            json=payload,
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.RequestException as e:
+        logger.warning(f"[web_search] DeepSeek API error: {e}")
+        return {"summary": f"搜索失败：DeepSeek 请求异常 ({type(e).__name__})"}
+
+    results = data.get("results", [])
+    if not results:
+        return {"summary": f"「{query}」未找到相关结果"}
+
+    lines = [f"「{query}」搜索结果（{min(len(results), count)}条）："]
+    for i, item in enumerate(results[:count], 1):
+        title = item.get("title", "")
+        url = item.get("url", "")
+        # summary 面向模型阅读，缺失时退回 snippet
+        snippet = item.get("summary") or item.get("snippet") or ""
+        # date 为 RFC 3339，只取日期部分
+        date = (item.get("date") or "")[:10]
+        site = item.get("site_name") or ""
+        date_tag = f" [{date}]" if date else ""
+        site_tag = f" [{site}]" if site else ""
+        lines.append(f"  {i}. {title}{date_tag}{site_tag}\n     {snippet}\n     {url}")
+
+    return {"summary": "\n".join(lines)}
+
+
 def check_connectivity() -> bool:
     """检测后端连通性，至少一个可用返回 True。"""
     cfg = _load_config()
@@ -196,7 +242,7 @@ def check_connectivity() -> bool:
 
     # 检测 Bing
     bing_key = cfg.get("bing_search_key", "")
-    if bing_key:
+    if bing_key and backend in ("bing", "auto"):
         try:
             resp = requests.get(
                 _BING_ENDPOINT,
@@ -214,8 +260,28 @@ def check_connectivity() -> bool:
         except requests.RequestException as e:
             logger.warning(f"[web_search] ✗ Bing API 无法连接 ({e})")
 
+    # 检测 DeepSeek（成功请求会计费，只在选用该后端时探测）
+    deepseek_key = cfg.get("deepseek_search_key", "")
+    if deepseek_key and backend in ("deepseek", "auto"):
+        try:
+            resp = requests.post(
+                _DEEPSEEK_SEARCH_ENDPOINT,
+                headers={"Authorization": f"Bearer {deepseek_key}"},
+                json={"query": "test", "count": 1},
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                logger.info("[web_search] ✓ DeepSeek 搜索 API 连通正常")
+                any_ok = True
+            else:
+                logger.warning(
+                    f"[web_search] ✗ DeepSeek 搜索 API 响应异常 (HTTP {resp.status_code})"
+                )
+        except requests.RequestException as e:
+            logger.warning(f"[web_search] ✗ DeepSeek 搜索 API 无法连接 ({e})")
+
     if not any_ok:
-        if not searxng_url and not bing_key:
+        if not searxng_url and not bing_key and not deepseek_key:
             logger.warning("[web_search] ⚠ 未配置任何搜索后端，搜索功能不可用")
         else:
             logger.warning("[web_search] ⚠ 所有搜索后端均不可达")
@@ -225,13 +291,13 @@ def check_connectivity() -> bool:
 
 
 def search(query: str, count: int = 5, language: str = "zh-CN", page: int = 1) -> dict:
-    """网络搜索 — 智能路由：优先使用 SearXNG，未配置/失败则 fallback 到 Bing。
+    """网络搜索 — 智能路由：优先使用 SearXNG，未配置/失败则依次回退 DeepSeek、Bing。
 
     Args:
         query:    搜索关键词
         count:    返回结果数量（1-10）
-        language: 语言/区域代码，如 zh-CN / en-US / ja-JP（SearXNG 用 language，Bing 用 market）
-        page:     页码，从1开始（第2页获取更多结果）
+        language: 语言/区域代码，如 zh-CN / en-US / ja-JP（SearXNG 用 language，Bing 用 market，DeepSeek 忽略）
+        page:     页码，从1开始（第2页获取更多结果；DeepSeek 后端不支持翻页）
     """
     cfg = _load_config()
     backend = cfg.get("backend", "auto")
@@ -245,10 +311,20 @@ def search(query: str, count: int = 5, language: str = "zh-CN", page: int = 1) -
                 result["has_next"] = len(result.get("summary", "").split("\n")) > 1
                 result["__context__"] = f"搜索「{query}」（第{page}页）"
                 return result
-            logger.info("[web_search] SearXNG failed, falling back to Bing")
+            logger.info("[web_search] SearXNG failed, falling back to DeepSeek")
+
+    deepseek_key = cfg.get("deepseek_search_key", "")
+    if backend in ("deepseek", "auto") and deepseek_key:
+        result = _search_deepseek(query, count, language, cfg, page)
+        if "搜索失败" not in str(result.get("summary", "")):
+            result["page"] = page
+            result["has_next"] = False
+            result["__context__"] = f"搜索「{query}」"
+            return result
+        logger.info("[web_search] DeepSeek failed, falling back to Bing")
 
     bing_key = cfg.get("bing_search_key", "")
-    if bing_key:
+    if backend in ("bing", "auto") and bing_key:
         result = _search_bing(query, count, language, cfg, page)
         result["page"] = page
         result["has_next"] = len(result.get("summary", "").split("\n")) > 1
@@ -260,7 +336,7 @@ def search(query: str, count: int = 5, language: str = "zh-CN", page: int = 1) -
         "summary": (
             "搜索失败：所有后端均不可用。"
             + ("SearXNG 已配置但请求失败。" if searxng_ok else "")
-            + " 请在 web_search/config.json 中配置 searxng_url 或 bing_search_key"
+            + " 请在 web_search/config.json 中配置 searxng_url、deepseek_search_key 或 bing_search_key"
         ),
     }
 

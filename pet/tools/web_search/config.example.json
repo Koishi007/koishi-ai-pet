@@ -2,5 +2,6 @@
     "backend": "auto",
     "searxng_url": "",
     "searxng_key": "",
+    "deepseek_search_key": "",
     "bing_search_key": ""
 }
