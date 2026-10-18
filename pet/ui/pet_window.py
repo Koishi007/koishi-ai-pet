@@ -337,6 +337,9 @@ class PetWindow(TransparentWindow):
         if self._dock_anim is not None:
             self._dock_anim.stop()
             self._dock_anim = None
+            # 淡入可能挂在移动动画的 finished 上，动画被停就不会再触发
+            if self.windowOpacity() < 1.0:
+                self.pet_actions.fade_in()
         self.clearMask()
         self.pet_label.set_flip(False)
         self.pet_actions.set_dock_side("")
@@ -358,7 +361,17 @@ class PetWindow(TransparentWindow):
             return
         geo = screen.availableGeometry()
         center_x = self.x() + self.width() // 2
-        self.dock_to("left" if center_x < geo.center().x() else "right", center_y=True)
+        side = "left" if center_x < geo.center().x() else "right"
+        self.pet_actions.fade_out(callback=lambda: self._dock_after_fade(side))
+
+    def _dock_after_fade(self, side: str):
+        """淡出结束后贴上边缘，移动动画播完再淡入"""
+        self.dock_to(side, center_y=True)
+        anim = self._dock_anim
+        if anim is None:
+            self.pet_actions.fade_in()
+        else:
+            anim.finished.connect(lambda: self.pet_actions.fade_in())
 
     def enterEvent(self, event):
         """鼠标进入桌宠区域时显示聊天、喂食和音乐按钮。

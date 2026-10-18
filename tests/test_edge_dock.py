@@ -236,25 +236,84 @@ class TestFlickEdge:
 
 class TestMenuDock:
 
+    @staticmethod
+    def _dock_via_menu(window) -> tuple[list[str], object | None]:
+        """走完菜单链路：淡出 → 回调里贴边 → 淡入，返回调用顺序与移动动画终点。"""
+        calls: list[str] = []
+        captured: dict = {}
+
+        def _fade_out(duration=300, callback=None):
+            calls.append("out")
+            captured["cb"] = callback
+
+        def _fade_in(duration=300):
+            calls.append("in")
+
+        window.pet_actions.fade_out = _fade_out
+        window.pet_actions.fade_in = _fade_in
+        window._dock_nearest()
+        captured["cb"]()                          # 淡出结束
+        anim = window._dock_anim
+        end = anim.endValue() if anim is not None else None
+        if anim is not None:
+            anim.finished.emit()                  # 移动动画结束
+        return calls, end
+
     def test_menu_dock_uses_screen_center(self, qt_app):
         window = PetWindow()
         try:
             geo = (window.screen() or QApplication.primaryScreen()).availableGeometry()
             # 窗口中心正好在屏幕中线：贴右
             window.move(geo.center().x() - window.width() // 2, 100)
-            window._dock_nearest()
+            self._dock_via_menu(window)
             assert window.dock_side == "right"
             window.undock()
 
             # 偏左：贴左
             window.move(geo.center().x() - 200, 100)
-            window._dock_nearest()
+            self._dock_via_menu(window)
             assert window.dock_side == "left"
         finally:
             window.undock()
             window.shutdown()
             window.deleteLater()
 
+    def test_menu_dock_fades_out_then_in(self, qt_app):
+        window = PetWindow()
+        try:
+            geo = (window.screen() or QApplication.primaryScreen()).availableGeometry()
+            window.move(geo.left() + 2, 100)
+            calls, _ = self._dock_via_menu(window)
+            assert calls == ["out", "in"]
+            assert window.is_docked
+        finally:
+            window.undock()
+            window.shutdown()
+            window.deleteLater()
+
+    def test_fade_in_waits_for_move(self, qt_app):
+        window = PetWindow()
+        try:
+            geo = (window.screen() or QApplication.primaryScreen()).availableGeometry()
+            window.move(geo.left() + 2, 100)
+            calls: list[str] = []
+            captured: dict = {}
+
+            def _fade_out(duration=300, callback=None):
+                captured["cb"] = callback
+
+            window.pet_actions.fade_out = _fade_out
+            window.pet_actions.fade_in = lambda duration=300: calls.append("in")
+
+            window._dock_nearest()
+            captured["cb"]()                    # 淡出结束，开始移动
+            assert calls == []                  # 移动动画还没结束，不该淡入
+            window._dock_anim.finished.emit()   # 移动动画结束
+            assert calls == ["in"]
+        finally:
+            window.undock()
+            window.shutdown()
+            window.deleteLater()
 
     def test_menu_dock_moves_to_vertical_center(self, qt_app):
         window = PetWindow()
@@ -266,8 +325,8 @@ class TestMenuDock:
 
             # 菜单路径：y 移到可用区垂直中点
             window.move(geo.left() + 2, geo.top() + 5)
-            window._dock_nearest()
-            assert window._dock_anim.endValue().y() == expected_y
+            _, end = self._dock_via_menu(window)
+            assert end.y() == expected_y
             window.undock()
 
             # 拖拽松手 / 甩飞撞边：y 保持当前高度
