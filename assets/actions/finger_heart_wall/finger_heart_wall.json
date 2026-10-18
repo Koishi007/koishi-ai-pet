@@ -1,0 +1,7 @@
+{
+  "desc": "靠屏比心",
+  "tick_counts": 15,
+  "frame_ratios": [1],
+  "loop": true,
+  "note": "屏幕侧边停靠用：主体右缘贴画布右缘"
+}

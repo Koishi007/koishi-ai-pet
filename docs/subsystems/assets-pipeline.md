@@ -52,9 +52,10 @@
 上表是**契约**：写成别的样子不会报错，而会被运行期容错悄悄改掉（等分、归一化、夹紧、跳过），
 具体后果见 [actions-and-animation.md](actions-and-animation.md) §3。
 
-当前素材规模（抽样）：26 个动作目录、26 个 json、58 个 webp 帧（全部 512×512）；
+当前素材规模（抽样）：38 个素材目录、38 个 json、74 个 webp 帧（全部 512×512）；
 多数动作 1~2 帧，`stretch` 3 帧、`fall_down` 4 帧、`rotate` 5 帧、`unconsciousness` 6 帧、`fishing` / `shake_arms` 8 帧。
 唯一的命名例外是 `sleep/`（单帧叫 `sleep.webp`）。
+11 个 `*_wall` 目录是屏幕侧边停靠姿势：单帧，主体右缘贴画布右缘，不适用 §1 的留边要求。
 
 ## 3. 入库检查清单
 

@@ -1,0 +1,8 @@
+{
+  "desc": "靠屏待机",
+  "tick_counts": 60,
+  "frame_ratios": [1],
+  "loop": true,
+  "breath": { "amplitude": 1, "period_ticks": 40 },
+  "note": "屏幕侧边停靠用：主体右缘贴画布右缘"
+}
