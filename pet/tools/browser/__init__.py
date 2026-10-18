@@ -7,7 +7,7 @@ from pet.tools.context import TOOL_CTX
 logger = logging.getLogger(__name__)
 
 TOOL_NAME = "browser"
-TOOL_DESCRIPTION = "浏览器操作（搜索网页、读取网页正文、截图）"
+TOOL_DESCRIPTION = "无头浏览器（Playwright）：读取网页正文、截图；搜索靠加载搜索引擎页面解析结果，较慢"
 TOOL_GROUP = "web"
 
 _instance: BrowserTool | None = None
@@ -76,7 +76,7 @@ def register(registry):
 
     registry.add_method(
         TOOL_NAME, "search",
-        "搜索关键词，返回结构化搜索结果（标题、URL、摘要），最多10条",
+        "打开 DuckDuckGo / Bing / 百度页面解析搜索结果（标题、URL、摘要，最多10条），比直连搜索 API 慢",
         handler=_search,
         timeout=45.0,
         args={

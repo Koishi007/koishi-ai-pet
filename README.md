@@ -175,7 +175,7 @@ chmod +x update.sh && ./update.sh
 | `default` | `game` | `list` / `init` / `play` / `stop` | 回合制小游戏：列出游戏、开局、玩一回合、主动结束 |
 | `default` | `recall` | `search` / `browse` | 回忆：主动检索桌宠关于用户的长期记忆（语义回忆、分页翻阅） |
 | `web` | `browser` | `search` / `read_url` / `screenshot_url` / `close` | 多引擎网页搜索、读取网页正文（分页）、截图 |
-| `web` | `web_search` | `search` / `deep_search` | SearXNG / Bing API 搜索，深度搜索自动抓取全文 |
+| `web` | `web_search` | `search` / `fetch` | SearXNG / DeepSeek / Bing 搜索与网页正文抓取 |
 | `info` | `weather` | `get_current` / `get_forecast` | 基于 Open-Meteo 的免费天气查询 |
 | `info` | `system_monitor` | `get_overview` / `get_top_processes` / `get_memory_detail` / `get_network` | CPU、内存、磁盘、电池、进程 |
 | `file` | `file_ops` | `list_dir` / `read_file` / `write_note` / `write_file` | 列目录、读写文件（限桌面/文档） |
@@ -246,18 +246,25 @@ Playwright 及浏览器二进制缺失时，工具加载直接报错。
 
 ### web_search
 
-通过 SearXNG 或 Bing API 搜索网页，`deep_search` 自动抓取结果页面全文。
+通过 SearXNG、Tavily、DeepSeek 或 Bing API 搜索网页；`fetch` 抓取指定网页正文时按后端顺序尝试 Tavily Extract、DeepSeek Fetch，未配置时用 trafilatura 本地提取。
 
 **配置**（`pet/tools/web_search/config.json`）：
 
 | 字段 | 类型 | 默认 | 说明 |
 |------|------|------|------|
-| `backend` | str | `"auto"` | 搜索后端：`"auto"` 自动选 / `"searxng"` / `"bing"` |
+| `backend` | str | `"auto"` | 搜索后端：`"auto"` 自动选 / `"searxng"` / `"deepseek"` / `"tavily"` / `"bing"` |
 | `searxng_url` | str | `""` | SearXNG 实例地址 |
 | `searxng_key` | str | `""` | SearXNG API Key（如需要） |
+| `deepseek_search_key` | str | `""` | DeepSeek API Key，与模型调用共用同一套（[搜索接口文档](https://api-docs.deepseek.com/zh-cn/guides/search)） |
+| `tavily_api_key` | str | `""` | Tavily API Key（[搜索](https://docs.tavily.com/documentation/api-reference/endpoint/search) / [抓取](https://docs.tavily.com/documentation/api-reference/endpoint/extract) 接口文档） |
 | `bing_search_key` | str | `""` | Bing Web Search API Key |
 
-`backend: "auto"` 模式下优先 SearXNG，不可用时自动回退 Bing。至少配置一个后端，否则工具加载失败。
+`backend: "auto"` 按 SearXNG → Tavily → DeepSeek → Bing 的顺序调用；配置了多个后端时启动会逐个探测，显式指定后端时只用该后端。至少配置一个后端，否则工具加载失败。
+
+计费与限速：
+
+- DeepSeek：搜索与抓取都按成功请求计费（每千次 5 元），限速 5 QPS。
+- Tavily：搜索 `basic` 深度每次 1 credit，抓取每 5 次成功 1 credit，免费额度 1000 credits/月。
 
 ### knowledge
 

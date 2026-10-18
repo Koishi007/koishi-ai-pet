@@ -1,10 +1,10 @@
-"""支持 SearXNG（自建）和 Bing Web Search API。"""
+"""支持 SearXNG（自建）、DeepSeek 搜索 API、Tavily 和 Bing Web Search API。"""
 
-from pet.tools.web_search.core import search, deep_search, check_connectivity
+from pet.tools.web_search.core import search, fetch, check_connectivity
 from pet.tools.context import TOOL_CTX
 
 TOOL_NAME = "web_search"
-TOOL_DESCRIPTION = "网络搜索，获取实时信息、新闻、百科知识"
+TOOL_DESCRIPTION = "网络搜索与网页抓取：搜索直接请求搜索服务返回标题与摘要，抓取网页正文转为纯文本"
 TOOL_GROUP = "web"
 
 
@@ -13,9 +13,9 @@ def _search(**kw):
     return search(**kw)
 
 
-def _deep_search(**kw):
-    TOOL_CTX.speech_random(["搜搜看…", "查查看…", "找找看…", "搜一下…"])
-    return deep_search(**kw)
+def _fetch(**kw):
+    TOOL_CTX.speech_random(["读一读网页…", "看看写了什么…", "读读看…", "瞄一眼…"])
+    return fetch(**kw)
 
 
 def register(registry):
@@ -26,7 +26,7 @@ def register(registry):
 
     registry.add_method(
         TOOL_NAME, "search",
-        "搜索网络获取最新信息（返回标题和摘要，速度快）",
+        "搜索网络获取最新信息（返回标题和摘要），直接请求搜索 API，速度快",
         handler=_search,
         timeout=15.0,
         args={
@@ -57,40 +57,21 @@ def register(registry):
         },
     )
     registry.add_method(
-        TOOL_NAME, "deep_search",
-        "深度搜索：搜索后自动抓取前几条结果的页面正文，信息更完整详细（比 search 慢）",
-        handler=_deep_search,
-        timeout=60.0,
+        TOOL_NAME, "fetch",
+        "抓取指定 URL 的网页正文并转为纯文本，不支持 JS 渲染页面",
+        handler=_fetch,
+        timeout=30.0,
         args={
-            "query": {
+            "url": {
                 "type": "str",
                 "required": True,
-                "desc": "搜索关键词",
+                "desc": "要抓取的网页地址（含 http:// 或 https://）",
             },
-            "count": {
+            "max_chars": {
                 "type": "int",
                 "required": False,
-                "default": 5,
-                "desc": "搜索结果数量（1-10）",
-            },
-            "language": {
-                "type": "str",
-                "required": False,
-                "default": "zh-CN",
-                "desc": "语言/区域代码",
-                "enum": ["zh-CN", "en-US", "ja-JP"],
-            },
-            "extract_top": {
-                "type": "int",
-                "required": False,
-                "default": 2,
-                "desc": "抓取正文的结果条数（1-3，越多越慢）",
-            },
-            "page": {
-                "type": "int",
-                "required": False,
-                "default": 1,
-                "desc": "页码，从1开始",
+                "default": 10000,
+                "desc": "正文最大字符数",
             },
         },
     )
