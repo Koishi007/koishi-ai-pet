@@ -178,7 +178,7 @@ chmod +x update.sh && ./update.sh
 | `web` | `web_search` | `search` / `fetch` | SearXNG / DeepSeek / Bing 搜索与网页正文抓取 |
 | `info` | `weather` | `get_current` / `get_forecast` | 基于 Open-Meteo 的免费天气查询 |
 | `info` | `system_monitor` | `get_overview` / `get_top_processes` / `get_memory_detail` / `get_network` | CPU、内存、磁盘、电池、进程 |
-| `file` | `file_ops` | `list_dir` / `read_file` / `write_note` / `write_file` | 列目录、读写文件（限桌面/文档） |
+| `file` | `file_ops` | `list_dir` / `read_file` / `write_note` / `write_file` | 列目录、读写文件、查看图片（限桌面/文档） |
 | `productivity` | `timer` | `set` / `list` / `cancel` / `cancel_all` | 倒计时定时器，到时宠物主动提醒 |
 | `productivity` | `todo` | `add` / `list` / `toggle` / `delete` / `update` | 待办事项管理 |
 | `knowledge` | `knowledge` | `search` / `list` | RAG 知识库：语义检索、知识条目管理 |
@@ -297,6 +297,8 @@ RAG 知识库，支持语义检索。可配置向量嵌入以启用语义搜索�
 ### file_ops
 
 所有文件操作限定在桌面和文档目录内，保证安全。
+
+`read_file` 对图片走视觉通道：解码后长边缩放到 1536 像素以内，并设有独立的 40 MP 像素闸门（不复用拖入文件的限额），再作为图像随下一轮请求交给模型。该能力依赖「设置 → 外观 → 视觉」中的视觉理解开关，关闭时返回错误提示；文本仍按 UTF-8 分页读取。
 
 无需额外配置。
 

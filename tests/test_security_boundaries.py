@@ -1,9 +1,11 @@
 """安全边界测试：文件路径白名单、URL 协议校验。"""
 
+import base64
 import subprocess
 import sys
 
 import pytest
+from PIL import Image
 
 from pet.tools.browser.core import BrowserTool
 from pet.tools.file_ops import core as file_ops_core
@@ -134,6 +136,54 @@ class TestReadFile:
         # read_file 不做兜底，由执行器统一转为错误结果
         with pytest.raises(PermissionError):
             FileOpsTool().read_file("C:\\Windows\\win.ini")
+
+
+class _VisionCtx:
+    """替身 TOOL_CTX：只提供读图需要的视觉能力查询。"""
+
+    def __init__(self, enabled: bool):
+        self.enabled = enabled
+
+    def has_vision(self) -> bool:
+        return self.enabled
+
+
+class TestReadImage:
+    def _make_image(self, path, size=(32, 16)) -> None:
+        Image.new("RGB", size, (12, 34, 56)).save(path)
+
+    def test_image_returned_as_visual_attachment(self, sandbox, monkeypatch):
+        monkeypatch.setattr(file_ops_core, "TOOL_CTX", _VisionCtx(True))
+        target = sandbox / "图.png"
+        self._make_image(target)
+        result = FileOpsTool().read_file(str(target))
+        assert result["kind"] == "image"
+        assert result["size"] == "32x16"
+        assert result["__image_mime__"] == "image/jpeg"
+        assert base64.b64decode(result["__image__"]).startswith(b"\xff\xd8")
+
+    def test_image_rejected_without_vision(self, sandbox, monkeypatch):
+        monkeypatch.setattr(file_ops_core, "TOOL_CTX", _VisionCtx(False))
+        target = sandbox / "图.png"
+        self._make_image(target)
+        assert "error" in FileOpsTool().read_file(str(target))
+
+    def test_over_pixel_gate_reports_error(self, sandbox, monkeypatch):
+        monkeypatch.setattr(file_ops_core, "TOOL_CTX", _VisionCtx(True))
+        monkeypatch.setattr(file_ops_core, "_MAX_IMAGE_PIXELS", 100)
+        target = sandbox / "大图.png"
+        self._make_image(target)
+        result = FileOpsTool().read_file(str(target))
+        assert "像素超出上限" in result["error"]
+        assert "无法解析" not in result["error"]
+
+    def test_broken_image_reports_error(self, sandbox, monkeypatch):
+        monkeypatch.setattr(file_ops_core, "TOOL_CTX", _VisionCtx(True))
+        target = sandbox / "坏图.png"
+        target.write_bytes(b"not an image")
+        result = FileOpsTool().read_file(str(target))
+        assert "无法解析" in result["error"]
+        assert "像素超出上限" not in result["error"]
 
 
 class TestWriteOps:

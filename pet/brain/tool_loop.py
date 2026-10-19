@@ -33,6 +33,9 @@ class ToolSession(Protocol):
     # 只读回忆类工具：结果本就在记忆库里，无需再写 Memory 行
     recall_tool_names: frozenset
 
+    # 模型是否支持视觉；工具返回的图片只在此为真时进入下一轮消息
+    has_vision: bool
+
     def tools_param(self, enable_tools: Optional[bool]) -> Optional[list]: ...
 
     def activate_groups(self, name: str, result, arguments: dict) -> None: ...
@@ -49,6 +52,18 @@ class ToolSession(Protocol):
 
     def stream(self, messages: list, max_tokens: int, tools, thinking: Optional[bool], *,
                tag: str, on_chunk=None, on_stream_end=None): ...
+
+
+def _image_source(result, tool_name: str) -> str:
+    """图片的来源说明：优先用工具写的 context_brief，其次路径或 URL。"""
+    if result.context_brief:
+        return result.context_brief
+    if isinstance(result.data, dict):
+        for key in ("path", "url"):
+            value = result.data.get(key)
+            if value:
+                return str(value)
+    return tool_name
 
 
 def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, session: ToolSession, *,
@@ -116,6 +131,7 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
         )
 
         # 按 index 排序后依次 append（保持顺序一致性）
+        round_images = []
         for idx in sorted_indices:
             _, tc, result, tool_brief, result_text, tool_aside = tool_results[idx]
             current_messages.append({
@@ -127,6 +143,13 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
             log_entry = f"{tc['name']} → {result.context_brief or tool_brief or result_text[:200]}"
             if tool_aside:
                 log_entry = f"（自言自语：{tool_aside}）{log_entry}"
+            if result.image_b64 and session.has_vision:
+                # 图片只在当轮上下文里，工具记录留一条可再次读取的引用
+                log_entry = f"{log_entry}（图片已读取，可再次调用查看）"
+                round_images.append((
+                    f"data:{result.image_mime};base64,{result.image_b64}",
+                    _image_source(result, tc["name"]),
+                ))
             tool_log.append(log_entry)
 
             # 搜索工具执行后自动激活匹配的分组
@@ -138,6 +161,14 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
 
             if tc["name"] in session.recall_tool_names:
                 used_recall = True
+
+        # tool 角色只承载文本，图片另起一条 user 消息附在下一轮请求里
+        if round_images:
+            parts = [{"type": "text", "text": "附图：本轮工具读取到的画面。"}]
+            for uri, source in round_images:
+                parts.append({"type": "text", "text": f"来源：{source}"})
+                parts.append({"type": "image_url", "image_url": {"url": uri}})
+            current_messages.append({"role": "user", "content": parts})
 
         # 非元工具轮次才计数
         if not all_meta:

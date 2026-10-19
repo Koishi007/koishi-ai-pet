@@ -1,10 +1,12 @@
 """工具框架契约测试：注册表检索、schema 生成、执行器容错。"""
 
 import threading
+from types import SimpleNamespace
 
 import pytest
 
 from pet.tools import executor as executor_mod
+from pet.tools.context import ToolContext
 from pet.tools.executor import ToolCall, ToolExecutor
 from pet.tools.registry import ToolRegistry
 
@@ -187,3 +189,14 @@ class TestNormalizeAndFormat:
         text, images = ToolExecutor.format_results(results)
         assert images == ["data:image/jpeg;base64,QUJD"]
         assert len(text.split("\n\n")) == 2
+
+
+class TestToolContextVision:
+    def test_unbound_context_reports_no_vision(self):
+        assert ToolContext().has_vision() is False
+
+    @pytest.mark.parametrize("enabled", [True, False])
+    def test_vision_follows_behavior(self, enabled):
+        ctx = ToolContext()
+        ctx.bind(SimpleNamespace(behavior=SimpleNamespace(has_vision=enabled)))
+        assert ctx.has_vision() is enabled

@@ -130,24 +130,29 @@ class TestRepairMessages:
 
 
 class _FakeResult:
-    def __init__(self, name="tool", success=True, data=None, brief=""):
+    def __init__(self, name="tool", success=True, data=None, brief="", image_b64=None,
+                 context_brief=""):
         self.name = name
         self.success = success
         self.data = data if data is not None else {"summary": brief}
         self.error = "" if success else "boom"
-        self.context_brief = ""
-        self.image_b64 = None
+        self.context_brief = context_brief
+        self.image_b64 = image_b64
+        self.image_mime = "image/png"
 
 
 class _FakeExecutor:
     """记录每次执行的工具名，返回固定结果。"""
 
-    def __init__(self):
+    def __init__(self, image_b64=None, context_brief=""):
         self.calls = []
+        self.image_b64 = image_b64
+        self.context_brief = context_brief
 
     def execute_one(self, call):
         self.calls.append(call.name)
-        return _FakeResult(name=call.name)
+        return _FakeResult(name=call.name, image_b64=self.image_b64,
+                           context_brief=self.context_brief)
 
     def normalize(self, data):
         return str(data)
@@ -159,16 +164,18 @@ class _FakeSession:
     meta_tool_names = frozenset({"recall__search", "tool_search__search"})
     meta_tool_max_rounds = 99
     recall_tool_names = frozenset({"recall__search"})
+    has_vision = True
 
-    def __init__(self, rounds, raise_on_stream=None):
+    def __init__(self, rounds, raise_on_stream=None, image_b64=None, context_brief=""):
         self.rounds = list(rounds)
         self.raise_on_stream = raise_on_stream
         self.streams = 0
         self.progress = 0
         self.contexts = []
-        self.executor_obj = _FakeExecutor()
+        self.executor_obj = _FakeExecutor(image_b64, context_brief)
         self.activated = []
         self.unparsed = []
+        self.last_messages = []
 
     def tools_param(self, enable_tools):
         return None
@@ -196,6 +203,7 @@ class _FakeSession:
 
     def stream(self, messages, max_tokens, tools, thinking, *, tag, on_chunk=None, on_stream_end=None):
         self.streams += 1
+        self.last_messages = list(messages)
         if self.raise_on_stream is not None:
             raise self.raise_on_stream
         return self.rounds.pop(0)
@@ -236,6 +244,42 @@ class TestToolLoopRounds:
         out = run_tool_loop([], _tool_calls("recall__search"), "Speech: 兜底\n", session, max_rounds=3)
         assert session.streams <= session.meta_tool_max_rounds
         assert out.actions[0].name == "sit"  # 最后一轮无内容 → 兜底动作
+
+
+class TestToolLoopImages:
+    """工具图片只在这轮请求里可见：tool 消息只放文本，图片紧随其后作为 user 内容。"""
+
+    def _image_message(self, session):
+        for message in session.last_messages:
+            content = message.get("content")
+            if isinstance(content, list) and any(
+                part.get("type") == "image_url" for part in content
+            ):
+                return content
+        return []
+
+    def test_image_result_attached_with_source_label(self):
+        session = _FakeSession([("Speech: 看到了\n", {})], image_b64="QUJD",
+                               context_brief="查看图片 图.png")
+        run_tool_loop([], _tool_calls("file_ops__read_file"), "", session, max_rounds=3)
+        content = self._image_message(session)
+        assert {"type": "image_url", "image_url": {"url": "data:image/png;base64,QUJD"}} in content
+        assert {"type": "text", "text": "来源：查看图片 图.png"} in content
+
+    def test_image_read_kept_as_reusable_context(self):
+        session = _FakeSession([("Speech: 看到了\n", {})], image_b64="QUJD",
+                               context_brief="查看图片 图.png")
+        run_tool_loop([], _tool_calls("file_ops__read_file"), "", session, max_rounds=3)
+        logs = [content for role, content in session.contexts if role == "assistant"]
+        assert any("图.png" in text and "可再次调用查看" in text for text in logs)
+
+    def test_image_result_dropped_without_vision(self):
+        session = _FakeSession([("Speech: 看不到\n", {})], image_b64="QUJD",
+                               context_brief="查看图片 图.png")
+        session.has_vision = False
+        run_tool_loop([], _tool_calls("file_ops__read_file"), "", session, max_rounds=3)
+        assert self._image_message(session) == []
+        assert not any("图片已读取" in text for _, text in session.contexts)
 
 
 class TestToolLoopSpeechBoundaries:

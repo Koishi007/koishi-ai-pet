@@ -567,6 +567,10 @@ class _BehaviorToolSession:
         self._behavior = behavior
         self._cancel_check = cancel_check
 
+    @property
+    def has_vision(self):
+        return self._behavior.has_vision
+
     def tools_param(self, enable_tools):
         return self._behavior._build_tools_param(enable_tools)
 

@@ -52,7 +52,7 @@
 | `pet/crash_reporter.py` | 崩溃信息收集与持久化 | `CrashReporter` `get_guard()` `install()` `mark_started()` `clear_marker()` |
 | `pet/db.py` | 数据库路径管理 — 集中管理 pet.db 路径与统一连接配置。 | `get_db_path()` `get_conn()` |
 | `pet/file_intake/__init__.py` | 拖入文件的纯逻辑：类型嗅探、解码链、截断与额度、图片闸门、拒绝名单、目录摘要。 |  |
-| `pet/file_intake/image.py` | 图片读取：先 draft 后判像素闸门，通过后再解码与缩放。 | `load_image()` |
+| `pet/file_intake/image.py` | 图片读取：先 draft 后判像素闸门，通过后再解码与缩放。 | `load_image()` `load_image_with_reason()` |
 | `pet/file_intake/sniff.py` | 类型嗅探、解码链、拒绝名单与目录摘要。 | `read_head()` `decode_bytes()` `sniff()` `match_deny()` `dir_summary()` `make_ref()` |
 | `pet/file_intake/text.py` | 文本读取与截断。 | `truncate()` `load_text()` `load_text_full()` |
 | `pet/file_intake/types.py` | 拖入文件的数据结构。 | `FileRef` `DropVerdict` |
@@ -77,7 +77,7 @@
 | `pet/tools/context.py` | 工具上下文 — 暴露宠物能力供工具主动调用。 | `ToolContext` |
 | `pet/tools/executor.py` | 工具执行器 — 解析 LLM 输出中的 Tool JSON，路由执行，返回结果。 | `ToolCall` `ToolResult` `ToolExecutor` |
 | `pet/tools/file_ops/__init__.py` | （模块未提供 docstring） | `register()` |
-| `pet/tools/file_ops/core.py` | （模块未提供 docstring） | `FileOpsTool` |
+| `pet/tools/file_ops/core.py` | 文件操作工具：列目录、读写文本、读取图片，限桌面与文档目录。 | `FileOpsTool` |
 | `pet/tools/knowledge/__init__.py` | knowledge 工具 — 轻量 RAG 知识库。只读检索，写入/删除仅限面板操作。 | `register()` |
 | `pet/tools/knowledge/chunker.py` | 轻量文本分块器 — 按段落 + 字数窗口切分。 | `chunk_text()` |
 | `pet/tools/knowledge/panel.py` | 知识库管理面板 — 添加、导入文件、搜索、删除。 | `KnowledgePanel` `show_panel()` |

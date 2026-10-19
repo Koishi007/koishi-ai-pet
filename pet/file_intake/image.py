@@ -8,11 +8,20 @@ from PIL import Image
 
 logger = logging.getLogger(__name__)
 
-MAX_EDGE = 1024
+MAX_EDGE = 1536
+
+# 失败原因分开报：调用方可以据此给出不同提示
+REASON_OVERSIZE = "oversize"
+REASON_UNREADABLE = "unreadable"
 
 
 def load_image(path: str, max_pixels: int) -> Image.Image | None:
-    """返回可直接编码的 RGB 图片；闸门命中或解析失败返回 None。
+    """返回可直接编码的 RGB 图片；闸门命中或解析失败返回 None。"""
+    return load_image_with_reason(path, max_pixels)[0]
+
+
+def load_image_with_reason(path: str, max_pixels: int) -> tuple[Image.Image | None, str]:
+    """返回（图片, 失败原因）；成功时原因为空串。
 
     顺序固定：Image.open 只读文件头，draft 让支持降采样的格式在解码阶段就变小，
     闸门判的是 draft 之后的尺寸，因此 JPEG 直出照片不会被像素上限误伤。
@@ -28,7 +37,7 @@ def load_image(path: str, max_pixels: int) -> Image.Image | None:
         if pixels >= max_pixels or (bomb and pixels > bomb):
             logger.info(f"[FileIntake] over pixel gate: {path} {image.size}")
             image.close()
-            return None
+            return None, REASON_OVERSIZE
         if image.mode != "RGB":
             converted = image.convert("RGB")
             image.close()
@@ -37,7 +46,11 @@ def load_image(path: str, max_pixels: int) -> Image.Image | None:
         image.load()
         result = image.copy()
         image.close()
-        return result
+        return result, ""
+    except Image.DecompressionBombError as e:
+        # 超过 Pillow 阈值两倍的图片在 open 阶段就抛错，本质仍是像素超限
+        logger.info(f"[FileIntake] over pixel gate: {path} {type(e).__name__}: {e}")
+        return None, REASON_OVERSIZE
     except Exception as e:
         logger.info(f"[FileIntake] image load failed: {path} {type(e).__name__}: {e}")
-        return None
+        return None, REASON_UNREADABLE

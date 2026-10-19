@@ -10,9 +10,12 @@ import pytest
 from PIL import Image
 
 from pet.file_intake import (
+    REASON_OVERSIZE,
+    REASON_UNREADABLE,
     check_drop,
     dir_summary,
     load_image,
+    load_image_with_reason,
     load_text,
     load_text_full,
     match_deny,
@@ -222,20 +225,50 @@ class TestImageGate:
         Image.new("RGB", (20, 20), (5, 5, 5)).save(path)
         assert load_image(str(path), 100) is None
 
+    def test_reason_for_pixel_gate(self, tmp_path):
+        path = tmp_path / "small.png"
+        Image.new("RGB", (20, 20), (5, 5, 5)).save(path)
+        image, reason = load_image_with_reason(str(path), 100)
+        assert image is None
+        assert reason == REASON_OVERSIZE
+
+    def test_reason_for_broken_file(self, tmp_path):
+        image, reason = load_image_with_reason(
+            _file(tmp_path, "broken.png", b"\x89PNG\r\n\x1a\n"), 10 ** 9)
+        assert image is None
+        assert reason == REASON_UNREADABLE
+
+    def test_reason_for_pillow_bomb_error(self, tmp_path, monkeypatch):
+        # 超过阈值两倍时 Image.open 直接抛错，仍应归为像素超限
+        path = tmp_path / "boom.png"
+        Image.new("RGB", (50, 50), (1, 2, 3)).save(path)
+        monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 1000)
+        image, reason = load_image_with_reason(str(path), 10 ** 9)
+        assert image is None
+        assert reason == REASON_OVERSIZE
+
+    def test_success_has_empty_reason(self, tmp_path):
+        path = tmp_path / "ok.png"
+        Image.new("RGB", (20, 20), (5, 5, 5)).save(path)
+        image, reason = load_image_with_reason(str(path), 10 ** 9)
+        assert image is not None
+        assert reason == ""
+        image.close()
+
     def test_gate_uses_size_after_draft(self, tmp_path):
-        # 4000×4000 = 16 MP，draft 到 (1024, 1024) 之后是 2000×2000 = 4 MP。
+        # 4000×4000 = 16 MP，draft 到 (1536, 1536) 之后是 2000×2000 = 4 MP。
         # 闸门取 8 MP 时通过，说明判的不是原始像素数；取 3 MP 时被拒。
         path = tmp_path / "large.jpg"
         Image.new("RGB", (4000, 4000), (200, 180, 160)).save(path, format="JPEG")
         assert load_image(str(path), 8_000_000) is not None
         assert load_image(str(path), 3_000_000) is None
 
-    def test_scales_down_to_1024(self, tmp_path):
+    def test_scales_down_to_max_edge(self, tmp_path):
         path = tmp_path / "wide.png"
         Image.new("RGB", (2400, 1200), (30, 60, 90)).save(path)
         image = load_image(str(path), 10 ** 9)
         assert image is not None
-        assert max(image.size) <= 1024
+        assert max(image.size) <= 1536
 
     def test_pillow_bomb_band_rejected(self, tmp_path, monkeypatch):
         # 2500 像素落在一倍到两倍阈值之间：Pillow 只发警告，闸门按同一上限自行拒绝
