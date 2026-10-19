@@ -52,7 +52,7 @@ def register(registry):
     )
     registry.add_method(
         TOOL_NAME, "read_file",
-        "读取文件（限桌面/文档）。文本每次1000字符，支持 offset 翻页，最多读5000字符；图片解码后作为图像附给模型，需开启视觉理解",
+        "读取文件（文本文件、图片，路径限桌面/文档）。文本分页读取：每次最多1000字符，用 offset 继续，offset 上限5000；图片不分页，直接返回图像，可查看。",
         handler=_read_file,
         args={
             "path": {"type": "str", "required": True, "desc": "文件路径"},
