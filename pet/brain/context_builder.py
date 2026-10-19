@@ -496,7 +496,7 @@ class ContextBuilder:
             age = self._memory_store.format_memory_time(r.get("created_at", ""))
             suffix = f"（{age}）" if age else ""
             lines.append(f"- {r['content']}{suffix}")
-        return ("（你忽然想起来的旧事，可以顺着说一句，不必特意去做什么）\n"
+        return ("（旧事，之后可能有变化；合适时顺口提一句即可，不必当成现状）\n"
                 + "\n".join(lines))
 
     def _dock_side(self) -> str:

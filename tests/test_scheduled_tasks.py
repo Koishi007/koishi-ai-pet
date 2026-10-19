@@ -1,7 +1,10 @@
-"""定时任务：无意识化的触发与复位。"""
+"""定时任务：无意识化的触发与复位、整点记忆汇总的调度。"""
 
 import time
+from datetime import datetime, timedelta
+from types import SimpleNamespace
 
+from pet.agent import scheduled_tasks
 from pet.agent.scheduled_tasks import ScheduledTasks
 from pet.config import config
 
@@ -157,3 +160,75 @@ class TestUnconsciousness:
         tasks._idle_since = time.monotonic() - config.UNCONSCIOUS_IDLE_SECONDS - 1
         tasks._unconsciousness()
         assert win.pet_actions.played == []
+
+
+class _FakeStore:
+    def __init__(self, marker: str | None):
+        self._marker = marker
+
+    def latest_event_marker(self):
+        return self._marker
+
+
+class _FakeScheduler:
+    def __init__(self):
+        self.calls: list[tuple] = []
+
+    def schedule_at(self, timestamp_ms, callback, key=None):
+        self.calls.append((timestamp_ms, callback, key))
+
+
+class TestMemoryMergeTick:
+    @staticmethod
+    def _tasks(marker):
+        tasks = ScheduledTasks(SimpleNamespace(memory_store=_FakeStore(marker)))
+        tasks._scheduler = _FakeScheduler()
+        return tasks
+
+    def test_schedules_next_hour(self, monkeypatch):
+        monkeypatch.setattr(config, "MEMORY_EVENT_MERGE_ENABLED", True)
+        tasks = self._tasks(None)
+        tasks._memory_event_merge()
+        assert len(tasks._scheduler.calls) == 1
+        timestamp_ms, callback, key = tasks._scheduler.calls[0]
+        assert key == "memory_event_merge"
+        assert callback == tasks._memory_event_merge
+        at = datetime.fromtimestamp(timestamp_ms / 1000)
+        assert (at.minute, at.second, at.microsecond) == (0, 0, 0)
+        # 下界留 1 秒：注册恰好跨整点时，断言时刻可能已越过目标整点
+        assert datetime.now() - timedelta(seconds=1) < at <= datetime.now() + timedelta(hours=1)
+
+    def test_skips_without_new_event(self, monkeypatch):
+        monkeypatch.setattr(config, "MEMORY_EVENT_MERGE_ENABLED", True)
+        tasks = self._tasks("m1")
+        tasks._last_merge_at = "m1"
+        started = []
+        monkeypatch.setattr(
+            scheduled_tasks.threading, "Thread",
+            lambda target, daemon: SimpleNamespace(start=lambda: started.append(target)))
+        tasks._memory_event_merge()
+        assert started == []
+
+    def test_starts_worker_on_new_event(self, monkeypatch):
+        monkeypatch.setattr(config, "MEMORY_EVENT_MERGE_ENABLED", True)
+        tasks = self._tasks("m2")
+        tasks._last_merge_at = "m1"
+        started = []
+        monkeypatch.setattr(
+            scheduled_tasks.threading, "Thread",
+            lambda target, daemon: SimpleNamespace(start=lambda: started.append(target)))
+        tasks._memory_event_merge()
+        assert started == [tasks._run_merge]
+        assert tasks._last_merge_at == "m2"
+
+    def test_disabled_skips(self, monkeypatch):
+        monkeypatch.setattr(config, "MEMORY_EVENT_MERGE_ENABLED", False)
+        tasks = self._tasks("m2")
+        tasks._last_merge_at = "m1"
+        started = []
+        monkeypatch.setattr(
+            scheduled_tasks.threading, "Thread",
+            lambda target, daemon: SimpleNamespace(start=lambda: started.append(target)))
+        tasks._memory_event_merge()
+        assert started == []
+        assert tasks._last_merge_at == "m1"

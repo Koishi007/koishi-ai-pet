@@ -188,6 +188,29 @@ class TestRandomEvents:
     def test_zero_limit_returns_empty(self, store):
         assert store.random_events(0) == []
 
+    def test_same_topic_returns_latest(self, store):
+        store.save("event", "准备拍视频，镜头需重拍", ["视频拍摄"], 3, "L2")
+        store.save("event", "视频已拍完，素材不用补拍", ["视频拍摄"], 3, "L2")
+        contents = [r["content"] for r in store.random_events(10)]
+        assert "视频已拍完，素材不用补拍" in contents
+        assert "准备拍视频，镜头需重拍" not in contents
+
+    def test_no_shared_keyword_returns_seed(self, store):
+        contents = [r["content"] for r in store.random_events(10)]
+        assert "用户今天加班到很晚" in contents
+        assert "用户上周带猫去看了医生" in contents
+
+    def test_marker_orders_by_id_on_same_timestamp(self, store):
+        store.save("event", "甲事件", ["甲"], 3, "L2")
+        store.save("event", "乙事件", ["乙"], 3, "L2")
+        with store._retriever._lock:
+            conn = store._retriever._conn
+            conn.execute("UPDATE memories SET created_at = '2026-10-19T10:00:00'")
+            conn.commit()
+            newest_id = conn.execute(
+                "SELECT MAX(id) FROM memories WHERE category = 'event'").fetchone()[0]
+        assert store.latest_event_marker() == f"2026-10-19T10:00:00#{newest_id:08d}"
+
     def test_injection_does_not_touch_access_stats(self, store):
         store.random_events(5)
         rows, _ = store.list_memories()

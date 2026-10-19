@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QThread, Signal, QObject
 from PySide6.QtGui import QIcon, QFont, QPainter, QPainterPath, QPen, QColor, QIntValidator, QDoubleValidator
 
+from pet.brain.memory_merge import run_merge
 from pet.config import config, _KEY_META
 from pet.auto_start import set_auto_start
 from pet.ui.styles import (
@@ -107,6 +108,28 @@ class _EmbeddingTestWorker(QObject):
         except Exception as e:
             elapsed = time.time() - start
             self.finished.emit(False, str(e), elapsed)
+
+
+class _MemoryMergeWorker(QObject):
+    """子线程执行一次事件记忆汇总。"""
+    finished = Signal(int, str)  # 应用组数, 说明或错误（空串表示正常完成）
+
+    def __init__(self, store):
+        super().__init__()
+        self._store = store
+
+    def run(self):
+        try:
+            rows = self._store.list_event_candidates()
+            if len(rows) < 2:
+                self.finished.emit(0, "event 记忆不足 2 条，已跳过")
+                return
+            applied = run_merge(self._store)
+        except Exception as e:
+            self.finished.emit(0, f"汇总失败：{e}")
+            return
+        self.finished.emit(applied, "" if applied else
+                           "模型没有返回可应用的分组（请求失败或分组不足 2 条，详见日志）")
 
 
 class _ModelsFetchWorker(QObject):
@@ -248,6 +271,8 @@ class SettingsWindow(QWidget):
         self._voice_worker = None
         self._embedding_thread = None
         self._embedding_worker = None
+        self._merge_thread = None
+        self._merge_worker = None
         self._capture_listener = None
         self._fields = {}
         self._snapshot = {}
@@ -358,9 +383,9 @@ class SettingsWindow(QWidget):
 
     def _line(self, key: str, placeholder: str = "",
               validator=None) -> QLineEdit:
-        """创建 QLineEdit 并注册到 _fields。"""
+        """创建 QLineEdit 并注册到 _fields；placeholder 缺省取 _KEY_META。"""
         edit = QLineEdit()
-        edit.setPlaceholderText(placeholder)
+        edit.setPlaceholderText(placeholder or _KEY_META.get(key, {}).get("placeholder", ""))
         edit.setStyleSheet(INPUT_HIGHLIGHT_QSS)
         if validator:
             edit.setValidator(validator)
@@ -750,7 +775,53 @@ class SettingsWindow(QWidget):
         memory_form.addRow("记忆最大容量:", self._line("MEMORY_MAX_CAPACITY", "200", QIntValidator(50, 1000)))
         memory_form.addRow("记忆召回条数:", self._line("MEMORY_RECALL_COUNT", "15", QIntValidator(3, 30)))
         memory_form.addRow("临时记忆过期(天):", self._line("MEMORY_L3_EXPIRE_DAYS", "3", QIntValidator(1, 30)))
+        memory_form.addRow("旧事注入条数:", self._line("MEMORY_EVENT_RECALL_COUNT", "1", QIntValidator(0, 5)))
         memory_layout.addLayout(memory_form)
+
+        merge_head = QHBoxLayout()
+        merge_head.setSpacing(6)
+        merge_head.addWidget(self._check("MEMORY_EVENT_MERGE_ENABLED", "整点汇总事件记忆"))
+
+        merge_help = QLabel("?")
+        merge_help.setFixedSize(16, 16)
+        merge_help.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        merge_help.setCursor(Qt.CursorShape.WhatsThisCursor)
+        merge_help.setStyleSheet(
+            f"QLabel {{ color:{_COLOR_TEXT_MUTED}; border:1px solid {_COLOR_BORDER_DARK};"
+            f" border-radius:8px; font-size:11px; }}"
+        )
+        merge_help.setToolTip(
+            "整点（或点下方「立即汇总」）把同主题的 event 记忆交给模型，合并成一条汇总：\n"
+            "省容量，旧事更好召回。\n\n"
+            "风险：\n"
+            "· 被合并的原始记忆会被删除，只留汇总，不可撤销\n"
+            "· 汇总由模型生成，可能丢细节或概括偏差\n"
+            "· 每次调用都消耗模型 token；未单独填汇总模型时用当前对话模型"
+        )
+        merge_head.addWidget(merge_help)
+        merge_head.addStretch()
+        memory_layout.addLayout(merge_head)
+
+        merge_form = QFormLayout()
+        merge_form.setSpacing(8)
+        merge_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        merge_form.addRow("汇总 API 地址:", self._line("MEMORY_MERGE_URL"))
+        merge_form.addRow("汇总 API Key:", self._secret_row("MEMORY_MERGE_KEY"))
+        merge_form.addRow("汇总模型名:", self._line("MEMORY_MERGE_MODEL"))
+        memory_layout.addLayout(merge_form)
+
+        merge_row = QHBoxLayout()
+        merge_row.setSpacing(6)
+        self._btn_merge_now = QPushButton("立即汇总")
+        self._btn_merge_now.setStyleSheet(BUTTON_PRIMARY_QSS)
+        self._btn_merge_now.setFixedWidth(88)
+        self._btn_merge_now.clicked.connect(self._manual_merge)
+        merge_row.addWidget(self._btn_merge_now)
+        self._label_merge = QLabel("就绪")
+        self._label_merge.setStyleSheet(f"color:{_COLOR_TEXT_SEC}; font-size:11px;")
+        merge_row.addWidget(self._label_merge)
+        merge_row.addStretch()
+        memory_layout.addLayout(merge_row)
 
         # 连接测试
         mem_test_row = QHBoxLayout()
@@ -1194,6 +1265,69 @@ class SettingsWindow(QWidget):
             self._mem_test_output.append(f"错误: {content}")
             self._label_mem_test.setText("❌ 失败")
         self._btn_mem_test.setEnabled(True)
+
+    def _manual_merge(self):
+        """手动汇总事件记忆：先确认风险，再在子线程执行。"""
+        if self._merge_thread is not None and self._merge_thread.isRunning():
+            logger.info("[Settings] 手动汇总忽略：上一轮仍在执行")
+            return
+
+        store = getattr(self.agent, "memory_store", None)
+        if store is None:
+            logger.info("[Settings] 手动汇总中止：没有可用的记忆库")
+            self._msg("提示", "当前没有可用的记忆库。", warning=True)
+            return
+        try:
+            count = len(store.list_event_candidates())
+        except Exception as e:
+            logger.info(f"[Settings] 手动汇总中止：读取候选失败 {e}")
+            self._msg("提示", f"读取 event 记忆失败：{e}", warning=True)
+            return
+        if count < 2:
+            logger.info(f"[Settings] 手动汇总中止：候选仅 {count} 条")
+            self._msg("提示", f"当前 event 记忆只有 {count} 条，不足 2 条，无需汇总。")
+            return
+
+        reply = QMessageBox.question(
+            self, "确认汇总",
+            f"将把当前 {count} 条 event 记忆交给汇总模型，同主题的会被合并成一条汇总。\n\n"
+            "· 被合并的原始记忆会被删除，只留汇总，不可撤销\n"
+            "· 判定为无需合并的独立记忆不受影响\n"
+            "· 汇总由模型生成，可能丢细节或概括偏差\n"
+            "· 本次调用消耗模型 token，用的是当前已保存的汇总配置\n\n"
+            "确定继续吗？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            logger.info("[Settings] 手动汇总取消：用户未确认")
+            return
+
+        self._btn_merge_now.setEnabled(False)
+        self._label_merge.setText("汇总中…（后台执行，不必在设置页等待）")
+        logger.info(f"[Settings] 手动汇总开始：候选 {count} 条")
+        self._merge_thread = QThread()
+        self._merge_worker = _MemoryMergeWorker(store)
+        self._merge_worker.moveToThread(self._merge_thread)
+        self._merge_thread.started.connect(self._merge_worker.run)
+        self._merge_worker.finished.connect(self._on_merge_result)
+        self._merge_worker.finished.connect(self._merge_thread.quit)
+        self._merge_thread.start()
+
+    def _on_merge_result(self, applied: int, note: str):
+        self._btn_merge_now.setEnabled(True)
+        if applied:
+            self._label_merge.setText(f"完成 {applied} 组")
+        else:
+            self._label_merge.setText("未应用")
+        state = "已打开" if self.isVisible() else "已关闭"
+        logger.info(
+            f"[Settings] 手动汇总结束：应用 {applied} 组，{note or '正常'}（设置页{state}）")
+        if not self.isVisible():
+            return
+        if applied:
+            self._msg("汇总完成", f"已应用 {applied} 组，组内原始记忆已删除。")
+        else:
+            self._msg("汇总完成", f"没有写入任何分组。\n{note}" if note else "没有写入任何分组。")
 
 
     def _on_capture_hotkey(self):

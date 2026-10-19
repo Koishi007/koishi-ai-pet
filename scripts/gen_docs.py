@@ -455,7 +455,8 @@ def render_config(meta: dict, tabs: list[tuple[str, list[str]]]) -> str:
             ])
         lines += [_table(["键", "类型", "默认", "需重启", "说明"], rows), ""]
 
-    rest = [k for k in meta if k not in listed]
+    # LLM_ACTIVE_PROFILE 由连接页的首选/备选切换按钮控制，没有输入控件
+    rest = [k for k in meta if k not in listed and k != "LLM_ACTIVE_PROFILE"]
     if rest:
         lines += [
             "## 未在设置界面列出的键",

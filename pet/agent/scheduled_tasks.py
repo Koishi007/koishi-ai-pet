@@ -1,10 +1,12 @@
 """定时任务注册与回调"""
 
 import logging
+import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from pet.agent.state import PetState
+from pet.brain.memory_merge import run_merge
 from pet.config import config
 
 logger = logging.getLogger(__name__)
@@ -32,9 +34,12 @@ class ScheduledTasks:
         self._dark_heart_tick: int = 0
         self._particle_ticks: dict[str, int] = {}  # 粒子名 → 累计 tick
         self._idle_since: float | None = None      # 连续 idle 的起点（monotonic），非 idle 时置 None
+        self._scheduler = None
+        self._last_merge_at: str = ""              # 上次发起汇总时最新的 event 记忆时间
 
 
     def register_all(self, scheduler):
+        self._scheduler = scheduler
         scheduler.register("mid", self._autonomous)
         scheduler.register("fast", self._brain_watchdog)
         scheduler.register("fast", self._vitals_tick)
@@ -47,6 +52,7 @@ class ScheduledTasks:
         scheduler.register("slow", self._mood_check)
         scheduler.register("slow", self._memory_maintenance)
         scheduler.register("slow", self._conversation_cleanup)
+        self._schedule_next_merge()
 
 
     def _autonomous(self):
@@ -186,6 +192,46 @@ class ScheduledTasks:
             self._agent.memory_store.maintenance()
         except Exception as e:
             logger.warning(f"[ScheduledTasks] memory maintenance failed: {e}")
+
+    def _schedule_next_merge(self):
+        """注册下一个整点的汇总闹钟，重复注册覆盖旧闹钟。"""
+        if self._scheduler is None:
+            return
+        now = datetime.now()
+        next_hour = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+        self._scheduler.schedule_at(
+            int(next_hour.timestamp() * 1000),
+            self._memory_event_merge,
+            key="memory_event_merge",
+        )
+
+    def _memory_event_merge(self):
+        """整点回调：先续约下一次，再按新增判定是否发起汇总。"""
+        self._schedule_next_merge()
+        if not config.MEMORY_EVENT_MERGE_ENABLED:
+            logger.debug("[MemoryMerge] 整点跳过：汇总开关关闭")
+            return
+        try:
+            latest = self._agent.memory_store.latest_event_marker()
+        except Exception as e:
+            logger.warning(f"[ScheduledTasks] merge precheck failed: {e}")
+            return
+        if not latest or latest <= self._last_merge_at:
+            logger.debug(
+                f"[MemoryMerge] 整点跳过：没有新增（最新 {latest}，"
+                f"上次 {self._last_merge_at or '无'}）")
+            return
+        logger.info(
+            f"[MemoryMerge] 整点触发：最新 {latest}，上次 {self._last_merge_at or '无'}")
+        self._last_merge_at = latest
+        threading.Thread(target=self._run_merge, daemon=True).start()
+
+    def _run_merge(self):
+        """后台执行汇总；失败只记录，不影响下一次整点。"""
+        try:
+            run_merge(self._agent.memory_store)
+        except Exception as e:
+            logger.warning(f"[ScheduledTasks] memory merge failed: {e}")
 
     def _conversation_cleanup(self):
         """定期清理过期对话历史记录（保持至多 7 天）。"""

@@ -97,6 +97,7 @@
 一旦 touch，随机抽中的记忆会凭 `recency_factor` 多出 1.5 倍加成并进入核心槽，形成
 「随机→加成→更常被选」的自我强化；同时 `access_count` 被污染还会影响 L3→L2 晋升与容量淘汰。
 这条行为有测试锁定（注入后 `access_count == 0`）。
+命中同关键词的记忆时返回其中最新的一条，避免注入已被后续记录推翻的状态。
 
 ## 4. 维护：`maintenance`
 
@@ -115,9 +116,21 @@ slow tick 触发（默认每 5 分钟）：
 
 两条边界：
 
-- **记忆系统不做摘要压缩**。摘要属于上下文系统（`context_entries` / `context_meta` +
-  `pet/brain/summary.py`），与 `memories` 表没有数据交集。
+- **记忆系统不做上下文摘要压缩**。上下文摘要属于 `context_entries` / `context_meta` +
+  `pet/brain/summary.py`，与 `memories` 表没有数据交集；事件汇总在上面单独说明，它在 `memories`
+  内部按同主题合并，产物仍是一条 event 记忆。
 - 维护本身没有网络 I/O、也没有单独的耗时保护，靠「容量上限 200」这个前提保持轻量。
+
+### 事件汇总
+
+整点（本地时间）由 `ScheduledTasks._memory_event_merge` 触发，`pet/brain/memory_merge.py` 执行：
+
+- 输入：全部 `event` 记忆，一行一条 `#id MM-DD HH:MM 内容`；
+- 输出：模型按 `Group: #id,#id | 汇总内容` 返回分组，解析时只保留输入集合内的 id、组内 ≥2 条、内容 ≤400 字；
+- 写回：每组插入一条新记忆（`created_at` 取组内最大值），删除组内旧条目，单事务；
+- 失败：请求或解析失败本轮不写回，等下一个整点；`event` 没有新增时跳过。
+
+逐条写入仍走 `Memory:` 行，汇总只处理 `event` 类；汇总产物与逐条记忆同表，召回与注入路径不再区分。
 
 ## 5. 开关与可见性
 
@@ -128,10 +141,12 @@ slow tick 触发（默认每 5 分钟）：
 | `EMBEDDING_DEDUP_THRESHOLD` | 语义去重的向量距离阈值（hidden） |
 | `MEMORY_MAX_CAPACITY` / `MEMORY_RECALL_COUNT` / `MEMORY_L3_EXPIRE_DAYS` | 容量、召回条数、L3 过期天数 |
 | `MEMORY_EVENT_RECALL_COUNT` | 「你惦记着的事」随机注入条数（0 = 关闭） |
+| `MEMORY_EVENT_MERGE_ENABLED` | 整点事件汇总开关 |
+| `MEMORY_MERGE_URL` / `MEMORY_MERGE_KEY` / `MEMORY_MERGE_MODEL` | 事件汇总的独立模型连接，三项齐全才生效 |
 | `MEMORY_RECALL_COOLDOWN_S` | 召回冷却（hidden） |
 | `MEMORY_RERANK_WEIGHT_*` | 向量重排权重（hidden） |
 
-- **记忆管理窗口**（托盘右键「记忆管理」）：按级别/重要度/日期筛选、搜索（防抖）、分页（默认 50/页）、
+- **记忆管理窗口**（托盘右键「记忆管理」）：按类别/级别/重要度/日期筛选、搜索（防抖）、分页（默认 50/页）、
   查看并编辑级别与重要度与关键词与正文、多选删除；详情里显示的「有效分」就是召回排序用的那个值。
 - **模型侧**：`recall__search`（按线索检索，limit 1~10）与 `recall__browse`（分页翻阅，10/页）
   两个元工具，不占工具轮次；返回结果已在库里，模型不需要再输出 Memory 行。

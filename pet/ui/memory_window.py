@@ -15,6 +15,7 @@ from datetime import datetime
 from PySide6.QtCore import Qt, QTimer, QEvent, QDate, QSignalBlocker
 from PySide6.QtGui import QFont, QIcon, QPainter, QPainterPath, QColor, QPen
 
+from pet.brain.memory import MEMORY_CATEGORIES
 from pet.ui.styles import (
     ICON_PATH, WINDOW_QSS, PANEL_QSS, BUTTON_QSS,
     BUTTON_PRIMARY_QSS, BUTTON_DANGER_QSS,
@@ -56,6 +57,7 @@ class MemoryWindow(QWidget):
         self._filter_level = ""
         self._filter_importance = 0
         self._filter_search = ""
+        self._filter_category = ""
         self._filter_start_date = ""
         self._filter_end_date = ""
 
@@ -71,13 +73,14 @@ class MemoryWindow(QWidget):
             LIST_QSS + SCROLLBAR_QSS
         )
 
+        self._load_categories()
         self._refresh_data()
 
     def _setup_window(self):
         self.setWindowTitle("记忆管理")
         self.setObjectName("FlatWindow")
-        self.setMinimumSize(800, 650)
-        self.resize(800, 650)
+        self.setMinimumSize(850, 650)
+        self.resize(850, 650)
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.Window
@@ -207,6 +210,18 @@ class MemoryWindow(QWidget):
             btn.clicked.connect(lambda checked, v=val: self._on_filter_importance(v))
             self._imp_btns[val] = btn
             row1.addWidget(btn)
+
+        row1.addSpacing(12)
+
+        # 类别筛选
+        self._label_cat = QLabel("类别:")
+        self._label_cat.setStyleSheet("font-size: 12px; color: #333;")
+        row1.addWidget(self._label_cat)
+        self._category_combo = QComboBox()
+        self._category_combo.setFixedWidth(120)
+        self._category_combo.addItem("全部", "")
+        self._category_combo.currentIndexChanged.connect(self._on_filter_category)
+        row1.addWidget(self._category_combo)
 
         row1.addStretch()
         layout.addLayout(row1)
@@ -411,6 +426,23 @@ class MemoryWindow(QWidget):
 
     # 数据加载
 
+    def _load_categories(self):
+        """按代码内定义的类别填充下拉，保留当前选择。"""
+        self._category_combo.blockSignals(True)
+        self._category_combo.clear()
+        self._category_combo.addItem("全部", "")
+        for name in MEMORY_CATEGORIES:
+            self._category_combo.addItem(name, name)
+        index = self._category_combo.findData(self._filter_category)
+        self._category_combo.setCurrentIndex(max(0, index))
+        self._category_combo.blockSignals(False)
+
+    def _on_filter_category(self):
+        self._filter_category = self._category_combo.currentData() or ""
+        self._page = 0
+        self._refresh_data()
+        self._clear_detail()
+
     def _refresh_data(self):
         if not self._memory_store:
             return
@@ -418,6 +450,7 @@ class MemoryWindow(QWidget):
             level=self._filter_level,
             importance=self._filter_importance,
             search=self._filter_search,
+            category=self._filter_category,
             start_date=self._filter_start_date,
             end_date=self._filter_end_date,
             page=self._page,

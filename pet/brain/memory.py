@@ -46,6 +46,10 @@ STOP_WORDS = {
 
 
 
+# 记忆类别，与 prompts._MEMORY_GUIDE 的类别定义保持一致
+MEMORY_CATEGORIES = ("user_fact", "user_preference", "conversation", "event")
+
+
 class LightweightDeduplicator:
 
     def __init__(self, ngram_size: int = 2, sim_threshold: float = 0.6):
@@ -189,6 +193,10 @@ class _MemoryRetriever(ABC):
 
     @abstractmethod
     def query_by_text(self, text: str, limit: int = 3) -> list[dict]: ...
+
+    def embed_memories(self, items: list[tuple[int, str]]) -> int:
+        """为一批记忆补生成向量，返回成功条数；无向量能力时返回 0。"""
+        return 0
 
 
     _LEVEL_ORDER = {"L1": 0, "L2": 1, "L3": 2}
@@ -1042,6 +1050,23 @@ class VectorRetriever(_MemoryRetriever):
         )
         self._conn.execute("UPDATE memories SET has_embedding=1 WHERE id=?", (memory_id,))
 
+    def embed_memories(self, items: list[tuple[int, str]]) -> int:
+        """批量补生成向量，一次 API 调用；返回成功条数。"""
+        if not items:
+            return 0
+        try:
+            vectors = self._embedder.embed([content for _, content in items])
+        except Exception as e:
+            logger.warning(f"[VectorRetriever] 批量 embedding 失败: {e}")
+            return 0
+        done = 0
+        with self._lock:
+            for (memory_id, _), vector in zip(items, vectors):
+                self._upsert_vector(memory_id, vector)
+                done += 1
+            self._conn.commit()
+        return done
+
     def save(self, category: str, content: str, keywords: list[str], importance: int = 3, level: str = "L2"):
         # 阶段 1：关键词优先去重
         with self._lock:
@@ -1369,19 +1394,22 @@ class MemoryStore:
 
     def list_memories(
         self, level: str = "", importance: int = 0, search: str = "",
-        start_date: str = "", end_date: str = "",
+        category: str = "", start_date: str = "", end_date: str = "",
         page: int = 0, page_size: int = 50,
     ) -> tuple[list[dict], int]:
         """分页查询记忆，返回 (rows, total)。
 
-        start_date / end_date 均为 YYYY-MM-DD，按 created_at 的日期闭区间筛选，
-        格式非法时记录告警并忽略该条件（而非静默返回空）。
+        category 为空时不过滤类别；start_date / end_date 均为 YYYY-MM-DD，
+        按 created_at 的日期闭区间筛选，格式非法时记录告警并忽略该条件。
         """
         with self._retriever._lock:
             conn = self._retriever._conn
             where = "WHERE 1=1"
             params = []
 
+            if category:
+                where += " AND category = ?"
+                params.append(category)
             if level:
                 where += " AND level = ?"
                 params.append(level)
@@ -1509,8 +1537,10 @@ class MemoryStore:
         return self._retriever._effective_importance(row)
 
     def random_events(self, limit: int = 1, exclude_ids: Optional[set] = None) -> list[dict]:
-        """随机取几条 event 类记忆，供模型「忽然想起」时使用。
+        """随机取 event 类记忆，供模型「忽然想起」时使用。
 
+        返回条数最多为 limit：同主题收敛与去重可能更少。
+        命中同主题候补时返回候补中最新的一条，避免抽到已被推翻的旧状态。
         只读：不 touch、不计召回冷却，避免被动注入抬高 access_count 与有效权重。
         """
         if limit <= 0:
@@ -1520,13 +1550,110 @@ class MemoryStore:
         if exclude_ids:
             where += " AND id NOT IN (%s)" % ",".join(["?"] * len(exclude_ids))
             params.extend(exclude_ids)
+        picked: list[dict] = []
+        seen: set[int] = set()
         with self._retriever._lock:
-            rows = self._retriever._conn.execute(
-                f"SELECT id, content, created_at FROM memories WHERE {where} "
+            seeds = self._retriever._conn.execute(
+                f"SELECT id, content, keywords, created_at FROM memories WHERE {where} "
                 f"ORDER BY RANDOM() LIMIT ?",
                 params + [limit],
             ).fetchall()
+            for seed in seeds:
+                row = self._latest_same_topic(seed, exclude_ids)
+                if row["id"] not in seen:
+                    seen.add(row["id"])
+                    picked.append(row)
+        return picked
+
+    def _latest_same_topic(self, seed, exclude_ids: Optional[set] = None) -> dict:
+        """同主题（含 seed 自身）中最新的条目；调用方须持有连接锁。"""
+        kws = {k.strip() for k in (seed["keywords"] or "").split(",") if k.strip()}
+        if not kws:
+            return dict(seed)
+        where = ("category = 'event' AND ("
+                 + " OR ".join(["keywords LIKE ? ESCAPE '\\'"] * len(kws)) + ")")
+        params: list = [f"%{_escape_like(k)}%" for k in kws]
+        if exclude_ids:
+            where += " AND id NOT IN (%s)" % ",".join("?" * len(exclude_ids))
+            params.extend(exclude_ids)
+        rows = self._retriever._conn.execute(
+            f"SELECT id, content, keywords, created_at FROM memories "
+            f"WHERE {where} ORDER BY created_at DESC, id DESC LIMIT 20",
+            params,
+        ).fetchall()
+        for row in rows:
+            cand = {k.strip() for k in (row["keywords"] or "").split(",") if k.strip()}
+            if cand & kws:
+                return dict(row)
+        return dict(seed)
+
+    def latest_event_marker(self) -> Optional[str]:
+        """最新一条 event 记忆的标记（时间 + id）；没有时返回 None。"""
+        with self._retriever._lock:
+            row = self._retriever._conn.execute(
+                "SELECT created_at, id FROM memories WHERE category = 'event' "
+                "ORDER BY created_at DESC, id DESC LIMIT 1"
+            ).fetchone()
+        # id 补零后再拼，避免 "…10" 与 "…9" 的字符串比较把后写入的判成更早
+        return f"{row['created_at']}#{row['id']:08d}" if row else None
+
+    def list_event_candidates(self) -> list[dict]:
+        """全部 event 记忆（按创建时间倒序），供整点汇总使用。"""
+        with self._retriever._lock:
+            rows = self._retriever._conn.execute(
+                "SELECT id, content, keywords, importance, level, created_at "
+                "FROM memories WHERE category = 'event' ORDER BY created_at DESC, id DESC"
+            ).fetchall()
         return [dict(r) for r in rows]
+
+    def apply_event_merges(self, groups: list[tuple[list[int], str]],
+                           rows: list[dict]) -> int:
+        """按组写回：插入汇总条目并删除组内旧条目，单事务；返回应用的组数。"""
+        by_id = {r["id"]: r for r in rows}
+        level_order = {"L1": 0, "L2": 1, "L3": 2}
+        applied = 0
+        created: list[tuple[int, str]] = []
+        with self._retriever._lock:
+            conn = self._retriever._conn
+            try:
+                for ids, summary in groups:
+                    members = [by_id[i] for i in ids if i in by_id]
+                    if len(members) < 2:
+                        continue
+                    keywords = sorted({kw.strip() for m in members
+                                       for kw in (m.get("keywords") or "").split(",") if kw.strip()})
+                    newest = max(m["created_at"] for m in members)
+                    importance = max(int(m.get("importance") or 3) for m in members)
+                    level = min((m.get("level") or "L2" for m in members),
+                                key=lambda lv: level_order.get(lv, 1))
+                    deleted = [m["id"] for m in members]
+                    for m in members:
+                        logger.info(
+                            f"[MemoryMerge] 删除 #{m['id']}：{(m.get('content') or '')[:50]}")
+                    conn.execute(
+                        "INSERT INTO memories (category, content, keywords, importance, level, created_at) "
+                        "VALUES ('event',?,?,?,?,?)",
+                        (summary, ",".join(keywords), importance, level, newest))
+                    new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+                    marks = ",".join("?" * len(deleted))
+                    conn.execute(f"DELETE FROM memories WHERE id IN ({marks})", deleted)
+                    if isinstance(self._retriever, VectorRetriever):
+                        conn.execute(
+                            f"DELETE FROM memories_vec WHERE memory_id IN ({marks})", deleted)
+                    logger.info(f"[MemoryMerge] #{new_id} ← {deleted}：{summary[:50]}")
+                    created.append((new_id, summary))
+                    applied += 1
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        # 向量生成是网络调用，放在事务提交之后：失败只影响语义检索，不影响合并结果
+        if created:
+            done = self._retriever.embed_memories(created)
+            if done < len(created):
+                logger.warning(
+                    f"[MemoryMerge] {len(created) - done} 条向量生成失败，仅关键词可见")
+        return applied
 
     def format_memory_time(self, created_at: str) -> str:
         """记忆时间戳 →「3小时前」这类简短描述。"""
