@@ -3,6 +3,6 @@
   "tick_counts": 60,
   "frame_ratios": [0.9, 0.1],
   "loop": true,
-  "breath": { "amplitude": 1, "period_ticks": 40 },
+  "breath": { "amplitude": 2, "period_ticks": 40 },
   "note": "4s一个眨眼周期，闭眼时间约0.4s；1px呼吸，2.7s一个来回"
 }
