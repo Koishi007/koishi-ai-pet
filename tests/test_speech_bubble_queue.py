@@ -1,7 +1,7 @@
 """气泡队列：多轮工具调用下「一句一泡、不丢句、不叠句」。
 
 这几个回归点不看成品 UI 也能判定：句子是否独立成泡、句子之间的过渡期是否会被抢占、
-抢占时是否真把队列清空。宿主窗口用几何桩替代，不依赖真实桌面；
+抢占时已输出的内容是否保留。宿主窗口用几何桩替代，不依赖真实桌面；
 播放进度由测试手动驱动（打字、收尾、过渡定时器），不依赖真实时钟与事件循环调度。
 """
 
@@ -123,7 +123,7 @@ def test_queued_sentence_is_not_preempted(bubble, monkeypatch):
 
 
 def test_flush_pending_drops_queue_and_buffer(bubble):
-    """抢占时必须连队列一起清：旧台词不能再弹出来压住新输出。"""
+    """窗口隐藏时必须连队列一起清：积压台词不能再弹出来。"""
     bubble.start_stream(_PARENT_POS)
     bubble.append_stream("旧输出")
     bubble.end_stream(10)
@@ -143,6 +143,60 @@ def test_flush_pending_drops_queue_and_buffer(bubble):
     _fire(bubble._hide_timer)
     _fire(bubble._gap_timer)
     assert not bubble.isVisible()
+
+
+def test_finish_pending_keeps_received_speech(bubble, monkeypatch):
+    """抢占时已收到的内容必须完整播出，不能丢句。"""
+    seen = _finished_sentences(bubble, monkeypatch)
+    played: list = []
+    original = bubble._play_text
+
+    def _record(text, duration, parent_pos=None):
+        played.append(text)
+        original(text, duration, parent_pos)
+
+    monkeypatch.setattr(bubble, "_play_text", _record)
+
+    bubble.start_stream(_PARENT_POS)
+    bubble.append_stream("已经输出的一句话")
+    bubble.end_stream(10)
+    bubble.show_text("已经输出的旁白", 10)  # 气泡忙 → 入队
+    bubble.finish_pending()
+
+    _finish_typing(bubble)
+    _advance(bubble)
+    assert seen == ["已经输出的一句话", "已经输出的旁白"]
+    assert played == ["已经输出的旁白"]
+
+
+def test_finish_pending_flushes_buffered_sentence(bubble):
+    """气泡忙时攒下的缓冲句，抢占后也要入队，不能丢。"""
+    bubble.show_text("占位句", 500, _PARENT_POS)
+    bubble.start_stream(_PARENT_POS)  # 忙 → 缓冲
+    bubble.append_stream("缓冲中的输出")
+    bubble.finish_pending()
+
+    assert bubble._buffering is False
+    assert [item["text"] for item in bubble._speech_queue] == ["缓冲中的输出"]
+
+    _finish_typing(bubble)
+    _advance(bubble)
+    assert bubble.text() == "缓冲中的输出"
+
+
+def test_new_stream_plays_after_pending_finish(bubble, monkeypatch):
+    """抢占后的新回复排在旧内容之后：不打断旧句，也不丢新句。"""
+    seen = _finished_sentences(bubble, monkeypatch)
+
+    bubble.show_text("旧句", 10, _PARENT_POS)
+    bubble.finish_pending()
+    bubble.start_stream(_PARENT_POS)  # 新回复，气泡忙 → 缓冲
+    bubble.append_stream("新回复")
+    bubble.end_stream(10)
+
+    _finish_typing(bubble)
+    _advance(bubble)
+    assert seen == ["旧句", "新回复"]
 
 
 def test_hide_clears_pending_so_nothing_pops_up_later(bubble):

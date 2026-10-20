@@ -189,8 +189,12 @@ class SpeechBubble(QLabel):
             self._type_timer.stop()
             self._finish_stream()
 
+    def finish_pending(self):
+        """停止接收新内容：已收到的句子与队列继续播完，不清空。"""
+        self._close_sentence()
+
     def flush_pending(self):
-        """清空待播队列与缓冲：新请求抢占时调用，旧台词不该再冒出来。"""
+        """清空待播队列与缓冲：窗口隐藏时调用，旧台词不该再冒出来。"""
         self._speech_queue.clear()
         self._incoming_chunks.clear()
         self._buffering = False
