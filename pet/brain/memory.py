@@ -1597,6 +1597,35 @@ class MemoryStore:
         # id 补零后再拼，避免 "…10" 与 "…9" 的字符串比较把后写入的判成更早
         return f"{row['created_at']}#{row['id']:08d}" if row else None
 
+    def pending_events(self, marker: Optional[str]) -> tuple[int, Optional[str]]:
+        """统计 marker 之后的 event 条数，同时返回当前最新 marker。
+
+        比较 (created_at, id) 二元组，与 latest_event_marker 的排序一致。
+        """
+        with self._retriever._lock:
+            conn = self._retriever._conn
+            row = conn.execute(
+                "SELECT created_at, id FROM memories WHERE category = 'event' "
+                "ORDER BY created_at DESC, id DESC LIMIT 1"
+            ).fetchone()
+            latest = f"{row['created_at']}#{row['id']:08d}" if row else None
+            if not marker:
+                count = conn.execute(
+                    "SELECT COUNT(*) FROM memories WHERE category = 'event'"
+                ).fetchone()[0]
+                return int(count), latest
+            created, _, raw_id = marker.rpartition("#")
+            if created and raw_id.isdigit():
+                where = "(created_at > ? OR (created_at = ? AND id > ?))"
+                params = (created, created, int(raw_id))
+            else:
+                where, params = "created_at > ?", (marker,)
+            count = conn.execute(
+                f"SELECT COUNT(*) FROM memories WHERE category = 'event' AND {where}",
+                params
+            ).fetchone()[0]
+        return int(count), latest
+
     def list_event_candidates(self) -> list[dict]:
         """全部 event 记忆（按创建时间倒序），供整点汇总使用。"""
         with self._retriever._lock:

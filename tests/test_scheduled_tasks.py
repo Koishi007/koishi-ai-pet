@@ -163,11 +163,15 @@ class TestUnconsciousness:
 
 
 class _FakeStore:
-    def __init__(self, marker: str | None):
+    def __init__(self, marker: str | None, pending: int = 0):
         self._marker = marker
+        self._pending = pending
 
     def latest_event_marker(self):
         return self._marker
+
+    def pending_events(self, marker):
+        return self._pending, self._marker
 
 
 class _FakeScheduler:
@@ -180,8 +184,8 @@ class _FakeScheduler:
 
 class TestMemoryMergeTick:
     @staticmethod
-    def _tasks(marker):
-        tasks = ScheduledTasks(SimpleNamespace(memory_store=_FakeStore(marker)))
+    def _tasks(marker, pending: int = 0):
+        tasks = ScheduledTasks(SimpleNamespace(memory_store=_FakeStore(marker, pending)))
         tasks._scheduler = _FakeScheduler()
         return tasks
 
@@ -198,9 +202,9 @@ class TestMemoryMergeTick:
         # 下界留 1 秒：注册恰好跨整点时，断言时刻可能已越过目标整点
         assert datetime.now() - timedelta(seconds=1) < at <= datetime.now() + timedelta(hours=1)
 
-    def test_skips_without_new_event(self, monkeypatch):
+    def test_skips_below_threshold(self, monkeypatch):
         monkeypatch.setattr(config, "MEMORY_EVENT_MERGE_ENABLED", True)
-        tasks = self._tasks("m1")
+        tasks = self._tasks("m2", pending=5)
         tasks._last_merge_at = "m1"
         started = []
         monkeypatch.setattr(
@@ -208,10 +212,11 @@ class TestMemoryMergeTick:
             lambda target, daemon: SimpleNamespace(start=lambda: started.append(target)))
         tasks._memory_event_merge()
         assert started == []
+        assert tasks._last_merge_at == "m1"
 
     def test_starts_worker_on_new_event(self, monkeypatch):
         monkeypatch.setattr(config, "MEMORY_EVENT_MERGE_ENABLED", True)
-        tasks = self._tasks("m2")
+        tasks = self._tasks("m2", pending=6)
         tasks._last_merge_at = "m1"
         started = []
         monkeypatch.setattr(
@@ -232,3 +237,32 @@ class TestMemoryMergeTick:
         tasks._memory_event_merge()
         assert started == []
         assert tasks._last_merge_at == "m1"
+
+
+class TestMergeMarkerRefresh:
+    @staticmethod
+    def _tasks(marker):
+        tasks = ScheduledTasks(SimpleNamespace(memory_store=_FakeStore(marker)))
+        tasks._scheduler = _FakeScheduler()
+        return tasks
+
+    def test_refreshes_when_created_at_unchanged(self, monkeypatch):
+        monkeypatch.setattr(scheduled_tasks, "run_merge", lambda store: 1)
+        tasks = self._tasks("2026-10-20T10:00:00#00000009")
+        tasks._last_merge_at = "2026-10-20T10:00:00#00000003"
+        tasks._run_merge()
+        assert tasks._last_merge_at == "2026-10-20T10:00:00#00000009"
+
+    def test_keeps_marker_when_new_event_appeared(self, monkeypatch):
+        monkeypatch.setattr(scheduled_tasks, "run_merge", lambda store: 1)
+        tasks = self._tasks("2026-10-20T11:00:00#00000009")
+        tasks._last_merge_at = "2026-10-20T10:00:00#00000003"
+        tasks._run_merge()
+        assert tasks._last_merge_at == "2026-10-20T10:00:00#00000003"
+
+    def test_keeps_marker_when_store_empty(self, monkeypatch):
+        monkeypatch.setattr(scheduled_tasks, "run_merge", lambda store: 0)
+        tasks = self._tasks(None)
+        tasks._last_merge_at = "2026-10-20T10:00:00#00000003"
+        tasks._run_merge()
+        assert tasks._last_merge_at == "2026-10-20T10:00:00#00000003"

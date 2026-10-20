@@ -11,6 +11,9 @@ from pet.config import config
 
 logger = logging.getLogger(__name__)
 
+# 增量触发阈值：新增 event 记忆达到该条数才发起整点汇总
+_MERGE_MIN_NEW_EVENTS = 6
+
 # 动作名称 → (粒子名, 触发间隔：fast tick 数)
 _ACTION_PARTICLES: dict[str, tuple[str, int]] = {
     "shake_arms":   ("stars", 2),
@@ -35,7 +38,7 @@ class ScheduledTasks:
         self._particle_ticks: dict[str, int] = {}  # 粒子名 → 累计 tick
         self._idle_since: float | None = None      # 连续 idle 的起点（monotonic），非 idle 时置 None
         self._scheduler = None
-        self._last_merge_at: str = ""              # 上次发起汇总时最新的 event 记忆时间
+        self._last_merge_at: str = ""              # 上次汇总后的 event marker（created_at#id）
 
 
     def register_all(self, scheduler):
@@ -206,24 +209,23 @@ class ScheduledTasks:
         )
 
     def _memory_event_merge(self):
-        """整点回调：先续约下一次，再按新增判定是否发起汇总。"""
+        """整点回调：先续约下一次，再按新增条数判定是否发起汇总。"""
         self._schedule_next_merge()
         if not config.MEMORY_EVENT_MERGE_ENABLED:
             logger.debug("[MemoryMerge] 整点跳过：汇总开关关闭")
             return
         try:
-            latest = self._agent.memory_store.latest_event_marker()
+            pending, latest = self._agent.memory_store.pending_events(self._last_merge_at)
         except Exception as e:
             logger.warning(f"[ScheduledTasks] merge precheck failed: {e}")
             return
-        if not latest or latest <= self._last_merge_at:
+        if pending < _MERGE_MIN_NEW_EVENTS:
             logger.debug(
-                f"[MemoryMerge] 整点跳过：没有新增（最新 {latest}，"
-                f"上次 {self._last_merge_at or '无'}）")
+                f"[MemoryMerge] 整点跳过：新增 {pending} 条，未达 {_MERGE_MIN_NEW_EVENTS} 条")
             return
         logger.info(
-            f"[MemoryMerge] 整点触发：最新 {latest}，上次 {self._last_merge_at or '无'}")
-        self._last_merge_at = latest
+            f"[MemoryMerge] 整点触发：新增 {pending} 条，上次 {self._last_merge_at or '无'}")
+        self._last_merge_at = latest or self._last_merge_at
         threading.Thread(target=self._run_merge, daemon=True).start()
 
     def _run_merge(self):
@@ -232,6 +234,21 @@ class ScheduledTasks:
             run_merge(self._agent.memory_store)
         except Exception as e:
             logger.warning(f"[ScheduledTasks] memory merge failed: {e}")
+        finally:
+            self._refresh_merge_marker()
+
+    def _refresh_merge_marker(self):
+        """汇总产物 created_at 回填组内最大值、id 更大，不刷新会被算作下一次的新增。"""
+        try:
+            latest = self._agent.memory_store.latest_event_marker()
+        except Exception as e:
+            logger.warning(f"[ScheduledTasks] merge marker refresh failed: {e}")
+            return
+        if not latest:
+            return
+        # created_at 前进说明汇总期间写入了真实新事件，留给下次统计
+        if latest.split("#", 1)[0] <= self._last_merge_at.split("#", 1)[0]:
+            self._last_merge_at = latest
 
     def _conversation_cleanup(self):
         """定期清理过期对话历史记录（保持至多 7 天）。"""

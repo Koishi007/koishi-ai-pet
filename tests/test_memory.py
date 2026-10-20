@@ -211,6 +211,23 @@ class TestRandomEvents:
                 "SELECT MAX(id) FROM memories WHERE category = 'event'").fetchone()[0]
         assert store.latest_event_marker() == f"2026-10-19T10:00:00#{newest_id:08d}"
 
+    def test_pending_events_without_marker_counts_all(self, store):
+        count, latest = store.pending_events(None)
+        assert count == 2
+        assert latest == store.latest_event_marker()
+
+    def test_pending_events_counts_after_marker(self, store):
+        oldest = store.list_event_candidates()[-1]
+        marker = f"{oldest['created_at']}#{oldest['id']:08d}"
+        before = store.pending_events(marker)[0]
+        store.save("event", "甲事件", ["甲"], 3, "L2")
+        count, latest = store.pending_events(marker)
+        assert count == before + 1
+        assert latest == store.latest_event_marker()
+
+    def test_pending_events_after_latest_is_zero(self, store):
+        assert store.pending_events(store.latest_event_marker())[0] == 0
+
     def test_injection_does_not_touch_access_stats(self, store):
         store.random_events(5)
         rows, _ = store.list_memories()
