@@ -60,6 +60,7 @@
 - 回调开头先注册下一个整点，再执行合并；合并异常不中断链。
 - 进程退出即停止，无后台守护；休眠唤醒或系统时钟调整后，按当前时间重新计算下一次整点。
 - 触发时先判定是否执行：`SELECT MAX(created_at) FROM memories WHERE category='event'` 与上次合并时间比较，没有新增则跳过，不发起 LLM 调用。
+  （实现现状：改为 `(created_at, id)` marker 起算的增量计数，新增不足 6 条才跳过，见 [subsystems/memory.md](../subsystems/memory.md) §4。）
 - 回调由 QTimer 在主线程执行，LLM 调用与写回放到后台线程。
 - 设置页提供「立即汇总」按钮：确认风险后执行一次，不检查整点间隔与 `MEMORY_EVENT_MERGE_ENABLED`，用于手动验证或临时收敛。
 
