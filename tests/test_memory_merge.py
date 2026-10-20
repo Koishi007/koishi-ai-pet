@@ -1,5 +1,7 @@
 """事件记忆汇总：解析、连接回退与写回。"""
 
+from datetime import datetime, timedelta
+
 import pytest
 
 from pet.brain import memory_merge
@@ -128,3 +130,45 @@ class TestRunMerge:
         assert memory_merge.run_merge(store) == 1
         assert len(embedded) == 1
         assert embedded[0][1] == "拍视频汇总"
+
+    def test_merged_row_is_l2_and_survives_l3_expiry(self, store, monkeypatch):
+        store.save("event", "准备拍视频", ["拍摄"], 3, "L3")
+        store.save("event", "镜头已补拍完成", ["补拍"], 3, "L3")
+        old = (datetime.now() - timedelta(days=10)).isoformat()
+        with store._retriever._lock:
+            conn = store._retriever._conn
+            conn.execute(
+                "UPDATE memories SET created_at = ?, last_accessed_at = NULL", (old,))
+            conn.commit()
+        ids = ",".join(str(r["id"]) for r in store.list_event_candidates())
+        monkeypatch.setattr(memory_merge, "_call_llm",
+                            lambda messages: f"Group: {ids} | 拍视频汇总")
+        assert memory_merge.run_merge(store) == 1
+        store.maintenance()
+        rows, _ = store.list_memories()
+        assert [r["content"] for r in rows] == ["拍视频汇总"]
+        assert rows[0]["level"] == "L2"
+        assert rows[0]["last_accessed_at"]
+
+    def test_merged_row_keeps_l1_when_member_is_l1(self, store, monkeypatch):
+        store.save("event", "用户开始拍视频", ["拍摄"], 5, "L1")
+        store.save("event", "镜头已补拍完成", ["补拍"], 3, "L3")
+        ids = ",".join(str(r["id"]) for r in store.list_event_candidates())
+        monkeypatch.setattr(memory_merge, "_call_llm",
+                            lambda messages: f"Group: {ids} | 拍视频汇总")
+        assert memory_merge.run_merge(store) == 1
+        rows, _ = store.list_memories()
+        assert rows[0]["level"] == "L1"
+        assert rows[0]["importance"] == 5
+
+    def test_l3_expiry_is_logged(self, store, caplog):
+        store.save("event", "旧事件", ["旧"], 3, "L3")
+        old = (datetime.now() - timedelta(days=10)).isoformat()
+        with store._retriever._lock:
+            conn = store._retriever._conn
+            conn.execute(
+                "UPDATE memories SET created_at = ?, last_accessed_at = NULL", (old,))
+            conn.commit()
+        with caplog.at_level("INFO"):
+            store.maintenance()
+        assert "L3 过期清理" in caplog.text

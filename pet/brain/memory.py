@@ -830,6 +830,12 @@ class _MemoryRetriever(ABC):
                 f"importance {old}→{new} (tool_hits 阈值)"
             )
 
+    def _log_l3_cleanup(self, count: int, cutoff: str, reason: str = "过期清理"):
+        """记录 L3 删除条数，避免静默消失无从排查。"""
+        if count:
+            logger.info(
+                f"[{self.__class__.__name__}] L3 {reason}: 删除 {count} 条 (cutoff={cutoff})")
+
     def enforce_capacity(self):
         """容量控制（需在已有 lock 内调用）"""
         count = self._conn.execute("SELECT COUNT(*) FROM memories").fetchall()[0][0]
@@ -841,32 +847,34 @@ class _MemoryRetriever(ABC):
                 (cutoff_l3,)
             ).fetchone()
             if stale:
-                self._conn.execute(
+                cur = self._conn.execute(
                     "DELETE FROM memories WHERE level='L3' AND COALESCE(last_accessed_at, created_at) < ?",
                     (cutoff_l3,)
                 )
                 self._conn.commit()
+                self._log_l3_cleanup(cur.rowcount, cutoff_l3)
             return
 
         # 超容量：多阶段清理，统一在最后一次 commit
         # 阶段 0：L3 硬清理
         cutoff_l3 = (datetime.now() - timedelta(days=config.MEMORY_L3_EXPIRE_DAYS)).isoformat()
-        self._conn.execute(
+        expired_l3 = self._conn.execute(
             "DELETE FROM memories WHERE level='L3' AND COALESCE(last_accessed_at, created_at) < ?",
             (cutoff_l3,)
-        )
+        ).rowcount
 
         count = self._conn.execute("SELECT COUNT(*) FROM memories").fetchall()[0][0]
         if count <= self.MAX_MEMORIES:
             self._conn.commit()
+            self._log_l3_cleanup(expired_l3, cutoff_l3)
             return
 
         # 阶段 1：删除 L3 中 access_count <= 1 的旧记忆
         cutoff = (datetime.now() - timedelta(days=1)).isoformat()
-        self._conn.execute(
+        low_access_l3 = self._conn.execute(
             "DELETE FROM memories WHERE level='L3' AND COALESCE(last_accessed_at, created_at) < ? AND access_count <= 1",
             (cutoff,)
-        )
+        ).rowcount
 
         # 阶段 2：淘汰可降级记忆（L1+i5 与 L3 豁免）
         # 候选：L2 importance<5 + L1 importance<5，按 effective_importance 升序淘汰
@@ -916,6 +924,8 @@ class _MemoryRetriever(ABC):
                     f"(目标:{target_clear}, 总数:{total}→{total - len(ids_to_delete)})"
                 )
         self._conn.commit()  # 统一一次 commit
+        self._log_l3_cleanup(expired_l3, cutoff_l3)
+        self._log_l3_cleanup(low_access_l3, cutoff, reason="低访问淘汰")
 
     def close(self):
         with self._lock:
@@ -1374,12 +1384,14 @@ class MemoryStore:
                 (cutoff_l3,)
             ).fetchone()
             if stale_l3:
-                self._retriever._conn.execute(
+                cur = self._retriever._conn.execute(
                     "DELETE FROM memories WHERE level='L3' "
                     "AND COALESCE(last_accessed_at, created_at) < ?",
                     (cutoff_l3,)
                 )
                 self._retriever._conn.commit()
+                logger.info(
+                    f"[MemoryStore] L3 过期清理: 删除 {cur.rowcount} 条 (cutoff={cutoff_l3})")
 
             # 每 6 次 slow_tick 执行一次
             self._maintenance_skip += 1
@@ -1637,11 +1649,15 @@ class MemoryStore:
 
     def apply_event_merges(self, groups: list[tuple[list[int], str]],
                            rows: list[dict]) -> int:
-        """按组写回：插入汇总条目并删除组内旧条目，单事务；返回应用的组数。"""
+        """按组写回：插入汇总条目并删除组内旧条目，单事务；返回应用的组数。
+
+        级别保底 L2、组内含 L1 时取 L1（L3 不拉低），并补 last_accessed_at：
+        created_at 回填组内最大值，若沿用 L3 会出生即被过期清理。
+        """
         by_id = {r["id"]: r for r in rows}
-        level_order = {"L1": 0, "L2": 1, "L3": 2}
         applied = 0
         created: list[tuple[int, str]] = []
+        now_iso = datetime.now().isoformat()
         with self._retriever._lock:
             conn = self._retriever._conn
             try:
@@ -1653,16 +1669,17 @@ class MemoryStore:
                                        for kw in (m.get("keywords") or "").split(",") if kw.strip()})
                     newest = max(m["created_at"] for m in members)
                     importance = max(int(m.get("importance") or 3) for m in members)
-                    level = min((m.get("level") or "L2" for m in members),
-                                key=lambda lv: level_order.get(lv, 1))
+                    level = "L1" if any(
+                        (m.get("level") or "L2") == "L1" for m in members) else "L2"
                     deleted = [m["id"] for m in members]
                     for m in members:
                         logger.info(
                             f"[MemoryMerge] 删除 #{m['id']}：{(m.get('content') or '')[:50]}")
                     conn.execute(
-                        "INSERT INTO memories (category, content, keywords, importance, level, created_at) "
-                        "VALUES ('event',?,?,?,?,?)",
-                        (summary, ",".join(keywords), importance, level, newest))
+                        "INSERT INTO memories (category, content, keywords, importance, level, "
+                        "created_at, last_accessed_at) "
+                        "VALUES ('event',?,?,?,?,?,?)",
+                        (summary, ",".join(keywords), importance, level, newest, now_iso))
                     new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
                     marks = ",".join("?" * len(deleted))
                     conn.execute(f"DELETE FROM memories WHERE id IN ({marks})", deleted)
