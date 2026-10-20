@@ -83,6 +83,9 @@
   队列打 warning 后跳过该动作；启动时若连 `idle` 都没有，会退化成 emoji 占位。
 - 动作配置**有缓存且没有失效入口**：换素材或改 json 之后需要重启才生效。
 - 呼吸姿态的位移只向上抬、缩放锚点由绘制方保证在脚底。
+- **呼吸位移是亚像素的**：Qt 在 1:1 绘制时走整数 blit，`QPointF` 的小数偏移会被取整；
+  绘制方给缩放叠了 `1e-6` 强制走带采样的变换路径，否则 1px 振幅会退化成 0/−1 两级台阶，
+  且镜像侧（贴左）与未镜像侧（贴右）因路径不同而观感不一致。
 - **无意识化**：连续 `idle` 达到 `UNCONSCIOUS_IDLE_SECONDS` 秒（默认 60，高级设置）后，
   `scheduled_tasks._unconsciousness` 播放 `unconsciousness`；该动画 `loop: false`，播完停在最后一帧，
   `_update_idle_anim` 与重力只切换 `idle` / `grim`，不会覆盖它。

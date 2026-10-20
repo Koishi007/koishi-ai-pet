@@ -78,11 +78,12 @@ class TestAssetSet:
         assert edge_asset("sleep") == "sleep_edge"
 
 
-def _asymmetric_pixmap(side: str) -> QPixmap:
-    """在 125×125 透明底上画一块贴边侧的不透明色块。"""
-    pm = QPixmap(125, 125)
+def _asymmetric_pixmap(side: str, dpr: float = 1.0) -> QPixmap:
+    """在 125×125 逻辑尺寸的透明底上画一块贴边侧的不透明色块。"""
+    pm = QPixmap(round(125 * dpr), round(125 * dpr))
+    pm.setDevicePixelRatio(dpr)
     pm.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(pm)
+    painter = QPainter(pm)  # 逻辑坐标：QPainter 已按 DPR 自动缩放
     painter.fillRect(90 if side == "right" else 5, 20, 30, 100, QColor("#000000"))
     painter.end()
     return pm
@@ -121,6 +122,61 @@ class TestFlipRender:
         label.render(flipped)
         flip_left, flip_right = _half_ink(flipped.toImage())
         assert flip_left > flip_right
+
+    @staticmethod
+    def _luma_centroid(label, dpr: float = 1.0) -> float:
+        """按亮度算纵向质心；QLabel 背景不透明，不能用 alpha。"""
+        img = QPixmap(round(label.width() * dpr), round(label.height() * dpr))
+        img.setDevicePixelRatio(dpr)
+        img.fill(Qt.GlobalColor.transparent)
+        label.render(img)
+        image = img.toImage()
+        total = acc = 0.0
+        for y in range(image.height()):
+            for x in range(image.width()):
+                w = (255 - image.pixelColor(x, y).red()) / 255.0
+                total += w
+                acc += w * y
+        return acc / total if total else 0.0
+
+    def test_breath_offset_is_subpixel_on_both_sides(self, qt_app):
+        label = _SpriteLabel()
+        label.resize(125, 125)
+        label.setPixmap(_asymmetric_pixmap("right"))
+        offsets = (0.0, -0.25, -0.5, -0.75, -1.0)
+
+        def centroids() -> list[float]:
+            out = []
+            for dy in offsets:
+                label.set_pose(dy, 1.0, 1.0)
+                out.append(round(self._luma_centroid(label), 2))
+            return out
+
+        normal = centroids()
+        label.set_flip(True)
+        flipped = centroids()
+        assert max(abs(a - b) for a, b in zip(flipped, normal)) < 0.1
+        # 位移按小数连续生效，而不是被取整成 0 / -1 两级
+        assert len(set(normal)) == len(offsets)
+
+    def test_breath_subpixel_with_fractional_dpr(self, qt_app):
+        label = _SpriteLabel()
+        label.resize(125, 125)
+        label.setPixmap(_asymmetric_pixmap("right", dpr=1.5))
+        offsets = (0.0, -0.25, -0.5, -0.75, -1.0)
+
+        def centroids() -> list[float]:
+            out = []
+            for dy in offsets:
+                label.set_pose(dy, 1.0, 1.0)
+                out.append(round(self._luma_centroid(label, dpr=1.5), 2))
+            return out
+
+        normal = centroids()
+        label.set_flip(True)
+        flipped = centroids()
+        assert max(abs(a - b) for a, b in zip(flipped, normal)) < 0.1
+        assert len(set(normal)) == len(offsets)
 
 
 class _FakeAnimator:
