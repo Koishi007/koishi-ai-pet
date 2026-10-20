@@ -96,6 +96,14 @@ def _escape_like(s: str) -> str:
     return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
+def _excerpt(text: str, limit: int = 50) -> str:
+    """日志用摘要：超长时截断并标注剩余字数。"""
+    text = text or ""
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit]}…<+{len(text) - limit}字>"
+
+
 # 并入查询词的原始片段最大长度：超过该长度基本是被标点切开的长句片段，
 # 而非用户/模型手写的检索词
 _MAX_QUERY_TERM_LEN = 8
@@ -1674,7 +1682,7 @@ class MemoryStore:
                     deleted = [m["id"] for m in members]
                     for m in members:
                         logger.info(
-                            f"[MemoryMerge] 删除 #{m['id']}：{(m.get('content') or '')[:50]}")
+                            f"[MemoryMerge] 删除 #{m['id']}：{_excerpt(m.get('content'))}")
                     conn.execute(
                         "INSERT INTO memories (category, content, keywords, importance, level, "
                         "created_at, last_accessed_at) "
@@ -1686,7 +1694,7 @@ class MemoryStore:
                     if isinstance(self._retriever, VectorRetriever):
                         conn.execute(
                             f"DELETE FROM memories_vec WHERE memory_id IN ({marks})", deleted)
-                    logger.info(f"[MemoryMerge] #{new_id} ← {deleted}：{summary[:50]}")
+                    logger.info(f"[MemoryMerge] #{new_id} ← {deleted}：{_excerpt(summary)}")
                     created.append((new_id, summary))
                     applied += 1
                 conn.commit()

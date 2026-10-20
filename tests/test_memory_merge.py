@@ -161,6 +161,16 @@ class TestRunMerge:
         assert rows[0]["level"] == "L1"
         assert rows[0]["importance"] == 5
 
+    def test_merge_log_marks_truncated_remainder(self, store, monkeypatch, caplog):
+        store.save("event", "准备拍视频", ["拍摄"], 3, "L2")
+        store.save("event", "镜头已补拍完成", ["补拍"], 3, "L2")
+        ids = ",".join(str(r["id"]) for r in store.list_event_candidates())
+        monkeypatch.setattr(memory_merge, "_call_llm",
+                            lambda messages: f"Group: {ids} | {'拍' * 60}")
+        with caplog.at_level("INFO"):
+            memory_merge.run_merge(store)
+        assert "…<+10字>" in caplog.text
+
     def test_l3_expiry_is_logged(self, store, caplog):
         store.save("event", "旧事件", ["旧"], 3, "L3")
         old = (datetime.now() - timedelta(days=10)).isoformat()
