@@ -158,8 +158,8 @@ class FeedBubble(QWidget):
         self._collapse_anim.start()
 
     def _on_collapse_done(self):
+        # 收起只隐藏，不清空：未提交的输入要保留到下次展开
         self._input.hide()
-        self._input.clear()
         self._input.setMinimumWidth(0)
         self._input.setMaximumWidth(180)
         self.adjustSize()
@@ -168,6 +168,7 @@ class FeedBubble(QWidget):
         text = self._input.text().strip()
         if text:
             self.feed_submitted.emit(text)
+            self._input.clear()
             self._collapse()
             self.hide_bubble()
 
