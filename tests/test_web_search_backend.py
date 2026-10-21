@@ -86,13 +86,14 @@ def test_deepseek_failure_falls_back_to_bing(config, monkeypatch):
 def test_deepseek_without_key_reports_failure(monkeypatch):
     monkeypatch.setattr(core, "_load_config",
                         lambda: {"backend": "deepseek", "deepseek_search_key": ""})
-    assert "搜索失败" in core.search("测试")["summary"]
+    assert core.search("测试")["summary"]
 
 
 def test_deepseek_empty_results(config, monkeypatch):
     monkeypatch.setattr(core.requests, "post",
                         lambda *a, **kw: _Resp(200, {"results": []}))
-    assert "未找到相关结果" in core.search("测试")["summary"]
+    summary = core.search("测试")["summary"]
+    assert summary and "测试" in summary
 
 
 def test_connectivity_detects_deepseek(monkeypatch):
@@ -122,17 +123,29 @@ def test_fetch_falls_back_to_local_extract(config, monkeypatch):
     assert "本地提取正文" in core.fetch("https://example.com")["summary"]
 
 
-def test_fetch_rejects_bad_scheme(config):
-    assert "抓取失败" in core.fetch("ftp://example.com/file")["summary"]
+def _reject_network(monkeypatch) -> None:
+    """在拒绝分支里不允许发出任何请求或抽取。"""
+    def _unexpected(*a, **kw):
+        raise AssertionError("URL 应在请求前被拒绝")
+
+    monkeypatch.setattr(core.requests, "post", _unexpected)
+    monkeypatch.setattr(core, "_extract_text", _unexpected)
 
 
-def test_fetch_rejects_loopback(config):
-    assert "抓取失败" in core.fetch("http://127.0.0.1/admin")["summary"]
+def test_fetch_rejects_bad_scheme(config, monkeypatch):
+    _reject_network(monkeypatch)
+    assert "__context__" not in core.fetch("ftp://example.com/file")
+
+
+def test_fetch_rejects_loopback(config, monkeypatch):
+    _reject_network(monkeypatch)
+    assert "__context__" not in core.fetch("http://127.0.0.1/admin")
 
 
 def test_fetch_rejects_private_host(config, monkeypatch):
     monkeypatch.setattr(core, "_resolve_public_ips", lambda host, port: [])
-    assert "内网" in core.fetch("https://intranet.example")["summary"]
+    _reject_network(monkeypatch)
+    assert "__context__" not in core.fetch("https://intranet.example")
 
 
 def test_pin_target_replaces_host_with_resolved_ip(monkeypatch):

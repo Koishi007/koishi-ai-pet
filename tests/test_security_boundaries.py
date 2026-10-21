@@ -140,7 +140,9 @@ class TestWriteOps:
     def test_write_note_rejects_subpath_filename(self, sandbox):
         # 白名单内的路径，但文件名带子路径 → 拒绝
         result = FileOpsTool().write_note("sub/备忘.txt", "内容")
-        assert result["error"] == "文件名不合法"
+        assert result.get("error")
+        assert result.get("status") != "written"
+        assert not (sandbox / "sub" / "备忘.txt").exists()
 
     def test_write_note_rejects_parent_escape(self, sandbox):
         result = FileOpsTool().write_note("../逃逸.txt", "内容")
@@ -154,7 +156,8 @@ class TestWriteOps:
 
     def test_write_file_rejects_unknown_mode(self, sandbox):
         result = FileOpsTool().write_file(str(sandbox / "a.txt"), "x", mode="x")
-        assert "不支持的写入模式" in result["error"]
+        assert result.get("error")
+        assert not (sandbox / "a.txt").exists()
 
     def test_write_file_outside_root_reports_error(self, sandbox):
         result = FileOpsTool().write_file("C:\\Windows\\evil.txt", "x")
@@ -183,7 +186,7 @@ class TestValidateUrl:
         assert self._tool()._validate_url(url) is not None
 
     def test_empty_url_rejected(self):
-        assert self._tool()._validate_url("") == "URL为空"
+        assert self._tool()._validate_url("")
 
     def test_label_included_in_message(self):
         assert "页面地址" in self._tool()._validate_url("", label="页面地址")

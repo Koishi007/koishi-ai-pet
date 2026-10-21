@@ -19,6 +19,7 @@ from pet.file_intake import (
     sniff,
     truncate,
 )
+from pet.file_intake import text as text_mod
 
 DENY = [".env*", "*.key", "*.pem", ".npmrc", "id_rsa*"]
 
@@ -187,11 +188,9 @@ class TestTruncate:
 
     def test_long_text_head_tail(self):
         text = "".join(str(i % 10) for i in range(3000))
+        head, tail = 1000, 500  # 1500 的 2/3 与 1/3
         result = truncate(text, 1500)
-        assert result.startswith(text[:1000])
-        assert result.endswith(text[-500:])
-        assert "（已省略 1500 字符）" in result
-        assert text[:1000] + result[len(text[:1000]):-len(text[-500:])] + text[-500:] == result
+        assert result == text[:head] + text_mod._OMIT.format(n=1500) + text[-tail:]
 
     def test_marker_not_counted_in_quota(self):
         text = "b" * 2000

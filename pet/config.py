@@ -47,6 +47,8 @@ _KEY_META = {
     "SCHEDULER_AUTO_START_MID":  {"type": "bool",     "default": True,          "category": "behavior",   "needs_restart": False, "hidden": False, "description": "自动启动 mid_tick(自主决策)"},
     "SCHEDULER_AUTO_START_SLOW": {"type": "bool",     "default": True,          "category": "behavior",   "needs_restart": False, "hidden": True,  "description": "自动启动 slow_tick"},
     "SCHEDULER_IDLE_TIMEOUT_MS": {"type": "int",      "default": 900000,        "category": "behavior",   "needs_restart": False, "hidden": True,  "description": "空闲超时(毫秒)，超过后进入休眠"},
+    "EDGE_DOCK_ENABLED":         {"type": "bool",     "default": True,          "category": "behavior",   "needs_restart": False, "hidden": False, "description": "贴边吸附总开关（拖拽松手或甩飞撞边时贴住屏幕左右边缘）"},
+    "EDGE_DOCK_SNAP_PX":         {"type": "int",      "default": 24,            "category": "behavior",   "needs_restart": False, "hidden": True,  "description": "拖拽松手判定贴边的距离阈值(px)"},
     "ACTION_TIMEOUT_MS":         {"type": "int",      "default": 90000,         "category": "behavior",   "needs_restart": False, "hidden": True,  "description": "单个动作超时(毫秒)"},
     "BRAIN_STUCK_TIMEOUT":       {"type": "int",      "default": 300,           "category": "behavior",   "needs_restart": False, "hidden": True,  "description": "脑线程无进展超时(秒)：autonomous/interacting 状态下持续无输出、无工具进展超过该时长才判定挂死（进行中的游戏对局不计时）"},
     "SANITY_CRITICAL_THRESHOLD": {"type": "int",      "default": 20,            "category": "behavior",   "needs_restart": False, "hidden": False, "description": "理智临界值，低于该值导致异常行为"},

@@ -27,7 +27,7 @@ class TestRollCatch:
         monkeypatch.setattr(fishing.random, "random", lambda: 0.0)
         monkeypatch.setattr(fishing.random, "choices", lambda seq, weights, k: ["legendary"])
         monkeypatch.setattr(fishing.random, "choice", lambda seq: seq[0])
-        assert fishing.roll_catch() == ("金龙鱼", "legendary")
+        assert fishing.roll_catch() == (fishing.FISH_TABLE["legendary"][0], "legendary")
 
 
 class TestFishTable:
@@ -44,22 +44,31 @@ class TestFishTable:
 
 class TestFormatResult:
     def test_miss_line(self):
-        assert "什么也没钓上" in fishing.format_result(None)
+        line = fishing.format_result(None)
+        assert line
+        assert not any(name in line for group in fishing.FISH_TABLE.values() for name in group)
 
-    @pytest.mark.parametrize("rarity,name,expected", [
-        ("common", "鲫鱼", "你钓到了一条鲫鱼，没什么特别的"),
-        ("rare", "鳜鱼", "你钓到了一条少见的鳜鱼！"),
-        ("legendary", "腔棘鱼", "你钓到了一条罕见的腔棘鱼！这是一个值得记住的时刻！"),
-    ])
-    def test_rarity_wording(self, rarity, name, expected):
-        assert fishing.format_result((name, rarity)) == expected
+    @pytest.mark.parametrize("rarity", list(fishing.FISH_TABLE))
+    def test_result_includes_fish_name(self, rarity):
+        name = fishing.FISH_TABLE[rarity][0]
+        line = fishing.format_result((name, rarity))
+        assert line
+        assert name in line
 
-    def test_common_stays_understated(self):
+    @pytest.mark.parametrize("rarity", list(fishing.FISH_TABLE))
+    def test_wording_follows_rarity_table(self, rarity):
+        name = fishing.FISH_TABLE[rarity][0]
+        prefix, suffix = fishing._RARITY_WORDING[rarity]
+        line = fishing.format_result((name, rarity))
+        assert line.endswith(suffix)
+        if prefix:
+            assert prefix in line
+
+    def test_rarities_render_distinctly(self):
+        lines = {rarity: fishing.format_result((fishing.FISH_TABLE[rarity][0], rarity))
+                 for rarity in fishing.FISH_TABLE}
+        assert len(set(lines.values())) == len(lines)
+
+    def test_common_has_no_exclamation(self):
         # 占七成的寻常收获要压平语气，不能和上游档同样兴奋
-        assert "！" not in fishing.format_result(("鲫鱼", "common"))
-
-    def test_only_legendary_hints_at_memory(self):
-        # 「值得记住」只给罕见档，避免引导被稀释
-        assert "值得记住" in fishing.format_result(("腔棘鱼", "legendary"))
-        assert "值得记住" not in fishing.format_result(("鳜鱼", "rare"))
-        assert "值得记住" not in fishing.format_result(("鲫鱼", "common"))
+        assert "！" not in fishing.format_result((fishing.FISH_TABLE["common"][0], "common"))

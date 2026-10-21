@@ -3,10 +3,11 @@ import logging
 import sys
 import time
 
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QMenu
-from PySide6.QtCore import Qt, QPoint, QPointF, QDateTime, QTimer, QSize, Property, QPropertyAnimation, Signal
+from PySide6.QtWidgets import QLabel, QVBoxLayout, QMenu, QApplication
+from PySide6.QtCore import (Qt, QPoint, QPointF, QDateTime, QTimer, QSize, Property,
+                            QPropertyAnimation, QEasingCurve, Signal)
 from PySide6.QtGui import (QMouseEvent, QAction, QPainter, QPainterPath, QColor, QPen,
-                           QDragEnterEvent, QDragMoveEvent, QDragLeaveEvent, QDropEvent)
+                           QDragEnterEvent, QDragMoveEvent, QDragLeaveEvent, QDropEvent, QRegion)
 from pet.agent.state import PetState
 from pet.ui.base_window import TransparentWindow
 from pet.ui.pet_animations import PetAnimator
@@ -15,7 +16,9 @@ from pet.ui.swing import SwingController
 from pet.ui.styles import MENU_QSS
 from pet.ui.settings_window import SettingsWindow
 from pet.ui.file_drop_handler import FileDropHandler, paths_from_mime
+from pet.ui.edge_dock import dock_x, pick_dock_side, edge_mask_rect
 from pet.action import PetActions, ActionQueue, outcome
+from pet.action.registry import EDGE_ACTION_NAMES
 from pet.brain.prompts import (INTERACT_GRABBED, INTERACT_RELEASED,
                                INTERACT_WINDOW_DISAPPEARED, interact_file_reject_prompt)
 from pet.tools.registry import TOOL_REGISTRY
@@ -90,6 +93,7 @@ class _SpriteLabel(QLabel):
         self._swing: float = 0.0
         self._tap_scale: float = 1.0
         self._tap_anim: QPropertyAnimation | None = None
+        self._flip: bool = False
 
     def set_pose(self, dy: float, scale_x: float, scale_y: float):
         pose = (dy, scale_x, scale_y)
@@ -100,6 +104,12 @@ class _SpriteLabel(QLabel):
     def set_swing(self, angle_deg: float):
         if angle_deg != self._swing:
             self._swing = angle_deg
+            self.update()
+
+    def set_flip(self, flip: bool):
+        """贴左边时水平镜像；贴右边保持原图。"""
+        if flip != self._flip:
+            self._flip = flip
             self.update()
 
     def play_tap_bounce(self):
@@ -132,7 +142,8 @@ class _SpriteLabel(QLabel):
         if pixmap is not None and not pixmap.isNull():
             if abs(pixmap.devicePixelRatio() - self.devicePixelRatioF()) > 0.01:
                 self.dpr_outdated.emit(self.devicePixelRatioF())
-        if pixmap is None or (self._pose == (0, 1.0, 1.0) and self._tap_scale == 1.0 and self._swing == 0.0):
+        if pixmap is None or (self._pose == (0, 1.0, 1.0) and self._tap_scale == 1.0
+                              and self._swing == 0.0 and not self._flip):
             super().paintEvent(event)
             return
 
@@ -161,6 +172,9 @@ class _SpriteLabel(QLabel):
             painter.translate(anchor_x, grab_y)
             painter.rotate(-self._swing)
             painter.translate(-anchor_x, -grab_y)
+        if self._flip:
+            painter.translate(self.width(), 0)
+            painter.scale(-1, 1)
         # QPointF 重载支持亚像素定位：浮点呼吸位移平滑渲染，不取整成方波
         painter.drawPixmap(QPointF(left, top), pixmap)
         painter.end()
@@ -170,6 +184,9 @@ class PetWindow(TransparentWindow):
     # 拖拽抓取点在窗口内的相对位置：水平居中、纵向与摆动锚点同高（头部）
     _GRAB_RATIO_X = 0.5
     _GRAB_RATIO_Y = _SpriteLabel.GRAB_ANCHOR_Y
+    _GRAB_GUARD_MS = 100  # 抓取守卫轮询间隔
+
+    dock_changed = Signal(object)  # "left" / "right" / None
 
     def __init__(self):
         super().__init__()
@@ -190,6 +207,8 @@ class PetWindow(TransparentWindow):
         self._app = None
         self._event_reaction = False
         self._mouse_penetration = False  # 鼠标穿透开关，默认关
+        self._dock_side: str = ""        # "" / "left" / "right"
+        self._dock_anim: QPropertyAnimation | None = None
         self._outcomes_done: set[str] = set()  # 本轮已结算过产出的动作（每轮每个动作最多一条事件）
         self._fall_started_at: float | None = None  # 本次下落起点（monotonic），落地时结算
         self._await_fall_down = False               # 落地跌倒播放中，等它播完再恢复队列
@@ -200,6 +219,9 @@ class PetWindow(TransparentWindow):
         self._click_timer.setSingleShot(True)
         self._click_timer.setInterval(200)      # 200ms 内无移动 → 判定为单击
         self._click_timer.timeout.connect(self._on_click_confirmed)
+        self._grab_guard = QTimer(self)         # 左键释放事件丢失时补结算抓取
+        self._grab_guard.setInterval(self._GRAB_GUARD_MS)
+        self._grab_guard.timeout.connect(self._check_grab_button)
         self._PROMPT_GRABBED = INTERACT_GRABBED
         self._PROMPT_RELEASED = INTERACT_RELEASED
         self._PROMPT_WINDOW_DISAPPEARED = INTERACT_WINDOW_DISAPPEARED
@@ -249,6 +271,110 @@ class PetWindow(TransparentWindow):
     def set_app(self, app):
         """注入 QApplication 引用，供退出按钮使用。"""
         self._app = app
+
+    @property
+    def dock_side(self) -> str:
+        """贴边侧别："" / "left" / "right"。"""
+        return self._dock_side
+
+    @property
+    def is_docked(self) -> bool:
+        return bool(self._dock_side)
+
+    def dock_to(self, side: str, center_y: bool = False):
+        """贴到屏幕左/右边缘；center_y 为真时把 y 移到可用区垂直中点（仅右键菜单用）"""
+        if side not in ("left", "right") or self._dock_side == side:
+            return
+        screen = self.screen() or QApplication.primaryScreen()
+        if screen is None:
+            return
+        geo = screen.availableGeometry()
+
+        if self._dock_anim is not None:
+            self._dock_anim.stop()
+            self._dock_anim = None
+        if self._dock_side:
+            self.clearMask()
+        self._dock_side = side
+        self.pet_actions.set_dock_side(side)
+        self.pet_label.set_flip(side == "left")
+        self.action_queue.clear()
+        self.swing_ctrl.land()
+        self.pet_actions.gravity.enable(False)
+        self.pet_actions.gravity.reset_motion()
+        self.pet_actions.idle()
+        self.dock_changed.emit(side)
+
+        target_x = dock_x(side, geo.left(), geo.right(), self.width())
+        target_y = self.y()
+        if center_y:
+            bottom_lim = geo.bottom() - self.height()
+            target_y = max(geo.top(),
+                           min(geo.center().y() - self.height() // 2, bottom_lim))
+        if abs(self.x() - target_x) <= 1 and abs(self.y() - target_y) <= 1:
+            self._finish_dock(side)
+            return
+        anim = QPropertyAnimation(self, b"pos", self)
+        anim.setDuration(180)
+        anim.setStartValue(self.pos())
+        anim.setEndValue(QPoint(target_x, target_y))
+        anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        anim.finished.connect(lambda s=side: self._finish_dock(s))
+        self._dock_anim = anim
+        anim.start()
+
+    def _finish_dock(self, side: str):
+        if self._dock_side != side:
+            return
+        self._dock_anim = None
+        x, y, w, h = edge_mask_rect(side, self.width(), self.height())
+        self.setMask(QRegion(x, y, w, h))
+
+    def undock(self, resume_gravity: bool = True):
+        """解除贴边；拖拽入口传 resume_gravity=False，由拖拽逻辑接管重力。"""
+        if not self._dock_side:
+            return
+        if self._dock_anim is not None:
+            self._dock_anim.stop()
+            self._dock_anim = None
+            # 淡入可能挂在移动动画的 finished 上，动画被停就不会再触发
+            if self.windowOpacity() < 1.0:
+                self.pet_actions.fade_in()
+        self.clearMask()
+        self.pet_label.set_flip(False)
+        self.pet_actions.set_dock_side("")
+        self._dock_side = ""
+        self.dock_changed.emit(None)
+        self.action_queue.clear()
+        if resume_gravity:
+            self.pet_actions.gravity.enable(True)
+        self.pet_actions.idle()
+
+    def _on_edge_hit(self, side: str):
+        """甩飞撞到屏幕边缘：吸附。"""
+        self.dock_to(side)
+
+    def _dock_nearest(self):
+        """右键菜单贴边：只比水平方向，中心落在中线时取右侧"""
+        screen = self.screen() or QApplication.primaryScreen()
+        if screen is None:
+            return
+        geo = screen.availableGeometry()
+        center_x = self.x() + self.width() // 2
+        side = "left" if center_x < geo.center().x() else "right"
+        self.pet_actions.fade_out(callback=lambda: self._dock_after_fade(side))
+
+    def _dock_after_fade(self, side: str):
+        """淡出结束后贴上边缘，移动动画播完再淡入；淡出期间被抓取则放弃贴边。"""
+        if self._grab_local is not None:
+            self.pet_actions.fade_in()
+            return
+        self.dock_to(side, center_y=True)
+        anim = self._dock_anim
+        if anim is None:
+            self.pet_actions.fade_in()
+        else:
+            anim.finished.connect(lambda: self.pet_actions.fade_in())
 
     def enterEvent(self, event):
         """鼠标进入桌宠区域时显示聊天、喂食和音乐按钮。
@@ -303,9 +429,9 @@ class PetWindow(TransparentWindow):
         self.action_queue.action_started.connect(self._on_action_started)
         self.action_queue.action_finished.connect(self._on_action_finished)
         self.pet_actions.gravity.standing_lost.connect(self._on_standing_lost)
+        self.pet_actions.gravity.edge_hit.connect(self._on_edge_hit)
 
         # 初始位置：屏幕中央
-        from PySide6.QtWidgets import QApplication
         screen = QApplication.primaryScreen()
         if screen:
             geo = screen.availableGeometry()
@@ -352,12 +478,14 @@ class PetWindow(TransparentWindow):
             round(config.PET_WIDTH * self._GRAB_RATIO_X),
             round(config.PET_HEIGHT * self._GRAB_RATIO_Y),
         )
+        self.undock(resume_gravity=False)
         self.pet_actions.gravity.enable(False)
         # 先清空再暂停：clear 会复位暂停态，按住期间的新动作靠 pause 只入队不执行
         self.action_queue.clear()
         self.action_queue.pause()
         self.swing_ctrl.begin()
         self.pet_actions.grabbed()
+        self._grab_guard.start()
         logger.info("[PetWindow] grabbed")
         if self._agent:
             self._agent.note_event("grabbed")  # 事件记录独立于 LLM 反应开关
@@ -399,29 +527,55 @@ class PetWindow(TransparentWindow):
             return
         if self._grab_local is None:
             return
+        self._end_grab(*self._release_velocity())
+
+    def _check_grab_button(self):
+        """抓取守卫：左键已松开但释放事件没到，补结算。"""
+        if self._grab_local is None:
+            self._grab_guard.stop()
+            return
+        if QApplication.mouseButtons() & Qt.MouseButton.LeftButton:
+            return
+        logger.info("[PetWindow] 左键释放事件丢失，按当前状态结束抓取")
+        self._end_grab(*self._release_velocity())
+
+    def _release_velocity(self) -> tuple[float, float]:
+        """最近 150ms 的拖拽速度（px/s）；采样不足或停顿时为 0。"""
+        now = QDateTime.currentMSecsSinceEpoch()
+        recent = [(p, t) for p, t in self._drag_history if now - t <= 150]
+        if len(recent) < 2:
+            return 0.0, 0.0
+        p1, t1 = recent[0]
+        p2, t2 = recent[-1]
+        dt = (t2 - t1) / 1000.0
+        if dt <= 0.005:
+            return 0.0, 0.0
+        return (p2.x() - p1.x()) / dt, (p2.y() - p1.y()) / dt
+
+    def _end_grab(self, vx: float = 0.0, vy: float = 0.0):
+        """结束抓取：恢复队列与重力，按速度决定贴边或抛出。"""
+        self._grab_guard.stop()
         self._grab_local = None
         self.action_queue.resume()
         self.swing_ctrl.release()
-        vx, vy = 0.0, 0.0
-        # 只使用最近 100ms 内的采样帧，过期帧视为停顿（避免释放前停顿导致速度为 0）
-        now = QDateTime.currentMSecsSinceEpoch()
-        recent = [(p, t) for p, t in self._drag_history if now - t <= 150]
-        if len(recent) >= 2:
-            p1, t1 = recent[0]
-            p2, t2 = recent[-1]
-            dt = (t2 - t1) / 1000.0
-            if dt > 0.005:
-                vx = (p2.x() - p1.x()) / dt
-                vy = (p2.y() - p1.y()) / dt
         self._drag_history.clear()
         speed = (vx ** 2 + vy ** 2) ** 0.5
-        self.pet_actions.gravity.enable(True)
-        if speed > 80:
-            self.pet_actions.gravity.apply_impulse(vx, vy)
-        logger.info(f"[PetWindow] released speed={speed:.0f}px/s flick={speed > 80}")
+        side = None
+        screen = self.screen() or QApplication.primaryScreen()
+        if config.EDGE_DOCK_ENABLED and speed <= 80 and screen is not None:
+            geo = screen.availableGeometry()
+            side = pick_dock_side(self.x(), self.width(), geo.left(), geo.right(),
+                                  config.EDGE_DOCK_SNAP_PX)
+        if side:
+            self.dock_to(side)
+        else:
+            self.pet_actions.gravity.enable(True)
+            if speed > 80:
+                self.pet_actions.gravity.apply_impulse(vx, vy)
+        logger.info(f"[PetWindow] released speed={speed:.0f}px/s flick={speed > 80} dock={side or ''}")
         if self._agent:
             self._agent.note_event("released")
-            if self._event_reaction:
+            if self._event_reaction and not side:
                 self._agent.trigger("interact", hint=self._PROMPT_RELEASED, is_play_loading=False, thinking=False)
 
     # 拖入文件
@@ -494,6 +648,9 @@ class PetWindow(TransparentWindow):
 
     def _show_context_menu(self, pos):
         """右键菜单。"""
+        if self._grab_local is not None:
+            # 菜单会接管鼠标，抓取无法继续跟随；先结束抓取，避免桌宠停在半空
+            self._end_grab()
         menu = _FlatMenuBase()
 
         if self._agent:
@@ -565,6 +722,16 @@ class PetWindow(TransparentWindow):
             toggle_mouse = QAction("关闭互动反应" if on else "开启互动反应")
             toggle_mouse.triggered.connect(self._toggle_event_reaction)
             menu.addAction(toggle_mouse)
+
+            if self._dock_side:
+                dock_action = QAction("离开边缘")
+                dock_action.triggered.connect(lambda: self.undock())
+                menu.addAction(dock_action)
+            elif config.EDGE_DOCK_ENABLED and self._grab_local is None:
+                # 拖拽中抓取点仍活跃，贴边位置会被后续 move 覆盖
+                dock_action = QAction("贴到屏幕边缘")
+                dock_action.triggered.connect(lambda: self._dock_nearest())
+                menu.addAction(dock_action)
 
             menu.addSeparator()
 
@@ -731,6 +898,9 @@ class PetWindow(TransparentWindow):
         self.action_queue.enqueue(method, *args, **kwargs)
 
     def queue_enqueue_action(self, name: str, args: tuple, kwargs: dict):
+        if self._dock_side and name not in EDGE_ACTION_NAMES:
+            logger.info(f"[PetWindow] docked, drop action '{name}'")
+            return
         self.action_queue.enqueue(name, *args, **kwargs)
 
     def queue_start(self):
@@ -744,6 +914,10 @@ class PetWindow(TransparentWindow):
 
     def shutdown(self):
         # 先断队列再停动画：stop 会发 animation_finished，避免队列在退出途中又推进一个动作
+        self._grab_guard.stop()
+        if self._dock_anim is not None:
+            self._dock_anim.stop()
+            self._dock_anim = None
         self.action_queue.clear()
         self.pet_anim.stop()
         self.pet_actions.gravity.enable(False)

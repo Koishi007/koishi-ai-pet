@@ -71,37 +71,45 @@ def _actions(bubble, monkeypatch, kinds, *, vision=True, read_content=True):
             for action_id, label, usable in bubble._available_actions()}
 
 
+def _button_for(bubble, action_id: str):
+    """按动作 id 取按钮；按钮顺序与 _action_ids 一致。"""
+    for index, (aid, _label, _usable) in enumerate(bubble._action_ids):
+        if aid == action_id:
+            return bubble._buttons.itemAt(index).widget()
+    raise AssertionError(f"按钮不存在: {action_id}")
+
+
 class TestCoreActions:
     def test_text_drop_available(self, bubble, monkeypatch):
         actions = _actions(bubble, monkeypatch, ["text"])
-        assert actions["taste"] == ("尝一口", True)
-        assert actions["read"] == ("看一看", True)
+        assert actions["taste"][1] is True
+        assert actions["read"][1] is True
 
     def test_image_drop_needs_vision(self, bubble, monkeypatch):
         actions = _actions(bubble, monkeypatch, ["image"], vision=False)
-        assert actions["taste"] == ("尝一口（视觉通道已关闭）", False)
-        assert actions["read"] == ("看一看（视觉通道已关闭）", False)
+        assert actions["taste"][1] is False
+        assert actions["read"][1] is False
 
     def test_image_drop_with_vision(self, bubble, monkeypatch):
         actions = _actions(bubble, monkeypatch, ["image"])
-        assert actions["taste"] == ("尝一口", True)
-        assert actions["read"] == ("看一看", True)
+        assert actions["taste"][1] is True
+        assert actions["read"][1] is True
 
     def test_mixed_drop_keeps_text_actions(self, bubble, monkeypatch):
         actions = _actions(bubble, monkeypatch, ["text", "image"], vision=False)
-        assert actions["taste"] == ("尝一口", True)
-        assert actions["read"] == ("看一看", True)
+        assert actions["taste"][1] is True
+        assert actions["read"][1] is True
 
     def test_binary_and_dir_get_taste_only(self, bubble, monkeypatch):
         for kind in ("binary", "dir"):
             actions = _actions(bubble, monkeypatch, [kind])
-            assert actions["taste"] == ("尝一口", True)
-            assert actions["read"] == ("看一看（没有可读文本）", False)
+            assert actions["taste"][1] is True
+            assert actions["read"][1] is False
 
     def test_read_content_off_disables_core(self, bubble, monkeypatch):
         actions = _actions(bubble, monkeypatch, ["text"], read_content=False)
-        assert actions["taste"] == ("尝一口（内容读取已关闭）", False)
-        assert actions["read"] == ("看一看（内容读取已关闭）", False)
+        assert actions["taste"][1] is False
+        assert actions["read"][1] is False
 
 
 class TestToolActions:
@@ -139,57 +147,67 @@ class TestSummaries:
         folder = tmp_path / "folder"
         folder.mkdir()
         (folder / "a.txt").write_text("x", encoding="utf-8")
-        bubble._refs = (FileRef(path=str(folder), name="folder", suffix="",
-                                size=0, kind="dir"),)
+        ref = FileRef(path=str(folder), name="folder", suffix="", size=0, kind="dir")
+        bubble._refs = (ref,)
         bubble._render_body()
-        assert "扫描中…" in bubble._rows[0].text()
+        placeholder = describe_ref(ref)
+        assert bubble._rows[0].text() == placeholder
         for _ in range(50):
             qt_app.processEvents()
-            if "1 项" in bubble._rows[0].text():
+            if bubble._rows[0].text() != placeholder:
                 break
             time.sleep(0.05)
-        assert "1 项：a.txt" in bubble._rows[0].text()
+        assert bubble._rows[0].text() == describe_ref(ref, _dir_note(1, ["a.txt"]))
 
     def test_dir_row_waits_for_scan(self):
-        assert describe_ref(_ref("dir", "d")) == "d · 文件夹 · 扫描中…"
+        ref = _ref("dir", "d")
+        line = describe_ref(ref)
+        assert ref.name in line
+        assert file_bubble_module.KIND_LABELS["dir"] in line
+        assert line != describe_ref(ref, _dir_note(1, ["a"]))
 
     def test_dir_row_with_note(self):
-        assert describe_ref(_ref("dir", "d"), "3 项：a、b") == "d · 文件夹 · 3 项：a、b"
+        ref = _ref("dir", "d")
+        note = "3 项：a、b"
+        line = describe_ref(ref, note)
+        assert ref.name in line
+        assert file_bubble_module.KIND_LABELS["dir"] in line
+        assert note in line
 
     def test_file_row_has_size(self):
-        assert describe_ref(_ref("text", "a.txt")) == "a.txt · 文本 · 10 B"
+        ref = _ref("text", "a.txt")
+        line = describe_ref(ref)
+        assert ref.name in line
+        assert file_bubble_module.KIND_LABELS["text"] in line
+        assert file_bubble_module._format_size(ref.size) in line
 
     def test_empty_dir_note(self):
-        assert _dir_note(0, []) == "空文件夹"
+        empty = _dir_note(0, [])
+        assert empty
+        assert empty == _dir_note(0, ["ignored"])
+        assert empty != _dir_note(1, [])
 
 
 class TestButtonStates:
     """按钮可用性：不可用动作保留按钮但置灰，取消始终可用且不产生请求。"""
 
-    def _button(self, bubble, text: str):
-        for index in range(bubble._buttons.count()):
-            widget = bubble._buttons.itemAt(index).widget()
-            if widget is not None and widget.text() == text:
-                return widget
-        raise AssertionError(f"按钮不存在: {text}")
-
     def test_unreadable_drop_greys_out_read(self, wired_bubble, monkeypatch):
         actions = _actions(wired_bubble, monkeypatch, ["binary"])
-        assert actions["read"] == ("看一看（没有可读文本）", False)
+        assert actions["read"][1] is False
         wired_bubble._render_buttons()
-        button = self._button(wired_bubble, "看一看（没有可读文本）")
+        button = _button_for(wired_bubble, "read")
         assert not button.isEnabled()
         assert ":disabled" in button.styleSheet()
 
     def test_readable_drop_keeps_read_enabled(self, wired_bubble, monkeypatch):
         _actions(wired_bubble, monkeypatch, ["text"])
         wired_bubble._render_buttons()
-        assert self._button(wired_bubble, "看一看").isEnabled()
+        assert _button_for(wired_bubble, "read").isEnabled()
 
     def test_cancel_enabled_when_all_actions_disabled(self, wired_bubble, monkeypatch):
         _actions(wired_bubble, monkeypatch, ["binary"], read_content=False)
         wired_bubble._render_buttons()
-        assert not self._button(wired_bubble, "看一看（内容读取已关闭）").isEnabled()
+        assert not _button_for(wired_bubble, "read").isEnabled()
         assert wired_bubble._cancel_button.isEnabled()
 
     def test_cancel_closes_without_request(self, wired_bubble, qt_app):

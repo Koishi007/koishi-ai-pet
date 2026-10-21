@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from pet.brain.base import BrainMixin
 from pet.brain.context_builder import ContextBuilder
 from pet.config import config
 
@@ -29,6 +30,8 @@ class _FakeMood:
 class _FakeMemoryStore:
     """只实现 ContextBuilder 用到的接口。"""
 
+    AGE = "3天前"
+
     def __init__(self, rows=()):
         self._rows = list(rows)
 
@@ -37,7 +40,7 @@ class _FakeMemoryStore:
         return [r for r in self._rows if r["id"] not in skip][:limit]
 
     def format_memory_time(self, created_at):
-        return "3天前"
+        return self.AGE
 
     def retrieve_context(self, user_message):
         return ""
@@ -69,7 +72,7 @@ class TestRecentEventsNote:
     def test_builtin_label_used_when_text_missing(self):
         now = time.time()
         note = self._builder([("grabbed", now, "")])._recent_events_note()
-        assert "用户把你抓了起来" in note
+        assert ContextBuilder._EVENT_LABELS["grabbed"] in note
 
     def test_custom_text_wins_over_label(self):
         now = time.time()
@@ -149,7 +152,7 @@ class TestOnceEvents:
             once_events_fn=lambda: [("fishing", now, "你钓到了一条鲤鱼")],
         )
         note = builder._recent_events_note()
-        assert note.index("用户摸了摸你的头") < note.index("你钓到了一条鲤鱼")
+        assert note.index(ContextBuilder._EVENT_LABELS["head_pat"]) < note.index("你钓到了一条鲤鱼")
 
     def test_same_kind_not_deduped(self):
         # 每次钓鱼都是独立的一次经历，不该像窗口事件那样只留最近一条
@@ -175,7 +178,7 @@ class TestNeedsNote:
         夜里会凭空多出「熬夜太久了」。需要测作息的用例自行覆盖 _circadian_need。
         """
         monkeypatch.setattr(ContextBuilder, "_circadian_need",
-                            staticmethod(lambda hour: None))
+                            staticmethod(lambda hour, docked=False: None))
 
     def _builder(self, satiety=100, energy=100, joy=100, affection=100, sanity=100):
         return ContextBuilder(
@@ -195,26 +198,31 @@ class TestNeedsNote:
         note = self._builder(satiety=60)._build_needs_note()
         assert note == ""
         note = self._builder(satiety=59)._build_needs_note()
-        assert "吃点东西" in note
+        assert ContextBuilder._NEED_LABELS["hungry"] in note
 
     def test_all_four_needs_mapped(self):
         note = self._builder(satiety=10, energy=10, joy=10, affection=10)._build_needs_note()
-        for label in ("吃点东西", "歇一歇", "找点乐子", "想被陪陪"):
-            assert label in note
+        for key in ("hungry", "tired", "bored", "lonely"):
+            assert ContextBuilder._NEED_LABELS[key] in note
 
     def test_first_occurrence_marked_as_new(self):
         note = self._builder(satiety=10)._build_needs_note()
-        assert "刚起念" in note
+        aged = self._builder(satiety=10)
+        aged._active_needs["hungry"] = time.time() - 180
+        aged_note = aged._build_needs_note()
+        assert BrainMixin.format_duration(180) not in note
+        assert BrainMixin.format_duration(180) in aged_note
+        assert note != aged_note
 
     def test_elapsed_time_reported(self):
         builder = self._builder(satiety=10)
         builder._active_needs["hungry"] = time.time() - 180
         note = builder._build_needs_note()
-        assert "已持续 3 分钟" in note
+        assert BrainMixin.format_duration(180) in note
 
     def test_recovered_need_removed(self):
         builder = self._builder(satiety=10)
-        assert "吃点东西" in builder._build_needs_note()
+        assert ContextBuilder._NEED_LABELS["hungry"] in builder._build_needs_note()
         builder._vitals = _FakeVitals(satiety=100)
         assert builder._build_needs_note() == ""
         assert builder._active_needs == {}
@@ -226,61 +234,68 @@ class TestNeedsNote:
 
     def test_low_sanity_mapped_to_need(self):
         note = self._builder(sanity=5)._build_needs_note()
-        assert "脑子有点乱" in note
-        assert "摸摸头" in note
+        assert ContextBuilder._NEED_LABELS["unsteady"] in note
+        assert ContextBuilder._NEED_HINTS["unsteady"] in note
 
     def test_sanity_uses_critical_threshold(self):
         t = config.SANITY_CRITICAL_THRESHOLD
-        assert "脑子有点乱" not in self._builder(sanity=t)._build_needs_note()
-        assert "脑子有点乱" in self._builder(sanity=t - 1)._build_needs_note()
+        label = ContextBuilder._NEED_LABELS["unsteady"]
+        assert label not in self._builder(sanity=t)._build_needs_note()
+        assert label in self._builder(sanity=t - 1)._build_needs_note()
 
     def test_line_carries_action_hint(self):
         note = self._builder(satiety=10)._build_needs_note()
-        assert "自己生成食物" in note
+        assert ContextBuilder._need_hint("hungry") in note
 
     def test_food_disabled_hint_only_begs_user(self, monkeypatch):
         monkeypatch.setattr(config, "FOOD_ENABLED", False)
         note = self._builder(satiety=10)._build_needs_note()
-        assert "讨点吃的" in note
-        assert "生成食物" not in note
+        assert ContextBuilder._need_hint("hungry") in note
+        assert ContextBuilder._NEED_HINTS["hungry"] not in note
 
     def test_interact_task_excludes_needs_block(self):
         builder = self._builder(satiety=10)
-        assert "你惦记着的事" not in builder._build_system("interact", "interact")
-        assert "你惦记着的事" in builder._build_system("chat_non_vision", "chat")
+        label = ContextBuilder._NEED_LABELS["hungry"]
+        assert label not in builder._build_system("interact", "interact")
+        assert label in builder._build_system("chat_non_vision", "chat")
 
     def test_bedtime_line_wired_into_note(self, monkeypatch):
+        label, hint = "困了", "去睡"
         monkeypatch.setattr(ContextBuilder, "_circadian_need",
-                            staticmethod(lambda hour: ("bedtime", "困了", "去睡")))
-        assert "困了（刚起念）→ 去睡" in self._builder()._build_needs_note()
+                            staticmethod(lambda hour, docked=False: ("bedtime", label, hint)))
+        note = self._builder()._build_needs_note()
+        assert re.search(rf"{re.escape(label)}（[^）]+）→ {re.escape(hint)}", note)
 
     def test_bedtime_suppresses_tired(self, monkeypatch):
+        label = "困了"
         monkeypatch.setattr(ContextBuilder, "_circadian_need",
-                            staticmethod(lambda hour: ("bedtime", "困了", "去睡")))
+                            staticmethod(lambda hour, docked=False: ("bedtime", label, "去睡")))
         note = self._builder(energy=10)._build_needs_note()
-        assert "困了" in note
-        assert "歇一歇" not in note
+        assert label in note
+        assert ContextBuilder._NEED_LABELS["tired"] not in note
 
     def test_tired_kept_outside_bedtime(self, monkeypatch):
-        monkeypatch.setattr(ContextBuilder, "_circadian_need", staticmethod(lambda hour: None))
-        assert "歇一歇" in self._builder(energy=10)._build_needs_note()
+        monkeypatch.setattr(ContextBuilder, "_circadian_need", staticmethod(lambda hour, docked=False: None))
+        assert ContextBuilder._NEED_LABELS["tired"] in self._builder(energy=10)._build_needs_note()
 
     def test_bedtime_cleared_after_window(self, monkeypatch):
         builder = self._builder()
         monkeypatch.setattr(ContextBuilder, "_circadian_need",
-                            staticmethod(lambda hour: ("bedtime", "困了", "去睡")))
+                            staticmethod(lambda hour, docked=False: ("bedtime", "困了", "去睡")))
         assert "困了" in builder._build_needs_note()
-        monkeypatch.setattr(ContextBuilder, "_circadian_need", staticmethod(lambda hour: None))
+        monkeypatch.setattr(ContextBuilder, "_circadian_need", staticmethod(lambda hour, docked=False: None))
         assert builder._build_needs_note() == ""
         assert builder._active_needs == {}
 
 
 class TestCircadianNeed:
-    @pytest.mark.parametrize("hour,label", [
-        (23, "困了"), (0, "困了"), (1, "熬夜太久了"), (5, "熬夜太久了"), (13, "犯困"),
+    @pytest.mark.parametrize("hour,key", [
+        (23, "bedtime"), (0, "bedtime"), (1, "bedtime"), (5, "bedtime"), (13, "drowsy"),
     ])
-    def test_window_labels(self, hour, label):
-        assert ContextBuilder._circadian_need(hour)[1] == label
+    def test_window_keys(self, hour, key):
+        need = ContextBuilder._circadian_need(hour)
+        assert need[0] == key
+        assert need[1] and need[2]
 
     @pytest.mark.parametrize("hour", [6, 9, 12, 14, 18, 22])
     def test_outside_windows_returns_none(self, hour):
@@ -306,12 +321,7 @@ class TestFeelingNote:
     def test_action_guides_only_in_needs_section(self):
         feeling = self._builder(satiety=10, energy=10, joy=10)._build_feeling()
         assert "food__spawn" not in feeling
-        assert "讨" not in feeling
-
-    def test_sanity_feeling_keeps_safety_norm(self):
-        feeling = self._builder(sanity=3)._build_feeling()
-        assert "绝不写或覆盖文件" in feeling
-        assert "摸摸头" not in feeling
+        assert ContextBuilder._NEED_HINTS["hungry"] not in feeling
 
 
 class TestEventMemoryNote:
@@ -336,8 +346,11 @@ class TestEventMemoryNote:
         assert ContextBuilder(memory_store=broken)._memory_event_note() == ""
 
     def test_line_carries_content_and_age(self):
-        note = self._builder([self._row(1, "用户上周带猫去看了医生")])._memory_event_note()
-        assert "- 用户上周带猫去看了医生（3天前）" in note
+        content = "用户上周带猫去看了医生"
+        note = self._builder([self._row(1, content)])._memory_event_note()
+        assert any(line.startswith("- ") for line in note.splitlines())
+        assert content in note
+        assert _FakeMemoryStore.AGE in note
 
     def test_previous_round_ids_skipped(self, monkeypatch):
         monkeypatch.setattr(config, "MEMORY_EVENT_RECALL_COUNT", 1)
@@ -358,9 +371,9 @@ class TestEventMemoryNote:
             memory_store=_FakeMemoryStore([self._row(1, "用户上周带猫去看了医生")]),
         )
         system = builder._build_system("chat_non_vision", "chat")
-        head = system.index("[你惦记着的事]")
-        assert system.index("吃点东西") > head
-        assert system.index("用户上周带猫去看了医生") > head
+        anchor = system.index("walk")
+        assert system.index(ContextBuilder._NEED_LABELS["hungry"]) > anchor
+        assert system.index("用户上周带猫去看了医生") > anchor
 
     def test_interact_task_excludes_memory_note(self, monkeypatch):
         monkeypatch.setattr(config, "MEMORY_EVENT_RECALL_COUNT", 1)

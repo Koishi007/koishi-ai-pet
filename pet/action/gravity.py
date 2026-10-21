@@ -6,6 +6,7 @@ from PySide6.QtCore import QTimer, QObject, Signal, QPropertyAnimation, QPoint
 from PySide6.QtWidgets import QWidget, QApplication
 
 from pet.brain.window_detector import get_visible_windows, get_window_rect, is_window_occluded
+from pet.config import config
 
 logger = logging.getLogger(__name__)
 
@@ -16,12 +17,13 @@ class GravitySystem(QObject):
     falling_started = Signal()  # 进入下落状态时发出
     landed = Signal()           # 落地时发出
     standing_lost = Signal(str) # 站立的窗口消失/被遮挡，附带窗口标题
+    edge_hit = Signal(str)      # 甩飞撞到左/右边缘，参数为 "left" / "right"
 
     _GRAVITY_ACCEL  = 1.5   # px/tick²
     _FRICTION       = 0.99
     _MAX_SPEED      = 25.0  # px/tick
     _FALL_TERMINAL  = 8.0   # px/tick
-    _WALL_BOUNCE    = -0.4
+    _EDGE_BOUNCE    = -0.4
     _IMPULSE_SCALE  = 0.05  # px/s → px/tick (30ms)
 
     def __init__(self, window: QWidget, animator, win_anims: list, parent=None):
@@ -99,6 +101,18 @@ class GravitySystem(QObject):
                 self._timer.start(self._interval)
         else:
             self._timer.stop()
+
+    def reset_motion(self):
+        """清空下落/甩飞状态，不改定时器；"""
+        self._falling = False
+        self._in_flick = False
+        self._vx = 0.0
+        self._vy = 0.0
+        self._cached_effective_bottom = None
+        self._standing_hwnd = 0
+        self._standing_title = ""
+        self._standing_rect = None
+        self._last_anim_played = None
 
     def _play_once(self, name: str):
         if name != self._last_anim_played:
@@ -284,6 +298,11 @@ class GravitySystem(QObject):
         if self._enabled and not self._timer.isActive():
             self._timer.start(self._interval)
 
+    @staticmethod
+    def _clamp_y(y: float, top_lim: int, bottom_lim: int) -> int:
+        """撞边落点先夹进可用区：同一 tick 还会越过上/下界时贴边位置会偏出屏幕"""
+        return max(top_lim, min(int(y), bottom_lim))
+
     def _tick_flick(self):
         screen = self._screen()
         if screen is None:
@@ -302,12 +321,27 @@ class GravitySystem(QObject):
         left_lim = geo.left()
         right_lim = geo.right() - w
         top_lim = geo.top()
+        bottom_lim = geo.bottom() - h
         if new_x <= left_lim:
+            if config.EDGE_DOCK_ENABLED:
+                self._in_flick = False
+                self._vx = 0.0
+                self._vy = 0.0
+                self._window.move(left_lim, self._clamp_y(new_y, top_lim, bottom_lim))
+                self.edge_hit.emit("left")
+                return
             new_x = left_lim
-            self._vx = abs(self._vx) * (-self._WALL_BOUNCE)
+            self._vx = abs(self._vx) * (-self._EDGE_BOUNCE)
         elif new_x >= right_lim:
+            if config.EDGE_DOCK_ENABLED:
+                self._in_flick = False
+                self._vx = 0.0
+                self._vy = 0.0
+                self._window.move(right_lim, self._clamp_y(new_y, top_lim, bottom_lim))
+                self.edge_hit.emit("right")
+                return
             new_x = right_lim
-            self._vx = -abs(self._vx) * (-self._WALL_BOUNCE)
+            self._vx = -abs(self._vx) * (-self._EDGE_BOUNCE)
 
         if new_y < top_lim:
             new_y = top_lim

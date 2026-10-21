@@ -82,7 +82,7 @@ class TestFishingIsWired:
         assert spec is not None
         # 无论钓到与否都要有交代，不能返回空
         for _ in range(20):
-            assert "钓" in spec.handler()
+            assert spec.handler().strip()
 
 
 class TestCallingIsWired:

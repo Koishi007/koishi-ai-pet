@@ -18,7 +18,19 @@
    - `[你惦记着的事]`：`_build_needs_note()`（未满足需求 + 该怎么做）+ `_memory_event_note()`（忽然想起来的旧事），
      **只在 `_NEEDS_TASKS`（`autonomous` / `chat`）注入**；
    - `[最近发生了什么]`：`_recent_events_note()`（近期事件，含工具上报与动作产出）。
+     事件按 `kind` 去重、只留最近一次；文案写在事件表 `_EVENT_LABELS`，贴边与离墙分别是
+     `dock` / `undock` 两个 kind。
 3. 最后追加 `[你对用户的记忆]`：`memory_store.retrieve_context(user_message)` 的召回结果（可能为空）。
+4. 贴边时 user 段最前面追加 `[贴边状态]`：由 `prompts.dock_note()` 生成，`ContextBuilder` 只决定
+   是否注入；四条任务路径都带，文案只有三要素 - 侧别与「你自己下不来」、
+   完成不了的请求直接说明做不到；仅 `autonomous` 追加一句“少打扰”。侧别与任务差异逐轮可能变化，
+   所以不进 system 前缀。autonomous 的移动分支写成“有窗口且有移动动作可用”，有没有移动动作由
+   动作表里的 `[移动]` 类型决定，贴边段不再单独声明步骤不适用。觅食与动作表的收窄由 system 侧
+   （`food` 工具禁用、动作表过滤）表达，贴边段不重复。
+5. 贴边时 `build_system_prompt(..., docked=True)` 替换 system 的三处：动作表换成
+   `_edge_action_section`、`_WINDOW_GUIDE` 不注入、四个任务段的示例与动作数换成贴边版本。
+   `_SELF_LIFE_GUIDE` / `_MOOD_GUIDE` / `_VITALS_GUIDE` / `_CHAT_INTRO` 写成通用描述，
+   贴边与未贴边共用；需求念头里 `lonely` / `drowsy` 同步收窄。
 
 `mode` 决定感知段（视觉 / 非视觉 / 对话 / 交互 / 分析），`task` 决定任务段（自主 / 对话 / 分析 / 交互），
 合法组合是白名单，写错直接抛 `ValueError` - 新增模式或任务要**同时**改
@@ -67,6 +79,11 @@
 | 随轮截图 | 有 | 有 | **不带** | 无 |
 | 感知段 | 视觉 / 窗口探测 | 视觉 / 窗口探测 | 只有分析段与动作表 | 只有动作表 |
 | 动作要求 | 按耗时撞满 | ≥3 个 | ≥3 个 | 1-2 个 |
+| 贴边动作要求 | ≥1 个 | ≥1 个 | ≥1 个 | ≥1 个 |
+| 贴边状态（user 段） | 有（侧别 + 少打扰） | 有（侧别） | 有（侧别） | 有（侧别） |
+
+动作数量下限集中在 `prompts._ACTION_LIMITS` 与 `_DOCKED_ACTION_LIMIT`，任务段只引用
+`_action_limit()` 的结果。
 
 `interact` 是对单一事件的反射（被抓、放下、投喂、窗口消失），注入长上下文只会让台词偏离事件本身，
 所以它的 prompt 最薄。`analyze` 走与 `chat` 相同的装配（历史、上下文池、记忆都保留），

@@ -18,8 +18,10 @@ from pet.brain.prompts import (
     build_system_prompt,
     chat_non_vision_user_prompt,
     chat_vision_user_prompt,
+    dock_note,
 )
 from pet.config import config
+from pet.tools.registry import food_tool_available
 
 
 class ContextBuilder:
@@ -34,7 +36,8 @@ class ContextBuilder:
     """
 
     def __init__(self, memory_store=None, screen_reader=None, vitals=None, mood=None,
-                 brain_mixin=None, recent_events_fn=None, once_events_fn=None):
+                 brain_mixin=None, recent_events_fn=None, once_events_fn=None,
+                 dock_side_fn=None):
         self._memory_store = memory_store
         self._screen_reader = screen_reader
         self._vitals = vitals
@@ -42,6 +45,7 @@ class ContextBuilder:
         self._brain = brain_mixin
         self._recent_events_fn = recent_events_fn
         self._once_events_fn = once_events_fn
+        self._dock_side_fn = dock_side_fn or (lambda: "")
         self._active_needs: dict[str, float] = {}  # 未满足需求: key → 起始时间戳
         self._recent_event_ids: set[int] = set()   # 上一轮注入的旧事 id，避免连续复读
 
@@ -93,7 +97,9 @@ class ContextBuilder:
                        attachment_image=None) -> list[dict]:
         """即时交互模式的 messages（抓取、释放、拖入文件等）。"""
         system = self._build_system("interact", "interact")
-        prompt = self._with_attachment(event_hint, attachment_text)
+        note = self._dock_note("interact")
+        prompt = f"{note}\n\n{event_hint}" if note else event_hint
+        prompt = self._with_attachment(prompt, attachment_text)
         base64_img = self._encode_attachment(attachment_image)
         content: str | list
         if base64_img is None:
@@ -127,6 +133,8 @@ class ContextBuilder:
         "window_lost": "你站的窗口消失了",
         "fall":      "你从窗口上掉了下来",
         "fall_down": "你摔了一跤",
+        "dock":      "用户把你放到了屏幕侧边，你下不来了",
+        "undock":    "用户把你从屏幕侧边放下来了",
     }
     _MAX_EVENT_LINES = 5  # 每次最多注入的最近事件条数
 
@@ -142,8 +150,7 @@ class ContextBuilder:
         "bedtime":  "困了",
         "drowsy":   "犯困",
     }
-    # 需求对应的"念头"：写成它自己心里那股劲，只给可选路子不给命令，
-    # 做不做、怎么做由模型自己定。bedtime/drowsy 按时段覆盖，这里是兜底
+
     _NEED_HINTS = {
         "hungry":   "肚子空空的，总想弄点吃的（跟你讨一口，或者自己生成食物走过去吃）",
         "tired":    "浑身发沉，想找个地方睡一会儿（或者让你把我放下）",
@@ -279,10 +286,11 @@ class ContextBuilder:
         food_line = self._food_line()
         if food_line:
             ctx_str += "\n" + food_line
+        dock_note = self._dock_note("autonomous")
         if vision:
-            current_prompt = autonomous_vision_user_prompt(ctx_str)
+            current_prompt = autonomous_vision_user_prompt(ctx_str, dock_note=dock_note)
         else:
-            current_prompt = autonomous_non_vision_user_prompt(ctx_str)
+            current_prompt = autonomous_non_vision_user_prompt(ctx_str, dock_note=dock_note)
 
         messages = self._merge_system_history(system, history_msgs)
 
@@ -311,13 +319,14 @@ class ContextBuilder:
         food_line = self._food_line()
         if food_line:
             ctx += "\n" + food_line
+        dock_note = self._dock_note(task)
         if task == "analyze":
-            current_prompt = (analyze_vision_user_prompt(user_message, ctx) if vision
-                              else analyze_non_vision_user_prompt(user_message, ctx))
+            current_prompt = (analyze_vision_user_prompt(user_message, ctx, dock_note=dock_note) if vision
+                              else analyze_non_vision_user_prompt(user_message, ctx, dock_note=dock_note))
         elif vision:
-            current_prompt = chat_vision_user_prompt(user_message, ctx)
+            current_prompt = chat_vision_user_prompt(user_message, ctx, dock_note=dock_note)
         else:
-            current_prompt = chat_non_vision_user_prompt(user_message, ctx)
+            current_prompt = chat_non_vision_user_prompt(user_message, ctx, dock_note=dock_note)
         current_prompt = self._with_attachment(current_prompt, attachment_text)
 
         messages = self._merge_system_history(system, history_msgs)
@@ -402,8 +411,9 @@ class ContextBuilder:
             return ""
 
         current: set[str] = set()
+        docked = bool(self._dock_side())
         # 作息有时段性，先算，深夜好压掉指向同一件事的「歇一歇」
-        circadian = self._circadian_need(datetime.now().hour)
+        circadian = self._circadian_need(datetime.now().hour, docked=docked)
         if circadian:
             current.add(circadian[0])
         if ns.get("satiety", 100) < self._NEED_THRESHOLD:
@@ -434,12 +444,12 @@ class ContextBuilder:
             if circadian and key == circadian[0]:
                 _, label, hint = circadian
             else:
-                label, hint = self._NEED_LABELS.get(key, key), self._need_hint(key)
+                label, hint = self._NEED_LABELS.get(key, key), self._need_hint(key, docked=docked)
             lines.append(f"- {label}（{age}）→ {hint}")
         return "\n".join(lines)
 
     @staticmethod
-    def _circadian_need(hour: int) -> tuple[str, str, str] | None:
+    def _circadian_need(hour: int, docked: bool = False) -> tuple[str, str, str] | None:
         """按时段返回作息需求 (key, 标签, 念头)，不在任何时段内返回 None"""
         if hour >= ContextBuilder._BEDTIME_HOUR or hour < ContextBuilder._WAKE_HOUR:
             # 距犯困起点的小时数：23 点记 0，跨零点后累加
@@ -448,14 +458,17 @@ class ContextBuilder:
                 return "bedtime", "熬夜太久了", "困过头了，脑子昏昏的，惦记着该睡了，又有点舍不得（sleep 睡长一点也行）"
             return "bedtime", "困了", "困意上来了，想找个地方窝着睡（sleep 睡久一点也行）"
         if hour == ContextBuilder._NAP_HOUR:
-            return "drowsy", "犯困", "有点犯困，想趴着眯一会儿（sit 或 sleep 都行）"
+            rest = "sleep 睡一小会儿也行" if docked else "sit 或 sleep 都行"
+            return "drowsy", "犯困", f"有点犯困，想趴着眯一会儿（{rest}）"
         return None
 
     @staticmethod
-    def _need_hint(key: str) -> str:
-        """需求对应的念头；觅食关闭时自行生成食物的路子不存在。"""
-        if key == "hungry" and not config.FOOD_ENABLED:
+    def _need_hint(key: str, docked: bool = False) -> str:
+        """需求对应的念头；觅食工具不可用时自行生成食物的路子不存在。"""
+        if key == "hungry" and (not config.FOOD_ENABLED or not food_tool_available()):
             return "肚子空空的，只能跟你讨点吃的（你自己弄不到食物）"
+        if key == "lonely" and docked:
+            return "有点想被搭理，想让你看看我（撒撒娇，或者小声念叨一句）"
         return ContextBuilder._NEED_HINTS.get(key, "")
 
     def _memory_event_note(self) -> str:
@@ -486,11 +499,23 @@ class ContextBuilder:
         return ("（你忽然想起来的旧事，可以顺着说一句，不必特意去做什么）\n"
                 + "\n".join(lines))
 
+    def _dock_side(self) -> str:
+        """当前贴边侧别；未贴边或读取失败时返回空串。"""
+        try:
+            side = self._dock_side_fn() or ""
+        except Exception:
+            return ""
+        return side if side in ("left", "right") else ""
+
+    def _dock_note(self, task: str) -> str:
+        """贴边状态说明；文案在 prompts.dock_note。"""
+        return dock_note(self._dock_side(), task)
+
     # 内部实现
 
     def _build_system(self, mode: str, task: str, user_message: str = "") -> str:
         """拼装 system prompt：感受描述 + 静态模板 + 记忆。"""
-        content = build_system_prompt(mode, task)
+        content = build_system_prompt(mode, task, docked=bool(self._dock_side()))
 
         # 人格驱动：始终注入当前感受到 FEELING_MARKER 锚点
         feeling = self._build_feeling()

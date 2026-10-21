@@ -63,6 +63,12 @@
 开关与角度上限见 `GRAB_SWING_ENABLED` / `GRAB_SWING_MAX_DEG`，
 模型与参数见 [specs/2026-10-14-grab-swing-design.md](../specs/2026-10-14-grab-swing-design.md)。
 
+**贴边路由**：贴边时 system 动作表只保留 `EDGE_ACTION_NAMES`（`sleep` / `thinking` / `shy` /
+`confuse` / `embarrassed` / `dejected` / `finger_heart` / `shake_arms`）；`PetActions` 把同名动作
+映射到 `*_edge`，`idle` / `grim` 同样映射。`PetWindow.queue_enqueue_action` 丢弃表外动作，
+解析层仍按完整 `ACTION_NAMES` 校验。贴边不播放 `unconsciousness`，设计见
+[specs/2026-10-18-screen-edge-dock-design.md](../specs/2026-10-18-screen-edge-dock-design.md)。
+
 ## 3. 帧动画的加载与运行
 
 素材侧契约（目录、命名、json 字段与取值）见 [assets-pipeline.md](assets-pipeline.md) §2；
@@ -119,3 +125,5 @@
 2. **动作名 ≠ 素材目录名**：`walk` → `walk_left/right`、`drive` → `driving_left/right`；
    `fade_in/fade_out` 没有素材；`idle` / `falling` / `grim` / `grabbed` / `unconsciousness` 是系统动画，不在动作注册表里。
 3. **`grim` 不是模型能输出的动作**，由理智驱动切换。
+4. **抓取状态必须与左键实际状态同步**：打开桌宠右键菜单时直接结束抓取；其余丢失释放的场景由
+   `PetWindow._grab_guard` 每 100ms 核对 `QApplication.mouseButtons()` 补结算（恢复动作队列与重力）。

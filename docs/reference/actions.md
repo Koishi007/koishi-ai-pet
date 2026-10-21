@@ -66,25 +66,25 @@
 
 ```text
 [可用动作] 共 21 个
-- drive [direction=left/right distance>=0] 骑小电驴 | 示例: drive right 800
-- walk [direction=left/right distance>=0（按 50px 步进）] 行走 | 示例: walk right 800
-- bounce [direction=left/right distance=0-800 height>0] 跳跃 | 示例: bounce right 400 200
-- shake_arms 无参数 开心摇晃手臂
-- look_around 无参数 张望环顾四周
-- stretch 无参数 睡醒起身后伸懒腰
-- fishing 无参数 钓鱼，说不定能钓到鱼
-- rotate 无参数 开心地原地转圈
-- confuse 无参数 看到或听到奇怪事情的疑惑
-- embarrassed 无参数 做错事后的尴尬
-- shy 无参数 双手捧脸表达害羞
-- dejected 无参数 失落，情绪低落地蹲着
-- hug 无参数 张开双手求抱抱
-- sit [10-216秒] 坐下 | 示例: sit 108
-- thinking [5-108秒] 沉思 | 示例: thinking 54
-- sleep [10-216秒] 睡觉 | 示例: sleep 108
-- calling [5-108秒] 给用户打电话，也许能让用户注意你关心你陪你玩 | 示例: calling 54
-- finger_heart [1-6秒] 表达喜欢的比心 | 示例: finger_heart 2
-- bathing [20-270秒] 放松地泡澡 | 示例: bathing 135
-- fade_in 无参数 显示自己的身形
-- fade_out 无参数 突然消失不见
+- drive [移动] [direction=left/right distance>=0] 骑小电驴 | 示例: drive right 800
+- walk [移动] [direction=left/right distance>=0（按 50px 步进）] 行走 | 示例: walk right 800
+- bounce [移动] [direction=left/right distance=0-800 height>0] 跳跃 | 示例: bounce right 400 200
+- shake_arms [驻留] 无参数 开心摇晃手臂
+- look_around [驻留] 无参数 张望环顾四周
+- stretch [驻留] 无参数 睡醒起身后伸懒腰
+- fishing [驻留] 无参数 钓鱼，说不定能钓到鱼
+- rotate [驻留] 无参数 开心地原地转圈
+- confuse [驻留] 无参数 看到或听到奇怪事情的疑惑
+- embarrassed [驻留] 无参数 做错事后的尴尬
+- shy [驻留] 无参数 双手捧脸表达害羞
+- dejected [驻留] 无参数 失落，情绪低落地蹲着
+- hug [驻留] 无参数 张开双手求抱抱
+- sit [驻留] [10-216秒] 坐下 | 示例: sit 108
+- thinking [驻留] [5-108秒] 沉思 | 示例: thinking 54
+- sleep [驻留] [10-216秒] 睡觉 | 示例: sleep 108
+- calling [驻留] [5-108秒] 给用户打电话，也许能让用户注意你关心你陪你玩 | 示例: calling 54
+- finger_heart [驻留] [1-6秒] 表达喜欢的比心 | 示例: finger_heart 2
+- bathing [驻留] [20-270秒] 放松地泡澡 | 示例: bathing 135
+- fade_in [显隐] 无参数 显示自己的身形
+- fade_out [显隐] 无参数 突然消失不见
 ```

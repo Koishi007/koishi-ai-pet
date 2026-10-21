@@ -1,0 +1,8 @@
+{
+  "desc": "靠屏睡觉",
+  "tick_counts": 15,
+  "frame_ratios": [1],
+  "loop": true,
+  "breath": { "amplitude": 0, "scale_x": 1.015, "scale_y": 0.97, "period_ticks": 45 },
+  "note": "屏幕侧边停靠用：主体右缘贴画布右缘"
+}

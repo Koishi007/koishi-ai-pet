@@ -439,8 +439,27 @@ def main():
             except Exception as e:
                 logger.warning(f"shutdown: close {_w.objectName() or type(_w).__name__} failed: {e}")
 
+    _quit_done = False
+
+    def _finish_quit():
+        """淡出结束后收尾退出；回调与兜底定时器都走这里，只执行一次。"""
+        nonlocal _quit_done
+        if _quit_done:
+            return
+        _quit_done = True
+        try:
+            window.shutdown()
+            window.close()
+        except Exception as e:
+            logger.warning(f"shutdown: window close failed: {e}")
+        try:
+            tray.hide()
+        except Exception as e:
+            logger.warning(f"shutdown: tray hide failed: {e}")
+        app.quit()
+
     def _do_quit():
-        """退出应用：关闭所有窗口 → 停止 agent → quit。"""
+        """退出应用：关闭所有窗口 → 停止 agent → 淡出 → quit。"""
         logger.info("shutting down...")
         if _hotkey_mgr:
             try:
@@ -468,17 +487,13 @@ def main():
             agent.stop()
         except Exception as e:
             logger.warning(f"shutdown: agent stop failed: {e}")
+        # 淡出后再退出；动画没回调时由兜底定时器收尾
         try:
-            window.shutdown()
-            window.close()
+            window.pet_actions.fade_out(callback=_finish_quit)
+            QTimer.singleShot(600, _finish_quit)
         except Exception as e:
-            logger.warning(f"shutdown: window close failed: {e}")
-        try:
-            tray.hide()
-        except Exception as e:
-            logger.warning(f"shutdown: tray hide failed: {e}")
-
-        app.quit()
+            logger.warning(f"shutdown: fade_out failed: {e}")
+            _finish_quit()
 
     def _shutdown():
         """aboutToQuit 回调：轻量善后。"""

@@ -8,7 +8,7 @@ import threading
 
 from pet.app import (_FileActionDispatcher, _file_meta_lines, _run_tool_file_action,
                      _start_file_action)
-from pet.file_intake import FileRef
+from pet.file_intake import KIND_LABELS, FileRef
 from pet.file_intake.sniff import make_ref
 from pet.tools.context import TOOL_CTX
 from pet.tools.registry import TOOL_REGISTRY
@@ -115,7 +115,9 @@ def test_tool_exception_reports_generic_summary(monkeypatch, tmp_path):
     _register_tool(monkeypatch, "x", handler)
     _run_tool_file_action("tool:probe:x", [ref])
     assert spy.done.wait(5), "异常未转成提示"
-    assert "没能完成" in spy.calls[0]
+    assert len(spy.calls) == 1
+    assert spy.calls[0].strip()
+    assert "boom" not in spy.calls[0]
 
 
 class _AgentStub:
@@ -145,19 +147,29 @@ def test_read_branch_sends_meta_as_message(tmp_path):
 
     intent, kwargs = agent.calls[0]
     assert intent == "analyze"
-    assert kwargs["message"] == "用户把文件交给了你：\n- note.txt（文本，21 字节）"
-    assert "正文" not in kwargs["message"]
+    message = kwargs["message"]
+    assert ref.name in message
+    assert KIND_LABELS["text"] in message
+    assert str(ref.size) in message
+    assert "正文" not in message
     assert kwargs["attachment_text"] == "正文"
 
 
 def test_meta_lines_include_kind_and_size(tmp_path):
     ref, _ = _text_ref(tmp_path)
-    assert _file_meta_lines([ref]) == [f"note.txt（文本，{ref.size} 字节）"]
+    lines = _file_meta_lines([ref])
+    assert len(lines) == 1
+    assert ref.name in lines[0]
+    assert KIND_LABELS["text"] in lines[0]
+    assert str(ref.size) in lines[0]
 
 
 def test_meta_lines_skip_dir_size(tmp_path):
     ref = FileRef(path=str(tmp_path), name="d", suffix="", size=0, kind="dir")
-    assert _file_meta_lines([ref]) == ["d（文件夹）"]
+    line = _file_meta_lines([ref])[0]
+    assert ref.name in line
+    assert KIND_LABELS["dir"] in line
+    assert str(ref.size) not in line
 
 
 def test_missing_tool_action_only_warns(monkeypatch, tmp_path):

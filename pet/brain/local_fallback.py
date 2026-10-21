@@ -22,8 +22,29 @@ _LOCAL_ACTIONS = [
     ("bathing", "洗个澡清爽一下～"),
 ]
 
+# 贴边兜底池：只用 EDGE_ACTION_NAMES 里的动作，避免本地兜底说出走动台词
+_EDGE_ACTIONS = [
+    ("thinking", "让我想想…"),
+    ("sleep", "呼…呼…"),
+    ("shy", "……"),
+    ("shake_arms", "嗯…"),
+    ("confuse", "咦…"),
+]
+
 # 需要方向与距离参数的移动类动作
 _MOVING_ACTIONS = ("drive", "walk")
+
+# 释放事件台词：贴边时宠物仍在边缘，不能说落地
+_RELEASE_SPEECH = [
+    "呼…终于落地了。",
+    "踏实的感觉真好～",
+    "嗯哼，还是地上舒服。",
+]
+
+_DOCKED_RELEASE_SPEECH = [
+    "唔…被贴在这儿了。",
+    "我下不来啦…",
+]
 
 
 def _random_step(action: str) -> ActionStep:
@@ -33,9 +54,9 @@ def _random_step(action: str) -> ActionStep:
     return ActionStep(action)
 
 
-def decide_local() -> BehaviorOutput:
-    """自主决策的本地兜底：随机挑一个动作与台词。"""
-    action, speech = random.choice(_LOCAL_ACTIONS)
+def decide_local(docked: bool = False) -> BehaviorOutput:
+    """自主决策的本地兜底：随机挑一个动作与台词；贴边时只用贴边动作。"""
+    action, speech = random.choice(_EDGE_ACTIONS if docked else _LOCAL_ACTIONS)
     logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] [Behavior] _decide_local → {action} / {speech}")
     return BehaviorOutput(
         actions=[_random_step(action)],
@@ -44,7 +65,7 @@ def decide_local() -> BehaviorOutput:
     )
 
 
-def interact_decide_local(event_hint: str) -> BehaviorOutput:
+def interact_decide_local(event_hint: str, docked: bool = False) -> BehaviorOutput:
     """交互决策的本地兜底：按事件提示词给出对应反应。"""
     t = datetime.now().strftime("%H:%M:%S")
 
@@ -84,19 +105,15 @@ def interact_decide_local(event_hint: str) -> BehaviorOutput:
 
     # 检测释放事件
     if "放下" in event_hint or "释放" in event_hint:
-        speech = random.choice([
-            "呼…终于落地了。",
-            "踏实的感觉真好～",
-            "嗯哼，还是地上舒服。",
-        ])
+        speech = random.choice(_DOCKED_RELEASE_SPEECH if docked else _RELEASE_SPEECH)
         logger.info(f"[{t}] [Behavior] _interact_decide_local(release) → {speech}")
         return BehaviorOutput(
-            actions=[ActionStep("stretch", kwargs={"duration": 4})],
+            actions=[ActionStep("thinking" if docked else "stretch", kwargs={"duration": 4})],
             speech=speech,
         )
 
     # 其他交互事件：通用兜底
-    action, speech = random.choice(_LOCAL_ACTIONS)
+    action, speech = random.choice(_EDGE_ACTIONS if docked else _LOCAL_ACTIONS)
     logger.info(f"[{t}] [Behavior] _interact_decide_local(generic) → {action} / {speech}")
     return BehaviorOutput(
         actions=[_random_step(action)],
@@ -105,9 +122,9 @@ def interact_decide_local(event_hint: str) -> BehaviorOutput:
     )
 
 
-def chat_decide_local(user_message: str) -> BehaviorOutput:
+def chat_decide_local(user_message: str, docked: bool = False) -> BehaviorOutput:
     """对话决策的本地兜底：示意还没接上模型。"""
     return BehaviorOutput(
-        actions=[ActionStep("look_around", kwargs={"duration": 5})],
+        actions=[ActionStep("thinking" if docked else "look_around", kwargs={"duration": 5})],
         speech=f"（听到了：{user_message[:10]}...但我还不会回应）",
     )

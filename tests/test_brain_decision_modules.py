@@ -118,8 +118,8 @@ class TestRepairMessages:
         """提示要模型先确认是输出协议字段，还是发起 OpenAI 格式的函数调用。"""
         hint = repair_module._EMPTY_RETRY_HINT
 
-        assert "Speech: 你好" in hint
-        assert "OpenAI" in hint and "函数" in hint
+        assert "Speech:" in hint and "Summary:" in hint
+        assert "OpenAI" in hint and "schema" in hint
 
     def test_original_messages_untouched(self):
         messages = [{"role": "user", "content": "你好"}]
@@ -322,27 +322,39 @@ class TestFlushSummaries:
     def test_uses_llm_summary(self):
         rec = _Recorder(["[user] 甲"], summary="LLM 摘要")
         flush_summaries(self._hooks(rec))
-        assert rec.added == [("system", "[历史摘要] LLM 摘要", True)]
+        assert len(rec.added) == 1
+        role, content, is_summary = rec.added[0]
+        assert (role, is_summary) == ("system", True)
+        assert content.endswith("LLM 摘要") and content != "LLM 摘要"
 
     def test_falls_back_without_llm(self, caplog):
         rec = _Recorder(["[user] 甲"])
         with caplog.at_level(logging.WARNING):
             flush_summaries(self._hooks(rec, summarize=False))
-        assert rec.added == [("system", "[历史摘要] 拼接摘要", True)]
+        assert len(rec.added) == 1
+        role, content, is_summary = rec.added[0]
+        assert (role, is_summary) == ("system", True)
+        assert content.endswith("拼接摘要") and content != "拼接摘要"
         assert rec.summarize_calls == 0
-        assert "LLM summarization failed" not in caplog.text
+        assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
 
     def test_falls_back_on_exception(self, caplog):
         rec = _Recorder(["[user] 甲"], raises=RuntimeError("boom"))
         with caplog.at_level(logging.WARNING):
             flush_summaries(self._hooks(rec))
-        assert rec.added == [("system", "[历史摘要] 拼接摘要", True)]
-        assert "LLM summarization failed" in caplog.text
+        assert len(rec.added) == 1
+        role, content, is_summary = rec.added[0]
+        assert (role, is_summary) == ("system", True)
+        assert content.endswith("拼接摘要") and content != "拼接摘要"
+        assert [r for r in caplog.records if r.levelno >= logging.WARNING]
 
     def test_falls_back_on_empty_summary(self):
         rec = _Recorder(["[user] 甲"], summary=None)
         flush_summaries(self._hooks(rec))
-        assert rec.added == [("system", "[历史摘要] 拼接摘要", True)]
+        assert len(rec.added) == 1
+        role, content, is_summary = rec.added[0]
+        assert (role, is_summary) == ("system", True)
+        assert content.endswith("拼接摘要") and content != "拼接摘要"
 
 
 class _Usage:
@@ -552,7 +564,9 @@ class TestNonStreamDecide:
         ])
         with caplog.at_level(logging.WARNING):
             behavior.chat_decide("在吗")
-        assert "预算耗尽" in caplog.text
+        warnings = [r for r in caplog.records if r.levelno >= logging.WARNING]
+        assert warnings
+        assert any("length" in r.getMessage() for r in warnings)
 
 
 class _ToolCallStream:

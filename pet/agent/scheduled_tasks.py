@@ -110,16 +110,21 @@ class ScheduledTasks:
             return
         ms = self._agent.mood.numeric_summary()
         sanity = ms.get("sanity", 100)
+        idle_anim = win.pet_actions.idle_animation
+        grim_anim = win.pet_actions.grim_animation
         cur = win.pet_anim.current_action
-        if sanity < config.SANITY_CRITICAL_THRESHOLD and cur == "idle":
-            win.pet_anim.play("grim")
-        elif sanity >= config.SANITY_CRITICAL_THRESHOLD and cur == "grim":
-            win.pet_anim.play("idle")
+        if sanity < config.SANITY_CRITICAL_THRESHOLD and cur == idle_anim:
+            win.pet_anim.play(grim_anim)
+        elif sanity >= config.SANITY_CRITICAL_THRESHOLD and cur == grim_anim:
+            win.pet_anim.play(idle_anim)
 
     def _unconsciousness(self):
         """连续 idle 超过 UNCONSCIOUS_IDLE_SECONDS 秒 → 播放无意识化动作"""
         win = self._agent._pet_window
         if not win:
+            return
+        if win.is_docked:
+            self._idle_since = None
             return
         if (win.action_queue.current_action_name() is not None
                 or win.pet_actions.gravity.falling

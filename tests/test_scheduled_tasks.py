@@ -18,6 +18,9 @@ class _Gravity:
 
 
 class _Actions:
+    idle_animation = "idle"
+    grim_animation = "grim"
+
     def __init__(self):
         self.gravity = _Gravity()
         self.played: list[str] = []
@@ -31,6 +34,8 @@ class _Anim:
 
 
 class _Win:
+    is_docked = False
+
     def __init__(self):
         self.action_queue = _Queue()
         self.pet_actions = _Actions()

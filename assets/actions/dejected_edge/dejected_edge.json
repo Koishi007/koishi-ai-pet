@@ -1,0 +1,7 @@
+{
+  "desc": "靠屏失落",
+  "tick_counts": 60,
+  "frame_ratios": [1],
+  "loop": false,
+  "note": "屏幕侧边停靠用：主体右缘贴画布右缘"
+}
