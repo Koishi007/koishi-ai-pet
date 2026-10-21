@@ -365,7 +365,10 @@ class PetWindow(TransparentWindow):
         self.pet_actions.fade_out(callback=lambda: self._dock_after_fade(side))
 
     def _dock_after_fade(self, side: str):
-        """淡出结束后贴上边缘，移动动画播完再淡入"""
+        """淡出结束后贴上边缘，移动动画播完再淡入；淡出期间被抓取则放弃贴边。"""
+        if self._grab_local is not None:
+            self.pet_actions.fade_in()
+            return
         self.dock_to(side, center_y=True)
         anim = self._dock_anim
         if anim is None:
