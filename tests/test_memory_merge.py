@@ -29,6 +29,14 @@ class TestParseGroups:
         text = "Group: #1,#2 | 第一组\nGroup: #2,#3 | 第二组\n"
         assert memory_merge.parse_groups(text, {1, 2, 3}) == [([1, 2], "第一组")]
 
+    def test_invalid_group_does_not_consume_ids(self):
+        text = "Group: #1,#2 |   \nGroup: #1,#2,#3 | 第二组\n"
+        assert memory_merge.parse_groups(text, {1, 2, 3}) == [([1, 2, 3], "第二组")]
+
+    def test_duplicate_id_inside_group_collapses(self):
+        assert memory_merge.parse_groups("Group: #1,#1,#2 | 同组重复\n", {1, 2}) == [
+            ([1, 2], "同组重复")]
+
     def test_empty_summary_ignored(self):
         assert memory_merge.parse_groups("Group: #1,#2 |   \n", {1, 2}) == []
 
@@ -115,6 +123,39 @@ class TestRunMerge:
         with pytest.raises(Exception):
             store.apply_event_merges([(ids, None)], rows)  # type: ignore[list-item]
         assert len(store.list_event_candidates()) == 2
+
+    def test_request_failure_raises(self, store, monkeypatch):
+        store.save("event", "准备拍视频", ["拍摄"], 3, "L2")
+        store.save("event", "镜头已补拍完成", ["补拍"], 3, "L2")
+
+        def _boom(messages):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(memory_merge, "_call_llm", _boom)
+        with pytest.raises(RuntimeError):
+            memory_merge.run_merge(store)
+
+    def test_changed_member_skips_group(self, store):
+        store.save("event", "准备拍视频", ["拍摄"], 3, "L2")
+        store.save("event", "镜头已补拍完成", ["补拍"], 3, "L2")
+        rows = store.list_event_candidates()
+        ids = [int(r["id"]) for r in rows]
+        with store._retriever._lock:
+            conn = store._retriever._conn
+            conn.execute("UPDATE memories SET content = ? WHERE id = ?",
+                         ("用户改过这条", ids[0]))
+            conn.commit()
+        assert store.apply_event_merges([(ids, "拍视频汇总")], rows) == 0
+        assert len(store.list_event_candidates()) == 2
+
+    def test_deleted_member_skips_group(self, store):
+        store.save("event", "准备拍视频", ["拍摄"], 3, "L2")
+        store.save("event", "镜头已补拍完成", ["补拍"], 3, "L2")
+        rows = store.list_event_candidates()
+        ids = [int(r["id"]) for r in rows]
+        store.delete_memories([ids[0]])
+        assert store.apply_event_merges([(ids, "拍视频汇总")], rows) == 0
+        assert len(store.list_event_candidates()) == 1
 
     def test_merged_row_gets_embedding(self, store, monkeypatch):
         store.save("event", "准备拍视频", ["拍摄"], 3, "L2")

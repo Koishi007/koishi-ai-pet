@@ -200,6 +200,16 @@ class TestRandomEvents:
         assert "用户今天加班到很晚" in contents
         assert "用户上周带猫去看了医生" in contents
 
+    def test_excluded_latest_topic_is_skipped(self, store):
+        store.save("event", "准备拍视频，镜头需重拍", ["视频拍摄"], 3, "L2")
+        store.save("event", "视频已拍完，素材不用补拍", ["视频拍摄"], 3, "L2")
+        newest = max(store.list_event_candidates(),
+                     key=lambda r: (r["created_at"], r["id"]))
+        picked = store.random_events(10, exclude_ids={newest["id"]})
+        # 同主题最新条目已被排除时不回退到更旧的条目
+        assert newest["content"] not in [r["content"] for r in picked]
+        assert "准备拍视频，镜头需重拍" not in [r["content"] for r in picked]
+
     def test_marker_orders_by_id_on_same_timestamp(self, store):
         store.save("event", "甲事件", ["甲"], 3, "L2")
         store.save("event", "乙事件", ["乙"], 3, "L2")
