@@ -1253,6 +1253,7 @@ class SettingsWindow(QWidget):
         self._conn_test_output.clear()
         self._conn_test_output.append("测试中...")
         self._btn_mem_test.setEnabled(False)
+        self._btn_merge_test.setEnabled(False)  # 两项测试共用输出框，一次只跑一个
         self._label_mem_test.setText("测试中...")
 
         self._embedding_thread = QThread()
@@ -1274,6 +1275,7 @@ class SettingsWindow(QWidget):
             self._conn_test_output.append(f"错误: {content}")
             self._label_mem_test.setText("❌ 失败")
         self._btn_mem_test.setEnabled(True)
+        self._btn_merge_test.setEnabled(True)
 
     def _test_merge_connection(self):
         """在子线程测试汇总模型连接；三项留空时沿用当前启用方案。"""
@@ -1312,6 +1314,7 @@ class SettingsWindow(QWidget):
         self._conn_test_output.append(
             "测试中...（汇总连接未填齐，沿用当前启用方案）" if inherited else "测试中...")
         self._btn_merge_test.setEnabled(False)
+        self._btn_mem_test.setEnabled(False)  # 两项测试共用输出框，一次只跑一个
         self._label_merge_test.setText("测试中...")
 
         self._merge_test_thread = QThread()
@@ -1333,6 +1336,7 @@ class SettingsWindow(QWidget):
             self._conn_test_output.append(f"错误: {content}")
             self._label_merge_test.setText("❌ 失败")
         self._btn_merge_test.setEnabled(True)
+        self._btn_mem_test.setEnabled(True)
 
     def _manual_merge(self):
         """手动汇总事件记忆：先确认风险，再在子线程执行。"""
@@ -1642,6 +1646,12 @@ class SettingsWindow(QWidget):
         if self._embedding_thread is not None and self._embedding_thread.isRunning():
             self._embedding_thread.quit()
             self._embedding_thread.wait(2000)
+        if self._merge_test_thread is not None and self._merge_test_thread.isRunning():
+            self._merge_test_thread.quit()
+            self._merge_test_thread.wait(2000)
+        if self._merge_thread is not None and self._merge_thread.isRunning():
+            self._merge_thread.quit()
+            self._merge_thread.wait(2000)
         super().closeEvent(event)
 
 
