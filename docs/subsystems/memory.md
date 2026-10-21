@@ -105,7 +105,7 @@ slow tick 触发（默认每 5 分钟）：
 
 | 频率 | 动作 |
 |---|---|
-| 每次 | L3 过期硬删（`MEMORY_L3_EXPIRE_DAYS`，默认 3 天；先探测再写，无过期行不落盘） |
+| 每次 | L3 过期硬删（`MEMORY_L3_EXPIRE_DAYS`，默认 3 天；先探测再写，无过期行不落盘；删除条数记 INFO） |
 | 每 6 次（≈30 分钟） | `_demote_l2_to_l3()`：有效分 < 2.2 的 L1→L2、L2→L3（`importance=5` 的 L1 除外），并把 importance 压到 ≤4 维持「L3 最高 4」 |
 | 每 6 次 | `_promote_by_tool_hits()`：先全表 `tool_hits × 0.9` 衰减；`≥40` 提到 importance 4、`≥120` 提到 5（命中即清零，不跳级，只对 L1/L2） |
 | 每 6 次 | 超容量时 `enforce_capacity()` |

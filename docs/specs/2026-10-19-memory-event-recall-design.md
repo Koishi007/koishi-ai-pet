@@ -59,7 +59,7 @@
 - 使用 `Scheduler.schedule_at(timestamp_ms, callback, key)` 注册下一个整点（本地时间）的一次性回调，`key` 固定为 `memory_event_merge`，重复注册会覆盖旧闹钟。
 - 回调开头先注册下一个整点，再执行合并；合并异常不中断链。
 - 进程退出即停止，无后台守护；休眠唤醒或系统时钟调整后，按当前时间重新计算下一次整点。
-- 触发时先判定是否执行：`SELECT MAX(created_at) FROM memories WHERE category='event'` 与上次合并时间比较，没有新增则跳过，不发起 LLM 调用。
+- 触发时先判定是否执行：按上次汇总的 `(created_at, id)` marker 统计新增 event 条数，新增不足 6 条则跳过，不发起 LLM 调用；实现见 [subsystems/memory.md](../subsystems/memory.md) §4。
 - 游标只存在内存：`register_all` 用 `latest_event_marker()` 初始化，重启后的第一个整点不重复汇总已有条目。
 - 请求失败时游标不推进，下一个整点重新汇总同一批；成功但无分组时正常推进。
 - 回调由 QTimer 在主线程执行，LLM 调用与写回放到后台线程。
@@ -214,7 +214,7 @@ Group: #1245,#1252 | 10-17 答应配合拍视频，当天已拍完
 | 用例 | 断言 |
 |---|---|
 | 整点注册 | 注册后闹钟指向下一个整点；重复注册覆盖旧闹钟 |
-| 无新增跳过 | `MAX(created_at)` 不晚于上次合并时间时不发起调用 |
+| 无新增跳过 | 新增条数不足 6 条时不发起调用 |
 | 输入范围 | 包含全部 event 条目，按时间倒序 |
 | 输入格式 | 每行为 id、`MM-DD HH:MM`、内容三段 |
 | 解析：全角符号 | 全角冒号与全角逗号可解析 |

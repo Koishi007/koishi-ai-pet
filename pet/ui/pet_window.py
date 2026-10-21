@@ -86,6 +86,9 @@ class _SpriteLabel(QLabel):
     _TAP_SQUASH = 0.9
     _TAP_OVERSHOOT = 1.03
     _TAP_DURATION_MS = 450
+    # 1:1 绘制时 Qt 走整数 blit，QPointF 的小数位移会被取整；DPR>1 或镜像时
+    # 矩阵本就非单位、会走采样路径。乘极小缩放补齐 1:1 这一档。
+    _SUBPIXEL_NUDGE = 1.0 + 1e-6
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -151,7 +154,7 @@ class _SpriteLabel(QLabel):
         scale_x *= self._tap_scale
         scale_y *= self._tap_scale
         # Qt6 的 QPixmap.width()/height() 返回设备像素，帧贴图带 DPR（高DPI适配），
-        # 需除回逻辑像素再计算，否则 dpr>1 时贴图会画偏（站立呼吸时左右闪动）
+        # 需除回逻辑像素再计算，否则 dpr>1 时贴图会画偏
         dpr = pixmap.devicePixelRatio() or 1.0
         pm_w = pixmap.width() / dpr
         pm_h = pixmap.height() / dpr
@@ -163,7 +166,7 @@ class _SpriteLabel(QLabel):
         anchor_x = left + pm_w / 2
         anchor_y = top + pm_h
         painter.translate(anchor_x, anchor_y)
-        painter.scale(scale_x, scale_y)
+        painter.scale(scale_x * self._SUBPIXEL_NUDGE, scale_y * self._SUBPIXEL_NUDGE)
         painter.translate(-anchor_x, -anchor_y)
         # 摆动绕头部抓取点旋转：θ 右偏为正；Qt 正角在屏幕上为顺时针，会把
         # 锚点下方的身体转向左侧，因此绘制取负角

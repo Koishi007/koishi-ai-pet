@@ -3,6 +3,6 @@
   "tick_counts": 60,
   "frame_ratios": [0.9, 0.1],
   "loop": true,
-  "breath": { "amplitude": 1, "period_ticks": 34 },
+  "breath": { "amplitude": 2, "period_ticks": 34 },
   "note": "1px呼吸，2.3s一个来回"
 }

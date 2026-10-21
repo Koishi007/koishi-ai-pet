@@ -273,6 +273,8 @@ class SettingsWindow(QWidget):
         self._embedding_worker = None
         self._merge_thread = None
         self._merge_worker = None
+        self._merge_test_thread = None
+        self._merge_test_worker = None
         self._capture_listener = None
         self._fields = {}
         self._snapshot = {}
@@ -792,7 +794,7 @@ class SettingsWindow(QWidget):
         )
         merge_help.setToolTip(
             "整点（或点下方「立即汇总」）把同主题的 event 记忆交给模型，合并成一条汇总：\n"
-            "省容量，旧事更好召回。\n\n"
+            "将散落的同一主题事件合并成一条，记忆召回内容更加完整。\n\n"
             "风险：\n"
             "· 被合并的原始记忆会被删除，只留汇总，不可撤销\n"
             "· 汇总由模型生成，可能丢细节或概括偏差\n"
@@ -805,8 +807,8 @@ class SettingsWindow(QWidget):
         merge_form = QFormLayout()
         merge_form.setSpacing(8)
         merge_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-        merge_form.addRow("汇总 API 地址:", self._line("MEMORY_MERGE_URL"))
-        merge_form.addRow("汇总 API Key:", self._secret_row("MEMORY_MERGE_KEY"))
+        merge_form.addRow("汇总模型 API 地址:", self._line("MEMORY_MERGE_URL"))
+        merge_form.addRow("汇总模型 API Key:", self._secret_row("MEMORY_MERGE_KEY"))
         merge_form.addRow("汇总模型名:", self._line("MEMORY_MERGE_MODEL"))
         memory_layout.addLayout(merge_form)
 
@@ -823,29 +825,36 @@ class SettingsWindow(QWidget):
         merge_row.addStretch()
         memory_layout.addLayout(merge_row)
 
-        # 连接测试
-        mem_test_row = QHBoxLayout()
-        mem_test_row.setSpacing(6)
-        self._btn_mem_test = QPushButton("测试连接")
+        # 连接测试：汇总与向量并排，共用下方输出框
+        test_row = QHBoxLayout()
+        test_row.setSpacing(6)
+        self._btn_merge_test = QPushButton("测试汇总模型连接")
+        self._btn_merge_test.setStyleSheet(BUTTON_PRIMARY_QSS)
+        self._btn_merge_test.clicked.connect(self._test_merge_connection)
+        test_row.addWidget(self._btn_merge_test)
+        self._label_merge_test = QLabel("就绪")
+        self._label_merge_test.setStyleSheet(f"color:{_COLOR_TEXT_SEC}; font-size:11px;")
+        test_row.addWidget(self._label_merge_test)
+        self._btn_mem_test = QPushButton("测试向量模型连接")
         self._btn_mem_test.setStyleSheet(BUTTON_PRIMARY_QSS)
         self._btn_mem_test.clicked.connect(self._test_embedding)
-        mem_test_row.addWidget(self._btn_mem_test)
+        test_row.addWidget(self._btn_mem_test)
         self._label_mem_test = QLabel("就绪")
         self._label_mem_test.setStyleSheet(f"color:{_COLOR_TEXT_SEC}; font-size:11px;")
-        mem_test_row.addWidget(self._label_mem_test)
-        mem_test_row.addStretch()
-        memory_layout.addLayout(mem_test_row)
+        test_row.addWidget(self._label_mem_test)
+        test_row.addStretch()
+        memory_layout.addLayout(test_row)
 
-        self._mem_test_output = QTextEdit()
-        self._mem_test_output.setReadOnly(True)
-        self._mem_test_output.setMaximumHeight(60)
-        self._mem_test_output.setFont(QFont("Consolas", 9))
-        self._mem_test_output.setStyleSheet(TEXTEDIT_QSS + f"""
+        self._conn_test_output = QTextEdit()
+        self._conn_test_output.setReadOnly(True)
+        self._conn_test_output.setMaximumHeight(60)
+        self._conn_test_output.setFont(QFont("Consolas", 9))
+        self._conn_test_output.setStyleSheet(TEXTEDIT_QSS + f"""
             QTextEdit {{
                 background: {_COLOR_BG};
             }}
         """)
-        memory_layout.addWidget(self._mem_test_output)
+        memory_layout.addWidget(self._conn_test_output)
 
         # 重启提示
         memory_hint = QLabel("修改记忆设置后需重启生效。")
@@ -1231,19 +1240,20 @@ class SettingsWindow(QWidget):
         try:
             dim = int(dim_str) if dim_str else 2048
         except ValueError:
-            self._mem_test_output.clear()
-            self._mem_test_output.append("⚠ 向量维度格式无效")
+            self._conn_test_output.clear()
+            self._conn_test_output.append("⚠ 向量维度格式无效")
             return
 
         if not url or not key or not model:
-            self._mem_test_output.clear()
-            self._mem_test_output.append("⚠ 请先填写 API 地址、Key 和模型名")
+            self._conn_test_output.clear()
+            self._conn_test_output.append("⚠ 请先填写 API 地址、Key 和模型名")
             self._label_mem_test.setText("未配置")
             return
 
-        self._mem_test_output.clear()
-        self._mem_test_output.append("测试中...")
+        self._conn_test_output.clear()
+        self._conn_test_output.append("测试中...")
         self._btn_mem_test.setEnabled(False)
+        self._btn_merge_test.setEnabled(False)  # 两项测试共用输出框，一次只跑一个
         self._label_mem_test.setText("测试中...")
 
         self._embedding_thread = QThread()
@@ -1255,15 +1265,77 @@ class SettingsWindow(QWidget):
         self._embedding_thread.start()
 
     def _on_embedding_test_result(self, success: bool, content: str, elapsed: float):
-        self._mem_test_output.clear()
+        self._conn_test_output.clear()
         if success:
-            self._mem_test_output.append(f"✅ 连接成功 ({elapsed:.1f}s)")
-            self._mem_test_output.append(f"响应: {content[:200]}")
+            self._conn_test_output.append(f"✅ 连接成功 ({elapsed:.1f}s)")
+            self._conn_test_output.append(f"响应: {content[:200]}")
             self._label_mem_test.setText("✅ 正常")
         else:
-            self._mem_test_output.append(f"❌ 连接失败 ({elapsed:.1f}s)")
-            self._mem_test_output.append(f"错误: {content}")
+            self._conn_test_output.append(f"❌ 连接失败 ({elapsed:.1f}s)")
+            self._conn_test_output.append(f"错误: {content}")
             self._label_mem_test.setText("❌ 失败")
+        self._btn_mem_test.setEnabled(True)
+        self._btn_merge_test.setEnabled(True)
+
+    def _test_merge_connection(self):
+        """在子线程测试汇总模型连接；三项留空时沿用当前启用方案。"""
+        if self._merge_test_thread is not None and self._merge_test_thread.isRunning():
+            return
+
+        url = self._fields["MEMORY_MERGE_URL"].text().strip()
+        key = self._fields["MEMORY_MERGE_KEY"].text().strip()
+        model = self._fields["MEMORY_MERGE_MODEL"].text().strip()
+        inherited = not (url and key and model)
+        if inherited:
+            brain_cfg = self._brain_combo.currentText()
+            if brain_cfg == "local":
+                self._conn_test_output.clear()
+                self._conn_test_output.append("⚠ 当前为 local 模式，且未填写汇总连接")
+                self._label_merge_test.setText("未配置")
+                return
+            profile = getattr(config, "LLM_ACTIVE_PROFILE", "primary") or "primary"
+            key, url, model = self._profile_form_values(profile)
+            if brain_cfg == "ollama":
+                url = self._fields["OLLAMA_BASE_URL"].text().strip()
+                key = "ollama"
+
+        if not (url and key and model):
+            self._conn_test_output.clear()
+            self._conn_test_output.append("⚠ 请填写汇总模型 API 地址、Key 和模型名，或先配置当前对话模型")
+            self._label_merge_test.setText("未配置")
+            return
+
+        try:
+            timeout = float(self._fields["LLM_TIMEOUT"].text().strip() or "30")
+        except ValueError:
+            timeout = 30.0
+
+        self._conn_test_output.clear()
+        self._conn_test_output.append(
+            "测试中...（汇总连接未填齐，沿用当前启用方案）" if inherited else "测试中...")
+        self._btn_merge_test.setEnabled(False)
+        self._btn_mem_test.setEnabled(False)  # 两项测试共用输出框，一次只跑一个
+        self._label_merge_test.setText("测试中...")
+
+        self._merge_test_thread = QThread()
+        self._merge_test_worker = _LLMTestWorker(url, key, model, timeout, thinking=False)
+        self._merge_test_worker.moveToThread(self._merge_test_thread)
+        self._merge_test_thread.started.connect(self._merge_test_worker.run)
+        self._merge_test_worker.finished.connect(self._on_merge_test_result)
+        self._merge_test_worker.finished.connect(self._merge_test_thread.quit)
+        self._merge_test_thread.start()
+
+    def _on_merge_test_result(self, success: bool, content: str, elapsed: float):
+        self._conn_test_output.clear()
+        if success:
+            self._conn_test_output.append(f"✅ 连接成功 ({elapsed:.1f}s)")
+            self._conn_test_output.append(f"响应: {content[:200]}")
+            self._label_merge_test.setText("✅ 正常")
+        else:
+            self._conn_test_output.append(f"❌ 连接失败 ({elapsed:.1f}s)")
+            self._conn_test_output.append(f"错误: {content}")
+            self._label_merge_test.setText("❌ 失败")
+        self._btn_merge_test.setEnabled(True)
         self._btn_mem_test.setEnabled(True)
 
     def _manual_merge(self):
@@ -1574,6 +1646,12 @@ class SettingsWindow(QWidget):
         if self._embedding_thread is not None and self._embedding_thread.isRunning():
             self._embedding_thread.quit()
             self._embedding_thread.wait(2000)
+        if self._merge_test_thread is not None and self._merge_test_thread.isRunning():
+            self._merge_test_thread.quit()
+            self._merge_test_thread.wait(2000)
+        if self._merge_thread is not None and self._merge_thread.isRunning():
+            self._merge_thread.quit()
+            self._merge_thread.wait(2000)
         super().closeEvent(event)
 
 

@@ -336,15 +336,18 @@ def main():
         lambda text, duration=5000: speech_bubble.show_text(text, duration) if window.isVisible() else None
     )
     agent.speak_stream_start.connect(
-        lambda: speech_bubble.start_stream() if window.isVisible() else None
+        lambda token: speech_bubble.start_stream()
+        if window.isVisible() and agent.is_current_call(token) else None
     )
     agent.speak_stream_chunk.connect(
-        lambda chunk: speech_bubble.append_stream(chunk) if window.isVisible() else None
+        lambda token, chunk: speech_bubble.append_stream(chunk)
+        if window.isVisible() and agent.is_current_call(token) else None
     )
     agent.speak_stream_end.connect(
-        lambda duration: speech_bubble.end_stream(duration) if window.isVisible() else None
+        lambda token, duration: speech_bubble.end_stream(duration)
+        if window.isVisible() and agent.is_current_call(token) else None
     )
-    agent.speech_clear_requested.connect(lambda: speech_bubble.flush_pending())
+    agent.speech_finish_requested.connect(lambda: speech_bubble.finish_pending())
     agent.llm_loading.connect(
         lambda loading: window.particles.start_loading() if window.isVisible() and loading else window.particles.stop_loading() if not loading else None
     )

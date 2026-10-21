@@ -3,5 +3,6 @@
   "tick_counts": 90,
   "frame_ratios": [1],
   "loop": false,
+  "breath": { "amplitude": 2, "period_ticks": 40 },
   "note": "屏幕侧边停靠用：主体右缘贴画布右缘"
 }

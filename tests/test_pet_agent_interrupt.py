@@ -125,8 +125,8 @@ def test_token_of_interrupted_call_stays_stale_after_restart():
     fresh = object()
     stub._call_token = fresh  # 模拟 _async_brain 派发新调用
 
-    assert PetAgent._is_current_call(stub, stale) is False
-    assert PetAgent._is_current_call(stub, fresh) is True
+    assert PetAgent.is_current_call(stub, stale) is False
+    assert PetAgent.is_current_call(stub, fresh) is True
 
 
 def test_pipeline_token_is_injected_at_dispatch():
@@ -135,6 +135,49 @@ def test_pipeline_token_is_injected_at_dispatch():
     worker = BrainWorker(lambda token, value: seen.append((token, value)), "T", 7)
     worker.run()
     assert seen == [("T", 7)]
+
+
+class _StreamAgent:
+    """承载 _interact_pipeline 所需的 agent 最小面：假行为直接回放一段流式输出。"""
+
+    class _Behavior:
+        @staticmethod
+        def interact_decide_stream(hint, *, on_chunk, on_stream_end, **_kw):
+            on_chunk("你好")
+            on_stream_end()
+
+    def __init__(self, token):
+        self._call_token = token
+        self.speak_stream_start = _Signal()
+        self.speak_stream_chunk = _Signal()
+        self.speak_stream_end = _Signal()
+        self.behavior = self._Behavior()
+
+    def is_current_call(self, token):
+        return PetAgent.is_current_call(self, token)  # 走真实判定
+
+
+def test_stream_signals_carry_call_token():
+    token = object()
+    stub = _StreamAgent(token)
+
+    PetAgent._interact_pipeline(stub, token, "hint")
+
+    assert stub.speak_stream_start.emitted == [(token,)]
+    assert stub.speak_stream_chunk.emitted == [(token, "你好")]
+    assert stub.speak_stream_end.emitted == [(token, 4000)]
+
+
+def test_stale_stream_signals_are_not_emitted():
+    stale = object()
+    stub = _StreamAgent(stale)
+    stub._call_token = object()  # 新调用顶替旧令牌
+
+    PetAgent._interact_pipeline(stub, stale, "hint")
+
+    assert stub.speak_stream_start.emitted == []
+    assert stub.speak_stream_chunk.emitted == []
+    assert stub.speak_stream_end.emitted == []
 
 
 def test_recover_stuck_brain_resets_groups_and_notifies():
@@ -198,8 +241,8 @@ class _DispatchStub:
     def sender(self):
         return self.sender_obj
 
-    def _is_current_call(self, token):
-        return PetAgent._is_current_call(self, token)  # 走真实判定
+    def is_current_call(self, token):
+        return PetAgent.is_current_call(self, token)  # 走真实判定
 
 
 class _WorkerStub:
