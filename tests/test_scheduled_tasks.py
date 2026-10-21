@@ -177,6 +177,10 @@ class _FakeStore:
 class _FakeScheduler:
     def __init__(self):
         self.calls: list[tuple] = []
+        self.registered: list[str] = []
+
+    def register(self, name, callback):
+        self.registered.append(name)
 
     def schedule_at(self, timestamp_ms, callback, key=None):
         self.calls.append((timestamp_ms, callback, key))
@@ -221,10 +225,29 @@ class TestMemoryMergeTick:
         started = []
         monkeypatch.setattr(
             scheduled_tasks.threading, "Thread",
-            lambda target, daemon: SimpleNamespace(start=lambda: started.append(target)))
+            lambda target, daemon, args=():
+                SimpleNamespace(start=lambda: started.append((target, args))))
         tasks._memory_event_merge()
-        assert started == [tasks._run_merge]
+        assert started == [(tasks._run_merge, ("m2",))]
+        # 游标等后台汇总成功后再推进
+        assert tasks._last_merge_at == "m1"
+
+    def test_worker_advances_cursor_on_success(self, monkeypatch):
+        monkeypatch.setattr(scheduled_tasks, "run_merge", lambda store: 1)
+        tasks = self._tasks("m2")
+        tasks._last_merge_at = "m1"
+        tasks._run_merge("m2")
         assert tasks._last_merge_at == "m2"
+
+    def test_worker_keeps_cursor_on_failure(self, monkeypatch):
+        def _boom(store):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(scheduled_tasks, "run_merge", _boom)
+        tasks = self._tasks("m2")
+        tasks._last_merge_at = "m1"
+        tasks._run_merge("m2")
+        assert tasks._last_merge_at == "m1"
 
     def test_disabled_skips(self, monkeypatch):
         monkeypatch.setattr(config, "MEMORY_EVENT_MERGE_ENABLED", False)
@@ -233,10 +256,21 @@ class TestMemoryMergeTick:
         started = []
         monkeypatch.setattr(
             scheduled_tasks.threading, "Thread",
-            lambda target, daemon: SimpleNamespace(start=lambda: started.append(target)))
+            lambda target, daemon, args=():
+                SimpleNamespace(start=lambda: started.append((target, args))))
         tasks._memory_event_merge()
         assert started == []
         assert tasks._last_merge_at == "m1"
+
+    def test_register_all_seeds_cursor_from_store(self, monkeypatch):
+        tasks = self._tasks("2026-10-20T10:00:00#00000009")
+        tasks.register_all(_FakeScheduler())
+        assert tasks._last_merge_at == "2026-10-20T10:00:00#00000009"
+
+    def test_register_all_keeps_empty_cursor_without_events(self):
+        tasks = self._tasks(None)
+        tasks.register_all(_FakeScheduler())
+        assert tasks._last_merge_at == ""
 
 
 class TestMergeMarkerRefresh:
