@@ -98,7 +98,7 @@ def do_something(target: str, mode: str = "fast") -> dict:
 |---|---|
 | `__image__` | base64 图片，作为多模态内容附给模型（见下节） |
 | `__image_mime__` | 图片 MIME，默认 `image/png` |
-| `__context__` | 一段文本，写入桌宠上下文（`context_brief`），适合放「模型后续应当记得」的短信息 |
+| `__context__` | 一段文本，写入桌宠上下文（`context_brief`），适合放「模型后续应当记得」的短信息；图片结果会用它作为来源说明 |
 
 ## 图片注入（多模态）
 
@@ -112,8 +112,14 @@ def capture() -> dict:
     }
 ```
 
-系统会把 `__image__` 提取为多模态消息；需要模型支持视觉（用户侧由 `VISION_ENABLED` 控制截图能力，
-但工具图片不受该开关影响）。
+系统会把 `__image__` 提取为多模态消息，附在工具结果之后的下一轮请求里。每张图带一条来源说明
+（优先取 `__context__`，其次结果里的 `path` / `url`），多图按工具调用顺序排列。宿主没有视觉能力时不注入，
+模型只看到文本结果；图片类工具可在返回前用 `TOOL_CTX.has_vision()` 判断，避免产出无人接收的图片。
+工具调用记录里保留「图片已读取，可再次调用查看」的引用，后续轮次可重新取图。
+
+文件类工具取图时复用 `pet/file_intake` 的 `load_image`：像素闸门与长边 1536 缩放已在其中完成，
+返回的 RGB 图可直接编码。需要区分失败原因时改用 `load_image_with_reason`，返回 `(image, reason)`；
+`REASON_OVERSIZE` 表示像素闸门拒绝，`REASON_UNREADABLE` 表示格式不支持或文件损坏。
 
 ## 主动调用宠物能力
 
@@ -136,11 +142,15 @@ def alert() -> dict:
 | `speech_random(texts, duration=3000)` | 随机挑一句；模型本轮已带 `aside` 时自动跳过 |
 | `action(name, args, kwargs)` | 触发动作，动作名须在 `pet/action/registry.py` 注册表内 |
 | `add_context(text)` | 往上下文追加一条 system 备注 |
+| `has_vision()` | 当前模型是否具备视觉能力；未绑定或视觉关闭时为 `False` |
 | `note_event(kind, text)` | 上报事件，进入「最近发生了什么」章节 |
 | `notify(title, message, duration)` | 系统通知 |
 | `request_interact(hint, delay_ms, cooldown_ms, thinking, enable_tools)` | 请求一次即时交互（会占用脑线程）；`cooldown_ms` 默认 15000，同一 hint 在窗口内会被合并，传 0 关闭 |
 | `register_tick(name, callback)` | 注册随调度器执行的周期回调 |
 | `register_alarm(timestamp_ms, callback, key=None)` | 注册一次性闹钟（只存内存，重启即丢；timer 工具能跨重启是它自己落库、启动时重新注册的） |
+
+宿主能力（视觉、数据库路径、调度器）统一由 `TOOL_CTX` 提供；`pet.config` 里属于其他功能的开关不由工具直接读取。
+共享的纯逻辑（类型嗅探、解码、分页）用 `pet/file_intake` 这类下层模块，工具私有配置放自己的 `config.json`。
 
 `note_event` 适合定时器、待办、对局这类「已经发生的事」 - 同类型只保留最近一次，超出保鲜窗口后不再注入：
 

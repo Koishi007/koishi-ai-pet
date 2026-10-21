@@ -188,6 +188,56 @@ class TestRandomEvents:
     def test_zero_limit_returns_empty(self, store):
         assert store.random_events(0) == []
 
+    def test_same_topic_returns_latest(self, store):
+        store.save("event", "准备拍视频，镜头需重拍", ["视频拍摄"], 3, "L2")
+        store.save("event", "视频已拍完，素材不用补拍", ["视频拍摄"], 3, "L2")
+        contents = [r["content"] for r in store.random_events(10)]
+        assert "视频已拍完，素材不用补拍" in contents
+        assert "准备拍视频，镜头需重拍" not in contents
+
+    def test_no_shared_keyword_returns_seed(self, store):
+        contents = [r["content"] for r in store.random_events(10)]
+        assert "用户今天加班到很晚" in contents
+        assert "用户上周带猫去看了医生" in contents
+
+    def test_excluded_latest_topic_is_skipped(self, store):
+        store.save("event", "准备拍视频，镜头需重拍", ["视频拍摄"], 3, "L2")
+        store.save("event", "视频已拍完，素材不用补拍", ["视频拍摄"], 3, "L2")
+        newest = max(store.list_event_candidates(),
+                     key=lambda r: (r["created_at"], r["id"]))
+        picked = store.random_events(10, exclude_ids={newest["id"]})
+        # 同主题最新条目已被排除时不回退到更旧的条目
+        assert newest["content"] not in [r["content"] for r in picked]
+        assert "准备拍视频，镜头需重拍" not in [r["content"] for r in picked]
+
+    def test_marker_orders_by_id_on_same_timestamp(self, store):
+        store.save("event", "甲事件", ["甲"], 3, "L2")
+        store.save("event", "乙事件", ["乙"], 3, "L2")
+        with store._retriever._lock:
+            conn = store._retriever._conn
+            conn.execute("UPDATE memories SET created_at = '2026-10-19T10:00:00'")
+            conn.commit()
+            newest_id = conn.execute(
+                "SELECT MAX(id) FROM memories WHERE category = 'event'").fetchone()[0]
+        assert store.latest_event_marker() == f"2026-10-19T10:00:00#{newest_id:08d}"
+
+    def test_pending_events_without_marker_counts_all(self, store):
+        count, latest = store.pending_events(None)
+        assert count == 2
+        assert latest == store.latest_event_marker()
+
+    def test_pending_events_counts_after_marker(self, store):
+        oldest = store.list_event_candidates()[-1]
+        marker = f"{oldest['created_at']}#{oldest['id']:08d}"
+        before = store.pending_events(marker)[0]
+        store.save("event", "甲事件", ["甲"], 3, "L2")
+        count, latest = store.pending_events(marker)
+        assert count == before + 1
+        assert latest == store.latest_event_marker()
+
+    def test_pending_events_after_latest_is_zero(self, store):
+        assert store.pending_events(store.latest_event_marker())[0] == 0
+
     def test_injection_does_not_touch_access_stats(self, store):
         store.random_events(5)
         rows, _ = store.list_memories()

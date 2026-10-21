@@ -43,7 +43,8 @@
 | **重要度（importance）** | 记忆的权重，影响检索排序与淘汰 | 同上 |
 | **层级（level）** | `L1`/`L2`/`L3` 三档，越高越容易过期（`MEMORY_L3_EXPIRE_DAYS`） | 同上 |
 | **召回（recall）** | 每轮对话注入的记忆片段：核心记忆 + 近期记忆 + 相关性检索（MMR） | `memory.py` 的 `retrieve_context` |
-| **旧事（random event）** | 随机抽取的历史事件记忆，作为「忽然想起来」注入「你惦记着的事」章节 | `memory.py` 的 `random_events`，条数 `MEMORY_EVENT_RECALL_COUNT` |
+| **旧事（random event）** | 随机抽取的历史事件记忆，作为「忽然想起来」注入「你惦记着的事」章节；同关键词命中时取最新一条 | `memory.py` 的 `random_events`，条数 `MEMORY_EVENT_RECALL_COUNT` |
+| **事件汇总（event merge）** | 整点把同主题的 event 记忆合并成一条，旧条目删除 | `pet/brain/memory_merge.py` 的 `run_merge`，开关 `MEMORY_EVENT_MERGE_ENABLED` |
 | **访问统计（access stats）** | 记忆被召回时的计数与时间戳，用于计算有效权重；被动注入不更新它 | `memory.py` |
 
 ## 动作与表现

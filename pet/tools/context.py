@@ -83,6 +83,12 @@ class ToolContext:
         if self._check_agent():
             self._agent.behavior.add_context(role="system", content=text)
 
+    def has_vision(self) -> bool:
+        """当前模型是否具备视觉能力；未绑定或视觉关闭时为 False。"""
+        if not self._agent:
+            return False
+        return bool(self._agent.behavior.has_vision)
+
     def note_event(self, kind: str, text: str = ""):
         """工具侧上报事件，进入桌宠的「最近发生了什么」章节。
 

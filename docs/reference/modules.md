@@ -40,6 +40,7 @@
 | `pet/brain/local_fallback.py` | 本地兜底决策：LLM 不可用或抢锁失败时的降级产出。 | `decide_local()` `interact_decide_local()` `chat_decide_local()` |
 | `pet/brain/mac_detector.py` | macOS 窗口枚举 —— 基于 Quartz CGWindow API，与 Win32 版保持相同接口。 | `is_window_alive()` `get_window_rect()` `is_window_occluded()` `get_visible_windows()` |
 | `pet/brain/memory.py` | SQLite 持久化记忆存储 | `LightweightDeduplicator` `_MemoryRetriever` `KeywordRetriever` `VectorRetriever` `MemoryStore` `get_memory_store()` |
+| `pet/brain/memory_merge.py` | 事件记忆汇总：整点把同主题的 event 记忆合并成一条。 | `parse_groups()` `run_merge()` |
 | `pet/brain/output.py` | LLM 决策的输出契约：行为输出与取消信号，供解析、工具轮次与编排共同引用。 | `CancelledError` `ActionStep` `BehaviorOutput` |
 | `pet/brain/parsing.py` | LLM 输出解析：把文本行 / 流式 chunk 收敛成 BehaviorOutput。 | `BehaviorSink` `parse_deltas()` `parse_mood_line()` `parse_vitals_line()` `parse_action_line()` `InlineTagNormalizer` |
 | `pet/brain/prompts.py` | 系统提示词分层组装 | `_Lazy` `invalidate_action_section()` `build_attention_hint()` `build_system_prompt()` `dock_note()` `autonomous_vision_user_prompt()` |
@@ -52,7 +53,7 @@
 | `pet/crash_reporter.py` | 崩溃信息收集与持久化 | `CrashReporter` `get_guard()` `install()` `mark_started()` `clear_marker()` |
 | `pet/db.py` | 数据库路径管理 — 集中管理 pet.db 路径与统一连接配置。 | `get_db_path()` `get_conn()` |
 | `pet/file_intake/__init__.py` | 拖入文件的纯逻辑：类型嗅探、解码链、截断与额度、图片闸门、拒绝名单、目录摘要。 |  |
-| `pet/file_intake/image.py` | 图片读取：先 draft 后判像素闸门，通过后再解码与缩放。 | `load_image()` |
+| `pet/file_intake/image.py` | 图片读取：先 draft 后判像素闸门，通过后再解码与缩放。 | `load_image()` `load_image_with_reason()` |
 | `pet/file_intake/sniff.py` | 类型嗅探、解码链、拒绝名单与目录摘要。 | `read_head()` `decode_bytes()` `sniff()` `match_deny()` `dir_summary()` `make_ref()` |
 | `pet/file_intake/text.py` | 文本读取与截断。 | `truncate()` `load_text()` `load_text_full()` |
 | `pet/file_intake/types.py` | 拖入文件的数据结构。 | `FileRef` `DropVerdict` |
@@ -77,7 +78,7 @@
 | `pet/tools/context.py` | 工具上下文 — 暴露宠物能力供工具主动调用。 | `ToolContext` |
 | `pet/tools/executor.py` | 工具执行器 — 解析 LLM 输出中的 Tool JSON，路由执行，返回结果。 | `ToolCall` `ToolResult` `ToolExecutor` |
 | `pet/tools/file_ops/__init__.py` | （模块未提供 docstring） | `register()` |
-| `pet/tools/file_ops/core.py` | （模块未提供 docstring） | `FileOpsTool` |
+| `pet/tools/file_ops/core.py` | 文件操作工具：列目录、读写文本、读取图片，限桌面与文档目录。 | `FileOpsTool` |
 | `pet/tools/knowledge/__init__.py` | knowledge 工具 — 轻量 RAG 知识库。只读检索，写入/删除仅限面板操作。 | `register()` |
 | `pet/tools/knowledge/chunker.py` | 轻量文本分块器 — 按段落 + 字数窗口切分。 | `chunk_text()` |
 | `pet/tools/knowledge/panel.py` | 知识库管理面板 — 添加、导入文件、搜索、删除。 | `KnowledgePanel` `show_panel()` |
@@ -119,7 +120,7 @@
 | `pet/ui/pet_animations.py` | 桌宠帧动画模块 —— 基于 JSON 配置的帧序列播放。 | `PetAnimator` |
 | `pet/ui/pet_window.py` | 扁平圆角菜单基类 — Windows 下自绘圆角背景，macOS 走原生。 | `_FlatMenuBase` `StickyMenu` `_SpriteLabel` `PetWindow` |
 | `pet/ui/rps_panel.py` | 猜拳面板 — 继承 GamePanelBase，负责出拳展示与点击提交。 | `RpsPanel` |
-| `pet/ui/settings_window.py` | 设置界面 — 用户配置的图形界面。 | `_LLMTestWorker` `_EmbeddingTestWorker` `_ModelsFetchWorker` `_VoiceTestWorker` `MarkdownEdit` `SettingsWindow` |
+| `pet/ui/settings_window.py` | 设置界面 — 用户配置的图形界面。 | `_LLMTestWorker` `_EmbeddingTestWorker` `_MemoryMergeWorker` `_ModelsFetchWorker` `_VoiceTestWorker` `MarkdownEdit` |
 | `pet/ui/speech_bubble.py` | 桌宠对话气泡：同一时刻只讲一句，多出来的排队 | `SpeechBubble` |
 | `pet/ui/styles.py` | QSS 样式库 —— 扁平化圆角风格。 | `bubble_column_y()` `make_title_button()` `make_minimize_button()` `make_close_button()` `ensure_taskbar_icon()` |
 | `pet/ui/swing.py` | 拖拽惯性钟摆：窗口加速度驱动贴图绕抓取点摆动，松手后自由衰减。 | `step_pendulum()` `SwingController` |
@@ -134,4 +135,4 @@
 | `pet/voice/voice_session.py` | 语音会话编排：麦克风采集 → 讯飞识别 | `VoiceSession` |
 | `pet/voice/xunfei_stt.py` | 讯飞语音听写 (iat) WebSocket API 封装 | `XunfeiSTT` |
 
-共 126 个模块。
+共 127 个模块。

@@ -1,8 +1,19 @@
+"""文件操作工具：列目录、读写文本、读取图片，限桌面与文档目录。"""
+
+import base64
+import io
+import logging
 import os
 import sys
-import logging
+
+from pet.file_intake import REASON_OVERSIZE, load_image_with_reason, sniff
+from pet.tools.context import TOOL_CTX
 
 logger = logging.getLogger(__name__)
+
+# 解码前的像素闸门，拦解压炸弹；工具读图不复用拖入文件的配置
+_MAX_IMAGE_PIXELS = 40_000_000
+_JPEG_QUALITY = 95
 
 
 def _get_special_folder(name: str) -> str:
@@ -30,6 +41,13 @@ def _allowed_roots() -> list[str]:
             _get_special_folder("DOCUMENTS"),
         ]
     return _ALLOWED_ROOTS
+
+
+def _encode_jpeg(image) -> str:
+    """把 RGB 图片编码成 base64 JPEG，控制多模态请求体积。"""
+    buf = io.BytesIO()
+    image.save(buf, format="JPEG", quality=_JPEG_QUALITY)
+    return base64.b64encode(buf.getvalue()).decode("ascii")
 
 
 class FileOpsTool:
@@ -90,6 +108,9 @@ class FileOpsTool:
         abs_path = self._check_path(path)
         if not os.path.isfile(abs_path):
             return {"error": "文件不存在"}
+        if sniff(abs_path) == "image":
+            # 图片整张读取，offset / max_chars 只用于文本分页
+            return self._read_image(abs_path)
         if offset >= self._MAX_OFFSET:
             return {"error": f"已读取至 offset={offset}，达到上限 {self._MAX_OFFSET}，不再翻页"}
         try:
@@ -118,6 +139,30 @@ class FileOpsTool:
             return result
         except Exception as e:
             return {"error": str(e)}
+
+    def _read_image(self, abs_path: str) -> dict:
+        """图片走视觉通道：解码、缩放后以 base64 附给模型，不参与文本分页。"""
+        if not TOOL_CTX.has_vision():
+            return {"error": "未开启视觉理解，无法查看图片（设置 → 外观 → 视觉）"}
+        image, reason = load_image_with_reason(abs_path, _MAX_IMAGE_PIXELS)
+        if image is None:
+            if reason == REASON_OVERSIZE:
+                return {"error": f"图片像素超出上限（上限 {_MAX_IMAGE_PIXELS}）"}
+            return {"error": "图片无法解析（格式不支持或文件损坏）"}
+        width, height = image.size
+        try:
+            payload = _encode_jpeg(image)
+        finally:
+            image.close()
+        logger.info(f"[FileOps] read image: {abs_path} {width}x{height}")
+        return {
+            "path": abs_path,
+            "kind": "image",
+            "size": f"{width}x{height}",
+            "__image__": payload,
+            "__image_mime__": "image/jpeg",
+            "__context__": f"查看图片 {abs_path}（{width}x{height}）",
+        }
 
     def write_note(self, filename: str, content: str) -> dict:
         desktop = _get_special_folder("DESKTOP")

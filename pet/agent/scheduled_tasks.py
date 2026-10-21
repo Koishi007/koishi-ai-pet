@@ -1,13 +1,18 @@
 """定时任务注册与回调"""
 
 import logging
+import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from pet.agent.state import PetState
+from pet.brain.memory_merge import run_merge
 from pet.config import config
 
 logger = logging.getLogger(__name__)
+
+# 增量触发阈值：新增 event 记忆达到该条数才发起整点汇总
+_MERGE_MIN_NEW_EVENTS = 6
 
 # 动作名称 → (粒子名, 触发间隔：fast tick 数)
 _ACTION_PARTICLES: dict[str, tuple[str, int]] = {
@@ -32,9 +37,13 @@ class ScheduledTasks:
         self._dark_heart_tick: int = 0
         self._particle_ticks: dict[str, int] = {}  # 粒子名 → 累计 tick
         self._idle_since: float | None = None      # 连续 idle 的起点（monotonic），非 idle 时置 None
+        self._scheduler = None
+        self._last_merge_at: str = ""              # 上次汇总后的 event marker（created_at#id）
 
 
     def register_all(self, scheduler):
+        self._scheduler = scheduler
+        self._init_merge_marker()
         scheduler.register("mid", self._autonomous)
         scheduler.register("fast", self._brain_watchdog)
         scheduler.register("fast", self._vitals_tick)
@@ -47,6 +56,7 @@ class ScheduledTasks:
         scheduler.register("slow", self._mood_check)
         scheduler.register("slow", self._memory_maintenance)
         scheduler.register("slow", self._conversation_cleanup)
+        self._schedule_next_merge()
 
 
     def _autonomous(self):
@@ -186,6 +196,70 @@ class ScheduledTasks:
             self._agent.memory_store.maintenance()
         except Exception as e:
             logger.warning(f"[ScheduledTasks] memory maintenance failed: {e}")
+
+    def _init_merge_marker(self):
+        """重启后以库中最新的 marker 初始化游标，第一个整点不重复汇总已有条目。"""
+        try:
+            latest = self._agent.memory_store.latest_event_marker()
+        except Exception as e:
+            logger.warning(f"[ScheduledTasks] merge marker init failed: {e}")
+            return
+        if latest:
+            self._last_merge_at = latest
+
+    def _schedule_next_merge(self):
+        """注册下一个整点的汇总闹钟，重复注册覆盖旧闹钟。"""
+        if self._scheduler is None:
+            return
+        now = datetime.now()
+        next_hour = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+        self._scheduler.schedule_at(
+            int(next_hour.timestamp() * 1000),
+            self._memory_event_merge,
+            key="memory_event_merge",
+        )
+
+    def _memory_event_merge(self):
+        """整点回调：先续约下一次，再按新增条数判定是否发起汇总。"""
+        self._schedule_next_merge()
+        if not config.MEMORY_EVENT_MERGE_ENABLED:
+            logger.debug("[MemoryMerge] 整点跳过：汇总开关关闭")
+            return
+        try:
+            pending, latest = self._agent.memory_store.pending_events(self._last_merge_at)
+        except Exception as e:
+            logger.warning(f"[ScheduledTasks] merge precheck failed: {e}")
+            return
+        if pending < _MERGE_MIN_NEW_EVENTS:
+            logger.debug(
+                f"[MemoryMerge] 整点跳过：新增 {pending} 条，未达 {_MERGE_MIN_NEW_EVENTS} 条")
+            return
+        logger.info(
+            f"[MemoryMerge] 整点触发：新增 {pending} 条，上次 {self._last_merge_at or '无'}")
+        threading.Thread(target=self._run_merge, args=(latest or "",), daemon=True).start()
+
+    def _run_merge(self, latest: str = ""):
+        """后台执行汇总；成功后推进游标，失败保留旧值，下一个整点重试同一批。"""
+        try:
+            run_merge(self._agent.memory_store)
+        except Exception as e:
+            logger.warning(f"[ScheduledTasks] memory merge failed: {e}")
+            return
+        self._last_merge_at = latest or self._last_merge_at
+        self._refresh_merge_marker()
+
+    def _refresh_merge_marker(self):
+        """汇总产物 created_at 回填组内最大值、id 更大，不刷新会被算作下一次的新增。"""
+        try:
+            latest = self._agent.memory_store.latest_event_marker()
+        except Exception as e:
+            logger.warning(f"[ScheduledTasks] merge marker refresh failed: {e}")
+            return
+        if not latest:
+            return
+        # created_at 前进说明汇总期间写入了真实新事件，留给下次统计
+        if latest.split("#", 1)[0] <= self._last_merge_at.split("#", 1)[0]:
+            self._last_merge_at = latest
 
     def _conversation_cleanup(self):
         """定期清理过期对话历史记录（保持至多 7 天）。"""

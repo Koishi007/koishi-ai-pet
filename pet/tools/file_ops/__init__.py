@@ -2,7 +2,7 @@ from pet.tools.file_ops.core import FileOpsTool
 from pet.tools.context import TOOL_CTX
 
 TOOL_NAME = "file_ops"
-TOOL_DESCRIPTION = "文件操作（读写、列目录，限桌面/文档）"
+TOOL_DESCRIPTION = "文件操作（读写、列目录、查看图片，限桌面/文档）"
 TOOL_GROUP = "file"
 
 _instance: FileOpsTool | None = None
@@ -52,7 +52,7 @@ def register(registry):
     )
     registry.add_method(
         TOOL_NAME, "read_file",
-        "读取文本文件（限桌面/文档，每次1000字符，支持 offset 翻页，最多读5000字符）",
+        "读取文件（文本文件、图片，路径限桌面/文档）。文本分页读取：每次最多1000字符，用 offset 继续，offset 上限5000；图片不分页，直接返回图像，可查看。",
         handler=_read_file,
         args={
             "path": {"type": "str", "required": True, "desc": "文件路径"},

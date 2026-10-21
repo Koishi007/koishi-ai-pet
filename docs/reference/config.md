@@ -53,6 +53,11 @@
 | `MEMORY_MAX_CAPACITY` | int | 200 |  | 记忆最大容量 |
 | `MEMORY_RECALL_COUNT` | int | 15 |  | 每次对话召回的记忆条数 |
 | `MEMORY_L3_EXPIRE_DAYS` | int | 3 |  | L3临时记忆过期天数 |
+| `MEMORY_EVENT_RECALL_COUNT` | int | 1 |  | 「你惦记着的事」随机注入的 event 记忆条数(0=关闭) |
+| `MEMORY_EVENT_MERGE_ENABLED` | bool | false |  | 整点汇总事件记忆(会删除被合并的旧条目) |
+| `MEMORY_MERGE_URL` | str | `""` |  | 事件汇总的 API 地址(三项齐全才生效) |
+| `MEMORY_MERGE_KEY` | str | `""` |  | 事件汇总的 API Key(三项齐全才生效) |
+| `MEMORY_MERGE_MODEL` | str | `""` |  | 事件汇总的模型名(三项齐全才生效) |
 
 ### 提示词
 
@@ -143,7 +148,6 @@
 | 键 | 类型 | 默认 | 高级 | 需重启 | 说明 |
 |---|---|---|---|---|---|
 | `LLM_ACTION_MIN_DIVISOR` | int | 25 | 是 |  | 动作权重最小除数 |
-| `LLM_ACTIVE_PROFILE` | str | `"primary"` |  |  | 当前启用的模型方案（可选：primary / alternative） |
 | `LLM_CREATE_TIMEOUT` | float | 30 |  |  | 建流超时(秒)：等待响应头超过该时长即放弃，避免服务端无响应时卡死 |
 | `LLM_STREAM_TIMEOUT` | float | 120 |  |  | 流式调用总超时(秒)，超过后降级到本地决策 |
 | `LLM_TOOL_PARALLEL` | bool | true | 是 |  | LLM 工具并行调用 |
@@ -153,7 +157,6 @@
 | 键 | 类型 | 默认 | 高级 | 需重启 | 说明 |
 |---|---|---|---|---|---|
 | `EMBEDDING_DEDUP_THRESHOLD` | float | 0.6 | 是 |  | 向量语义去重距离阈值(0~1) |
-| `MEMORY_EVENT_RECALL_COUNT` | int | 1 |  |  | 「你惦记着的事」随机注入的 event 记忆条数(0=关闭) |
 | `MEMORY_RECALL_COOLDOWN_S` | int | 300 | 是 |  | 记忆召回冷却时间(秒) |
 | `MEMORY_RERANK_WEIGHT_IMP` | float | 0.2 | 是 |  | 重排序-有效重要性权重 |
 | `MEMORY_RERANK_WEIGHT_RECENCY` | float | 0.1 | 是 |  | 重排序-时效性权重 |
@@ -168,4 +171,4 @@
 - `hidden`：`true` 表示不在界面显示，只能直接编辑 `settings.json`
 - `enum` / `minimum` / `maximum`：取值约束，会写进 `settings-schema.json`
 
-共 104 项（其中 51 项未在界面列出）。
+共 108 项（其中 49 项未在界面列出）。
