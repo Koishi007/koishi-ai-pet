@@ -176,6 +176,7 @@ chmod +x update.sh && ./update.sh
 | `default` | `recall` | `search` / `browse` | 回忆：主动检索桌宠关于用户的长期记忆（语义回忆、分页翻阅） |
 | `web` | `browser` | `search` / `read_url` / `screenshot_url` / `close` | 多引擎网页搜索、读取网页正文（分页）、截图 |
 | `web` | `web_search` | `search` / `fetch` | SearXNG / DeepSeek / Bing 搜索与网页正文抓取 |
+| `info` | `bilibili` | `browse` / `status` / `like` / `coin` / `comment` / `dm` / `verify` | 独立 B 站账号：刷视频、读字幕、点赞投币评论私信 |
 | `info` | `weather` | `get_current` / `get_forecast` | 基于 Open-Meteo 的免费天气查询 |
 | `info` | `system_monitor` | `get_overview` / `get_top_processes` / `get_memory_detail` / `get_network` | CPU、内存、磁盘、电池、进程 |
 | `file` | `file_ops` | `list_dir` / `read_file` / `write_note` / `write_file` | 列目录、读写文件、查看图片（限桌面/文档） |
@@ -213,6 +214,38 @@ chmod +x update.sh && ./update.sh
 - `browse(start_date, end_date, keyword, page)`：分页翻阅全部记忆，可按创建日期范围（`YYYY-MM-DD`，闭区间、可只填一端）、关键词筛选，每页 10 条
 
 检索到的记忆进入召回冷却（防止随后输出重复的 Memory 行）并获得回忆强化（L3 高频访问自动升级 L2）。
+
+### bilibili
+
+独立 B 站账号的刷视频与互动。首次使用在托盘右键菜单打开「B 站账号」扫码登录；凭证存 `pet/tools/bilibili/credential.json`，不进入版本库。
+
+- `browse(keyword)`：按关键词搜最近几天的视频，随机取几部连同字幕交给模型；无字幕的视频照常返回，靠标题、简介与封面判断；`keyword` 可临时指定关键词或 BV 号，不受配置列表限制；是否点赞、投币、评论由模型自己决定
+- `status`：账号昵称、UID、等级、硬币、关注关键词与今日各项次数
+- `like(bvid)` / `coin(bvid)` / `comment(bvid, text)` / `dm(text)`：单条互动，目标必须在最近一轮的候选里
+- `verify(limit)`：复核待确认的评论是否公开可见
+
+面板里有五个功能开关，改动写回 `pet/tools/bilibili/config.json`，配置文件：
+
+| 字段 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `keywords` | list | `东方Project`、`古明地觉`、`古明地恋`、`猫`、`狗`、`动物` | 关注关键词，面板里可编辑，留空回退默认；填 BV 号时直接读取该视频 |
+| `allow_browse` | bool | `true` | 刷视频总开关 |
+| `allow_like` / `allow_coin` / `allow_comment` / `allow_dm` | bool | `false` | 四个写操作开关 |
+| `comment_per_day` | int | 7 | 每日评论上限 |
+| `dm_per_day` | int | 10 | 每日私信上限 |
+| `coin_per_day` | int | 2 | 每日投币上限 |
+| `dm_uid` | int | 0 | 私信收件人 UID，面板里填写，0 表示不发 |
+| `schedule_enabled` | bool | `false` | 定时提醒总开关 |
+| `schedule_interval_minutes` | int | 180 | 两次提醒的最小间隔，最小 60 |
+| `schedule_active_hours` | str | `09:00-23:00` | 允许触发的作息窗口 |
+| `schedule_backoff_base_minutes` | int | 5 | 桌宠忙碌时的退避起点 |
+| `schedule_pause_hours` | str | 空 | 禁用时段，逗号分隔多个区间；非空且格式正确时生效 |
+| `schedule_pause_weekdays_only` | bool | `true` | 禁用时段只作用于工作日 |
+| `mention_enabled` | bool | `true` | 每次提醒前检查主人的 @ |
+| `mention_per_day` | int | 3 | 每日处理的 @ 上限 |
+| `min_interval_s` | float | 3.0 | 两次请求的最小间隔 |
+
+评论会经过长度、链接、隐私、内部术语、重复等检查，被拦下时不发送。同一视频最多保留 3 条有效评论。主人在评论里 @ 了恋恋时，回复会挂在那条评论下并带 `@昵称`。
 
 ### browser
 

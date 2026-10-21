@@ -189,6 +189,9 @@ cython_debug/
 # 插件私有配置（含 API key 等敏感信息）
 config.json
 
+# B 站登录凭证（等同账号密码）
+credential.json
+
 # 插件依赖安装标记文件（自动生成）
 .deps_installed
 

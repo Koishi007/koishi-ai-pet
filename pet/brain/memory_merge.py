@@ -114,7 +114,7 @@ def run_merge(memory_store) -> int:
     """执行一次汇总，返回应用的组数；无候选或输出无可应用组时返回 0，请求失败时抛出。"""
     rows = memory_store.list_event_candidates()
     if len(rows) < 2:
-        logger.info("[MemoryMerge] event 记忆不足两条，跳过")
+        logger.info(f"[MemoryMerge] event 记忆不足两条，跳过（当前 {len(rows)} 条）")
         return 0
     messages = [
         {"role": "system", "content": MEMORY_MERGE_PROMPT},
