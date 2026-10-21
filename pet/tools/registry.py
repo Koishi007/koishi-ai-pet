@@ -1,6 +1,7 @@
 ﻿"""工具注册表 — 自动发现、注册、描述可用工具。"""
 
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Callable, Any
@@ -29,6 +30,28 @@ class ToolDef:
     file_actions: list[dict] = field(default_factory=list)
     group: str = "default"
     meta: bool = False  # 元工具：系统内置，不可禁用、不出现在工具管理列表
+
+
+_SEARCH_SPLIT = re.compile(r"[\s,，、;；/|+&]+")
+
+
+def _search_normalize(text: str) -> str:
+    """搜索归一化：小写并去掉全部空白。"""
+    return "".join((text or "").lower().split())
+
+
+def _search_terms(keyword: str) -> list[str]:
+    """按空白与常见分隔符把关键词拆成词，归一化后丢弃空串。"""
+    return [t for t in (_search_normalize(part) for part in _SEARCH_SPLIT.split(keyword or "")) if t]
+
+
+def _tool_search_text(tool: "ToolDef") -> str:
+    """工具的可搜索文本：名称、分组、描述，以及每个方法的名称与说明。"""
+    parts = [tool.name, tool.group, tool.description]
+    for method in tool.methods.values():
+        parts.append(method.name)
+        parts.append(method.description)
+    return _search_normalize(" ".join(parts))
 
 
 class ToolRegistry:
@@ -161,7 +184,8 @@ class ToolRegistry:
             tool_name="tool_search",
             method_name="search",
             description=(
-                "按关键词精确搜索工具。匹配工具名、描述或分组名。"
+                "按关键词搜索工具，匹配工具名、方法名、描述与分组名。"
+                "多个关键词用空格分开，返回命中全部关键词的工具；都不满足时退回命中任一关键词的工具。"
                 "搜索返回的分组会在后续请求中自动变为可用。"
                 "如无匹配结果会自动返回全部工具列表。"
                 "提示：不确定关键词时优先用 list_groups 浏览全部。"
@@ -170,7 +194,7 @@ class ToolRegistry:
             args={
                 "keyword": {
                     "type": "str",
-                    "description": "搜索关键词，如 '文件'、'浏览器'、'提醒'、'天气'",
+                    "description": "一个或多个关键词，用空格分隔，如 '文件'、'天气 提醒'",
                 }
             },
         )
@@ -520,45 +544,48 @@ class ToolRegistry:
             })
         return {"groups": groups}
 
+    @staticmethod
+    def _tool_search_entry(tool: "ToolDef") -> dict:
+        """搜索结果里单个工具的展示结构。"""
+        return {
+            "name": tool.name,
+            "group": tool.group,
+            "description": tool.description,
+            "methods": [
+                {"name": f"{tool.name}__{method.name}", "description": method.description}
+                for method in tool.methods.values()
+            ],
+        }
+
     def _tool_search_search(self, keyword: str = "") -> dict:
-        kw = keyword.strip().lower() if keyword else ""
-        results = []
-        for tool in self.enabled_tools:
-            if tool.group == "default":
-                continue
-            name_low = tool.name.lower()
-            desc_low = tool.description.lower()
-            if not kw or kw in name_low or kw in desc_low or kw in tool.group.lower():
-                methods_list = [
-                    {"name": f"{tool.name}__{m.name}", "description": m.description}
-                    for m in tool.methods.values()
-                ]
-                results.append({
-                    "name": tool.name,
-                    "group": tool.group,
-                    "description": tool.description,
-                    "methods": methods_list,
-                })
+        kw = (keyword or "").strip()
+        phrase = _search_normalize(kw)
+        terms = _search_terms(kw)
+        tools = [tool for tool in self.enabled_tools if tool.group != "default"]
+        texts = {tool.name: _tool_search_text(tool) for tool in tools}
+
+        matched = [
+            tool for tool in tools
+            if not kw
+            or (phrase and phrase in texts[tool.name])
+            or (terms and all(term in texts[tool.name] for term in terms))
+        ]
+        if kw and not matched:
+            # 未命中全部关键词时退回命中任一关键词
+            matched = [tool for tool in tools
+                       if any(term in texts[tool.name] for term in terms)]
 
         hint = None
-        if kw and not results:
+        if kw and not matched:
             # 无匹配：fallback 返回全部工具，引导用 list_groups
-            for tool in self.enabled_tools:
-                if tool.group == "default":
-                    continue
-                methods_list = [
-                    {"name": f"{tool.name}__{m.name}", "description": m.description}
-                    for m in tool.methods.values()
-                ]
-                results.append({
-                    "name": tool.name,
-                    "group": tool.group,
-                    "description": tool.description,
-                    "methods": methods_list,
-                })
-            hint = (f"未找到与「{keyword}」匹配的工具，已返回全部可用工具。")
+            matched = tools
+            hint = f"未找到与「{keyword}」匹配的工具，已返回全部可用工具。"
 
-        return {"keyword": keyword, "matches": results, "hint": hint}
+        return {
+            "keyword": keyword,
+            "matches": [self._tool_search_entry(tool) for tool in matched],
+            "hint": hint,
+        }
 
     _TYPE_TO_JSON_SCHEMA = {
         "str": "string",
