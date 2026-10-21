@@ -34,6 +34,18 @@ _EDGE_ACTIONS = [
 # 需要方向与距离参数的移动类动作
 _MOVING_ACTIONS = ("drive", "walk")
 
+# 释放事件台词：贴边时宠物仍在边缘，不能说落地
+_RELEASE_SPEECH = [
+    "呼…终于落地了。",
+    "踏实的感觉真好～",
+    "嗯哼，还是地上舒服。",
+]
+
+_DOCKED_RELEASE_SPEECH = [
+    "唔…被贴在这儿了。",
+    "我下不来啦…",
+]
+
 
 def _random_step(action: str) -> ActionStep:
     """移动类动作补上方向与距离参数。"""
@@ -93,11 +105,7 @@ def interact_decide_local(event_hint: str, docked: bool = False) -> BehaviorOutp
 
     # 检测释放事件
     if "放下" in event_hint or "释放" in event_hint:
-        speech = random.choice([
-            "呼…终于落地了。",
-            "踏实的感觉真好～",
-            "嗯哼，还是地上舒服。",
-        ])
+        speech = random.choice(_DOCKED_RELEASE_SPEECH if docked else _RELEASE_SPEECH)
         logger.info(f"[{t}] [Behavior] _interact_decide_local(release) → {speech}")
         return BehaviorOutput(
             actions=[ActionStep("thinking" if docked else "stretch", kwargs={"duration": 4})],
