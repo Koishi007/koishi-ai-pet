@@ -88,6 +88,50 @@ class TestRegistryLookup:
         assert registry.get_tool_group("missing") == "default"
 
 
+class TestToolSearch:
+    def test_single_keyword_matches_description(self, registry):
+        result = registry._tool_search_search("演示")
+        assert [m["name"] for m in result["matches"]] == ["demo"]
+        assert result["hint"] is None
+
+    def test_all_terms_must_hit(self, registry):
+        registry.register("bili", "B 站：点赞、投币、评论", group="info")
+        result = registry._tool_search_search("点赞 评论")
+        assert [m["name"] for m in result["matches"]] == ["bili"]
+
+    def test_partial_terms_fall_back_to_any_term(self, registry):
+        registry.register("bili", "B 站：点赞、投币、评论", group="info")
+        result = registry._tool_search_search("点赞 天气")
+        assert [m["name"] for m in result["matches"]] == ["bili"]
+
+    def test_separators_split_keywords(self, registry):
+        registry.register("bili", "B 站：点赞、投币、评论", group="info")
+        result = registry._tool_search_search("点赞、评论")
+        assert [m["name"] for m in result["matches"]] == ["bili"]
+
+    def test_whitespace_difference_ignored(self, registry):
+        registry.register("bili", "B 站：点赞", group="info")
+        result = registry._tool_search_search("B站")
+        assert [m["name"] for m in result["matches"]] == ["bili"]
+
+    def test_method_description_is_searchable(self, registry):
+        result = registry._tool_search_search("回显")
+        assert [m["name"] for m in result["matches"]] == ["demo"]
+
+    def test_no_match_returns_all_tools_with_hint(self, registry):
+        result = registry._tool_search_search("查无此工具")
+        assert [m["name"] for m in result["matches"]] == ["demo"]
+        assert result["hint"] is not None
+
+    def test_default_group_never_returned(self, registry):
+        names = [m["name"] for m in registry._tool_search_search("工具")["matches"]]
+        assert "tool_search" not in names
+
+    def test_disabled_tool_excluded(self, registry):
+        registry.set_enabled("demo", False)
+        assert registry._tool_search_search("演示")["matches"] == []
+
+
 class TestOpenAiSchema:
     def test_schema_types_and_required(self, registry):
         tools = registry.to_openai_tools(groups={"test"})
