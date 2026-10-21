@@ -61,9 +61,9 @@ class PetAgent(QObject):
     speak_requested  = Signal(str, int)
     emotion_requested = Signal(str, int)
     state_changed    = Signal(str)
-    speak_stream_start = Signal()
-    speak_stream_chunk = Signal(str)
-    speak_stream_end   = Signal(int)
+    speak_stream_start = Signal(object)
+    speak_stream_chunk = Signal(object, str)
+    speak_stream_end   = Signal(object, int)
     speech_finish_requested = Signal()  # 抢占时收尾：已收到的台词继续播完
     llm_loading        = Signal(bool)  # True=开始等待, False=结束
     notify_requested   = Signal(str, str, int)  # title, message, duration_ms
@@ -279,29 +279,29 @@ class PetAgent(QObject):
         stream_started = False
 
         def _is_stale() -> bool:
-            return not self._is_current_call(token)
+            return not self.is_current_call(token)
 
         def on_chunk(delta: str):
             nonlocal stream_started
-            if not self._is_current_call(token):
+            if not self.is_current_call(token):
                 return
             if not stream_started:
-                self.speak_stream_start.emit()
+                self.speak_stream_start.emit(token)
                 stream_started = True
-            self.speak_stream_chunk.emit(delta)
+            self.speak_stream_chunk.emit(token, delta)
 
         def on_stream_end():
             nonlocal stream_started
-            if not self._is_current_call(token):
+            if not self.is_current_call(token):
                 return
             if stream_started:
-                self.speak_stream_end.emit(5000)
+                self.speak_stream_end.emit(token, 5000)
                 stream_started = False
 
         result = self.behavior.autonomous_decide_stream(context, screenshot=True, on_chunk=on_chunk, on_stream_end=on_stream_end, cancel_check=_is_stale)
 
         if stream_started:
-            self.speak_stream_end.emit(5000)
+            self.speak_stream_end.emit(token, 5000)
         return result
 
     def _play_loading(self, is_play_loading: bool = True):
@@ -366,23 +366,23 @@ class PetAgent(QObject):
         stream_started = False
 
         def _is_stale() -> bool:
-            return not self._is_current_call(token)
+            return not self.is_current_call(token)
 
         def on_chunk(delta: str):
             nonlocal stream_started
-            if not self._is_current_call(token):
+            if not self.is_current_call(token):
                 return
             if not stream_started:
-                self.speak_stream_start.emit()
+                self.speak_stream_start.emit(token)
                 stream_started = True
-            self.speak_stream_chunk.emit(delta)
+            self.speak_stream_chunk.emit(token, delta)
 
         def on_stream_end():
             nonlocal stream_started
-            if not self._is_current_call(token):
+            if not self.is_current_call(token):
                 return
             if stream_started:
-                self.speak_stream_end.emit(4000)
+                self.speak_stream_end.emit(token, 4000)
                 stream_started = False
 
         result = self.behavior.interact_decide_stream(
@@ -393,7 +393,7 @@ class PetAgent(QObject):
         )
 
         if stream_started:
-            self.speak_stream_end.emit(4000)
+            self.speak_stream_end.emit(token, 4000)
         return result
 
     def _trigger_chat(self, **kwargs):
@@ -452,23 +452,23 @@ class PetAgent(QObject):
         stream_started = False
 
         def _is_stale() -> bool:
-            return not self._is_current_call(token)
+            return not self.is_current_call(token)
 
         def on_chunk(delta: str):
             nonlocal stream_started
-            if not self._is_current_call(token):
+            if not self.is_current_call(token):
                 return
             if not stream_started:
-                self.speak_stream_start.emit()
+                self.speak_stream_start.emit(token)
                 stream_started = True
-            self.speak_stream_chunk.emit(delta)
+            self.speak_stream_chunk.emit(token, delta)
 
         def on_stream_end():
             nonlocal stream_started
-            if not self._is_current_call(token):
+            if not self.is_current_call(token):
                 return
             if stream_started:
-                self.speak_stream_end.emit(4000)
+                self.speak_stream_end.emit(token, 4000)
                 stream_started = False
 
         decide = (self.behavior.analyze_decide_stream if kind == "analyze"
@@ -483,7 +483,7 @@ class PetAgent(QObject):
         )
 
         if stream_started:
-            self.speak_stream_end.emit(4000)
+            self.speak_stream_end.emit(token, 4000)
         return result
 
     def _on_state_changed(self, state: str):
@@ -528,7 +528,7 @@ class PetAgent(QObject):
         """是否存在可中断的调用：只看当前线程，退休线程已在取消路径上。"""
         return self._thread is not None and self._thread.isRunning()
 
-    def _is_current_call(self, token) -> bool:
+    def is_current_call(self, token) -> bool:
         """token 是否仍属于当前调用；被中断或被新调用顶替即为 False。"""
         return self._call_token is token
 
@@ -606,7 +606,7 @@ class PetAgent(QObject):
         worker = self.sender()
         if worker is None:
             return
-        if self._is_current_call(worker.call_token):
+        if self.is_current_call(worker.call_token):
             worker.result_handler(result)
 
     @Slot(str)
@@ -614,7 +614,7 @@ class PetAgent(QObject):
         worker = self.sender()
         if worker is None:
             return
-        if self._is_current_call(worker.call_token):
+        if self.is_current_call(worker.call_token):
             worker.error_handler(msg)
 
     def _set_llm_loading(self, loading: bool):
