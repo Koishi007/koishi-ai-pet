@@ -56,7 +56,7 @@ def _call_llm(messages: list[dict]) -> str:
     if conn is None:
         raise RuntimeError("未配置可用的模型连接")
     key, url, model = conn
-    client = OpenAI(base_url=url, api_key=key, timeout=config.LLM_TIMEOUT)
+    client = OpenAI(base_url=url, api_key=key, timeout=config.LLM_TIMEOUT, max_retries=0)
     kwargs = {
         "model": model,
         "messages": messages,
@@ -92,23 +92,26 @@ def parse_groups(text: str, valid_ids: set[int]) -> list[tuple[list[int], str]]:
         else:
             continue
         ids: list[int] = []
+        seen = set(used)
         for token in re.split(r"[,\s，]+", ids_part.strip()):
             token = token.strip().lstrip("#＃")
             if not token.isdigit():
                 continue
             mid = int(token)
-            if mid in valid_ids and mid not in used:
+            if mid in valid_ids and mid not in seen:
                 ids.append(mid)
-                used.add(mid)
+                seen.add(mid)
         summary = summary.strip()[:_MAX_SUMMARY_CHARS]
+        # 无效组不占用 id，后面的组仍可拿到这些 id
         if len(ids) < 2 or not summary:
             continue
+        used.update(ids)
         groups.append((ids, summary))
     return groups
 
 
 def run_merge(memory_store) -> int:
-    """执行一次汇总，返回应用的组数；无候选、无连接或解析失败时返回 0。"""
+    """执行一次汇总，返回应用的组数；无候选或输出无可应用组时返回 0，请求失败时抛出。"""
     rows = memory_store.list_event_candidates()
     if len(rows) < 2:
         logger.info("[MemoryMerge] event 记忆不足两条，跳过")
@@ -121,7 +124,7 @@ def run_merge(memory_store) -> int:
         text = _call_llm(messages)
     except Exception as e:
         logger.warning(f"[MemoryMerge] 请求失败: {e}")
-        return 0
+        raise
     groups = parse_groups(text, {r["id"] for r in rows})
     if not groups:
         logger.info("[MemoryMerge] 输出无可应用的组")

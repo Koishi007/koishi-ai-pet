@@ -4,7 +4,7 @@ import time
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QColor, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication, QWidget
 
@@ -367,6 +367,32 @@ class TestMenuDock:
             window._dock_anim.finished.emit()   # 移动动画结束
             assert calls == ["in"]
         finally:
+            window.undock()
+            window.shutdown()
+            window.deleteLater()
+
+    def test_menu_dock_skipped_when_grabbed(self, qt_app):
+        window = PetWindow()
+        try:
+            geo = (window.screen() or QApplication.primaryScreen()).availableGeometry()
+            window.move(geo.left() + 2, 100)
+            calls: list[str] = []
+            captured: dict = {}
+
+            def _fade_out(duration=300, callback=None):
+                captured["cb"] = callback
+
+            window.pet_actions.fade_out = _fade_out
+            window.pet_actions.fade_in = lambda duration=300: calls.append("in")
+
+            window._dock_nearest()
+            window._grab_local = QPoint(10, 10)     # 淡出期间开始拖拽
+            captured["cb"]()
+            assert calls == ["in"]
+            assert not window.is_docked
+            assert window._dock_anim is None
+        finally:
+            window._grab_local = None
             window.undock()
             window.shutdown()
             window.deleteLater()

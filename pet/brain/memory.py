@@ -1561,6 +1561,7 @@ class MemoryStore:
 
         返回条数最多为 limit：同主题收敛与去重可能更少。
         命中同主题候补时返回候补中最新的一条，避免抽到已被推翻的旧状态。
+        最新候补已被 exclude_ids 排除时跳过该种子，不回退到更旧的同主题条目。
         只读：不 touch、不计召回冷却，避免被动注入抬高 access_count 与有效权重。
         """
         if limit <= 0:
@@ -1579,13 +1580,15 @@ class MemoryStore:
                 params + [limit],
             ).fetchall()
             for seed in seeds:
-                row = self._latest_same_topic(seed, exclude_ids)
+                row = self._latest_same_topic(seed)
+                if exclude_ids and row["id"] in exclude_ids:
+                    continue
                 if row["id"] not in seen:
                     seen.add(row["id"])
                     picked.append(row)
         return picked
 
-    def _latest_same_topic(self, seed, exclude_ids: Optional[set] = None) -> dict:
+    def _latest_same_topic(self, seed) -> dict:
         """同主题（含 seed 自身）中最新的条目；调用方须持有连接锁。"""
         kws = {k.strip() for k in (seed["keywords"] or "").split(",") if k.strip()}
         if not kws:
@@ -1593,9 +1596,6 @@ class MemoryStore:
         where = ("category = 'event' AND ("
                  + " OR ".join(["keywords LIKE ? ESCAPE '\\'"] * len(kws)) + ")")
         params: list = [f"%{_escape_like(k)}%" for k in kws]
-        if exclude_ids:
-            where += " AND id NOT IN (%s)" % ",".join("?" * len(exclude_ids))
-            params.extend(exclude_ids)
         rows = self._retriever._conn.execute(
             f"SELECT id, content, keywords, created_at FROM memories "
             f"WHERE {where} ORDER BY created_at DESC, id DESC LIMIT 20",
@@ -1661,6 +1661,7 @@ class MemoryStore:
 
         级别保底 L2、组内含 L1 时取 L1（L3 不拉低），并补 last_accessed_at：
         created_at 回填组内最大值，若沿用 L3 会出生即被过期清理。
+        组内成员在请求期间被删除或改写时整组跳过，避免删掉新内容。
         """
         by_id = {r["id"]: r for r in rows}
         applied = 0
@@ -1673,13 +1674,22 @@ class MemoryStore:
                     members = [by_id[i] for i in ids if i in by_id]
                     if len(members) < 2:
                         continue
+                    deleted = [m["id"] for m in members]
+                    marks = ",".join("?" * len(deleted))
+                    current = {
+                        r["id"]: r["content"] for r in conn.execute(
+                            f"SELECT id, content FROM memories WHERE id IN ({marks})",
+                            deleted).fetchall()
+                    }
+                    if current != {m["id"]: m["content"] for m in members}:
+                        logger.warning(f"[MemoryMerge] 成员已变化，跳过组 {deleted}")
+                        continue
                     keywords = sorted({kw.strip() for m in members
                                        for kw in (m.get("keywords") or "").split(",") if kw.strip()})
                     newest = max(m["created_at"] for m in members)
                     importance = max(int(m.get("importance") or 3) for m in members)
                     level = "L1" if any(
                         (m.get("level") or "L2") == "L1" for m in members) else "L2"
-                    deleted = [m["id"] for m in members]
                     for m in members:
                         logger.info(
                             f"[MemoryMerge] 删除 #{m['id']}：{_excerpt(m.get('content'))}")
@@ -1689,7 +1699,6 @@ class MemoryStore:
                         "VALUES ('event',?,?,?,?,?,?)",
                         (summary, ",".join(keywords), importance, level, newest, now_iso))
                     new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-                    marks = ",".join("?" * len(deleted))
                     conn.execute(f"DELETE FROM memories WHERE id IN ({marks})", deleted)
                     if isinstance(self._retriever, VectorRetriever):
                         conn.execute(

@@ -43,6 +43,7 @@ class ScheduledTasks:
 
     def register_all(self, scheduler):
         self._scheduler = scheduler
+        self._init_merge_marker()
         scheduler.register("mid", self._autonomous)
         scheduler.register("fast", self._brain_watchdog)
         scheduler.register("fast", self._vitals_tick)
@@ -196,6 +197,16 @@ class ScheduledTasks:
         except Exception as e:
             logger.warning(f"[ScheduledTasks] memory maintenance failed: {e}")
 
+    def _init_merge_marker(self):
+        """重启后以库中最新的 marker 初始化游标，第一个整点不重复汇总已有条目。"""
+        try:
+            latest = self._agent.memory_store.latest_event_marker()
+        except Exception as e:
+            logger.warning(f"[ScheduledTasks] merge marker init failed: {e}")
+            return
+        if latest:
+            self._last_merge_at = latest
+
     def _schedule_next_merge(self):
         """注册下一个整点的汇总闹钟，重复注册覆盖旧闹钟。"""
         if self._scheduler is None:
@@ -225,17 +236,17 @@ class ScheduledTasks:
             return
         logger.info(
             f"[MemoryMerge] 整点触发：新增 {pending} 条，上次 {self._last_merge_at or '无'}")
-        self._last_merge_at = latest or self._last_merge_at
-        threading.Thread(target=self._run_merge, daemon=True).start()
+        threading.Thread(target=self._run_merge, args=(latest or "",), daemon=True).start()
 
-    def _run_merge(self):
-        """后台执行汇总；失败只记录，不影响下一次整点。"""
+    def _run_merge(self, latest: str = ""):
+        """后台执行汇总；成功后推进游标，失败保留旧值，下一个整点重试同一批。"""
         try:
             run_merge(self._agent.memory_store)
         except Exception as e:
             logger.warning(f"[ScheduledTasks] memory merge failed: {e}")
-        finally:
-            self._refresh_merge_marker()
+            return
+        self._last_merge_at = latest or self._last_merge_at
+        self._refresh_merge_marker()
 
     def _refresh_merge_marker(self):
         """汇总产物 created_at 回填组内最大值、id 更大，不刷新会被算作下一次的新增。"""
