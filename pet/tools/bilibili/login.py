@@ -63,6 +63,7 @@ def _credential_from_cookies(resp: httpx.Response, fallback_url: str = "") -> Cr
     bili_jct = jar.get("bili_jct") or ""
     dedeuserid = jar.get("DedeUserID") or ""
     buvid3 = jar.get("buvid3") or ""
+    buvid4 = jar.get("buvid4") or ""
     ac_time_value = jar.get("ac_time_value") or ""
     if not (sessdata and bili_jct and dedeuserid) and fallback_url:
         query = parse_qs(urlsplit(fallback_url).query)
@@ -72,7 +73,7 @@ def _credential_from_cookies(resp: httpx.Response, fallback_url: str = "") -> Cr
     if not (sessdata and bili_jct and dedeuserid):
         return None
     return Credential(sessdata=sessdata, bili_jct=bili_jct, dedeuserid=dedeuserid,
-                      buvid3=buvid3, ac_time_value=ac_time_value)
+                      buvid3=buvid3, buvid4=buvid4, ac_time_value=ac_time_value)
 
 
 def poll(key: str, *, timeout: float = 15.0,

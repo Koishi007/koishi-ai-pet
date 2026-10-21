@@ -502,6 +502,11 @@ def write_action(storage: BiliStorage, kind: str, *, bvid: str = "", text: str =
     return _as_tool_result(result)
 
 
+def _reply_hidden(reply: dict) -> bool:
+    """评论是否被隐藏：invisible 字段或阿瓦隆状态 17。"""
+    return bool(reply.get("invisible")) or int(reply.get("state") or 0) == 17
+
+
 def verify(storage: BiliStorage, limit: int = 10) -> dict:
     """复核已发出的评论是否公开可见；按 rpid 精确匹配，正文只作兜底。"""
     cfg = load_config()
@@ -542,7 +547,7 @@ def verify(storage: BiliStorage, limit: int = 10) -> dict:
                             and head in str((r.get("content") or {}).get("message") or "")), None)
             if hit is None:
                 continue
-            if hit.get("invisible"):
+            if _reply_hidden(hit):
                 storage.finish_action(action["id"], "hidden", remote_id=str(rpid))
                 continue
             if int(hit.get("state") or 0) != 0:

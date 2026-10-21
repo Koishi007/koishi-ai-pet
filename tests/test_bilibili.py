@@ -11,7 +11,7 @@ import httpx
 import pytest
 from PIL import Image
 
-from pet.tools.bilibili import filters, schedule
+from pet.tools.bilibili import core, duty, filters, schedule
 from pet.tools.bilibili.core import (
     BiliClient,
     Credential,
@@ -25,7 +25,6 @@ from pet.tools.bilibili.core import (
     sign_params,
     within_days,
 )
-from pet.tools.bilibili import duty
 from pet.tools.bilibili.storage import BiliStorage
 
 IMG = "7cd084941338484aae1ad9425b84077c"
@@ -192,16 +191,16 @@ def test_filter_allows_url_only_for_dm():
 def test_credential_roundtrip(tmp_path):
     path = tmp_path / "credential.json"
     cred = Credential(sessdata="s", bili_jct="j", dedeuserid="9", buvid3="b",
-                      ac_time_value="a")
+                      buvid4="b4", ac_time_value="a")
     cred.save(path)
     assert Credential.from_file(path) == cred
 
 
 def test_credential_cookie_header_matches_bilibili_api_order():
     cred = Credential(sessdata="s", bili_jct="j", dedeuserid="9",
-                      buvid3="b", ac_time_value="a")
+                      buvid3="b", buvid4="b4", ac_time_value="a")
     parts = cred.cookie_header().split("; ")
-    assert parts == ["SESSDATA=s", "buvid3=b", "bili_jct=j",
+    assert parts == ["SESSDATA=s", "buvid3=b", "buvid4=b4", "bili_jct=j",
                      "DedeUserID=9", "ac_time_value=a"]
 
 
@@ -211,6 +210,49 @@ def test_credential_missing_fields(tmp_path):
     assert Credential.from_file(path) is None
 
 
+# ---------- 评论请求 ----------
+
+def test_comment_request_carries_web_params(monkeypatch):
+    seen = {}
+
+    def handler(request):
+        path = request.url.path
+        if path == "/x/frontend/finger/spi":
+            return httpx.Response(200, json={"code": 0, "data": {"b_3": "B3", "b_4": "B4"}})
+        if path == "/x/web-interface/nav":
+            return httpx.Response(200, json={"code": 0, "data": {"wbi_img": {
+                "img_url": f"https://i0.hdslb.com/bfs/wbi/{IMG}.png",
+                "sub_url": f"https://i0.hdslb.com/bfs/wbi/{SUB}.png",
+            }}})
+        if path == "/x/v2/reply/add":
+            seen["query"] = dict(request.url.params)
+            seen["body"] = dict(httpx.QueryParams(request.content.decode()))
+            seen["cookie"] = request.headers.get("cookie", "")
+            return httpx.Response(200, json={"code": 0, "data": {"rpid": 123}})
+        return httpx.Response(404)
+
+    monkeypatch.setattr(core, "_buvid_pair", None)
+    client = BiliClient(Credential(sessdata="s", bili_jct="j", dedeuserid="9"),
+                        interval=0.0, transport=httpx.MockTransport(handler))
+    assert client.comment(42, "测试") == 123
+    client.close()
+
+    query = seen["query"]
+    assert query["web_location"] == "1550101"
+    assert query["dm_img_list"] == "[]"
+    assert len(query["dm_img_str"]) == 2
+    assert len(query["dm_cover_img_str"]) == 2
+    assert "dm_img_inter" in query
+    assert query["wts"] and query["w_rid"]
+
+    body = seen["body"]
+    assert body["oid"] == "42"
+    assert body["statistics"] == '{"appId":100,"platform":5}'
+    assert body["gaia_source"] == "main_web"
+    assert body["csrf"] == body["csrf_token"] == "j"
+    assert body["plat"] == "1"
+    assert "buvid3=B3" in seen["cookie"]
+    assert "buvid4=B4" in seen["cookie"]
 
 
 
@@ -489,3 +531,9 @@ def test_run_round_when_browse_disabled(monkeypatch, tmp_path, store):
     result = duty.run_round(store)
     assert result["ok"] is False
     assert result["reason"] == "disabled"
+
+
+def test_reply_hidden_detects_avalon_state():
+    assert duty._reply_hidden({"state": 17})
+    assert duty._reply_hidden({"invisible": True})
+    assert not duty._reply_hidden({"state": 0, "invisible": False})

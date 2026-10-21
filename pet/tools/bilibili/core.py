@@ -11,6 +11,7 @@ import hashlib
 import io
 import json
 import logging
+import random
 import re
 import threading
 import time
@@ -49,13 +50,19 @@ _MIXIN_TAB = (
 )
 # 参数值在签名前剔除的字符，与 B 站前端的过滤规则一致
 _STRIP_CHARS = "!'()*"
+# 评论接口的 Web 端参数：reply/add 额外要求 wbi 与 dm 风控字段
+_DM_ALPHABET = "ABCDEFGHIJK"
+_DM_IMG_INTER = '{"ds":[],"wh":[0,0,0],"of":[0,0,0]}'
+_COMMENT_WEB_LOCATION = 1550101
+_COMMENT_STATISTICS = '{"appId":100,"platform":5}'
 _VIEW_TTL_S = 1800.0
 # 与 pet/file_intake/image.py 的 MAX_EDGE、file_ops 的 JPEG 质量与像素上限一致
 _COVER_EDGE = 1536
 _COVER_QUALITY = 95
 _COVER_MAX_PIXELS = 40_000_000
 
-_CRED_FIELDS = ("sessdata", "bili_jct", "dedeuserid", "buvid3", "ac_time_value")
+_CRED_FIELDS = ("sessdata", "bili_jct", "dedeuserid", "buvid3", "buvid4",
+                "ac_time_value")
 _AUTH_CODES = (-101, -111)
 
 _BVID_RE = re.compile(r"^BV[0-9A-Za-z]{10}$")
@@ -92,6 +99,7 @@ class Credential:
     bili_jct: str
     dedeuserid: str
     buvid3: str = ""
+    buvid4: str = ""
     ac_time_value: str = ""
 
     @classmethod
@@ -118,6 +126,7 @@ class Credential:
             "bili_jct": self.bili_jct,
             "dedeuserid": self.dedeuserid,
             "buvid3": self.buvid3,
+            "buvid4": self.buvid4,
             "ac_time_value": self.ac_time_value,
             "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         }
@@ -127,10 +136,11 @@ class Credential:
         except OSError:
             pass
 
-    def cookie_header(self, buvid3: str = "") -> str:
+    def cookie_header(self, buvid3: str = "", buvid4: str = "") -> str:
         pairs = {
             "SESSDATA": self.sessdata,
             "buvid3": buvid3 or self.buvid3,
+            "buvid4": buvid4 or self.buvid4,
             "bili_jct": self.bili_jct,
             "DedeUserID": self.dedeuserid,
             "ac_time_value": self.ac_time_value,
@@ -161,6 +171,37 @@ def sign_params(params: dict, img_key: str, sub_key: str, wts: int) -> dict:
     )
     signed["w_rid"] = hashlib.md5((query + mixin_key(img_key, sub_key)).encode()).hexdigest()
     return signed
+
+
+def _dm_params() -> dict:
+    """评论接口的 dm 风控参数：空鼠标轨迹与两项随机图像指纹。"""
+    return {
+        "dm_img_list": "[]",
+        "dm_img_str": "".join(random.sample(_DM_ALPHABET, 2)),
+        "dm_cover_img_str": "".join(random.sample(_DM_ALPHABET, 2)),
+        "dm_img_inter": _DM_IMG_INTER,
+        "web_location": _COMMENT_WEB_LOCATION,
+    }
+
+
+_buvid_pair: tuple[str, str] | None = None
+
+
+def _device_buvid(http: httpx.Client) -> tuple[str, str]:
+    """取一对匿名 buvid3/buvid4，进程内复用；失败返回空串。"""
+    global _buvid_pair
+    if _buvid_pair is not None:
+        return _buvid_pair
+    try:
+        resp = http.get(f"{_API}/x/frontend/finger/spi", headers=dict(_HEADERS))
+        data = resp.json().get("data") or {}
+    except (httpx.HTTPError, ValueError) as exc:
+        logger.info(f"[bili] 取 buvid 失败：{exc}")
+        return "", ""
+    pair = (str(data.get("b_3") or ""), str(data.get("b_4") or ""))
+    if pair[0] and pair[1]:
+        _buvid_pair = pair
+    return pair
 
 
 def _file_stem(url: str) -> str:
@@ -291,6 +332,7 @@ class BiliClient:
         self._last = 0.0
         self._finger_done = False
         self._buvid3 = credential.buvid3 if credential else ""
+        self._buvid4 = credential.buvid4 if credential else ""
         self._wbi: tuple[str, str] | None = None
         self._wbi_day: date | None = None
         self._view_cache: dict[str, tuple[float, dict]] = {}
@@ -323,22 +365,20 @@ class BiliClient:
 
     def _cookie_header(self) -> str:
         if not self._cred:
-            return f"buvid3={self._buvid3}" if self._buvid3 else ""
-        return self._cred.cookie_header(self._buvid3)
+            pairs = {"buvid3": self._buvid3, "buvid4": self._buvid4}
+            return "; ".join(f"{k}={v}" for k, v in pairs.items() if v)
+        return self._cred.cookie_header(self._buvid3, self._buvid4)
 
     def _ensure_fingerprint(self):
-        """补齐匿名 buvid3；失败不阻断请求。"""
-        if self._finger_done or self._buvid3:
-            self._finger_done = True
+        """补齐 buvid3/buvid4；进程内复用同一对，失败不阻断请求。"""
+        if self._finger_done:
             return
         self._finger_done = True
-        try:
-            resp = self._http.get(f"{_API}/x/frontend/finger/spi", headers=dict(_HEADERS))
-            self.requests += 1
-            data = resp.json().get("data") or {}
-            self._buvid3 = str(data.get("b_3") or "")
-        except (httpx.HTTPError, ValueError) as exc:
-            logger.info(f"[bili] 取 buvid3 失败：{exc}")
+        if self._buvid3 and self._buvid4:
+            return
+        pair = _device_buvid(self._http)
+        if pair[0]:
+            self._buvid3, self._buvid4 = pair
 
     def _wbi_keys(self) -> tuple[str, str]:
         today = date.today()
@@ -517,12 +557,18 @@ class BiliClient:
 
     def comment(self, aid: int, text: str, *, root: int = 0, parent: int = 0) -> int:
         """发评论；root 非 0 时回复该评论，parent 默认与 root 相同。"""
-        payload = {"oid": int(aid), "type": 1, "message": text,
-                   "plat": 1, "from": 0}
+        payload = {
+            "oid": int(aid), "type": 1, "message": text,
+            "plat": 1, "from": 0,
+            "statistics": _COMMENT_STATISTICS, "gaia_source": "main_web",
+        }
+        if self._cred:
+            payload["csrf_token"] = self._cred.bili_jct
         if root:
             payload["root"] = int(root)
             payload["parent"] = int(parent or root)
-        data = self._request("POST", "/x/v2/reply/add", data=payload, auth=True)
+        data = self._request("POST", "/x/v2/reply/add", params=_dm_params(),
+                             data=payload, sign=True, auth=True)
         return int(data.get("rpid") or 0)
 
     def dm(self, uid: int, text: str) -> dict:
