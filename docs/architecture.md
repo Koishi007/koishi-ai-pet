@@ -93,10 +93,10 @@ flowchart TB
 
 启动（`pet/app.py` 的 `main()`）：
 
-1. 配置加载与控制台日志。
+1. 配置加载与控制台日志：`LOG_LEVEL` 决定控制台与日志窗口的级别。
 2. 单实例锁：`QLockFile`（与 `settings.json` 同目录）；已被占用则弹提示并退出，锁不可用则放行并告警。
 3. 应用上一次更新遗留的 `update.*.new` 脚本（`pet/self_update.py`）。
-4. 挂上文件日志 `logs/koishiai.log`（按天轮转，保留 3 份）；崩溃钩子在 `pet/__init__.py`
+4. 挂上文件日志 `logs/koishiai.log`（按天轮转，保留 3 份，固定 DEBUG，不受 `LOG_LEVEL` 影响）；崩溃钩子在 `pet/__init__.py`
    导入期就装好了，`main()` 里只按配置开关。
 5. 加载工具插件：`load_tools(config.TOOLS_ENABLED)`（缺依赖的工具首次会 pip 安装）。
 6. 创建 `QApplication` → `PetAgent` → `PetWindow` → 气泡/托盘 → 信号互联。

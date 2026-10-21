@@ -73,6 +73,14 @@
 | `pet/settings.py` | 用户设置持久化 — JSON 文件读写。 | `settings_path()` `load_user_settings()` `save_user_setting()` `delete_user_settings()` |
 | `pet/single_instance.py` | 单实例限制 — 防止桌宠被重复启动导致状态/数据库冲突。 | `SingleInstanceGuard` |
 | `pet/tools/__init__.py` | 工具加载器 — 自动发现 + 自动安装依赖 + 配置选择性加载。 | `load_tools()` |
+| `pet/tools/bilibili/__init__.py` | bili 工具 — 刷 B 站：搜索、读字幕、点赞投币评论、给主人发私信。 | `register()` |
+| `pet/tools/bilibili/core.py` | B 站接口客户端：wbi 签名、请求、解析、写操作。 | `is_bvid()` `BiliError` `Credential` `mixin_key()` `sign_params()` `absolute_url()` |
+| `pet/tools/bilibili/duty.py` | 一轮刷 B 站：搜索、判重、读字幕，随机取几条返回给模型。 | `load_config()` `update_config()` `normalize_keywords()` `parse_keywords()` `set_keywords()` `set_dm_uid()` |
+| `pet/tools/bilibili/filters.py` | 评论与私信内容过滤。 | `describe()` `normalize()` `similarity()` `check_text()` |
+| `pet/tools/bilibili/login.py` | B 站扫码登录：生成二维码、轮询状态、提取凭证。 | `generate()` `poll()` |
+| `pet/tools/bilibili/panel.py` | B 站账号面板：扫码登录、功能开关、搜索关键词、私信 UID、退出登录。 | `_QrLabel` `_LoginWorker` `AccountPanel` `show_panel()` |
+| `pet/tools/bilibili/schedule.py` | 定时提醒：到点给模型一个念头，由提示词决定用什么工具。 | `parse_window()` `parse_pause_windows()` `in_window()` `is_paused()` `next_out_of_pause()` `next_window_start()` |
+| `pet/tools/bilibili/storage.py` | B 站工具的持久化层：判重表、每日轮次、写操作台账。 | `BiliStorage` |
 | `pet/tools/browser/__init__.py` | （模块未提供 docstring） | `register()` |
 | `pet/tools/browser/core.py` | 浏览器工具：每次调用冷启动 Chromium，用完即关。 | `BrowserTool` |
 | `pet/tools/context.py` | 工具上下文 — 暴露宠物能力供工具主动调用。 | `ToolContext` |
@@ -135,4 +143,4 @@
 | `pet/voice/voice_session.py` | 语音会话编排：麦克风采集 → 讯飞识别 | `VoiceSession` |
 | `pet/voice/xunfei_stt.py` | 讯飞语音听写 (iat) WebSocket API 封装 | `XunfeiSTT` |
 
-共 127 个模块。
+共 135 个模块。
