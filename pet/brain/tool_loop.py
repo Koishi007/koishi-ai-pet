@@ -162,13 +162,15 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
             if tc["name"] in session.recall_tool_names:
                 used_recall = True
 
-        # tool 角色只承载文本，图片另起一条 user 消息附在下一轮请求里
+        # tool 角色只承载文本，图片另起一条 user 消息附在紧接的一次请求里
+        image_msg = None
         if round_images:
             parts = [{"type": "text", "text": "附图：本轮工具读取到的画面。"}]
             for uri, source in round_images:
                 parts.append({"type": "text", "text": f"来源：{source}"})
                 parts.append({"type": "image_url", "image_url": {"url": uri}})
-            current_messages.append({"role": "user", "content": parts})
+            image_msg = {"role": "user", "content": parts}
+            current_messages.append(image_msg)
 
         # 非元工具轮次才计数
         if not all_meta:
@@ -201,6 +203,9 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
             tag=f"{tag}_round_{display_round}", on_chunk=_wrapped_chunk,
             on_stream_end=on_stream_end,
         )
+        if image_msg is not None:
+            # 图片只随这一次请求发送，后续轮次不再重复上传
+            current_messages = [m for m in current_messages if m is not image_msg]
         if _chunk_invoked[0]:
             speech_streamed = True
 

@@ -176,6 +176,7 @@ class _FakeSession:
         self.activated = []
         self.unparsed = []
         self.last_messages = []
+        self.messages_per_call = []
 
     def tools_param(self, enable_tools):
         return None
@@ -204,6 +205,7 @@ class _FakeSession:
     def stream(self, messages, max_tokens, tools, thinking, *, tag, on_chunk=None, on_stream_end=None):
         self.streams += 1
         self.last_messages = list(messages)
+        self.messages_per_call.append(list(messages))
         if self.raise_on_stream is not None:
             raise self.raise_on_stream
         return self.rounds.pop(0)
@@ -280,6 +282,23 @@ class TestToolLoopImages:
         run_tool_loop([], _tool_calls("file_ops__read_file"), "", session, max_rounds=3)
         assert self._image_message(session) == []
         assert not any("图片已读取" in text for _, text in session.contexts)
+
+    def test_image_message_sent_once(self):
+        session = _FakeSession([("Speech: 看到了\n", _tool_calls("timer__set")),
+                                ("Speech: 好\n", {})], image_b64="QUJD")
+        execute = session.executor_obj.execute_one
+
+        def _once(call):
+            result = execute(call)
+            session.executor_obj.image_b64 = None   # 后续工具不再返回图片
+            return result
+
+        session.executor_obj.execute_one = _once
+        run_tool_loop([], _tool_calls("file_ops__read_file"), "", session, max_rounds=3)
+        assert len(session.messages_per_call) == 2
+        first, second = session.messages_per_call
+        assert any(isinstance(m.get("content"), list) for m in first)
+        assert not any(isinstance(m.get("content"), list) for m in second)
 
 
 class TestToolLoopSpeechBoundaries:
