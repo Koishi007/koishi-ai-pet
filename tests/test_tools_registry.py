@@ -93,7 +93,7 @@ class TestToolSearch:
         result = registry._tool_search_search("演示")
         assert [m["name"] for m in result["matches"]] == ["demo"]
         assert "直接调用" in result["hint"]
-        assert result["__context__"].startswith("搜到 demo")
+        assert result["__context__"].startswith("搜到 1 个：demo")
 
     def test_full_method_name_is_searchable(self, registry):
         # 模型常直接拿 demo__echo 去搜，整串必须命中
@@ -124,11 +124,22 @@ class TestToolSearch:
         result = registry._tool_search_search("回显")
         assert [m["name"] for m in result["matches"]] == ["demo"]
 
-    def test_no_match_returns_all_tools_with_hint(self, registry):
+    def test_no_match_returns_group_catalog(self, registry):
+        registry.register("bili", "B 站：点赞、投币、评论", group="info")
         result = registry._tool_search_search("查无此工具")
-        assert [m["name"] for m in result["matches"]] == ["demo"]
-        assert "不要重复搜索" in result["hint"]
+        assert result["matches"] == []
+        catalog = {g["group"]: [t["name"] for t in g["tools"]] for g in result["groups"]}
+        assert catalog["test"] == ["demo"]
+        assert catalog["info"] == ["bili"]
+        assert "重新搜索" in result["hint"]
         assert result["__context__"].startswith("未匹配")
+
+    def test_results_capped_per_search(self, registry):
+        for i in range(8):
+            registry.register(f"t{i}", "天气 查询", group="info")
+        result = registry._tool_search_search("天气")
+        assert len(result["matches"]) == 5
+        assert "前 5 个" in result["hint"]
 
     def test_default_group_never_returned(self, registry):
         names = [m["name"] for m in registry._tool_search_search("工具")["matches"]]

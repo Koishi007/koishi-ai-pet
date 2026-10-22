@@ -14,6 +14,9 @@ _NOTE_PREFIX = "（环境记录）"
 _FAKE_LABEL = re.compile(r"^\s*\[(工具调用|已执行)\]")
 _TOOL_SHAPE = re.compile(r"→|\{|\w+__\w+")
 
+# 工具组配额占对话条数的比例
+_GROUP_RATIO = 0.4
+
 
 @dataclass(frozen=True)
 class Profile:
@@ -32,6 +35,7 @@ class Profile:
 class Budget:
     """条数与 token 预算；`now` 由调用方传入以保持纯函数。"""
     max_entries: int = 15
+    max_groups: int = -1   # -1 表示按 max_entries 比例派生
     max_tokens: int = 8192
     max_summaries: int = 3
     evict_before_ts: float = 0.0
@@ -343,25 +347,39 @@ def _apply_skip_last(items: list[_Item], budget: Budget) -> list[_Item]:
 
 
 def _trim(items: list[_Item], budget: Budget, stats: dict) -> list[_Item]:
+    """摘要、工具组、对话各自配额：工具组不会被对话挤掉，反之亦然。"""
     summaries = [it for it in items if it.kind == "summary"]
-    body = [it for it in items if it.kind != "summary"]
+    groups = [it for it in items if it.kind == "group"]
+    dialogue = [it for it in items if it.kind not in ("summary", "group")]
 
-    if budget.max_summaries >= 0 and len(summaries) > budget.max_summaries:
+    if 0 <= budget.max_summaries < len(summaries):
         summaries = summaries[-budget.max_summaries:] if budget.max_summaries else []
 
+    group_limit = budget.max_groups
+    if group_limit < 0:
+        group_limit = max(3, int(budget.max_entries * _GROUP_RATIO))
+    if 0 <= group_limit < len(groups):
+        stats["dropped_groups"] = stats.get("dropped_groups", 0) + len(groups) - group_limit
+        groups = groups[-group_limit:]
+
     def total() -> int:
-        return sum(estimate_tokens(it.text()) for it in body)
+        return sum(estimate_tokens(it.text()) for it in dialogue + groups)
 
-    while body and (len(body) > budget.max_entries
-                    or (budget.max_tokens > 0 and total() > budget.max_tokens)):
-        if len(body) <= 1:
-            break
-        idx = next((i for i, it in enumerate(body) if it.kind == "group"), 0)
-        dropped = body.pop(idx)
-        if dropped.kind == "group":
+    # 对话配额独立于工具组：组多不会压缩 user/assistant 的席位
+    while len(dialogue) > budget.max_entries:
+        dialogue.pop(0)
+
+    # token 紧张时先丢最旧的工具组：它只对当前任务有效，对话由摘要兜底
+    while budget.max_tokens > 0 and total() > budget.max_tokens:
+        if len(groups) > 1:
+            groups.pop(0)
             stats["dropped_groups"] = stats.get("dropped_groups", 0) + 1
+        elif dialogue:
+            dialogue.pop(0)
+        else:
+            break
 
-    return sorted(summaries + body, key=lambda it: it.seq)
+    return sorted(summaries + groups + dialogue, key=lambda it: it.seq)
 
 
 def _render(items: list[_Item], profile: Profile, budget: Budget, stats: dict) -> list[dict]:
