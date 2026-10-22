@@ -47,6 +47,34 @@
 | `screenshot_url` | `url`（str, 必需） 要截图的网页地址（包含 http/https）<br>`width`（int, 默认 1280） 视口宽度(px)<br>`height`（int, 默认 800） 视口高度(px)<br>`wait_seconds`（float, 默认 3.0） 页面加载等待时间(秒)<br>`full_page`（bool, 默认 False） 是否截取整页（默认仅可视区域） | 用无头浏览器打开URL并截图，可以'看到'网页外观 |
 | `close` | 无参数 | 关闭浏览器，释放内存（所有网页操作完成后调用） |
 
+**`search` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 搜索词与命中条数 |
+| `body` | string | 否 | body | 每条结果三行：标题、网址、摘要 |
+
+**`read_url` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 网页标题与分页概况 |
+| `body` | string | 否 | body | 当前页正文 |
+| `pagination` | object | 否 | pagination | 分页信息 |
+
+**`screenshot_url` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 截图对象与尺寸 |
+| `images` | array | 否 | images | 图片列表 |
+
+**`close` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 关闭结果 |
+
 ### `file_ops`
 
 - 目录：`pet/tools/file_ops/`
@@ -60,6 +88,35 @@
 | `write_note` | `filename`（str, 必需） 文件名（含扩展名）<br>`content`（str, 必需） 写入内容 | 在桌面创建一个文本笔记 |
 | `write_file` | `path`（str, 必需） 文件路径<br>`content`（str, 必需） 写入内容<br>`mode`（str, 默认 "w", 可选：w/a） 写入模式: w=覆盖, a=追加 | 写入/覆盖/追加文件内容（限桌面/文档。追加时 mode='a'，覆盖 mode='w'） |
 
+**`list_dir` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 一句话结论，进历史记录 |
+| `body` | string | 否 | body | 文件名列表，每行一项 |
+| `pagination` | object | 否 | pagination | 分页信息 |
+
+**`read_file` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 一句话结论，进历史记录 |
+| `body` | string | 否 | body | 文本内容 |
+| `images` | array | 否 | images | 图片列表 |
+| `agent_hint` | string | 否 | hint | 如何继续读取，如用 offset 翻页 |
+
+**`write_note` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 一句话结论，进历史记录 |
+
+**`write_file` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 一句话结论，进历史记录 |
+
 ### `knowledge`
 
 - 目录：`pet/tools/knowledge/`
@@ -70,6 +127,21 @@
 |---|---|---|
 | `search` | `query`（str, 必需） 搜索查询文本<br>`limit`（int, 默认 3） 返回结果数量(1~10) | 语义检索知识库，返回与查询最相关的知识片段。当用户询问你之前学过的知识、你录入的笔记、或你需要参考已存储的文档来回答问题时调用此工具。 |
 | `list` | `page`（int, 默认 1） 页码(从1开始) | 分页列出知识库中的条目。 |
+
+**`search` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 查询词与命中条数 |
+| `body` | string | 否 | body | 命中的知识片段 |
+
+**`list` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 知识库总量与分页概况 |
+| `body` | string | 否 | body | 每条一行：编号与标题 |
+| `pagination` | object | 否 | pagination | 分页信息 |
 
 ### `system_monitor`
 

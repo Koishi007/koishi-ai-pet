@@ -291,8 +291,16 @@ def load_tools() -> dict:
     return {"tools": tools, "meta_tools": meta_tools}
 
 
+def _shared_consts() -> dict:
+    """output.py 里的公共 schema 片段，供 ** 展开使用。"""
+    path = ROOT / "pet" / "tools" / "output.py"
+    if not path.exists():
+        return {}
+    return _collect_const_dicts(ast.parse(_read(path)))
+
+
 def _collect_methods(tree: ast.AST) -> list[dict]:
-    consts = _collect_const_dicts(tree)
+    consts = {**_shared_consts(), **_collect_const_dicts(tree)}
     return [
         method
         for node in _walk_source_order(tree)
@@ -305,7 +313,7 @@ def _collect_methods(tree: ast.AST) -> list[dict]:
 def _collect_registrations(tree: ast.AST) -> list[dict]:
     """从 registry.py 收集 register()/add_method() 的字面量声明。"""
     by_name: dict[str, dict] = {}
-    consts = _collect_const_dicts(tree)
+    consts = {**_shared_consts(), **_collect_const_dicts(tree)}
     for call in _walk_source_order(tree):
         if not isinstance(call, ast.Call):
             continue

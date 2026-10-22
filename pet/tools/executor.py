@@ -131,6 +131,10 @@ class ToolExecutor:
 
             data = box.get("data")
             logger.info(f"[ToolExecutor] {call.name} -> {_log_preview(data)}")
+            # 业务失败沿用 {"error": "..."} 的写法：转成错误通道，交给投影层统一渲染
+            if isinstance(data, dict) and data.get("error") and not data.get("headline"):
+                return ToolResult(name=call.name, error_code="tool_error",
+                                  error_message=str(data["error"]))
             return ToolResult(name=call.name, output=data, meta=_split_legacy_keys(data))
         except TypeError as e:
             logger.error(f"[ToolExecutor] {call.name} TypeError: {e}")

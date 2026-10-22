@@ -14,6 +14,7 @@ from pet.brain.events import args_digest, new_group_id
 from pet.brain.output import BehaviorOutput
 from pet.brain.parsing import parse_behavior
 from pet.tools.executor import ToolCall, ToolExecutor
+from pet.tools.output import ImageBlock, TextBlock, render_record, render_turn, validate
 from pet.tools.registry import TOOL_REGISTRY
 
 logger = logging.getLogger(__name__)
@@ -276,9 +277,9 @@ def _record_tool_events(session, tool_calls_map: dict, sorted_indices: list,
         calls.append({"id": tc["id"], "name": tc["name"],
                       "args_digest": args_digest(args),
                       "side_effect": TOOL_REGISTRY.is_side_effect(tc["name"])})
+        brief = result.meta.get("record") or _tool_brief(result, tool_brief, result_text)
         results.append({"tool_call_id": tc["id"], "ok": bool(result.ok),
-                        "brief": _tool_brief(result, tool_brief, result_text),
-                        "raw": result_text})
+                        "brief": brief, "raw": result_text})
         if tool_aside:
             asides.append((tc["id"], str(tool_aside)))
     try:
@@ -339,5 +340,29 @@ def _exec_tool(tool_calls_map: dict, idx: int, executor: ToolExecutor, session: 
     tool_brief = ""
     if result.ok and isinstance(result.output, dict):
         tool_brief = result.output.get("summary", "")
-    result_text = executor.normalize(result.output) if result.ok else result.error_message
-    return idx, tc, result, tool_brief, result_text, tool_aside
+
+    if not result.ok:
+        return idx, tc, result, tool_brief, result.error_message, tool_aside
+
+    definition = _output_of(tc["name"])
+    if definition is None:
+        return idx, tc, result, tool_brief, executor.normalize(result.output), tool_aside
+
+    problems = validate(definition, result.output)
+    if problems:
+        logger.warning(f"[Behavior] {tc['name']} 输出不符合 schema: {problems[:3]}")
+    blocks = render_turn(definition, result.output)
+    text = "\n\n".join(b.text for b in blocks if isinstance(b, TextBlock)).strip()
+    images = [b for b in blocks if isinstance(b, ImageBlock)]
+    if images:
+        result.meta["images"] = [
+            {"base64": b.base64, "mime": b.mime, "caption": b.caption} for b in images
+        ]
+    result.meta["record"] = render_record(definition, result.output)
+    return idx, tc, result, tool_brief, text or "操作已完成", tool_aside
+
+
+def _output_of(name: str):
+    """取方法声明的输出契约；未声明返回 None，调用方走旧渲染。"""
+    method = TOOL_REGISTRY.get_method(name)
+    return getattr(method, "output", None)

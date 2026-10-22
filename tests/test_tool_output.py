@@ -129,3 +129,42 @@ class TestBudgets:
         blocks = render_turn(definition(), {"headline": "结论"})
         assert all(isinstance(b, TextBlock) for b in blocks)
         assert blocks[0].role == "primary"
+
+
+class TestDeclaredTools:
+    """已声明 output 的工具：规范值与 schema 必须对得上。"""
+
+    def test_file_ops_read_file(self):
+        from pet.tools.file_ops import READ_FILE_OUTPUT
+
+        definition = ToolOutputDefinition(schema=READ_FILE_OUTPUT)
+        value = {"headline": "读取文件 a.md（offset=0，100 字符，还有更多）",
+                 "body": "第一行", "agent_hint": "用 offset=100 继续读取"}
+        assert validate(definition, value) == []
+        blocks = render_turn(definition, value)
+        assert blocks[0].text == value["headline"]
+        assert blocks[-1].role == "hint"
+        assert render_record(definition, value).startswith("读取文件 a.md")
+
+    def test_browser_screenshot(self):
+        from pet.tools.browser import SCREENSHOT_OUTPUT
+
+        definition = ToolOutputDefinition(schema=SCREENSHOT_OUTPUT)
+        value = {"headline": "截图网页 https://example.com",
+                 "images": [{"base64": "AAA", "mime": "image/png", "caption": "截图"}]}
+        assert validate(definition, value) == []
+        assert isinstance(render_turn(definition, value)[-1], ImageBlock)
+
+    def test_knowledge_list_pagination(self):
+        from pet.tools.knowledge import LIST_OUTPUT
+
+        definition = ToolOutputDefinition(schema=LIST_OUTPUT)
+        value = {"headline": "知识库共 30 条，第 1/2 页",
+                 "body": "#1 笔记",
+                 "pagination": {"page": 1, "page_size": 20,
+                                "total_items": 30, "has_next": True}}
+        assert validate(definition, value) == []
+        blocks = render_turn(definition, value)
+        assert blocks[-1].role == "hint"
+        assert "page=2" in blocks[-1].text
+        assert render_record(definition, value).endswith("还有更多")
