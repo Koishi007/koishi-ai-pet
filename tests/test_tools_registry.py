@@ -210,14 +210,12 @@ class TestExecutorRouting:
             _slow_gate.set()  # 释放仍在阻塞的 handler 线程
             _slow_gate.clear()
 
-    def test_image_and_context_extracted_into_meta(self, executor):
+    def test_output_passed_through_untouched(self, executor):
+        """执行器不认识任何魔法键：返回值原样进 output，投影由 output.schema 负责。"""
         result = executor.execute([ToolCall("demo__shot", {})])[0]
-        image = result.meta["images"][0]
-        assert image["base64"] == "QUJD"
-        assert image["mime"] == "image/jpeg"
-        assert result.meta["context_brief"] == "已截图"
-        assert "__image__" not in result.output
-        assert "__context__" not in result.output
+        assert result.ok is True
+        assert result.meta == {}
+        assert "__image__" in result.output
 
     def test_multiple_calls_all_reported(self, executor):
         results = executor.execute([
@@ -225,33 +223,6 @@ class TestExecutorRouting:
             ToolCall("demo__boom", {}),
         ])
         assert [r.ok for r in results] == [True, False]
-
-
-class TestNormalizeAndFormat:
-    def test_dict_with_summary(self):
-        assert ToolExecutor._normalize({"summary": "完成", "n": 1}) == '完成\n{"n": 1}'
-
-    def test_dict_without_summary(self):
-        assert ToolExecutor._normalize({"n": 1}) == '{"n": 1}'
-
-    def test_str_passthrough(self):
-        assert ToolExecutor._normalize("原文") == "原文"
-
-    def test_format_results_success_and_failure_lines(self, executor):
-        results = executor.execute([
-            ToolCall("demo__echo", {"text": "x"}),
-            ToolCall("demo__boom", {}),
-        ])
-        text, images = ToolExecutor.format_results(results)
-        assert "[OK demo__echo]" in text
-        assert "[FAIL demo__boom]" in text
-        assert images == []
-
-    def test_format_results_emits_image_uri(self, executor):
-        results = executor.execute([ToolCall("demo__shot", {})])
-        text, images = ToolExecutor.format_results(results)
-        assert images == ["data:image/jpeg;base64,QUJD"]
-        assert len(text.split("\n\n")) == 2
 
 
 class TestSideEffectDeclaration:

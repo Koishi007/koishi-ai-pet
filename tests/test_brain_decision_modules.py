@@ -240,37 +240,22 @@ class _RefusingEventSession(_FakeSession):
 
 
 class TestToolBrief:
-    """brief 回退链：context_brief → summary → 结果首行 → 兜底。"""
+    """无输出契约时的历史短句：结果首行 → 兜底。"""
 
     @staticmethod
-    def _result(context_brief="", success=True, error=""):
-        return SimpleNamespace(
-            ok=success,
-            error_message=error,
-            meta={"context_brief": context_brief} if context_brief else {},
-        )
+    def _result(success=True, error=""):
+        return SimpleNamespace(ok=success, error_message=error, meta={})
 
-    def test_context_brief_wins(self):
-        logic = tool_loop_mod._tool_brief
-        assert logic(self._result("读了 a.md"), "summary", "原文") == "读了 a.md"
-
-    def test_falls_back_to_summary(self):
-        logic = tool_loop_mod._tool_brief
-        assert logic(self._result(), "已添加待办「买菜」", '{"id": 1}') == "已添加待办「买菜」"
-
-    def test_falls_back_to_first_line_of_text(self):
-        logic = tool_loop_mod._tool_brief
+    def test_uses_first_line_of_text(self):
         text = '深圳 晴 29.6度\n{"temp": 29.6}'
-        assert logic(self._result(), "", text) == "深圳 晴 29.6度"
+        assert tool_loop_mod._tool_brief(self._result(), text) == "深圳 晴 29.6度"
 
     def test_json_only_result_degrades(self):
-        logic = tool_loop_mod._tool_brief
-        assert logic(self._result(), "", '{"temp": 29.6}') == "操作已完成"
+        assert tool_loop_mod._tool_brief(self._result(), '{"temp": 29.6}') == "操作已完成"
 
     def test_failure_uses_error(self):
-        logic = tool_loop_mod._tool_brief
         result = self._result(success=False, error="网络超时")
-        assert logic(result, "", "") == "网络超时"
+        assert tool_loop_mod._tool_brief(result) == "网络超时"
 
 
 class TestToolLoopRounds:

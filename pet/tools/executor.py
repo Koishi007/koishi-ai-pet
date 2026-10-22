@@ -1,6 +1,5 @@
 """工具执行器 — 解析 LLM 输出中的 Tool JSON，路由执行，返回结果。"""
 
-import json
 import logging
 import threading
 from dataclasses import dataclass, field
@@ -30,21 +29,6 @@ def _log_preview(data: Any) -> str:
     if len(preview) > _MAX_LOG_LINE_LEN:
         preview = preview[:_MAX_LOG_LINE_LEN] + f"...<+{len(preview) - _MAX_LOG_LINE_LEN}字>"
     return preview
-
-
-def _split_legacy_keys(data: Any) -> dict:
-    """把旧工具的魔法键拆进 meta；工具声明 output 后不再产生，阶段 5 删除。"""
-    if not isinstance(data, dict):
-        return {}
-    image = data.pop("__image__", None)
-    mime = data.pop("__image_mime__", "image/png")
-    context = data.pop("__context__", "")
-    meta: dict = {}
-    if context:
-        meta["context_brief"] = context
-    if image:
-        meta["images"] = [{"base64": image, "mime": mime, "caption": context}]
-    return meta
 
 
 _TYPE_MAP = {
@@ -89,11 +73,6 @@ class ToolExecutor:
         """执行单个工具调用（带超时与参数校验）。"""
         return self._execute_one(call)
 
-    @classmethod
-    def normalize(cls, data: Any) -> str:
-        """把工具返回的数据整理成给模型看的文本。"""
-        return cls._normalize(data)
-
     def _execute_one(self, call: ToolCall) -> ToolResult:
         method = self._lookup_method(call.name)
         if method is None:
@@ -136,7 +115,7 @@ class ToolExecutor:
                 return ToolResult(name=call.name,
                                   error_code=str(data.get("code") or "tool_error"),
                                   error_message=str(data["error"]))
-            return ToolResult(name=call.name, output=data, meta=_split_legacy_keys(data))
+            return ToolResult(name=call.name, output=data)
         except TypeError as e:
             logger.error(f"[ToolExecutor] {call.name} TypeError: {e}")
             return ToolResult(name=call.name, error_code="handler_error",
@@ -180,28 +159,4 @@ class ToolExecutor:
 
         return validated, ""
 
-    @staticmethod
-    def _normalize(data: Any) -> str:
-        if isinstance(data, dict):
-            head = [str(data[key]) for key in ("summary", "model_hint") if data.get(key)]
-            clean = {k: v for k, v in data.items() if k not in ("summary", "model_hint")}
-            json_str = json.dumps(clean, ensure_ascii=False)
-            return "\n".join(head + [json_str])
-        elif isinstance(data, str):
-            return data
-        return str(data)
 
-    @classmethod
-    def format_results(cls, results: list[ToolResult]) -> tuple[str, list[str]]:
-        lines = []
-        image_uris = []
-        for r in results:
-            if r.ok:
-                lines.append(f"[OK {r.name}]\n{cls._normalize(r.output)}")
-                for image in r.meta.get("images") or []:
-                    image_uris.append(
-                        f"data:{image.get('mime', 'image/png')};base64,{image.get('base64', '')}")
-                    lines.append("(附图: 已提供截图，可直接观察内容)")
-            else:
-                lines.append(f"[FAIL {r.name}] {r.error_code}: {r.error_message}")
-        return "\n\n".join(lines), image_uris

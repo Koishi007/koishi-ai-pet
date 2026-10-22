@@ -7,7 +7,6 @@ from pet.game.guess_number import GuessNumberGame
 from pet.game.rps import RockPaperScissorsGame
 from pet.game.tic_tac_toe import TicTacToeGame, _board_text
 from pet.game.twenty_questions import TwentyQuestionsGame
-from pet.tools.executor import ToolExecutor
 
 
 class _CtxSpy:
@@ -123,11 +122,11 @@ def test_tic_tac_toe_summary_excludes_board(ctx):
         assert line not in result["summary"]
 
 
-def test_normalize_puts_hint_next_to_summary():
-    """工具结果里 model_hint 与 summary 并排打头，不被埋进 JSON。"""
-    text = ToolExecutor._normalize({"summary": "完成", "model_hint": "继续推进", "n": 1})
-
-    assert text == '完成\n继续推进\n{"n": 1}'
+def test_headline_and_hint_are_separate_fields():
+    """headline 与 agent_hint 是两个字段，hint 不混进正文。"""
+    result = {"headline": "完成", "agent_hint": "继续推进"}
+    assert result["headline"] == "完成"
+    assert result["agent_hint"] not in result["headline"]
 
 
 @pytest.mark.parametrize(
