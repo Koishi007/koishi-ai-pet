@@ -49,6 +49,7 @@ class ToolOutputDefinition:
 PAGINATION_SCHEMA = {
     "type": "object",
     "x-role": "pagination",
+    "description": "分页信息",
     "properties": {
         "page":        {"type": "integer", "x-role": "suppress", "description": "当前页码"},
         "page_size":   {"type": "integer", "x-role": "suppress", "description": "每页条数"},
@@ -60,6 +61,7 @@ PAGINATION_SCHEMA = {
 IMAGES_SCHEMA = {
     "type": "array",
     "x-role": "images",
+    "description": "图片列表",
     "items": {
         "type": "object",
         "required": ["base64", "mime"],

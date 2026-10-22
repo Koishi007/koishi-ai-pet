@@ -121,16 +121,16 @@ class TestReadFile:
         target = sandbox / "长文.txt"
         target.write_text("甲" * 50, encoding="utf-8")
         result = FileOpsTool().read_file(str(target), max_chars=20, offset=0)
-        assert result["chars_read"] == 20
-        assert result["has_next"] is True
-        assert result["next_offset"] == 20
+        assert result["body"] == "甲" * 20
+        assert "还有更多" in result["headline"]
+        assert "offset=20" in result["agent_hint"]
 
     def test_last_page_has_no_next(self, sandbox):
         target = sandbox / "短文.txt"
         target.write_text("乙" * 10, encoding="utf-8")
         result = FileOpsTool().read_file(str(target), max_chars=100, offset=0)
-        assert result["has_next"] is False
-        assert "next_offset" not in result
+        assert "还有更多" not in result["headline"]
+        assert result["agent_hint"] == ""
 
     def test_illegal_path_raises_permission_error(self, sandbox):
         # read_file 不做兜底，由执行器统一转为错误结果
@@ -157,10 +157,10 @@ class TestReadImage:
         target = sandbox / "图.png"
         self._make_image(target)
         result = FileOpsTool().read_file(str(target))
-        assert result["kind"] == "image"
-        assert result["size"] == "32x16"
-        assert result["__image_mime__"] == "image/jpeg"
-        assert base64.b64decode(result["__image__"]).startswith(b"\xff\xd8")
+        image = result["images"][0]
+        assert image["mime"] == "image/jpeg"
+        assert "32x16" in result["headline"]
+        assert base64.b64decode(image["base64"]).startswith(b"\xff\xd8")
 
     def test_image_rejected_without_vision(self, sandbox, monkeypatch):
         monkeypatch.setattr(file_ops_core, "TOOL_CTX", _VisionCtx(False))
@@ -201,7 +201,7 @@ class TestWriteOps:
 
     def test_write_note_writes_into_sandbox(self, sandbox):
         result = FileOpsTool().write_note("备忘.txt", "你好")
-        assert result["status"] == "written"
+        assert "写入文件" in result["headline"]
         assert (sandbox / "备忘.txt").read_text(encoding="utf-8") == "你好"
 
     def test_write_file_rejects_unknown_mode(self, sandbox):

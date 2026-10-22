@@ -8,12 +8,34 @@ import atexit
 from pet.file_intake import load_text_full
 from pet.tools.knowledge.storage import KnowledgeStorage
 from pet.tools.context import TOOL_CTX
+from pet.tools.output import PAGINATION_SCHEMA, ToolOutputDefinition
 
 logger = logging.getLogger(__name__)
 
 TOOL_NAME = "knowledge"
 TOOL_DESCRIPTION = "RAG 知识库。可语义检索用户手动录入的知识和文档，只读。"
 TOOL_GROUP = "knowledge"
+
+SEARCH_OUTPUT = {
+    "type": "object",
+    "required": ["headline"],
+    "properties": {
+        "headline": {"type": "string", "maxLength": 120, "x-role": "headline",
+                     "description": "查询词与命中条数"},
+        "body": {"type": "string", "x-role": "body", "description": "命中的知识片段"},
+    },
+}
+
+LIST_OUTPUT = {
+    "type": "object",
+    "required": ["headline"],
+    "properties": {
+        "headline": {"type": "string", "maxLength": 120, "x-role": "headline",
+                     "description": "知识库总量与分页概况"},
+        "body": {"type": "string", "x-role": "body", "description": "每条一行：编号与标题"},
+        "pagination": {**PAGINATION_SCHEMA},
+    },
+}
 
 _instance = None
 _HINT_NAMES_MAX = 5
@@ -35,19 +57,14 @@ def _search(query: str, limit: int = 3) -> dict:
     limit = max(1, min(limit, 10))
     results = _instance.search(query, limit=limit)
     if not results:
-        return {"summary": "未找到相关知识", "results": [], "count": 0}
-    lines = [f"找到 {len(results)} 条相关知识:"]
+        return {"headline": f"检索「{query}」没有命中知识"}
+    lines = []
     for r in results:
-        score_str = f" ({r.get('score', 0):.2f})" if r.get("score") else ""
-        lines.append(f"  [{r.get('title', '未知')}]{score_str}")
+        score = f"（{r.get('score', 0):.2f}）" if r.get("score") else ""
+        lines.append(f"[{r.get('title', '未知')}]{score}\n{r['content']}")
     return {
-        "summary": "\n".join(lines),
-        "results": [
-            {"title": r.get("title", ""), "content": r["content"],
-             "score": r.get("score", 0)}
-            for r in results
-        ],
-        "count": len(results),
+        "headline": f"检索「{query}」命中 {len(results)} 条知识",
+        "body": "\n\n".join(lines),
     }
 
 
@@ -59,18 +76,17 @@ def _list(page: int = 1) -> dict:
     data = _instance.list_documents(page=page, page_size=20)
     docs = data["documents"]
     if not docs:
-        return {"summary": "知识库为空", "documents": [], "page": page, "total_pages": 0}
+        return {"headline": "知识库为空"}
     total = (data["total_pages"] - 1) * 20 + len(docs)  # 近似总数
-    lines = [f"共 {total} 条知识，第 {data['page']}/{data['total_pages']} 页:"]
+    lines = []
     for d in docs:
         tags_str = f" [{d['tags']}]" if d.get("tags") else ""
-        lines.append(f"  #{d['id']} {d['title']}{tags_str}")
+        lines.append(f"#{d['id']} {d['title']}{tags_str}")
     return {
-        "summary": "\n".join(lines),
-        "documents": [{"id": d["id"], "title": d["title"], "tags": d.get("tags", "")} for d in docs],
-        "page": data["page"],
-        "total_pages": data["total_pages"],
-        "has_next": data["has_next"],
+        "headline": f"知识库共 {total} 条，第 {data['page']}/{data['total_pages']} 页",
+        "body": "\n".join(lines),
+        "pagination": {"page": data["page"], "page_size": 20,
+                       "total_items": total, "has_next": data["has_next"]},
     }
 
 
@@ -120,6 +136,7 @@ def register(registry):
                       "desc": "返回结果数量(1~10)"},
         },
         timeout=30.0,
+        output=ToolOutputDefinition(schema=SEARCH_OUTPUT),
     )
 
     registry.add_method(
@@ -130,6 +147,7 @@ def register(registry):
             "page": {"type": "int", "required": False, "default": 1,
                      "desc": "页码(从1开始)"},
         },
+        output=ToolOutputDefinition(schema=LIST_OUTPUT),
     )
 
 
