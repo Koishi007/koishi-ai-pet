@@ -87,6 +87,45 @@ class TestProjectionEntry:
         assert "上一句" in messages[0]["content"]
 
 
+class TestSnapshotRestore:
+    def test_context_snapshot_rebuilt_on_restart(self, tmp_path):
+        db = str(tmp_path / "pet.db")
+        first = _brain(tmp_path)
+        first.add_context("user", "重启前的话")
+        first.add_context("assistant", "记住了")
+        first.close_events()
+
+        reset_cache()
+        second = BrainMixin(db)
+        entries = second.context_entries()
+        assert [e.role for e in entries] == ["user", "assistant"]
+        assert entries[0].content == "重启前的话"
+        assert entries[0].seq > 0
+
+    def test_summary_restored_flag(self, tmp_path):
+        db = str(tmp_path / "pet.db")
+        first = _brain(tmp_path)
+        first.add_context("system", "[历史摘要] 之前聊过天气", is_summary=True)
+        first.close_events()
+
+        reset_cache()
+        second = BrainMixin(db)
+        entries = second.context_entries()
+        assert len(entries) == 1
+        assert entries[0].is_summary is True
+
+    def test_restart_does_not_duplicate_events(self, tmp_path):
+        db = str(tmp_path / "pet.db")
+        first = _brain(tmp_path)
+        first.add_context("user", "一次")
+        count = first._events.count()
+        first.close_events()
+
+        reset_cache()
+        second = BrainMixin(db)
+        assert second._events.count() == count
+
+
 class TestArtifactProducer:
     def test_long_raw_result_stored_as_artifact(self, tmp_path):
         brain = _brain(tmp_path)

@@ -83,9 +83,10 @@ class BrainMixin:
             self._events = None
 
     def _load_context(self):
-        """启动时处理离开时长与未闭合工具组；历史由投影读取，不做旧表迁移。"""
+        """启动时重建调试快照、处理离开时长与未闭合工具组。"""
         if self._events is None or not self._events.available:
             return
+        self._rebuild_context_snapshot()
         self._scan_unclosed_groups()
         meta = self._events.meta_get("shutdown_time")
         if not meta:
@@ -99,6 +100,30 @@ class BrainMixin:
                 logger.info(f"[BrainMixin] user was away for {away_str}")
         except Exception:
             pass
+
+    def _rebuild_context_snapshot(self):
+        """从当前会话事件重建调试面板用的内存快照，不触发淘汰与摘要。"""
+        try:
+            events = self._events.load()
+        except Exception as e:
+            logger.warning(f"[BrainMixin] rebuild context snapshot failed: {e}")
+            return
+        entries: List[ContextEntry] = []
+        for event in events:
+            text = event.payload.get("text") or ""
+            if not text:
+                continue
+            if event.type == "user_msg":
+                entries.append(ContextEntry("user", text, event.ts, False, event.seq))
+            elif event.type == "assistant_turn":
+                entries.append(ContextEntry("assistant", text, event.ts, False, event.seq))
+            elif event.type == "system_note":
+                entries.append(ContextEntry("system", text, event.ts, False, event.seq))
+            elif event.type == "summary":
+                entries.append(ContextEntry("system", text, event.ts, True, event.seq))
+        # 只取池子上限内的条目，避免重启后第一条消息就触发淘汰与摘要
+        with self._ctx_lock:
+            self._context = entries[-self._MAX_ENTRIES:]
 
     def _scan_unclosed_groups(self):
         """崩溃窗口：未闭合组只记录，不重放、不重试。"""
