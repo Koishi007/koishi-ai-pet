@@ -318,18 +318,21 @@ def _collect_registrations(tree: ast.AST) -> list[dict]:
         if not isinstance(call, ast.Call):
             continue
         attr = getattr(call.func, "attr", "")
-        args = [a.value for a in call.args if isinstance(a, ast.Constant)]
-        if attr == "register" and len(args) >= 1 and isinstance(args[0], str):
-            name = args[0]
+        if attr == "register":
+            name = _literal(_arg_node(call, 0, "tool_name"))
+            if not isinstance(name, str) or not name:
+                continue
             by_name.setdefault(name, {
                 "name": name,
-                "description": args[1] if len(args) > 1 and isinstance(args[1], str) else "",
+                "description": _literal(_arg_node(call, 1, "description"), ""),
                 "group": _keyword(call, "group", "default"),
                 "meta": bool(_keyword(call, "meta", False)),
                 "methods": [],
             })
-        elif attr == "add_method" and len(args) >= 2:
-            tool_name = args[0]
+        elif attr == "add_method":
+            tool_name = _literal(_arg_node(call, 0, "tool_name"))
+            if not isinstance(tool_name, str) or not tool_name:
+                continue
             entry = by_name.setdefault(tool_name, {
                 "name": tool_name, "description": "", "group": "default", "meta": False,
                 "methods": [],
@@ -340,18 +343,26 @@ def _collect_registrations(tree: ast.AST) -> list[dict]:
     return list(by_name.values())
 
 
+def _arg_node(call: ast.Call, index: int, keyword: str) -> ast.AST | None:
+    """取位置实参，缺省时取同名关键字实参。"""
+    if len(call.args) > index:
+        return call.args[index]
+    return _keyword_node(call, keyword)
+
+
 def _method_from_call(call: ast.Call, tool_name: str | None = None,
                       consts: dict | None = None) -> dict | None:
-    if getattr(call.func, "attr", "") != "add_method" or len(call.args) < 3:
+    if getattr(call.func, "attr", "") != "add_method":
         return None
-    name_node, desc_node = call.args[1], call.args[2]
+    name_node = _arg_node(call, 1, "method_name")
     if not (isinstance(name_node, ast.Constant) and isinstance(name_node.value, str)):
         return None
-    args_node = _keyword_node(call, "args")
+    desc_node = _arg_node(call, 2, "description")
+    args_node = _arg_node(call, 4, "args")
     return {
-        "tool": tool_name or _literal(call.args[0]),
+        "tool": tool_name or _literal(_arg_node(call, 0, "tool_name")),
         "name": name_node.value,
-        "description": _literal(desc_node),
+        "description": _literal(desc_node, ""),
         "args": _parse_args_dict(args_node) if args_node is not None else [],
         "has_output": _keyword_node(call, "output") is not None,
         "output": _parse_output(call, consts or {}),
@@ -409,7 +420,7 @@ def _parse_output(call: ast.Call, consts: dict) -> list[dict]:
         spec = _expand_dict(value, consts)
         fields.append({
             "name": str(_literal(key)),
-            "type": _literal(spec.get("type"), "object"),
+            "type": _literal(spec.get("type"), "-"),
             "required": str(_literal(key)) in required,
             "role": _literal(spec.get("x-role"), "data"),
             "description": _literal(spec.get("description"), ""),
@@ -433,7 +444,7 @@ def _parse_output_fields(node: ast.AST | None, consts: dict, required: set) -> l
         sub = _expand_dict(value, consts)
         fields.append({
             "name": str(_literal(key)),
-            "type": _literal(sub.get("type"), "object"),
+            "type": _literal(sub.get("type"), "-"),
             "required": str(_literal(key)) in required,
             "role": role,
             "description": _literal(sub.get("description"), ""),

@@ -108,7 +108,7 @@ class TicTacToeGame(Game):
         pet_mark = state["pet_mark"]
         user_mark = state["user_mark"]
 
-        # 首次调用：在 summary 里告知双方执子与先后手，供模型 speech 转述给用户
+        # 首次调用：在 headline 里告知双方执子与先后手，供模型 speech 转述给用户
         first_notice = ""
         if not state.get("_notified"):
             state["_notified"] = True
@@ -124,7 +124,8 @@ class TicTacToeGame(Game):
         if state["turn"] == pet_mark:
             if not params.get("ttt_move"):
                 return {
-                    "headline": _s("轮到我落子，请传 ttt_move 参数（A1~C3）。"),
+                    "headline": _s("轮到我落子"),
+                    "agent_hint": "请传 ttt_move 参数（A1~C3）重新调用 game__play。",
                     "ended": False,
                     "pet_mark": pet_mark,
                     "user_mark": user_mark,
@@ -134,7 +135,8 @@ class TicTacToeGame(Game):
             pos = _POS_MAP.get(str(params["ttt_move"]).strip().upper())
             if pos is None:
                 return {
-                    "headline": _s(f"无效位置 {params['ttt_move']}，请用 A1~C3 格式"),
+                    "headline": _s(f"无效位置 {params['ttt_move']}"),
+                    "agent_hint": "请用 A1~C3 格式传 ttt_move。",
                     "ended": False,
                     "pet_mark": pet_mark,
                     "user_mark": user_mark,
@@ -144,7 +146,8 @@ class TicTacToeGame(Game):
             r, c = pos
             if board[r][c]:
                 return {
-                    "headline": _s(f"位置 {params['ttt_move']} 已经有子了，请换个位置"),
+                    "headline": _s(f"位置 {params['ttt_move']} 已经有子了"),
+                    "agent_hint": "请换一个位置传 ttt_move。",
                     "ended": False,
                     "pet_mark": pet_mark,
                     "user_mark": user_mark,

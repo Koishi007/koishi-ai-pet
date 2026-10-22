@@ -1,4 +1,4 @@
-"""工具输出契约：schema 校验、当轮渲染、历史记录与预算裁剪。"""
+"""工具输出契约：schema 校验、当轮渲染、历史记录与观测统计。"""
 
 import pytest
 
@@ -10,7 +10,7 @@ WEATHER_SCHEMA = {
     "type": "object",
     "required": ["headline"],
     "properties": {
-        "headline": {"type": "string", "maxLength": 120, "x-role": "headline"},
+        "headline": {"type": "string", "x-role": "headline"},
         "body":     {"type": "string", "x-role": "body"},
         "data":     {"type": "object", "x-role": "data"},
         "pagination": {**PAGINATION_SCHEMA},
@@ -37,10 +37,6 @@ class TestValidate:
         problems = validate(definition(), {"headline": 123})
         assert any("期望 string" in p for p in problems)
 
-    def test_max_length(self):
-        problems = validate(definition(), {"headline": "长" * 121})
-        assert any("120" in p for p in problems)
-
     def test_nested_items(self):
         schema = {
             "type": "object",
@@ -53,6 +49,9 @@ class TestValidate:
         problems = validate(ToolOutputDefinition(schema=schema),
                             {"items": [{"name": "ok"}, {"name": 1}]})
         assert any("items[1].name" in p for p in problems)
+
+    def test_long_headline_is_not_violation(self):
+        assert validate(definition(), {"headline": "长" * 500}) == []
 
     def test_enum(self):
         schema = {"type": "object",
@@ -107,6 +106,14 @@ class TestRenderTurn:
         custom = ToolOutputDefinition(schema={}, renderer=lambda v: [TextBlock("自定义")])
         assert render_turn(custom, {"x": 1})[0].text == "自定义"
 
+    def test_malformed_pagination_not_rendered(self):
+        blocks = render_turn(definition(), {"headline": "结论", "pagination": "坏值"})
+        assert [b.text for b in blocks] == ["结论"]
+
+    def test_headline_is_primary_block(self):
+        blocks = render_turn(definition(), {"headline": "结论"})
+        assert [b.role for b in blocks] == ["primary"]
+
 
 class TestRenderRecord:
     def test_headline(self):
@@ -122,29 +129,6 @@ class TestRenderRecord:
 
     def test_missing_headline(self):
         assert render_record(definition(), {"body": "正文"}) == ""
-
-
-class TestBudgets:
-    def test_text_blocks_only(self):
-        blocks = render_turn(definition(), {"headline": "结论"})
-        assert all(isinstance(b, TextBlock) for b in blocks)
-        assert blocks[0].role == "primary"
-
-
-    def test_mixed_paths(self):
-        from pet.brain import tool_loop
-
-        tool_loop._OUTPUT_STATS.clear()
-        tool_loop.record_output_stat("a__x", "declared", 0)
-        tool_loop.record_output_stat("a__x", "declared", 2)
-        tool_loop.record_output_stat("b__y", "legacy")
-        stats = tool_loop.output_stats()
-        assert stats["total"] == 3
-        assert stats["legacy"] == 1
-        assert stats["violations"] == 2
-        assert stats["declared_ratio"] == round(2 / 3, 3)
-        assert stats["by_tool"]["b__y"]["path"] == "legacy"
-        tool_loop._OUTPUT_STATS.clear()
 
 
 class TestDeclaredTools:

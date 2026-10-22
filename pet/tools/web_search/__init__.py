@@ -12,7 +12,7 @@ SEARCH_OUTPUT = {
     "type": "object",
     "required": ["headline"],
     "properties": {
-        "headline": {"type": "string", "maxLength": 120, "x-role": "headline",
+        "headline": {"type": "string", "x-role": "headline",
                      "description": "搜索词与结果条数"},
         "body": {"type": "string", "x-role": "body",
                  "description": "每条三行：标题、摘要、网址"},
@@ -24,7 +24,7 @@ FETCH_OUTPUT = {
     "type": "object",
     "required": ["headline"],
     "properties": {
-        "headline": {"type": "string", "maxLength": 120, "x-role": "headline",
+        "headline": {"type": "string", "x-role": "headline",
                      "description": "网页标题与字符数"},
         "body": {"type": "string", "x-role": "body", "description": "正文纯文本"},
     },

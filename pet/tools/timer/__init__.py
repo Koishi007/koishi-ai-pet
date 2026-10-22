@@ -18,7 +18,7 @@ SET_OUTPUT = {
     "type": "object",
     "required": ["headline"],
     "properties": {
-        "headline": {"type": "string", "maxLength": 120, "x-role": "headline",
+        "headline": {"type": "string", "x-role": "headline",
                      "description": "确认设定的一句话"},
         "data": {"type": "object", "x-role": "data", "description": "定时器 id 与秒数"},
     },
@@ -28,7 +28,7 @@ LIST_OUTPUT = {
     "type": "object",
     "required": ["headline"],
     "properties": {
-        "headline": {"type": "string", "maxLength": 120, "x-role": "headline",
+        "headline": {"type": "string", "x-role": "headline",
                      "description": "活跃定时器数量"},
         "body": {"type": "string", "x-role": "body", "description": "每个定时器一行"},
     },
@@ -38,7 +38,7 @@ CANCEL_OUTPUT = {
     "type": "object",
     "required": ["headline"],
     "properties": {
-        "headline": {"type": "string", "maxLength": 120, "x-role": "headline",
+        "headline": {"type": "string", "x-role": "headline",
                      "description": "取消结果"},
         "data": {"type": "object", "x-role": "data", "description": "定时器 id"},
     },
@@ -48,7 +48,7 @@ CANCEL_ALL_OUTPUT = {
     "type": "object",
     "required": ["headline"],
     "properties": {
-        "headline": {"type": "string", "maxLength": 120, "x-role": "headline",
+        "headline": {"type": "string", "x-role": "headline",
                      "description": "取消数量"},
     },
 }

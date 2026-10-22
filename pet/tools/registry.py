@@ -40,7 +40,7 @@ _SEARCH_SPLIT = re.compile(r"[\s,，、;；/|+&]+")
 # 单次搜索最多返回的工具数：与文件/浏览/知识库的分页同一个思路，避免一次吐出全部定义
 _MAX_SEARCH_RESULTS = 5
 
-_HEADLINE = {"type": "string", "maxLength": 120, "x-role": "headline",
+_HEADLINE = {"type": "string", "x-role": "headline",
              "description": "一句话结论，进历史记录"}
 
 FOOD_OUTPUT = {
@@ -58,11 +58,14 @@ GAME_OUTPUT = {
     "required": ["headline"],
     "properties": {
         "headline": _HEADLINE,
-        "body": {"type": "string", "x-role": "body", "description": "局面与规则"},
         "agent_hint": {"type": "string", "x-role": "hint",
                        "description": "下一步该传什么参数"},
+        "ended": {"type": "boolean", "x-role": "data",
+                  "description": "本局是否结束"},
+        "won": {"x-role": "data",
+                "description": "胜负：true 获胜，false 失败，null 平局或未分胜负"},
         "data": {"type": "object", "x-role": "data",
-                 "description": "ended / won / round 等状态"},
+                 "description": "对局状态与游戏专属字段"},
     },
 }
 
@@ -74,6 +77,8 @@ SEARCH_OUTPUT = {
         "body": {"type": "string", "x-role": "body", "description": "命中的工具与方法清单"},
         "agent_hint": {"type": "string", "x-role": "hint",
                        "description": "下一步该直接调用哪个函数"},
+        "groups": {"type": "array", "x-role": "suppress",
+                   "description": "命中的工具分组，供行为层激活"},
     },
 }
 
@@ -486,16 +491,13 @@ class ToolRegistry:
             return "", f"{name} 格式无效，请使用 YYYY-MM-DD，例如 2025-08-01"
 
     @staticmethod
-    def _format_recall_memory(row: dict) -> dict:
-        """将记忆行精简为 LLM 可读字段。"""
+    def _format_recall_memory(row: dict) -> str:
+        """将记忆行渲染成一行可读文本。"""
         # 模块级导入会经 pet.brain.__init__ → behavior 回指本模块成环，保持函数内导入
         from pet.brain.memory import get_memory_store
-        return {
-            "content": row.get("content", ""),
-            "level": row.get("level", "L2"),
-            "importance": row.get("importance", 3),
-            "time": get_memory_store().format_memory_time(row.get("created_at", "")),
-        }
+        time_str = get_memory_store().format_memory_time(row.get("created_at", ""))
+        level = row.get("level", "L2")
+        return f"[{time_str}]（{level}）{row.get('content', '')}"
 
     def _recall_search(self, query: str, limit: int = 5) -> dict:
         """recall__search 工具实现。"""
@@ -682,6 +684,7 @@ class ToolRegistry:
                      else self._format_entries(
                          [self._tool_search_entry(tool) for tool in matched])),
             "agent_hint": hint or "",
+            "groups": sorted({tool.group for tool in matched if tool.group != "default"}),
         }
 
     @staticmethod

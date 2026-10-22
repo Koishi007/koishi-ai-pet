@@ -35,6 +35,10 @@ class TodoListTool:
             "body": "\n".join(lines),
         }
 
+    def list_all(self) -> list[dict]:
+        """面板用：全部任务行，保留 id。"""
+        return self._storage.list()
+
     def toggle(self, todo_id: int) -> dict:
         """切换任务完成状态。「帮我完成/恢复 #3」→ 切换 pending↔done。"""
         result = self._storage.toggle(todo_id)
@@ -44,7 +48,8 @@ class TodoListTool:
         result["todo_id"] = result.pop("id")
         return {
             "headline": f"{label}：#{todo_id}「{result['title']}」",
-            "data": {"id": todo_id, "status": result["status"]},
+            "data": {"id": todo_id, "title": result["title"],
+                     "status": result["status"]},
         }
 
     def delete(self, todo_id: int) -> dict:

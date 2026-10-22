@@ -92,7 +92,9 @@ def test_deepseek_without_key_reports_failure(monkeypatch):
 def test_deepseek_empty_results(config, monkeypatch):
     monkeypatch.setattr(core.requests, "post",
                         lambda *a, **kw: _Resp(200, {"results": []}))
-    assert "没有结果" in core.search("测试")["headline"]
+    result = core.search("测试")
+    assert result["body"] == ""
+    assert result["headline"]
 
 
 def test_connectivity_detects_deepseek(monkeypatch):

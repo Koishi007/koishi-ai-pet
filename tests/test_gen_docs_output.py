@@ -23,7 +23,7 @@ READ_FILE_OUTPUT = {
     "type": "object",
     "required": ["headline"],
     "properties": {
-        "headline": {"type": "string", "maxLength": 120, "x-role": "headline",
+        "headline": {"type": "string", "x-role": "headline",
                      "description": "一句话结论"},
         "body": {"type": "string", "x-role": "body", "description": "正文"},
         "pagination": {**PAGINATION_SCHEMA},
@@ -91,6 +91,16 @@ registry.add_method(
 
 
 class TestRealTools:
+    def test_meta_tools_parsed(self):
+        """registry.py 用关键字实参注册元工具，方法与字段表都不能漏。"""
+        data = gen_docs.load_tools()
+        meta = {tool["name"]: tool for tool in data["meta_tools"]}
+        for name in ("tool_search", "food", "game", "recall"):
+            assert meta[name]["methods"], name
+        search = next(m for m in meta["tool_search"]["methods"]
+                      if m["name"] == "search")
+        assert "groups" in {field["name"] for field in search["output"]}
+
     def test_every_method_declares_output(self):
         """阶段 4 之后，所有注册方法都应有输出契约。"""
         data = gen_docs.load_tools()

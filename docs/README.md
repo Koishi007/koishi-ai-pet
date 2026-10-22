@@ -52,7 +52,7 @@
 | [specs/2026-10-19-memory-event-recall-design.md](specs/2026-10-19-memory-event-recall-design.md) | 设计文档 | 手写 | 事件记忆随机注入的时效处理：整点定时汇总、读取侧取同主题最新、注入文案标注时效；含合并模型连接与记忆面板类别筛选 | 动手前写，落地后补齐结论 |
 | [specs/2026-10-21-bili-video-browse-design.md](specs/2026-10-21-bili-video-browse-design.md) | 设计文档 | 手写 | 独立账号刷 B 站：扫码登录与凭证、wbi 签名、一轮流程、点赞投币评论私信的限额与内容 filter、台账幂等与复核、记忆落点 | 动手前写，落地后补齐结论 |
 | [specs/2026-10-22-session-event-log-projection-design.md](specs/2026-10-22-session-event-log-projection-design.md) | 设计文档 | 手写 | 会话事件日志与消息投影：只追加事件表、纯函数投影、工具组原子裁剪、四档工具通道、传输编码层 | 动手前写，落地后补齐结论 |
-| [specs/2026-10-22-tool-output-projection-design.md](specs/2026-10-22-tool-output-projection-design.md) | 设计文档 | 手写 | 工具输出声明与投影：output.schema 与 x-role 角色标注、当轮与历史两条投影、轻量校验与降级、分阶段迁移 | 动手前写，落地后补齐结论 |
+| [specs/2026-10-22-tool-output-projection-design.md](specs/2026-10-22-tool-output-projection-design.md) | 设计文档 | 手写 | 工具输出声明与投影：output.schema 与 x-role 角色标注、当轮与历史两条投影、严格校验、旧键去向 | 改契约时人工更新 |
 | [../CHANGELOG.md](../CHANGELOG.md) | 事实参考 | 生成 | 按版本分组的变更记录 | `python scripts/gen_changelog.py` |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | 操作指南 | 手写 | 开发流程、测试、提交与 PR 规范 | 流程变化时人工更新 |
 

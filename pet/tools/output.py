@@ -93,13 +93,13 @@ def render_turn(definition: ToolOutputDefinition, value: Any) -> list[ContentBlo
             if item in (None, "", [], {}):
                 continue
             if role == "images":
-                blocks.extend(_image_blocks(item, name))
+                blocks.extend(_image_blocks(item))
             elif role in ("headline", "body"):
                 blocks.append(TextBlock(text=str(item)))
             elif role == "data":
                 blocks.append(TextBlock(text=_flatten(item), role="data"))
             elif role == "pagination":
-                hint = _pagination_hint(item)
+                hint = _pagination_hint(item) if isinstance(item, dict) else ""
                 if hint:
                     blocks.append(TextBlock(text=hint, role="hint"))
             elif role == "hint":
@@ -165,7 +165,7 @@ def _flatten(value: Any, prefix: str = "") -> str:
     return f"{prefix}: {value}" if prefix else str(value)
 
 
-def _image_blocks(items: Any, caption_fallback: str) -> list[ImageBlock]:
+def _image_blocks(items: Any) -> list[ImageBlock]:
     blocks = []
     if not isinstance(items, list):
         return blocks
@@ -175,7 +175,7 @@ def _image_blocks(items: Any, caption_fallback: str) -> list[ImageBlock]:
         blocks.append(ImageBlock(
             base64=str(item["base64"]),
             mime=str(item.get("mime") or "image/png"),
-            caption=str(item.get("caption") or caption_fallback),
+            caption=str(item.get("caption") or ""),
         ))
     return blocks
 
@@ -231,9 +231,6 @@ def _check_value(value: Any, spec: dict, path: str) -> list[str]:
     expected = spec.get("type")
     if expected and not _TYPE_CHECK.get(expected, lambda v: True)(value):
         return [f"{path}: 期望 {expected}"]
-    max_len = spec.get("maxLength")
-    if max_len is not None and isinstance(value, str) and len(value) > int(max_len):
-        problems.append(f"{path}: 超过 {max_len} 字符")
     enum = spec.get("enum")
     if isinstance(enum, list) and value not in enum:
         problems.append(f"{path}: 不在枚举内")

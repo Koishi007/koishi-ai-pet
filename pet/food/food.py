@@ -178,7 +178,7 @@ class FoodManager(QObject):
                 return {
                     "headline": f"桌面上已经有{f['name']}了，直接去吃吧",
                     "data": {
-                        "success": True, "food_id": f["id"], "food_type": f["name"],
+                        "food_id": f["id"], "food_type": f["name"],
                         "position": {"x": f["x"], "y": f["y"]},
                         "dx": dx, "direction": direction,
                         "dy": dy, "bounce_height": bounce_height,
@@ -232,7 +232,7 @@ class FoodManager(QObject):
             return {
                 "headline": f"已生成{name}，在你{_side_text(direction)} {dx}px，{height_hint}",
                 "data": {
-                    "success": True, "food_id": food_id, "food_type": name,
+                    "food_id": food_id, "food_type": name,
                     "position": {"x": x, "y": y},
                     "dx": dx, "direction": direction, "dy": dy,
                     "bounce_height": bounce_height, "height_hint": height_hint,
@@ -247,8 +247,7 @@ class FoodManager(QObject):
             if self._food is None:
                 return {
                     "headline": "桌面上没有食物，可以调用 food__spawn 生成一份",
-                    "data": {"success": True, "has_food": False,
-                             "pet_position": pet_pos},
+                    "data": {"has_food": False, "pet_position": pet_pos},
                 }
             f = self._food
             dx, direction = self._dx_to(f["center_x"])
@@ -280,7 +279,7 @@ class FoodManager(QObject):
             return {
                 "headline": summary,
                 "data": {
-                    "success": True, "has_food": True, "food_id": f["id"],
+                    "has_food": True, "food_id": f["id"],
                     "food_type": f["name"],
                     "position": {"x": f["x"], "y": f["y"]},
                     "pet_position": pet_pos,

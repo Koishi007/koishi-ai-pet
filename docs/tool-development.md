@@ -86,7 +86,7 @@ READ_FILE_OUTPUT = {
     "type": "object",
     "required": ["headline"],
     "properties": {
-        "headline": {"type": "string", "maxLength": 120, "x-role": "headline",
+        "headline": {"type": "string", "x-role": "headline",
                      "description": "一句话结论"},
         "body":     {"type": "string", "x-role": "body", "description": "文件内容"},
         "pagination": {**PAGINATION_SCHEMA},
@@ -114,10 +114,10 @@ registry.add_method(TOOL_NAME, "read_file", "读取文件", handler=read_file,
 | `data` | 压成 `key: value` 行 | 否 |
 | `hint` | 文本块，置于最后，提示下一步 | 否 |
 | `images` | 图片块，附在下一轮 user 消息 | 否 |
-| `pagination` | 「第 1/3 页，共 500 条，用 page=2 继续」 | 是，附在 headline 后 |
+| `pagination` | 「第 2 页，共 500 条，用 page=3 继续」 | 是，附在 headline 后 |
 | `suppress` | 丢弃 | 否 |
 
-渲染顺序按上表固定，同角色内按 schema 声明顺序。**未声明的返回字段归入 `data`**，不判违约。
+渲染顺序按上表固定，同角色内按 schema 声明顺序。**未声明的返回字段归入 `data`**，不判违约；schema 声明 `additionalProperties: false` 时例外。
 
 ### 字段命名
 
@@ -130,11 +130,13 @@ registry.add_method(TOOL_NAME, "read_file", "读取文件", handler=read_file,
 
 ### 失败
 
-业务失败返回 `{"error": "...", "code": "..."}`，执行器转成 `ToolResult.error_code`，模型看到 `[FAIL 工具名] code: 文案`，历史记为「操作失败」。不要自己造 `ok=False` 之类的成功标记。
+业务失败返回 `{"error": "...", "code": "..."}`，执行器转成 `ToolResult.error_code`，模型看到 `[FAIL 工具名] code: 文案`，历史记录取该错误文案。不要自己造 `ok=False` 之类的成功标记。
+
+返回值不符合 `output.schema` 时同样失败，`code` 为 `output_violation`，模型看到首个违约路径，返回值不渲染。
 
 ### 校验
 
-`validate` 支持 `type` / `required` / `properties` / `items` / `enum` / `maxLength` / `additionalProperties: false`。当前只记 warning，不阻断返回。
+`validate` 支持 `type` / `required` / `properties` / `items` / `enum` / `additionalProperties: false`，按严格模式执行：违约即本次调用失败。`headline` 的长度不参与校验，历史记录截断到 120 字符。
 
 ### 图片
 
@@ -153,7 +155,7 @@ return {
 
 schema 必须是**模块级字面量**（可以是常量名，跨文件片段用 `**常量名` 展开一层），函数调用解析不出来。运行 `python scripts/gen_docs.py` 后，`reference/tools.md` 会为每个已声明方法生成「字段 / 类型 / 必填 / 角色 / 说明」表。
 
-未声明 `output` 的方法仍走旧的 `summary` 兼容路径，但新建工具一律要声明。
+未声明 `output` 的方法把返回值原样交给模型：字符串直接作为文本，其余值序列化成 JSON。新建工具一律要声明。
 
 ## 图片注入（多模态）
 

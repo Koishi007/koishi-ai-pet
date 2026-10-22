@@ -20,7 +20,7 @@ ADD_OUTPUT = {
     "type": "object",
     "required": ["headline"],
     "properties": {
-        "headline": {"type": "string", "maxLength": 120, "x-role": "headline",
+        "headline": {"type": "string", "x-role": "headline",
                      "description": "确认添加的一句话"},
         "data": {"type": "object", "x-role": "data", "description": "任务 id 与标题"},
     },
@@ -30,7 +30,7 @@ LIST_OUTPUT = {
     "type": "object",
     "required": ["headline"],
     "properties": {
-        "headline": {"type": "string", "maxLength": 120, "x-role": "headline",
+        "headline": {"type": "string", "x-role": "headline",
                      "description": "待办条数"},
         "body": {"type": "string", "x-role": "body", "description": "每条一行，含状态标记"},
     },
@@ -40,9 +40,9 @@ TOGGLE_OUTPUT = {
     "type": "object",
     "required": ["headline"],
     "properties": {
-        "headline": {"type": "string", "maxLength": 120, "x-role": "headline",
+        "headline": {"type": "string", "x-role": "headline",
                      "description": "状态变化与任务名"},
-        "data": {"type": "object", "x-role": "data", "description": "任务 id 与新状态"},
+        "data": {"type": "object", "x-role": "data", "description": "任务 id、标题与新状态"},
     },
 }
 
@@ -50,7 +50,7 @@ DELETE_OUTPUT = {
     "type": "object",
     "required": ["headline"],
     "properties": {
-        "headline": {"type": "string", "maxLength": 120, "x-role": "headline",
+        "headline": {"type": "string", "x-role": "headline",
                      "description": "删除结果"},
     },
 }
@@ -59,7 +59,7 @@ UPDATE_OUTPUT = {
     "type": "object",
     "required": ["headline"],
     "properties": {
-        "headline": {"type": "string", "maxLength": 120, "x-role": "headline",
+        "headline": {"type": "string", "x-role": "headline",
                      "description": "更新结果"},
         "data": {"type": "object", "x-role": "data", "description": "任务 id"},
     },
@@ -93,10 +93,10 @@ def _complete_with_notify(todo_id: int) -> dict:
     TOOL_CTX.speech_random(["完成…", "搞定…", "好耶…", "做完啦…"])
     result = store.get_instance().toggle(todo_id)
     if "error" not in result:
-        item = result.get("item", {})
-        label = "已完成" if item.get("status") == "done" else "已恢复"
-        TOOL_CTX.notify(f"待办{label}", item.get("title", ""))
-        TOOL_CTX.note_event("todo", f"待办「{item.get('title', '')}」{label}")
+        data = result.get("data") or {}
+        label = "已完成" if data.get("status") == "done" else "已恢复"
+        TOOL_CTX.notify(f"待办{label}", data.get("title", ""))
+        TOOL_CTX.note_event("todo", f"待办「{data.get('title', '')}」{label}")
     return result
 
 

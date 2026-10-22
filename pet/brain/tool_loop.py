@@ -7,7 +7,6 @@
 import concurrent.futures
 import json
 import logging
-import threading
 from typing import Optional, Protocol
 
 from pet.config import config
@@ -15,46 +14,11 @@ from pet.brain.events import args_digest, new_group_id
 from pet.brain.output import BehaviorOutput
 from pet.brain.parsing import parse_behavior
 from pet.tools.executor import ToolCall, ToolExecutor
-from pet.tools.output import ImageBlock, TextBlock, render_record, render_turn, validate
+from pet.tools.output import (RECORD_LIMIT, ImageBlock, TextBlock, render_record,
+                              render_turn, validate)
 from pet.tools.registry import TOOL_REGISTRY
 
 logger = logging.getLogger(__name__)
-
-# 输出契约的运行时观测：按工具累计调用数、违约数与走旧渲染的次数
-_OUTPUT_STATS: dict[str, dict] = {}
-_stats_lock: Optional[threading.Lock] = None
-
-
-def _stats_guard() -> threading.Lock:
-    """惰性建锁，避免模块导入期的副作用。"""
-    global _stats_lock
-    if _stats_lock is None:
-        _stats_lock = threading.Lock()
-    return _stats_lock
-
-
-def record_output_stat(tool: str, path: str, violations: int = 0):
-    """累计一次工具输出的处理结果；`path` 为 declared / legacy / failed。"""
-    with _stats_guard():
-        item = _OUTPUT_STATS.setdefault(
-            tool, {"calls": 0, "violations": 0, "path": path})
-        item["calls"] += 1
-        item["violations"] += violations
-        item["path"] = path
-
-
-def output_stats() -> dict:
-    """观测快照：覆盖情况与违约数，用于判断能否切 strict。"""
-    with _stats_guard():
-        by_tool = {name: dict(item) for name, item in sorted(_OUTPUT_STATS.items())}
-    total = sum(item["calls"] for item in by_tool.values())
-    legacy = sum(item["calls"] for item in by_tool.values()
-                 if item["path"] == "legacy")
-    violations = sum(item["violations"] for item in by_tool.values())
-    return {"total": total, "legacy": legacy, "violations": violations,
-            "declared_ratio": round((total - legacy) / total, 3) if total else 0.0,
-            "by_tool": by_tool}
-
 
 class ToolSession(Protocol):
     """工具轮次需要的会话能力：轮次策略、工具开关、分组激活与流式回传。
@@ -91,18 +55,6 @@ class ToolSession(Protocol):
 
     def stream(self, messages: list, max_tokens: int, tools, thinking: Optional[bool], *,
                tag: str, on_chunk=None, on_stream_end=None): ...
-
-
-def _image_source(result, tool_name: str) -> str:
-    """图片的来源说明：优先用工具写的 context_brief，其次路径或 URL。"""
-    if result.meta.get("context_brief"):
-        return result.meta["context_brief"]
-    if isinstance(result.output, dict):
-        for key in ("path", "url"):
-            value = result.output.get(key)
-            if value:
-                return str(value)
-    return tool_name
 
 
 def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, session: ToolSession, *,
@@ -179,7 +131,7 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
                 "content": result_text,
             })
             logger.info(f"[Behavior] tool_round_{display_round} {tc['name']} -> {'OK' if result.ok else 'FAIL'}")
-            log_entry = f"{tc['name']} → {result.meta.get('context_brief') or tool_brief or result_text[:200]}"
+            log_entry = f"{tc['name']} → {result.meta.get('record') or tool_brief or result_text[:200]}"
             if tool_aside:
                 log_entry = f"（自言自语：{tool_aside}）{log_entry}"
             images = result.meta.get("images") or []
@@ -189,7 +141,7 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
                 for image in images:
                     round_images.append((
                         f"data:{image.get('mime', 'image/png')};base64,{image.get('base64', '')}",
-                        image.get("caption") or _image_source(result, tc["name"]),
+                        image.get("caption") or tc["name"],
                     ))
             round_log.append(log_entry)
 
@@ -287,7 +239,7 @@ def _tool_brief(result, result_text: str = "") -> str:
         head = result_text.strip().splitlines()[0].strip() if result_text.strip() else ""
         if head and not head.startswith(("{", "[")):
             text = head
-    return (text or ("操作已完成" if result.ok else "操作失败"))[:120]
+    return (text or ("操作已完成" if result.ok else "操作失败"))[:RECORD_LIMIT]
 
 
 def _record_tool_events(session, tool_calls_map: dict, sorted_indices: list,
@@ -349,6 +301,11 @@ def _execute_round(tool_calls_map: dict, sorted_indices: list, executor: ToolExe
     return tool_results
 
 
+def _fail_text(name: str, result) -> str:
+    """失败调用的模型可见文本。"""
+    return f"[FAIL {name}] {result.error_code}: {result.error_message}"
+
+
 def _exec_tool(tool_calls_map: dict, idx: int, executor: ToolExecutor, session: ToolSession):
     """执行单个工具调用，返回 (idx, tc, result, tool_brief, result_text, tool_aside)。"""
     tc = tool_calls_map[idx]
@@ -368,21 +325,21 @@ def _exec_tool(tool_calls_map: dict, idx: int, executor: ToolExecutor, session: 
         if tool_aside:
             session.end_aside()
     if not result.ok:
-        record_output_stat(tc["name"], "failed")
-        return idx, tc, result, "", result.error_message, tool_aside
+        return idx, tc, result, "", _fail_text(tc["name"], result), tool_aside
 
     definition = _output_of(tc["name"])
     if definition is None:
         # 没有输出契约：整体当文本交给模型，历史记录走首行兜底
-        record_output_stat(tc["name"], "undeclared")
         text = (result.output if isinstance(result.output, str)
                 else json.dumps(result.output, ensure_ascii=False))
         return idx, tc, result, "", text, tool_aside
 
     problems = validate(definition, result.output)
-    record_output_stat(tc["name"], "declared", len(problems))
     if problems:
         logger.warning(f"[Behavior] {tc['name']} 输出不符合 schema: {problems[:3]}")
+        result.error_code = "output_violation"
+        result.error_message = problems[0]
+        return idx, tc, result, "", _fail_text(tc["name"], result), tool_aside
     blocks = render_turn(definition, result.output)
     text = "\n\n".join(b.text for b in blocks if isinstance(b, TextBlock)).strip()
     images = [b for b in blocks if isinstance(b, ImageBlock)]
