@@ -56,8 +56,10 @@ def get_overview() -> dict:
             parts.append(f"电池 {battery.percent}% ({status})")
         parts.append(f"已运行 {uptime_str}")
 
-        result["summary"] = " | ".join(parts)
-        return result
+        return {
+            "headline": " | ".join(parts),
+            "data": result,
+        }
     except Exception as e:
         return {"error": str(e)}
 
@@ -76,16 +78,15 @@ def get_top_processes(count: int = 5) -> dict:
     procs.sort(key=lambda x: x["cpu_percent"] or 0, reverse=True)
     top = procs[:count]
 
-    lines = [f"CPU 占用最高的 {len(top)} 个进程："]
-    for i, p in enumerate(top, 1):
-        lines.append(
-            f"  {i}. {p['name']} (PID {p['pid']}) "
-            f"- CPU {p['cpu_percent']:.1f}% / 内存 {p['memory_percent']:.1f}%"
-        )
+    lines = [
+        f"{i}. {p['name']} (PID {p['pid']}) "
+        f"- CPU {p['cpu_percent']:.1f}% / 内存 {p['memory_percent']:.1f}%"
+        for i, p in enumerate(top, 1)
+    ]
 
     return {
-        "processes": top,
-        "summary": "\n".join(lines),
+        "headline": f"CPU 占用最高的 {len(top)} 个进程",
+        "body": "\n".join(lines),
     }
 
 
@@ -103,12 +104,14 @@ def get_memory_detail() -> dict:
         "swap_percent": swap.percent,
     }
 
-    result["summary"] = (
-        f"物理内存: {mem.percent}% ({_format_bytes(mem.used)}/{_format_bytes(mem.total)}, "
-        f"可用 {_format_bytes(mem.available)}) | "
-        f"交换分区: {swap.percent}% ({_format_bytes(swap.used)}/{_format_bytes(swap.total)})"
-    )
-    return result
+    return {
+        "headline": (
+            f"物理内存 {mem.percent}%（{_format_bytes(mem.used)}/{_format_bytes(mem.total)}"
+            f"，可用 {_format_bytes(mem.available)}）"
+            f"，交换分区 {swap.percent}%"
+        ),
+        "data": result,
+    }
 
 
 def get_network() -> dict:
@@ -119,8 +122,8 @@ def get_network() -> dict:
         "packets_sent": counters.packets_sent,
         "packets_recv": counters.packets_recv,
     }
-    result["summary"] = (
-        f"网络: 已发送 {_format_bytes(counters.bytes_sent)} / "
-        f"已接收 {_format_bytes(counters.bytes_recv)}"
-    )
-    return result
+    return {
+        "headline": (f"网络已发送 {_format_bytes(counters.bytes_sent)}，"
+                     f"已接收 {_format_bytes(counters.bytes_recv)}"),
+        "data": result,
+    }

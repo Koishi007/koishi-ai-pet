@@ -184,7 +184,7 @@ def _extract_text(url: str, max_chars: int = 2000) -> str:
 def _search_searxng(query: str, count: int, language: str, cfg: dict, page: int = 1) -> dict:
     base_url = cfg.get("searxng_url", "").rstrip("/").removesuffix("/search")
     if not base_url:
-        return {"summary": "搜索失败：未配置 searxng_url，请在 web_search/config.json 中设置"}
+        return {"error": "未配置 searxng_url，请在 web_search/config.json 中设置"}
 
     params = {
         "q": query,
@@ -211,11 +211,11 @@ def _search_searxng(query: str, count: int, language: str, cfg: dict, page: int 
         data = resp.json()
     except requests.RequestException as e:
         logger.warning(f"[web_search] SearXNG error: {e}")
-        return {"summary": f"搜索失败：SearXNG 请求异常 ({type(e).__name__})"}
+        return {"error": f"SearXNG 请求异常 ({type(e).__name__})"}
 
     raw_results = data.get("results", [])
     if not raw_results:
-        return {"summary": f"「{query}」未找到相关结果"}
+        return {"body": ""}
 
     lines = [f"「{query}」搜索结果（{min(len(raw_results), count)}条）："]
     for i, item in enumerate(raw_results[:count], 1):
@@ -228,14 +228,14 @@ def _search_searxng(query: str, count: int, language: str, cfg: dict, page: int 
         engine_tag = f" [{engine}]" if engine else ""
         lines.append(f"  {i}. {title}{date_tag}{engine_tag}\n     {snippet}\n     {url}")
 
-    return {"summary": "\n".join(lines)}
+    return {"body": "\n".join(lines)}
 
 
 
 def _search_bing(query: str, count: int, market: str, cfg: dict, page: int = 1) -> dict:
     api_key = cfg.get("bing_search_key", "")
     if not api_key:
-        return {"summary": "搜索失败：未配置 bing_search_key，请在 web_search/config.json 中设置"}
+        return {"error": "未配置 bing_search_key，请在 web_search/config.json 中设置"}
 
     count = max(1, min(count, 10))
     offset = (page - 1) * count
@@ -261,11 +261,11 @@ def _search_bing(query: str, count: int, market: str, cfg: dict, page: int = 1) 
         data = resp.json()
     except requests.RequestException as e:
         logger.warning(f"[web_search] Bing API error: {e}")
-        return {"summary": f"搜索失败：网络请求异常 ({type(e).__name__})"}
+        return {"error": f"网络请求异常 ({type(e).__name__})"}
 
     web_pages = data.get("webPages", {}).get("value", [])
     if not web_pages:
-        return {"summary": f"「{query}」未找到相关结果"}
+        return {"body": ""}
 
     lines = [f"「{query}」搜索结果（{len(web_pages)}条）："]
     for i, page in enumerate(web_pages, 1):
@@ -276,7 +276,7 @@ def _search_bing(query: str, count: int, market: str, cfg: dict, page: int = 1) 
         date_tag = f" [{date}]" if date else ""
         lines.append(f"  {i}. {title}{date_tag}\n     {snippet}\n     {url}")
 
-    return {"summary": "\n".join(lines)}
+    return {"body": "\n".join(lines)}
 
 
 def _search_deepseek(query: str, count: int, language: str, cfg: dict, page: int = 1) -> dict:
@@ -286,7 +286,7 @@ def _search_deepseek(query: str, count: int, language: str, cfg: dict, page: int
     """
     api_key = cfg.get("deepseek_search_key", "")
     if not api_key:
-        return {"summary": "搜索失败：未配置 deepseek_search_key，请在 web_search/config.json 中设置"}
+        return {"error": "未配置 deepseek_search_key，请在 web_search/config.json 中设置"}
 
     count = max(1, min(count, 50))
     payload = {"query": query, "count": count, "need_content": False}
@@ -302,11 +302,11 @@ def _search_deepseek(query: str, count: int, language: str, cfg: dict, page: int
         data = resp.json()
     except requests.RequestException as e:
         logger.warning(f"[web_search] DeepSeek API error: {e}")
-        return {"summary": f"搜索失败：DeepSeek 请求异常 ({type(e).__name__})"}
+        return {"error": f"DeepSeek 请求异常 ({type(e).__name__})"}
 
     results = data.get("results", [])
     if not results:
-        return {"summary": f"「{query}」未找到相关结果"}
+        return {"body": ""}
 
     lines = [f"「{query}」搜索结果（{min(len(results), count)}条）："]
     for i, item in enumerate(results[:count], 1):
@@ -321,7 +321,7 @@ def _search_deepseek(query: str, count: int, language: str, cfg: dict, page: int
         site_tag = f" [{site}]" if site else ""
         lines.append(f"  {i}. {title}{date_tag}{site_tag}\n     {snippet}\n     {url}")
 
-    return {"summary": "\n".join(lines)}
+    return {"body": "\n".join(lines)}
 
 
 def _search_tavily(query: str, count: int, language: str, cfg: dict, page: int = 1) -> dict:
@@ -331,7 +331,7 @@ def _search_tavily(query: str, count: int, language: str, cfg: dict, page: int =
     """
     api_key = cfg.get("tavily_api_key", "")
     if not api_key:
-        return {"summary": "搜索失败：未配置 tavily_api_key，请在 web_search/config.json 中设置"}
+        return {"error": "未配置 tavily_api_key，请在 web_search/config.json 中设置"}
 
     payload = {
         "query": query,
@@ -354,11 +354,11 @@ def _search_tavily(query: str, count: int, language: str, cfg: dict, page: int =
         data = resp.json()
     except requests.RequestException as e:
         logger.warning(f"[web_search] Tavily API error: {e}")
-        return {"summary": f"搜索失败：Tavily 请求异常 ({type(e).__name__})"}
+        return {"error": f"Tavily 请求异常 ({type(e).__name__})"}
 
     results = data.get("results", [])
     if not results:
-        return {"summary": f"「{query}」未找到相关结果"}
+        return {"body": ""}
 
     lines = [f"「{query}」搜索结果（{len(results)}条）："]
     for i, item in enumerate(results, 1):
@@ -369,7 +369,7 @@ def _search_tavily(query: str, count: int, language: str, cfg: dict, page: int =
         date_tag = f" [{date}]" if date else ""
         lines.append(f"  {i}. {title}{date_tag}\n     {snippet}\n     {url}")
 
-    return {"summary": "\n".join(lines)}
+    return {"body": "\n".join(lines)}
 
 
 def check_connectivity() -> bool:
@@ -485,6 +485,20 @@ def check_connectivity() -> bool:
 
 
 
+def _finish_search(query: str, result: dict, page: int, count: int, paged: bool) -> dict:
+    """填 headline 与分页；后端失败原样返回，由调用方回退下一个后端。"""
+    if "error" in result:
+        return result
+    if result.get("body"):
+        result["headline"] = (f"搜索「{query}」（第 {page} 页，{count} 条）" if paged
+                              else f"搜索「{query}」（{count} 条）")
+    else:
+        result["headline"] = f"搜索「{query}」没有结果"
+    if paged:
+        result["pagination"] = {"page": page, "has_next": bool(result.get("body"))}
+    return result
+
+
 def search(query: str, count: int = 5, language: str = "zh-CN", page: int = 1) -> dict:
     """网络搜索 — 智能路由：优先使用 SearXNG，未配置/失败则依次回退 DeepSeek、Bing。
 
@@ -501,45 +515,33 @@ def search(query: str, count: int = 5, language: str = "zh-CN", page: int = 1) -
         searxng_url = cfg.get("searxng_url", "")
         if searxng_url:
             result = _search_searxng(query, count, language, cfg, page)
-            if "搜索失败" not in str(result.get("summary", "")):
-                result["page"] = page
-                result["has_next"] = len(result.get("summary", "").split("\n")) > 1
-                result["__context__"] = f"搜索「{query}」（第{page}页）"
-                return result
+            if "error" not in result:
+                return _finish_search(query, result, page, count, paged=True)
             logger.info("[web_search] SearXNG failed, falling back to Tavily")
 
     tavily_key = cfg.get("tavily_api_key", "")
     if backend in ("tavily", "auto") and tavily_key:
         result = _search_tavily(query, count, language, cfg, page)
-        if "搜索失败" not in str(result.get("summary", "")):
-            result["page"] = page
-            result["has_next"] = False
-            result["__context__"] = f"搜索「{query}」"
-            return result
+        if "error" not in result:
+            return _finish_search(query, result, page, count, paged=False)
         logger.info("[web_search] Tavily failed, falling back to DeepSeek")
 
     deepseek_key = cfg.get("deepseek_search_key", "")
     if backend in ("deepseek", "auto") and deepseek_key:
         result = _search_deepseek(query, count, language, cfg, page)
-        if "搜索失败" not in str(result.get("summary", "")):
-            result["page"] = page
-            result["has_next"] = False
-            result["__context__"] = f"搜索「{query}」"
-            return result
+        if "error" not in result:
+            return _finish_search(query, result, page, count, paged=False)
         logger.info("[web_search] DeepSeek failed, falling back to Bing")
 
     bing_key = cfg.get("bing_search_key", "")
     if backend in ("bing", "auto") and bing_key:
-        result = _search_bing(query, count, language, cfg, page)
-        result["page"] = page
-        result["has_next"] = len(result.get("summary", "").split("\n")) > 1
-        result["__context__"] = f"搜索「{query}」（第{page}页）"
-        return result
+        return _finish_search(query, _search_bing(query, count, language, cfg, page),
+                              page, count, paged=True)
 
     searxng_ok = bool(cfg.get("searxng_url", ""))
     return {
-        "summary": (
-            "搜索失败：所有后端均不可用。"
+        "error": (
+            "所有搜索后端均不可用。"
             + ("SearXNG 已配置但请求失败。" if searxng_ok else "")
             + " 请在 web_search/config.json 中配置 searxng_url、tavily_api_key、deepseek_search_key 或 bing_search_key"
         ),
@@ -602,7 +604,7 @@ def fetch(url: str, max_chars: int = 10000) -> dict:
     """
     reason = _url_reject_reason(url)
     if reason:
-        return {"summary": f"抓取失败：{reason}"}
+        return {"error": f"抓取失败：{reason}"}
 
     cfg = _load_config()
     backend = cfg.get("backend", "auto")
@@ -620,11 +622,15 @@ def fetch(url: str, max_chars: int = 10000) -> dict:
             if len(text) > max_chars:
                 text = text[:max_chars] + "…"
             title = page.get("title", "")
-            head = f"{title}\n{url}" if title else url
-            return {"summary": f"{head}\n{text}",
-                    "__context__": f"抓取网页「{title or url}」"}
+            return {
+                "headline": f"抓取网页「{title or url}」（{len(text)} 字符）",
+                "body": text,
+            }
 
     text = _extract_text(url, max_chars)
     if not text:
-        return {"summary": f"抓取失败：未能从 {url} 提取正文"}
-    return {"summary": f"{url}\n{text}", "__context__": f"抓取网页 {url}"}
+        return {"error": f"未能从 {url} 提取正文"}
+    return {
+        "headline": f"抓取网页 {url}（{len(text)} 字符）",
+        "body": text,
+    }

@@ -129,10 +129,8 @@ class TimerTool:
             return {"error": "定时器注册失败"}
         logger.info(f"[Timer] set: {timer_id} '{label}' {duration}s")
         return {
-            "id": timer_id,
-            "label": label,
-            "duration": duration,
-            "summary": f"已设定「{label}」，{self._format_duration(duration)}后提醒",
+            "headline": f"已设定「{label}」，{self._format_duration(duration)}后提醒",
+            "data": {"id": timer_id, "duration": duration},
         }
 
     def list_timers(self) -> dict:
@@ -140,7 +138,7 @@ class TimerTool:
         with self._lock:
             snapshot = list(self._timers.items())
         if not snapshot:
-            return {"summary": "当前没有活跃的定时器", "timers": [], "count": 0}
+            return {"headline": "当前没有活跃的定时器"}
 
         now_s = time.time()
         items = []
@@ -152,12 +150,14 @@ class TimerTool:
                 "remaining_str": self._format_duration(remain),
             })
 
-        lines = [f"共 {len(items)} 个活跃定时器:"]
-        for item in items:
-            lines.append(
-                f"  [{item['id']}] {item['label']} — 剩余 {item['remaining_str']}"
-            )
-        return {"summary": "\n".join(lines), "timers": items, "count": len(items)}
+        lines = [
+            f"[{item['id']}] {item['label']}，剩余 {item['remaining_str']}"
+            for item in items
+        ]
+        return {
+            "headline": f"共 {len(items)} 个活跃定时器",
+            "body": "\n".join(lines),
+        }
 
     def cancel_timer(self, timer_id: str) -> dict:
         """取消指定定时器。"""
@@ -179,11 +179,9 @@ class TimerTool:
 
         logger.info(f"[Timer] cancelled: {timer_id} '{timer['label']}'")
         return {
-            "cancelled": timer_id,
-            "label": timer["label"],
-            "alarm_cleared": cleaned,
-            "summary": f"已取消定时器「{timer['label']}」"
+            "headline": f"已取消定时器「{timer['label']}」"
             + ("" if cleaned else "（但提醒可能仍会触发）"),
+            "data": {"id": timer_id, "alarm_cleared": cleaned},
         }
 
     def cancel_all(self) -> dict:
@@ -192,11 +190,9 @@ class TimerTool:
             ids = list(self._timers.keys())
         cancelled = 0
         for tid in ids:
-            result = self.cancel_timer(tid)
-            if "cancelled" in result:
+            if self.cancel_timer(tid).get("headline"):
                 cancelled += 1
-        return {"cancelled": cancelled, "total": len(ids),
-                "summary": f"已取消 {cancelled}/{len(ids)} 个定时器"}
+        return {"headline": f"已取消 {cancelled}/{len(ids)} 个定时器"}
 
     def close(self):
         """关闭时保存关机时间，清除所有闹钟，关闭存储连接。"""

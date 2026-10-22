@@ -6,12 +6,52 @@ import atexit
 from pet.tools.timer.core import TimerTool
 from pet.tools.timer.storage import TimerStorage
 from pet.tools.context import TOOL_CTX
+from pet.tools.output import ToolOutputDefinition
 
 logger = logging.getLogger(__name__)
 
 TOOL_NAME = "timer"
 TOOL_DESCRIPTION = "倒计时定时器，设定后宠物会在指定时间后主动提醒。"
 TOOL_GROUP = "productivity"
+
+SET_OUTPUT = {
+    "type": "object",
+    "required": ["headline"],
+    "properties": {
+        "headline": {"type": "string", "maxLength": 120, "x-role": "headline",
+                     "description": "确认设定的一句话"},
+        "data": {"type": "object", "x-role": "data", "description": "定时器 id 与秒数"},
+    },
+}
+
+LIST_OUTPUT = {
+    "type": "object",
+    "required": ["headline"],
+    "properties": {
+        "headline": {"type": "string", "maxLength": 120, "x-role": "headline",
+                     "description": "活跃定时器数量"},
+        "body": {"type": "string", "x-role": "body", "description": "每个定时器一行"},
+    },
+}
+
+CANCEL_OUTPUT = {
+    "type": "object",
+    "required": ["headline"],
+    "properties": {
+        "headline": {"type": "string", "maxLength": 120, "x-role": "headline",
+                     "description": "取消结果"},
+        "data": {"type": "object", "x-role": "data", "description": "定时器 id"},
+    },
+}
+
+CANCEL_ALL_OUTPUT = {
+    "type": "object",
+    "required": ["headline"],
+    "properties": {
+        "headline": {"type": "string", "maxLength": 120, "x-role": "headline",
+                     "description": "取消数量"},
+    },
+}
 
 _instance: TimerTool | None = None
 
@@ -76,12 +116,14 @@ def register(registry):
                       "desc": "提醒内容标题"},
         },
         timeout=5.0,
+        output=ToolOutputDefinition(schema=SET_OUTPUT),
     )
 
     registry.add_method(
         TOOL_NAME, "list",
         "查看当前所有活跃的定时器。",
         handler=_list,
+        output=ToolOutputDefinition(schema=LIST_OUTPUT),
     )
 
     registry.add_method(
@@ -91,12 +133,14 @@ def register(registry):
         args={
             "timer_id": {"type": "str", "required": True, "desc": "定时器ID"},
         },
+        output=ToolOutputDefinition(schema=CANCEL_OUTPUT),
     )
 
     registry.add_method(
         TOOL_NAME, "cancel_all",
         "取消所有活跃的定时器。",
         handler=_cancel_all,
+        output=ToolOutputDefinition(schema=CANCEL_ALL_OUTPUT),
     )
 
     logger.info("[timer] tool registered")

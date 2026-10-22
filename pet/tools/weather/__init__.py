@@ -1,9 +1,31 @@
 from pet.tools.weather.core import get_current, get_forecast
 from pet.tools.context import TOOL_CTX
+from pet.tools.output import ToolOutputDefinition
 
 TOOL_NAME = "weather"
 TOOL_DESCRIPTION = "天气查询（当前天气、未来预报）"
 TOOL_GROUP = "info"
+
+CURRENT_OUTPUT = {
+    "type": "object",
+    "required": ["headline"],
+    "properties": {
+        "headline": {"type": "string", "maxLength": 120, "x-role": "headline",
+                     "description": "城市、天气与气温"},
+        "body": {"type": "string", "x-role": "body", "description": "湿度、风速与未来简报"},
+        "data": {"type": "object", "x-role": "data", "description": "原始数值"},
+    },
+}
+
+FORECAST_OUTPUT = {
+    "type": "object",
+    "required": ["headline"],
+    "properties": {
+        "headline": {"type": "string", "maxLength": 120, "x-role": "headline",
+                     "description": "城市与预报天数"},
+        "body": {"type": "string", "x-role": "body", "description": "每日一行"},
+    },
+}
 
 
 def _get_current(**kw):
@@ -27,6 +49,7 @@ def register(registry):
             "city": {"type": "str", "required": False, "default": "Beijing",
                      "desc": "城市名（中英文均可，如 Beijing/北京/Tokyo/東京）"},
         },
+        output=ToolOutputDefinition(schema=CURRENT_OUTPUT),
     )
     registry.add_method(
         TOOL_NAME, "get_forecast",
@@ -38,4 +61,5 @@ def register(registry):
             "days": {"type": "int", "required": False, "default": 3,
                      "desc": "预报天数（1-7）"},
         },
+        output=ToolOutputDefinition(schema=FORECAST_OUTPUT),
     )

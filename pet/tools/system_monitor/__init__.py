@@ -1,9 +1,30 @@
 from pet.tools.system_monitor.core import get_overview, get_top_processes, get_memory_detail, get_network
 from pet.tools.context import TOOL_CTX
+from pet.tools.output import ToolOutputDefinition
 
 TOOL_NAME = "system_monitor"
 TOOL_DESCRIPTION = "系统资源监控（CPU、内存、磁盘、电池、进程）"
 TOOL_GROUP = "info"
+
+WITH_DATA_OUTPUT = {
+    "type": "object",
+    "required": ["headline"],
+    "properties": {
+        "headline": {"type": "string", "maxLength": 120, "x-role": "headline",
+                     "description": "一句话结论"},
+        "data": {"type": "object", "x-role": "data", "description": "原始数值"},
+    },
+}
+
+PROCESS_OUTPUT = {
+    "type": "object",
+    "required": ["headline"],
+    "properties": {
+        "headline": {"type": "string", "maxLength": 120, "x-role": "headline",
+                     "description": "进程条数"},
+        "body": {"type": "string", "x-role": "body", "description": "每个进程一行"},
+    },
+}
 
 
 def _get_overview(**kw):
@@ -34,6 +55,7 @@ def register(registry):
         "获取系统整体概况（CPU、内存、磁盘、电池、运行时长）",
         handler=_get_overview,
         args={},
+        output=ToolOutputDefinition(schema=WITH_DATA_OUTPUT),
     )
     registry.add_method(
         TOOL_NAME, "get_top_processes",
@@ -43,16 +65,19 @@ def register(registry):
             "count": {"type": "int", "required": False, "default": 5,
                       "desc": "返回进程数量（1-20）"},
         },
+        output=ToolOutputDefinition(schema=PROCESS_OUTPUT),
     )
     registry.add_method(
         TOOL_NAME, "get_memory_detail",
         "获取详细内存信息（物理内存+交换分区）",
         handler=_get_memory_detail,
         args={},
+        output=ToolOutputDefinition(schema=WITH_DATA_OUTPUT),
     )
     registry.add_method(
         TOOL_NAME, "get_network",
         "获取网络流量统计（累计发送/接收字节数）",
         handler=_get_network,
         args={},
+        output=ToolOutputDefinition(schema=WITH_DATA_OUTPUT),
     )

@@ -55,13 +55,13 @@ def _weather_code_desc(code: int) -> str:
 def get_current(city: str = "Beijing") -> dict:
     city_info = _resolve_city(city)
     if not city_info:
-        return {"summary": f"未找到城市：{city}"}
+        return {"error": f"未找到城市：{city}"}
 
     data = _fetch_json(_WEATHER_URL.format(
         lat=city_info["lat"], lon=city_info["lon"], days=3,
     ))
     if not data or "current" not in data:
-        return {"summary": f"获取 {city_info['name']} 天气失败"}
+        return {"error": f"获取 {city_info['name']} 天气失败"}
 
     try:
         cur = data["current"]
@@ -73,12 +73,9 @@ def get_current(city: str = "Beijing") -> dict:
         desc = _weather_code_desc(code)
     except KeyError as e:
         logger.warning(f"[weather] unexpected API response: missing {e}")
-        return {"summary": f"获取 {city_info['name']} 天气数据格式异常"}
+        return {"error": f"获取 {city_info['name']} 天气数据格式异常"}
 
-    lines = [
-        f"{city_info['name']} 当前天气：{desc}，气温 {temp}°C（体感 {feels}°C）",
-        f"湿度 {humidity}%，风速 {wind_speed} km/h",
-    ]
+    body_lines = [f"湿度 {humidity}%，风速 {wind_speed} km/h"]
 
     daily = data.get("daily", {})
     if daily:
@@ -87,38 +84,37 @@ def get_current(city: str = "Beijing") -> dict:
         lows = daily.get("temperature_2m_min", [])
         codes = daily.get("weather_code", [])
         if dates:
-            lines.append("未来预报：")
+            body_lines.append("未来预报：")
             for i, d in enumerate(dates[:3]):
                 try:
-                    lines.append(
-                        f"  {d}  {_weather_code_desc(codes[i]) if i < len(codes) else '?'}"
+                    body_lines.append(
+                        f"{d}  {_weather_code_desc(codes[i]) if i < len(codes) else '?'}"
                         f"，{int(lows[i])}°C ~ {int(highs[i])}°C"
                     )
                 except (IndexError, TypeError):
                     break
 
     return {
-        "city": city_info["name"],
-        "temperature": temp,
-        "feels_like": feels,
-        "humidity": humidity,
-        "wind_speed": wind_speed,
-        "weather": desc,
-        "summary": "\n".join(lines),
+        "headline": f"{city_info['name']} {desc}，{temp}°C（体感 {feels}°C）",
+        "body": "\n".join(body_lines),
+        "data": {
+            "city": city_info["name"], "temperature": temp, "feels_like": feels,
+            "humidity": humidity, "wind_speed": wind_speed, "weather": desc,
+        },
     }
 
 
 def get_forecast(city: str = "Beijing", days: int = 3) -> dict:
     city_info = _resolve_city(city)
     if not city_info:
-        return {"summary": f"未找到城市：{city}"}
+        return {"error": f"未找到城市：{city}"}
 
     days = max(1, min(days, 7))
     data = _fetch_json(_WEATHER_URL.format(
         lat=city_info["lat"], lon=city_info["lon"], days=days,
     ))
     if not data:
-        return {"summary": f"获取 {city_info['name']} 预报失败"}
+        return {"error": f"获取 {city_info['name']} 预报失败"}
 
     daily = data.get("daily", {})
     dates = daily.get("time", [])
@@ -128,19 +124,22 @@ def get_forecast(city: str = "Beijing", days: int = 3) -> dict:
     precips = daily.get("precipitation_probability_max", [])
 
     if not dates:
-        return {"summary": f"获取 {city_info['name']} 预报数据为空"}
+        return {"error": f"获取 {city_info['name']} 预报数据为空"}
 
-    lines = [f"{city_info['name']} {len(dates)}日天气预报："]
+    lines = []
     for i, d in enumerate(dates):
         try:
             wcode = codes[i] if i < len(codes) else 0
             precip = int(precips[i]) if i < len(precips) and precips[i] is not None else 0
             lines.append(
-                f"  {d}  {_weather_code_desc(wcode)}"
+                f"{d}  {_weather_code_desc(wcode)}"
                 f"，{int(lows[i])}°C ~ {int(highs[i])}°C"
                 f"，降水概率 {precip}%"
             )
         except (IndexError, TypeError, ValueError):
             break
 
-    return {"summary": "\n".join(lines)}
+    return {
+        "headline": f"{city_info['name']} 未来 {len(dates)} 天预报",
+        "body": "\n".join(lines),
+    }
