@@ -200,6 +200,14 @@ class ScheduledTasks:
             self._agent.behavior.maintenance()
         except Exception as e:
             logger.warning(f"[ScheduledTasks] event maintenance failed: {e}")
+        try:
+            stats = self._agent.behavior.tool_output_stats()
+            if stats["total"]:
+                logger.info(f"[ScheduledTasks] tool output: calls={stats['total']} "
+                            f"declared={stats['declared_ratio']} "
+                            f"violations={stats['violations']}")
+        except Exception as e:
+            logger.warning(f"[ScheduledTasks] output stats failed: {e}")
 
     def _init_merge_marker(self):
         """重启后以库中最新的 marker 初始化游标，第一个整点不重复汇总已有条目。"""

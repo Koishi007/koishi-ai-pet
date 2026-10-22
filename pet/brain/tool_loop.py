@@ -7,6 +7,7 @@
 import concurrent.futures
 import json
 import logging
+import threading
 from typing import Optional, Protocol
 
 from pet.config import config
@@ -18,6 +19,41 @@ from pet.tools.output import ImageBlock, TextBlock, render_record, render_turn, 
 from pet.tools.registry import TOOL_REGISTRY
 
 logger = logging.getLogger(__name__)
+
+# 输出契约的运行时观测：按工具累计调用数、违约数与走旧渲染的次数
+_OUTPUT_STATS: dict[str, dict] = {}
+_stats_lock: Optional[threading.Lock] = None
+
+
+def _stats_guard() -> threading.Lock:
+    """惰性建锁，避免模块导入期的副作用。"""
+    global _stats_lock
+    if _stats_lock is None:
+        _stats_lock = threading.Lock()
+    return _stats_lock
+
+
+def record_output_stat(tool: str, path: str, violations: int = 0):
+    """累计一次工具输出的处理结果；`path` 为 declared / legacy / failed。"""
+    with _stats_guard():
+        item = _OUTPUT_STATS.setdefault(
+            tool, {"calls": 0, "violations": 0, "path": path})
+        item["calls"] += 1
+        item["violations"] += violations
+        item["path"] = path
+
+
+def output_stats() -> dict:
+    """观测快照：覆盖情况与违约数，用于判断能否切 strict。"""
+    with _stats_guard():
+        by_tool = {name: dict(item) for name, item in sorted(_OUTPUT_STATS.items())}
+    total = sum(item["calls"] for item in by_tool.values())
+    legacy = sum(item["calls"] for item in by_tool.values()
+                 if item["path"] == "legacy")
+    violations = sum(item["violations"] for item in by_tool.values())
+    return {"total": total, "legacy": legacy, "violations": violations,
+            "declared_ratio": round((total - legacy) / total, 3) if total else 0.0,
+            "by_tool": by_tool}
 
 
 class ToolSession(Protocol):
@@ -342,13 +378,16 @@ def _exec_tool(tool_calls_map: dict, idx: int, executor: ToolExecutor, session: 
         tool_brief = result.output.get("summary", "")
 
     if not result.ok:
+        record_output_stat(tc["name"], "failed")
         return idx, tc, result, tool_brief, result.error_message, tool_aside
 
     definition = _output_of(tc["name"])
     if definition is None:
+        record_output_stat(tc["name"], "legacy")
         return idx, tc, result, tool_brief, executor.normalize(result.output), tool_aside
 
     problems = validate(definition, result.output)
+    record_output_stat(tc["name"], "declared", len(problems))
     if problems:
         logger.warning(f"[Behavior] {tc['name']} 输出不符合 schema: {problems[:3]}")
     blocks = render_turn(definition, result.output)
