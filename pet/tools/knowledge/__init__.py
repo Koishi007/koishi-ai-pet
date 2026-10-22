@@ -105,7 +105,7 @@ def register(registry):
         logger.error(f"[knowledge] Failed to initialize: {e}")
         return
 
-    tool = registry.register(TOOL_NAME, TOOL_DESCRIPTION)
+    tool = registry.register(TOOL_NAME, TOOL_DESCRIPTION, side_effect=True)
 
 
     registry.add_method(

@@ -66,7 +66,7 @@ def register(registry):
     except Exception as e:
         logger.error(f"[todo] Failed to initialize TodoListTool: {e}")
         return
-    tool = registry.register(TOOL_NAME, TOOL_DESCRIPTION)
+    tool = registry.register(TOOL_NAME, TOOL_DESCRIPTION, side_effect=True)
 
 
     registry.add_method(

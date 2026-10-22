@@ -40,6 +40,14 @@ class Event:
     refs: dict
 
 
+def _truncate_bytes(text: str, limit: int) -> str:
+    """按 UTF-8 字节截断，不切坏多字节字符。"""
+    raw = text.encode("utf-8")
+    if len(raw) <= limit:
+        return text
+    return raw[:limit].decode("utf-8", "ignore")
+
+
 def new_group_id() -> str:
     """工具轮次组标识。"""
     return uuid.uuid4().hex[:12]
@@ -218,17 +226,59 @@ class EventStore:
                  "results": int(r["results"])}
                 for r in rows if int(r["calls"]) != int(r["results"])]
 
+    def purge_covered(self, min_events: int = 800, session_id: Optional[str] = None) -> int:
+        """删除已被摘要覆盖的原始事件：投影本就跳过它们，删除不改变视图。"""
+        if self._conn is None:
+            return 0
+        sid = session_id or self.current_session_id()
+        if self.count(session_id=sid) < min_events:
+            return 0
+        events = self.load(session_id=sid)
+        ranges = []
+        for event in events:
+            if event.type != "summary":
+                continue
+            covers = event.refs.get("covers")
+            if isinstance(covers, (list, tuple)) and len(covers) == 2:
+                try:
+                    ranges.append((int(covers[0]), int(covers[1])))
+                except (TypeError, ValueError):
+                    continue
+        if not ranges:
+            return 0
+        targets = [
+            event.seq for event in events
+            if event.type not in ("summary", "snapshot")
+            and any(start <= event.seq <= end for start, end in ranges)
+        ]
+        if not targets:
+            return 0
+        removed = 0
+        with self._lock:
+            for offset in range(0, len(targets), 500):
+                chunk = targets[offset:offset + 500]
+                marks = ",".join("?" * len(chunk))
+                cur = self._conn.execute(
+                    f"DELETE FROM session_events WHERE session_id=? AND seq IN ({marks})",
+                    (sid, *chunk))
+                removed += cur.rowcount or 0
+            self._conn.commit()
+        logger.info(f"[EventStore] purged {removed} covered events")
+        return removed
+
     def put_artifact(self, body: str, mime: str = "text/plain") -> Optional[str]:
         """超过内联阈值才落 artifact，返回 id；内联够用返回 None。"""
         if self._conn is None or len(body) <= ARTIFACT_INLINE_LIMIT:
             return None
-        text = body[:ARTIFACT_MAX_BYTES]
+        text = _truncate_bytes(body, ARTIFACT_MAX_BYTES)
+        if text is not body:
+            logger.warning(f"[EventStore] artifact truncated to {ARTIFACT_MAX_BYTES} bytes")
         artifact_id = uuid.uuid4().hex
         with self._lock:
             self._conn.execute(
                 "INSERT INTO session_artifacts (artifact_id, created_at, mime, size, body) "
                 "VALUES (?, ?, ?, ?, ?)",
-                (artifact_id, time.time(), mime, len(text), text),
+                (artifact_id, time.time(), mime, len(text.encode("utf-8")), text),
             )
             self._conn.commit()
         return artifact_id

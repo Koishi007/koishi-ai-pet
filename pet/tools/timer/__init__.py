@@ -63,7 +63,7 @@ def _cancel_all() -> dict:
 
 
 def register(registry):
-    tool = registry.register(TOOL_NAME, TOOL_DESCRIPTION)
+    tool = registry.register(TOOL_NAME, TOOL_DESCRIPTION, side_effect=True)
 
     registry.add_method(
         TOOL_NAME, "set",

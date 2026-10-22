@@ -215,7 +215,20 @@ def _tool_calls(name: str, arguments: str = "{}"):
     return {0: {"id": f"call_{name}", "name": name, "arguments": arguments}}
 
 
+class _FailingEventSession(_FakeSession):
+    """事件写入总是失败，用于验证按轮次回退文本记录。"""
+
+    def record_tool_events(self, group_id, calls, results, asides=None):
+        raise RuntimeError("event store unavailable")
+
+
 class TestToolLoopRounds:
+    def test_event_failure_falls_back_to_text_log(self):
+        session = _FailingEventSession([("Speech: 好\n", {})])
+        run_tool_loop([], _tool_calls("timer__set"), "", session, max_rounds=3)
+        contents = [content for _, content in session.contexts]
+        assert any(content.startswith("[工具调用]") for content in contents)
+
     def test_stops_when_model_returns_no_tool_calls(self):
         session = _FakeSession([("Speech: 好\n", {})])
         out = run_tool_loop([], _tool_calls("timer__set"), "", session, max_rounds=3)

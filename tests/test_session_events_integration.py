@@ -87,6 +87,41 @@ class TestProjectionEntry:
         assert "上一句" in messages[0]["content"]
 
 
+class TestArtifactProducer:
+    def test_long_raw_result_stored_as_artifact(self, tmp_path):
+        brain = _brain(tmp_path)
+        raw = "长" * 3000
+        brain.record_tool_events(
+            "g1",
+            [{"id": "c1", "name": "x__y", "args_digest": "-", "side_effect": True}],
+            [{"tool_call_id": "c1", "ok": True, "brief": "完成", "raw": raw}],
+        )
+        result = [e for e in brain.dump_events() if e["type"] == "tool_result"][0]
+        artifact_id = result["payload"]["artifact_id"]
+        assert artifact_id
+        assert brain._events.get_artifact(artifact_id) == raw
+
+    def test_short_raw_result_keeps_no_artifact(self, tmp_path):
+        brain = _brain(tmp_path)
+        brain.record_tool_events(
+            "g1",
+            [{"id": "c1", "name": "x__y", "args_digest": "-", "side_effect": True}],
+            [{"tool_call_id": "c1", "ok": True, "brief": "完成", "raw": "短"}],
+        )
+        result = [e for e in brain.dump_events() if e["type"] == "tool_result"][0]
+        assert result["payload"]["artifact_id"] is None
+
+    def test_side_effect_flag_comes_from_call(self, tmp_path):
+        brain = _brain(tmp_path)
+        brain.record_tool_events(
+            "g1",
+            [{"id": "c1", "name": "reader__read", "args_digest": "-", "side_effect": False}],
+            [{"tool_call_id": "c1", "ok": True, "brief": "读了"}],
+        )
+        call = [e for e in brain.dump_events() if e["type"] == "tool_call"][0]
+        assert call["payload"]["side_effect"] is False
+
+
 class TestMaintenance:
     def test_unclosed_group_reported(self, tmp_path):
         brain = _brain(tmp_path)

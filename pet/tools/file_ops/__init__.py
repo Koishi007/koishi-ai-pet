@@ -37,7 +37,7 @@ def _write_file(**kw):
 
 
 def register(registry):
-    tool = registry.register(TOOL_NAME, TOOL_DESCRIPTION)
+    tool = registry.register(TOOL_NAME, TOOL_DESCRIPTION, side_effect=True)
 
     registry.add_method(
         TOOL_NAME, "list_dir",

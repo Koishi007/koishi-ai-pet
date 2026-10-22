@@ -72,7 +72,7 @@ def _check_playwright() -> None:
 def register(registry):
     _check_playwright()
 
-    tool = registry.register(TOOL_NAME, TOOL_DESCRIPTION)
+    tool = registry.register(TOOL_NAME, TOOL_DESCRIPTION, side_effect=True)
 
     registry.add_method(
         TOOL_NAME, "search",

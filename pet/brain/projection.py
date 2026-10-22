@@ -100,11 +100,16 @@ def degrade_messages(messages: list, channel: str = "user-note") -> list:
     index = 0
     while index < len(messages):
         message = messages[index]
-        calls = message.get("tool_calls") if isinstance(message, dict) else None
+        if not isinstance(message, dict):
+            out.append(message)
+            index += 1
+            continue
+        calls = message.get("tool_calls")
         if message.get("role") == "assistant" and calls:
             briefs: dict = {}
             cursor = index + 1
-            while cursor < len(messages) and messages[cursor].get("role") == "tool":
+            while cursor < len(messages) and isinstance(messages[cursor], dict) \
+                    and messages[cursor].get("role") == "tool":
                 briefs[messages[cursor].get("tool_call_id")] = messages[cursor].get("content") or ""
                 cursor += 1
             if message.get("content"):

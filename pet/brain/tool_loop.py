@@ -14,6 +14,7 @@ from pet.brain.events import args_digest, new_group_id
 from pet.brain.output import BehaviorOutput
 from pet.brain.parsing import parse_behavior
 from pet.tools.executor import ToolCall, ToolExecutor
+from pet.tools.registry import TOOL_REGISTRY
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +79,6 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
     """
     executor = session.executor()
     current_messages = list(messages)
-    tool_log = []  # 记录工具调用摘要，用于写入上下文
     final_instruction_added = False  # 最终轮精简指令是否已追加
 
     # 仅当 Speech 被实际流式发送时才标记 speech_streamed=True
@@ -94,7 +94,6 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
     display_round = 0  # 仅用于日志展示
     used_recall = False  # 整次工具循环里是否用过回忆类工具
     recall_instruction_added = False
-    events_recorded = False  # 工具记录已进事件日志，不再写 [工具调用] 文本
 
     while real_round < max_rounds:
         session.note_progress()  # 每轮工具调用都算进展，长流程不被看门狗误杀
@@ -125,8 +124,6 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
 
         sorted_indices = sorted(tool_calls_map.keys())
         tool_results = _execute_round(tool_calls_map, sorted_indices, executor, session)
-        events_recorded = _record_tool_events(
-            session, tool_calls_map, sorted_indices, tool_results) or events_recorded
 
         # 判断本轮是否全为元工具调用（不消耗实际轮次配额）
         all_meta = all(
@@ -136,6 +133,7 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
 
         # 按 index 排序后依次 append（保持顺序一致性）
         round_images = []
+        round_log = []
         for idx in sorted_indices:
             _, tc, result, tool_brief, result_text, tool_aside = tool_results[idx]
             current_messages.append({
@@ -154,7 +152,7 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
                     f"data:{result.image_mime};base64,{result.image_b64}",
                     _image_source(result, tc["name"]),
                 ))
-            tool_log.append(log_entry)
+            round_log.append(log_entry)
 
             # 搜索工具执行后自动激活匹配的分组
             try:
@@ -165,6 +163,11 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
 
             if tc["name"] in session.recall_tool_names:
                 used_recall = True
+
+        if not _record_tool_events(session, tool_calls_map, sorted_indices, tool_results):
+            # 事件写入失败时，本轮退回文本记录，不留空档
+            session.add_context(
+                role="assistant", content=f"[工具调用] {' | '.join(round_log)}")
 
         # tool 角色只承载文本，图片另起一条 user 消息附在紧接的一次请求里
         image_msg = None
@@ -223,8 +226,6 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
             # LLM 不再请求工具，解析最终行为
             result = parse_behavior(content)
             result.speech_streamed = speech_streamed
-            if tool_log and not events_recorded:
-                session.add_context(role="assistant", content=f"[工具调用] {' | '.join(tool_log)}")
             return result
 
         first_content = content
@@ -233,8 +234,6 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
     logger.warning(f"[Behavior] reached MAX_ROUNDS={max_rounds} (real_rounds={real_round}, meta_rounds={meta_round}), force terminate tool loop")
     result = parse_behavior(first_content)
     result.speech_streamed = speech_streamed
-    if tool_log and not events_recorded:
-        session.add_context(role="assistant", content=f"[工具调用] {' | '.join(tool_log)}")
     return result
 
 
@@ -259,16 +258,17 @@ def _record_tool_events(session, tool_calls_map: dict, sorted_indices: list,
     group_id = new_group_id()
     calls, results, asides = [], [], []
     for idx in sorted_indices:
-        _, tc, result, tool_brief, _, tool_aside = tool_results[idx]
+        _, tc, result, tool_brief, result_text, tool_aside = tool_results[idx]
         try:
             args = json.loads(tc["arguments"] or "{}")
         except json.JSONDecodeError:
             args = {}
         args.pop("aside", None)
         calls.append({"id": tc["id"], "name": tc["name"],
-                      "args_digest": args_digest(args), "side_effect": True})
+                      "args_digest": args_digest(args),
+                      "side_effect": TOOL_REGISTRY.is_side_effect(tc["name"])})
         results.append({"tool_call_id": tc["id"], "ok": bool(result.success),
-                        "brief": _tool_brief(result, tool_brief)})
+                        "brief": _tool_brief(result, tool_brief), "raw": result_text})
         if tool_aside:
             asides.append((tc["id"], str(tool_aside)))
     try:

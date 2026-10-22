@@ -235,6 +235,17 @@ class TestNormalizeAndFormat:
         assert len(text.split("\n\n")) == 2
 
 
+class TestSideEffectDeclaration:
+    def test_declared_tools(self, registry):
+        registry.register("writer", "写工具", side_effect=True)
+        registry.register("reader", "读工具")
+        assert registry.is_side_effect("writer__do") is True
+        assert registry.is_side_effect("reader__read") is False
+
+    def test_unknown_tool_treated_as_side_effect(self, registry):
+        assert registry.is_side_effect("ghost__x") is True
+
+
 class TestToolContextVision:
     def test_unbound_context_reports_no_vision(self):
         assert ToolContext().has_vision() is False
