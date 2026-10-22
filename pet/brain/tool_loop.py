@@ -278,21 +278,16 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
     return result
 
 
-def _tool_brief(result, tool_brief: str, result_text: str = "") -> str:
-    """结果短句：context_brief → summary → 结果文本首行，去掉 JSON 后截 120 字符。"""
-    text = (result.meta.get("context_brief") or tool_brief or "").strip()
-    if not text and not result.ok:
+def _tool_brief(result, result_text: str = "") -> str:
+    """未声明输出契约时的历史短句：结果文本首行，去 JSON 后截 120 字符。"""
+    text = ""
+    if not result.ok:
         text = str(result.error_message or "").strip()
     if not text and result_text:
-        # 纯文本结果才取首行；JSON 结果没有可读结论，跳过
         head = result_text.strip().splitlines()[0].strip() if result_text.strip() else ""
         if head and not head.startswith(("{", "[")):
             text = head
-    if text.startswith(("{", "[")):
-        text = ""
-    if not text:
-        text = "操作已完成" if result.ok else "操作失败"
-    return text[:120]
+    return (text or ("操作已完成" if result.ok else "操作失败"))[:120]
 
 
 def _record_tool_events(session, tool_calls_map: dict, sorted_indices: list,
@@ -313,7 +308,7 @@ def _record_tool_events(session, tool_calls_map: dict, sorted_indices: list,
         calls.append({"id": tc["id"], "name": tc["name"],
                       "args_digest": args_digest(args),
                       "side_effect": TOOL_REGISTRY.is_side_effect(tc["name"])})
-        brief = result.meta.get("record") or _tool_brief(result, tool_brief, result_text)
+        brief = result.meta.get("record") or _tool_brief(result, result_text)
         results.append({"tool_call_id": tc["id"], "ok": bool(result.ok),
                         "brief": brief, "raw": result_text})
         if tool_aside:
@@ -372,19 +367,17 @@ def _exec_tool(tool_calls_map: dict, idx: int, executor: ToolExecutor, session: 
     finally:
         if tool_aside:
             session.end_aside()
-    # 摘要供日志与上下文使用；_normalize 不改动原 dict，顺序无所谓
-    tool_brief = ""
-    if result.ok and isinstance(result.output, dict):
-        tool_brief = result.output.get("summary", "")
-
     if not result.ok:
         record_output_stat(tc["name"], "failed")
-        return idx, tc, result, tool_brief, result.error_message, tool_aside
+        return idx, tc, result, "", result.error_message, tool_aside
 
     definition = _output_of(tc["name"])
     if definition is None:
-        record_output_stat(tc["name"], "legacy")
-        return idx, tc, result, tool_brief, executor.normalize(result.output), tool_aside
+        # 没有输出契约：整体当文本交给模型，历史记录走首行兜底
+        record_output_stat(tc["name"], "undeclared")
+        text = (result.output if isinstance(result.output, str)
+                else json.dumps(result.output, ensure_ascii=False))
+        return idx, tc, result, "", text, tool_aside
 
     problems = validate(definition, result.output)
     record_output_stat(tc["name"], "declared", len(problems))
@@ -398,10 +391,10 @@ def _exec_tool(tool_calls_map: dict, idx: int, executor: ToolExecutor, session: 
             {"base64": b.base64, "mime": b.mime, "caption": b.caption} for b in images
         ]
     result.meta["record"] = render_record(definition, result.output)
-    return idx, tc, result, tool_brief, text or "操作已完成", tool_aside
+    return idx, tc, result, "", text or "操作已完成", tool_aside
 
 
 def _output_of(name: str):
-    """取方法声明的输出契约；未声明返回 None，调用方走旧渲染。"""
+    """取方法声明的输出契约；未声明返回 None，调用方整体当文本。"""
     method = TOOL_REGISTRY.get_method(name)
     return getattr(method, "output", None)
