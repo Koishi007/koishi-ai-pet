@@ -131,15 +131,24 @@ class TestRepairMessages:
 
 
 class _FakeResult:
+    """与 ToolResult 同形：output / error_code / error_message / meta / ok。"""
+
     def __init__(self, name="tool", success=True, data=None, brief="", image_b64=None,
                  context_brief=""):
         self.name = name
-        self.success = success
-        self.data = data if data is not None else {"summary": brief}
-        self.error = "" if success else "boom"
-        self.context_brief = context_brief
-        self.image_b64 = image_b64
-        self.image_mime = "image/png"
+        self.error_code = "" if success else "handler_error"
+        self.error_message = "" if success else "boom"
+        self.output = data if data is not None else {"summary": brief}
+        self.meta = {}
+        if context_brief:
+            self.meta["context_brief"] = context_brief
+        if image_b64:
+            self.meta["images"] = [{"base64": image_b64, "mime": "image/png",
+                                   "caption": context_brief}]
+
+    @property
+    def ok(self):
+        return not self.error_code
 
 
 class _FakeExecutor:
@@ -235,7 +244,11 @@ class TestToolBrief:
 
     @staticmethod
     def _result(context_brief="", success=True, error=""):
-        return SimpleNamespace(context_brief=context_brief, success=success, error=error)
+        return SimpleNamespace(
+            ok=success,
+            error_message=error,
+            meta={"context_brief": context_brief} if context_brief else {},
+        )
 
     def test_context_brief_wins(self):
         logic = tool_loop_mod._tool_brief

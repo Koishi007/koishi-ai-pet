@@ -203,7 +203,7 @@ def render_turn(definition: ToolOutputDefinition, value) -> list[ContentBlock]:
     """按 schema 声明顺序展开：headline → body → data → pagination → images → hint。"""
 ```
 
-1. 遍历 `schema.properties` 的声明顺序，不按返回 dict 的键序。
+1. 按 `x-role` 的固定优先级排序（`headline` → `body` → `data` → `pagination` → `images` → `hint`），同角色内按 `schema.properties` 的声明顺序，两者都不按返回 dict 的键序。
 2. `headline` / `body` → `TextBlock(role="primary")`，字段之间空行分隔。
 3. `data` → 递归展开为 `key: value` 行，一个 `TextBlock(role="data")`。
 4. `pagination.has_next` → `TextBlock(role="hint")`：「第 1/3 页，共 100 条，用 page=2 继续」。

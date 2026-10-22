@@ -58,11 +58,11 @@ class ToolSession(Protocol):
 
 def _image_source(result, tool_name: str) -> str:
     """图片的来源说明：优先用工具写的 context_brief，其次路径或 URL。"""
-    if result.context_brief:
-        return result.context_brief
-    if isinstance(result.data, dict):
+    if result.meta.get("context_brief"):
+        return result.meta["context_brief"]
+    if isinstance(result.output, dict):
         for key in ("path", "url"):
-            value = result.data.get(key)
+            value = result.output.get(key)
             if value:
                 return str(value)
     return tool_name
@@ -141,17 +141,19 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
                 "tool_call_id": tc["id"],
                 "content": result_text,
             })
-            logger.info(f"[Behavior] tool_round_{display_round} {tc['name']} -> {'OK' if result.success else 'FAIL'}")
-            log_entry = f"{tc['name']} → {result.context_brief or tool_brief or result_text[:200]}"
+            logger.info(f"[Behavior] tool_round_{display_round} {tc['name']} -> {'OK' if result.ok else 'FAIL'}")
+            log_entry = f"{tc['name']} → {result.meta.get('context_brief') or tool_brief or result_text[:200]}"
             if tool_aside:
                 log_entry = f"（自言自语：{tool_aside}）{log_entry}"
-            if result.image_b64 and session.has_vision:
+            images = result.meta.get("images") or []
+            if images and session.has_vision:
                 # 图片只在当轮上下文里，工具记录留一条可再次读取的引用
                 log_entry = f"{log_entry}（图片已读取，可再次调用查看）"
-                round_images.append((
-                    f"data:{result.image_mime};base64,{result.image_b64}",
-                    _image_source(result, tc["name"]),
-                ))
+                for image in images:
+                    round_images.append((
+                        f"data:{image.get('mime', 'image/png')};base64,{image.get('base64', '')}",
+                        image.get("caption") or _image_source(result, tc["name"]),
+                    ))
             round_log.append(log_entry)
 
             # 搜索工具执行后自动激活匹配的分组
@@ -241,9 +243,9 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
 
 def _tool_brief(result, tool_brief: str, result_text: str = "") -> str:
     """结果短句：context_brief → summary → 结果文本首行，去掉 JSON 后截 120 字符。"""
-    text = (result.context_brief or tool_brief or "").strip()
-    if not text and not result.success:
-        text = str(result.error or "").strip()
+    text = (result.meta.get("context_brief") or tool_brief or "").strip()
+    if not text and not result.ok:
+        text = str(result.error_message or "").strip()
     if not text and result_text:
         # 纯文本结果才取首行；JSON 结果没有可读结论，跳过
         head = result_text.strip().splitlines()[0].strip() if result_text.strip() else ""
@@ -252,7 +254,7 @@ def _tool_brief(result, tool_brief: str, result_text: str = "") -> str:
     if text.startswith(("{", "[")):
         text = ""
     if not text:
-        text = "操作已完成" if result.success else "操作失败"
+        text = "操作已完成" if result.ok else "操作失败"
     return text[:120]
 
 
@@ -274,7 +276,7 @@ def _record_tool_events(session, tool_calls_map: dict, sorted_indices: list,
         calls.append({"id": tc["id"], "name": tc["name"],
                       "args_digest": args_digest(args),
                       "side_effect": TOOL_REGISTRY.is_side_effect(tc["name"])})
-        results.append({"tool_call_id": tc["id"], "ok": bool(result.success),
+        results.append({"tool_call_id": tc["id"], "ok": bool(result.ok),
                         "brief": _tool_brief(result, tool_brief, result_text),
                         "raw": result_text})
         if tool_aside:
@@ -334,7 +336,7 @@ def _exec_tool(tool_calls_map: dict, idx: int, executor: ToolExecutor, session: 
             session.end_aside()
     # 摘要供日志与上下文使用；_normalize 不改动原 dict，顺序无所谓
     tool_brief = ""
-    if result.success and isinstance(result.data, dict):
-        tool_brief = result.data.get("summary", "")
-    result_text = executor.normalize(result.data) if result.success else result.error
+    if result.ok and isinstance(result.output, dict):
+        tool_brief = result.output.get("summary", "")
+    result_text = executor.normalize(result.output) if result.ok else result.error_message
     return idx, tc, result, tool_brief, result_text, tool_aside

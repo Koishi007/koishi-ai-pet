@@ -176,54 +176,59 @@ class TestOpenAiSchema:
 class TestExecutorRouting:
     def test_unknown_tool(self, executor):
         result = executor.execute([ToolCall("nope__go", {})])[0]
-        assert result.success is False
-        assert "nope__go" in result.error
+        assert result.ok is False
+        assert result.error_code == "unknown_tool"
+        assert "nope__go" in result.error_message
 
     def test_successful_call(self, executor):
         result = executor.execute([ToolCall("demo__echo", {"text": "hi"})])[0]
-        assert result.success is True
-        assert result.data["text"] == "hi"
+        assert result.ok is True
+        assert result.output["text"] == "hi"
 
     def test_argument_validation_failure(self, executor):
         result = executor.execute([ToolCall("demo__count", {"n": "不是数字"})])[0]
-        assert result.success is False
-        assert "'n'" in result.error
-        assert "int" in result.error and "str" in result.error
+        assert result.ok is False
+        assert result.error_code == "bad_arguments"
+        assert "'n'" in result.error_message
+        assert "int" in result.error_message and "str" in result.error_message
 
     def test_type_error_reported_as_signature_mismatch(self, executor):
         # 参数名与 handler 签名不匹配 → handler 抛 TypeError
         result = executor.execute([ToolCall("demo__bad", {"other": "x"})])[0]
-        assert result.success is False
-        assert "other" in result.error
+        assert result.ok is False
+        assert result.error_code == "handler_error"
+        assert "other" in result.error_message
 
     def test_runtime_error_propagated_as_message(self, executor):
         result = executor.execute([ToolCall("demo__boom", {})])[0]
-        assert result.success is False
-        assert "工具炸了" in result.error
+        assert result.ok is False
+        assert "工具炸了" in result.error_message
 
     def test_timeout_reported(self, executor):
         try:
             result = executor.execute([ToolCall("demo__slow", {})])[0]
-            assert result.success is False
-            assert "0.05" in result.error
+            assert result.ok is False
+            assert result.error_code == "timeout"
+            assert "0.05" in result.error_message
         finally:
             _slow_gate.set()  # 释放仍在阻塞的 handler 线程
             _slow_gate.clear()
 
-    def test_image_and_context_extracted_from_data(self, executor):
+    def test_image_and_context_extracted_into_meta(self, executor):
         result = executor.execute([ToolCall("demo__shot", {})])[0]
-        assert result.image_b64 == "QUJD"
-        assert result.image_mime == "image/jpeg"
-        assert result.context_brief == "已截图"
-        assert "__image__" not in result.data
-        assert "__context__" not in result.data
+        image = result.meta["images"][0]
+        assert image["base64"] == "QUJD"
+        assert image["mime"] == "image/jpeg"
+        assert result.meta["context_brief"] == "已截图"
+        assert "__image__" not in result.output
+        assert "__context__" not in result.output
 
     def test_multiple_calls_all_reported(self, executor):
         results = executor.execute([
             ToolCall("demo__echo", {"text": "a"}),
             ToolCall("demo__boom", {}),
         ])
-        assert [r.success for r in results] == [True, False]
+        assert [r.ok for r in results] == [True, False]
 
 
 class TestNormalizeAndFormat:

@@ -599,8 +599,8 @@ class _BehaviorToolSession:
             return
         try:
             keyword = arguments.get("keyword", "")
-            if result.success and isinstance(result.data, dict):
-                self._behavior._activate_tool_groups_from_search(result.data.get("matches", []))
+            if result.ok and isinstance(result.output, dict):
+                self._behavior._activate_tool_groups_from_search(result.output.get("matches", []))
             # 兜底：keyword 直接匹配组名
             self._behavior._activate_groups_from_keyword(keyword)
         except Exception:
