@@ -91,63 +91,59 @@ class TestRegistryLookup:
 class TestToolSearch:
     def test_single_keyword_matches_description(self, registry):
         result = registry._tool_search_search("演示")
-        assert [m["name"] for m in result["matches"]] == ["demo"]
-        assert "直接调用" in result["hint"]
-        assert result["__context__"].startswith("搜到 1 个：demo")
+        assert "demo（test）" in result["body"]
+        assert "直接调用" in result["agent_hint"]
+        assert result["headline"].startswith("搜到 1 个：demo")
 
     def test_full_method_name_is_searchable(self, registry):
         # 模型常直接拿 demo__echo 去搜，整串必须命中
         result = registry._tool_search_search("demo__echo")
-        assert [m["name"] for m in result["matches"]] == ["demo"]
+        assert "demo__echo" in result["body"]
 
     def test_all_terms_must_hit(self, registry):
         registry.register("bili", "B 站：点赞、投币、评论", group="info")
         result = registry._tool_search_search("点赞 评论")
-        assert [m["name"] for m in result["matches"]] == ["bili"]
+        assert "bili（info）" in result["body"]
 
     def test_partial_terms_fall_back_to_any_term(self, registry):
         registry.register("bili", "B 站：点赞、投币、评论", group="info")
         result = registry._tool_search_search("点赞 天气")
-        assert [m["name"] for m in result["matches"]] == ["bili"]
+        assert "bili（info）" in result["body"]
 
     def test_separators_split_keywords(self, registry):
         registry.register("bili", "B 站：点赞、投币、评论", group="info")
         result = registry._tool_search_search("点赞、评论")
-        assert [m["name"] for m in result["matches"]] == ["bili"]
+        assert "bili（info）" in result["body"]
 
     def test_whitespace_difference_ignored(self, registry):
         registry.register("bili", "B 站：点赞", group="info")
         result = registry._tool_search_search("B站")
-        assert [m["name"] for m in result["matches"]] == ["bili"]
+        assert "bili（info）" in result["body"]
 
     def test_method_description_is_searchable(self, registry):
         result = registry._tool_search_search("回显")
-        assert [m["name"] for m in result["matches"]] == ["demo"]
+        assert "demo（test）" in result["body"]
 
     def test_no_match_returns_group_catalog(self, registry):
         registry.register("bili", "B 站：点赞、投币、评论", group="info")
         result = registry._tool_search_search("查无此工具")
-        assert result["matches"] == []
-        catalog = {g["group"]: [t["name"] for t in g["tools"]] for g in result["groups"]}
-        assert catalog["test"] == ["demo"]
-        assert catalog["info"] == ["bili"]
-        assert "重新搜索" in result["hint"]
-        assert result["__context__"].startswith("未匹配")
+        assert "未匹配" in result["headline"]
+        assert "[test]" in result["body"] and "[info]" in result["body"]
+        assert "重新搜索" in result["agent_hint"]
 
     def test_results_capped_per_search(self, registry):
         for i in range(8):
             registry.register(f"t{i}", "天气 查询", group="info")
         result = registry._tool_search_search("天气")
-        assert len(result["matches"]) == 5
-        assert "前 5 个" in result["hint"]
+        assert "5 个" in result["headline"]
+        assert "前 5 个" in result["agent_hint"]
 
     def test_default_group_never_returned(self, registry):
-        names = [m["name"] for m in registry._tool_search_search("工具")["matches"]]
-        assert "tool_search" not in names
+        assert "tool_search" not in registry._tool_search_search("工具")["body"]
 
     def test_disabled_tool_excluded(self, registry):
         registry.set_enabled("demo", False)
-        assert registry._tool_search_search("演示")["matches"] == []
+        assert "demo（test）" not in registry._tool_search_search("演示")["body"]
 
 
 class TestOpenAiSchema:

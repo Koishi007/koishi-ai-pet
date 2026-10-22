@@ -34,6 +34,56 @@
 | `dm` | `text`（str, 必需） 私信正文 | 给主人在 B 站发一条私信。收件人取配置里的 dm_uid，未配置时不发送。 |
 | `verify` | `limit`（int, 默认 10） 最多检查几条 | 复核待确认的评论是否已经公开可见。未核到的保持待确认，不会重发。 |
 
+**`browse` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 关键词与刷到的部数 |
+| `body` | string | 否 | body | 每部：标题、网址、字幕全文 |
+| `data` | object | 否 | data | 略过与统计 |
+
+**`status` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 操作结果的一句话 |
+| `data` | object | 否 | data | 计数与开关 |
+
+**`like` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 操作结果的一句话 |
+| `data` | object | 否 | data | 计数与开关 |
+
+**`coin` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 操作结果的一句话 |
+| `data` | object | 否 | data | 计数与开关 |
+
+**`comment` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 操作结果的一句话 |
+| `data` | object | 否 | data | 计数与开关 |
+
+**`dm` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 操作结果的一句话 |
+| `data` | object | 否 | data | 计数与开关 |
+
+**`verify` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 操作结果的一句话 |
+| `data` | object | 否 | data | 计数与开关 |
+
 ### `browser`
 
 - 目录：`pet/tools/browser/`
