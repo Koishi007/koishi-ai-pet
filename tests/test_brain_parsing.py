@@ -184,6 +184,14 @@ class TestParseBehavior:
         assert out.actions == []
         assert out.summary == "只有摘要"
 
+    def test_summary_time_label_is_stripped(self):
+        out = parse_behavior("Summary: 〔3 分钟前〕连输三局\nSpeech: 唔...\n")
+        assert out.summary == "连输三局"
+
+    def test_non_time_bracket_prefix_survives(self):
+        out = parse_behavior("Summary: 〔备注〕连输三局\n")
+        assert out.summary == "〔备注〕连输三局"
+
 
 class TestParseActionLine:
     def test_positional_and_keyword_args(self):

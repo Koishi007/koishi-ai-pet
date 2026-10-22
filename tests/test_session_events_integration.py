@@ -104,13 +104,35 @@ class TestProjectionEntry:
         assert [m["role"] for m in messages] == ["user", "assistant"]
         assert "在吗" in messages[0]["content"]
 
-    def test_clear_context_switches_session_without_deleting(self, tmp_path):
+    def test_kinds_render_as_protocol_lines(self, tmp_path):
+        brain = _brain(tmp_path)
+        brain.add_context("assistant", "连输三局", kind="summary")
+        brain.add_context("assistant", "唔...又猜输了", kind="speech")
+
+        messages = brain.get_multi_turn_messages()
+
+        assert messages[0]["content"].startswith("Summary: 〔")
+        assert messages[0]["content"].endswith("〕连输三局")
+        assert messages[1]["content"] == "Speech: 唔...又猜输了"
+
+    def test_untagged_assistant_keeps_clock_prefix(self, tmp_path):
+        brain = _brain(tmp_path)
+        brain.add_context("assistant", "旧台词")
+
+        content = brain.get_multi_turn_messages()[0]["content"]
+
+        assert content.startswith("[")
+        assert content.endswith("] 旧台词")
+
+    def test_clear_context_deletes_history(self, tmp_path):
         brain = _brain(tmp_path)
         brain.add_context("user", "旧会话")
         old_session = brain._events.current_session_id()
+
         brain.clear_context()
+
         assert brain.get_multi_turn_messages() == []
-        assert brain._events.count(session_id=old_session) >= 1
+        assert brain._events.count(session_id=old_session) == 0
         brain.add_context("user", "新会话")
         assert "新会话" in brain.get_multi_turn_messages()[0]["content"]
 

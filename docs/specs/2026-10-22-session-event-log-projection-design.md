@@ -41,7 +41,7 @@
 
 ## §1 目标
 
-- 会话历史成为只追加的事件日志，不提供 UPDATE/DELETE 语义。
+- 会话历史成为只追加的事件日志，不提供单条 UPDATE/DELETE；整段回收只发生在摘要覆盖（`purge_covered`）与清空上下文（`purge_sessions`）。
 - `Message[]` 由纯函数投影产生：同一份日志可按不同模型能力投影出不同视图。
 - 工具调用以事件组存储，投影时按组处理，不产生孤立的 `tool` 消息。
 - 模型能力差异（是否支持 `tool` 角色、是否支持多条 system）只影响投影，不影响存储。
@@ -90,7 +90,7 @@ CREATE TABLE IF NOT EXISTS session_artifacts (
 
 `group_id` 提为独立列而不是塞进 JSON：投影要按组聚合，表达式索引在部分 SQLite 发行版上不可用（JSON1 未编译）。
 
-**会话边界**：同一时刻只有一个活动会话，`session_id` 是 UUID，存于 `session_meta('current_session')`。`clear_context` 时生成新 UUID，旧会话事件永久保留、不再投影。应用重启不换会话，保持现有"上下文跨重启保留"的行为。
+**会话边界**：同一时刻只有一个活动会话，`session_id` 是 UUID，存于 `session_meta('current_session')`。应用重启不换会话，保持"上下文跨重启保留"的行为。`clear_context` 生成新 UUID 并删除其他会话的事件与不再被引用的 artifact：清空是用户可见的删除动作，磁盘随之释放。
 
 `refs` 约定：
 
@@ -106,7 +106,7 @@ CREATE TABLE IF NOT EXISTS session_artifacts (
 | type | payload | 参与投影 | 说明 |
 |---|---|---|---|
 | `user_msg` | `{text}` | 是 | 用户消息 |
-| `assistant_turn` | `{text, speech_parts, actions, summary, memory_line}` | 是 | 一次**有效**的模型响应；`text` 即该次响应的 `content` |
+| `assistant_turn` | `{text, kind?}` | 是 | 一次**有效**的模型响应；`text` 即该次响应的内容；`kind` 取 `speech`（台词）/ `summary`（本轮摘要），缺省按纯文本渲染 |
 | `assistant_speech` | `{text}` | 条件 | 工具 `arguments.aside` 产生的台词；与 `assistant_turn.text` 不同时才单独记 |
 | `tool_call` | `{name, args_digest, side_effect}` | 是 | 一次工具调用；不含原始参数；`side_effect` 由工具注册表声明 |
 | `tool_result` | `{ok, brief, artifact_id?}` | 是 | 结果摘要；大结果落 artifacts |
@@ -150,12 +150,14 @@ def project(events: list[Event], profile: Profile, budget: Budget) -> list[dict]
 | `max_tokens` | 总 token 预算 |
 | `max_summaries` | 摘要事件条数上限，独立于 `max_entries` |
 | `evict_before_ts` | 半衰期淘汰边界，由调用方用 `now - CONTEXT_HALF_LIFE_S` 算好传入 |
+| `now` | 投影时刻，决定相对时间标签；为 0 时退化为时钟 |
 
 时间相关规则：
 
-- **时间前缀基于事件 `ts`**，与投影时刻无关，保证可重放。
+- **相对时间由事件 `ts` 与 `Budget.now` 共同决定**：`刚刚` / `N 分钟前` / `N 小时前` / `昨天 22:10`。重放要固定 `now`，同一份事件在不同 `now` 下渲染不同。
+- 时间只出现在 `user_msg` / `system_note` / `summary` 与 `Summary:` 行上；`Speech:` 行不带时间，模型照抄历史行也不会把时间念出来。
 - `evict_before_ts` 只用于**读取前过滤**，不进入投影器内部的判断。
-- 缓存键：`(session_id, last_seq, profile.name, max_entries, max_tokens, evict_before_ts)`；`evict_before_ts` 按分钟取整，跨过半衰期边界才失效。
+- 缓存键：`(session_id, last_seq, profile.name, max_entries, max_tokens, evict_before_ts, now)`；两处时间都按分钟取整，跨过分钟或半衰期边界才失效。
 
 ### §4.2 Profile 与能力判定
 
@@ -191,7 +193,9 @@ def project(events: list[Event], profile: Profile, budget: Budget) -> list[dict]
 3. 剔除被 `supersedes` 指向的事件；被 supersede 的 summary 连同其 `covers` 整段失效。
 4. 跳过落在有效 `summary.covers` 区间内的事件；`snapshot` 优先于 `summary`。
 5. 事件 → 逻辑消息：
-   - `user_msg` / `assistant_turn` / `assistant_speech` / `system_note` / `summary` 各自映射；
+   - `user_msg` / `system_note` / `summary` 渲染成 `[相对时间] 正文`；
+   - `assistant_turn` 按 `payload.kind` 渲染：`speech` → `Speech: 正文`，`summary` → `Summary: 〔相对时间〕正文`，缺省 → `[相对时间] 正文`；
+   - `assistant_speech` 渲染成 `Speech: 正文`；
    - `tool_call` + `tool_result` 按 `group_id` 聚合为 `ToolExchange`；
    - `failed_turn` 直接丢弃。
 6. `ToolExchange` 按 profile 映射（§4.5）。

@@ -272,6 +272,12 @@ class TestToolLoopRounds:
         assert out.speech == "好"
         assert session.executor_obj.calls == ["timer__set"]
 
+    def test_unparsed_final_round_stays_empty(self):
+        # 空解析不能补 sit：入口要靠「既无动作也无台词」判断是否跑修复轮
+        session = _FakeSession([("", {})])
+        out = run_tool_loop([], _tool_calls("timer__set"), "", session, max_rounds=3)
+        assert out.actions == [] and out.speech is None
+
     def test_real_round_budget_exhausted_returns_parsed_content(self):
         # 每轮都请求普通工具：预算耗尽后应拿最后一轮内容解析，而不是丢产出
         session = _FakeSession([("Speech: 第 %d 轮\n" % i, _tool_calls("timer__set")) for i in range(1, 4)])
@@ -295,7 +301,7 @@ class TestToolLoopRounds:
         session.meta_tool_max_rounds = 2
         out = run_tool_loop([], _tool_calls("recall__search"), "Speech: 兜底\n", session, max_rounds=3)
         assert session.streams <= session.meta_tool_max_rounds
-        assert out.actions[0].name == "sit"  # 最后一轮无内容 → 兜底动作
+        assert out.actions == [] and out.speech is None  # 兜底 sit 由入口在修复轮之后补
 
 
 class TestToolGroupActivation:
@@ -681,11 +687,12 @@ class TestEntrypointRetry:
         assert len(fake.tags) == 1
         assert out.speech == "一次就好"
 
-    def test_still_empty_after_retry_is_returned(self, monkeypatch):
+    def test_still_empty_after_retry_gets_sit_fallback(self, monkeypatch):
         behavior, fake = _stream_behavior(monkeypatch, ["Summary: 一\n", "Summary: 二\n"])
         out = behavior.chat_decide_stream("在吗", "")
         assert len(fake.tags) == 2
-        assert out.actions == [] and out.speech is None
+        assert [a.name for a in out.actions] == ["sit"]
+        assert out.speech is None
 
     def test_repair_round_keeps_thinking(self, monkeypatch):
         """修复重试只纠格式：thinking 沿用调用方设定，不降级也不强塞。"""

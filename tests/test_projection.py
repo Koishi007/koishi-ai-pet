@@ -1,5 +1,6 @@
 """会话投影测试：纯函数、摘要覆盖、工具组原子裁剪、四档通道与伪调用清洗。"""
 
+import re
 import time
 
 import pytest
@@ -298,3 +299,41 @@ class TestTimePrefix:
         messages = project(events, Profile(), Budget(skip_last=1, now=T0 + 1000))
         assert len(messages) == 1
         assert "保留" in messages[0]["content"]
+
+
+class TestHistoryFormat:
+    """历史形态：assistant 行首是协议标签，时间只挂在 Summary 行与用户行上。
+
+    时间进不了 Speech 行，模型照抄也不会把时间念出来；assistant 行照抄后仍是合法字段行。
+    """
+
+    @staticmethod
+    def _speech(seq, text):
+        return ev(seq, "assistant_turn", {"text": text, "kind": "speech"})
+
+    @staticmethod
+    def _summary(seq, text):
+        return ev(seq, "assistant_turn", {"text": text, "kind": "summary"})
+
+    def test_speech_line_is_protocol_only(self):
+        messages = project([self._speech(1, "你好")], Profile(), Budget(now=T0 + 600))
+        assert messages == [{"role": "assistant", "content": "Speech: 你好"}]
+
+    def test_summary_line_carries_relative_label(self):
+        messages = project([self._summary(1, "发呆了一轮")], Profile(),
+                           Budget(now=T0 + 600))
+        assert re.fullmatch(r"Summary: 〔\d+ 分钟前〕发呆了一轮", messages[0]["content"])
+
+    def test_user_line_carries_relative_label(self):
+        messages = project([dialogue("在吗", 1)], Profile(), Budget(now=T0 + 600))
+        assert re.fullmatch(r"\[\d+ 分钟前\] 在吗", messages[0]["content"])
+
+    def test_just_now_label_for_recent_event(self):
+        messages = project([dialogue("在吗", 1)], Profile(), Budget(now=T0 + 5))
+        assert messages[0]["content"].startswith("[刚刚]")
+
+    def test_legacy_assistant_event_keeps_clock_shape(self):
+        messages = project([dialogue("旧台词", 1, role="assistant")], Profile(),
+                           Budget(now=T0 + 600))
+        assert messages[0]["content"].startswith("[")
+        assert "旧台词" in messages[0]["content"]
