@@ -549,3 +549,18 @@ tool 返回的 __context__
 ### §10.4 `snapshot.state` 的稳定性
 
 snapshot 一旦写入不可变，格式变更只能靠 `v` 迁移，因此：`summaries` 与 `summary.payload` 同构、`tail` 只存 seq 引用、禁止嵌套、顶层带 `v`。投影器对 snapshot 内与 snapshot 外的 summary 复用同一套处理代码，不写第二套逻辑。
+
+## §11 落地记录
+
+模块：`pet/brain/events.py`（EventStore）、`pet/brain/projection.py`（project / Budget / Profile）、`pet/brain/tool_channel.py`（通道选择与降档）。接入点：`BrainMixin.add_context` 写事件、`get_multi_turn_messages` 走投影、`record_tool_events` 写工具组、`llm_gateway` 在拒绝时降档。
+
+与上文不同的实现取舍：
+
+| 项 | 实现 | 原因 |
+|---|---|---|
+| `assistant_turn` 时机 | 结果产出方写一次；工具轮不写中间正文 | 中间轮 `content` 是格式原文，进历史会自我强化，且与最终 `speech` 重复 |
+| 无事件能力时 | 退回 `[工具调用]` 文本与内存裁剪 | 测试替身与未启用持久化的调试场景；生产恒走事件路径 |
+| 降档方式 | `degrade_messages` 改写本次请求体 | 重投影需要回传原始事件与 Profile，代价高于就地改写；缓存保证下一次投影直接是低档 |
+| `assistant_speech` | 与 `tool_call` 同组，投影时并入 assistant `content` | 满足"紧随 tool 消息"的顺序约束 |
+
+未实现：`supports_image` 未接入（图片仍只在当轮请求里）；snapshot compaction 只有读写支持，无触发逻辑；`failed_turn` 在两条非流式与流式入口都会落库，修复轮会再记一条。

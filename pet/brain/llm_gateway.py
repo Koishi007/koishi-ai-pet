@@ -4,11 +4,13 @@ import logging
 import time
 from datetime import datetime
 
-from openai import BadRequestError
+from openai import BadRequestError, UnprocessableEntityError
 
 from pet.config import config
 from pet.brain.budget import thinking_active
 from pet.brain.llm_retry import llm_stream_with_retry, retryer_for
+from pet.brain.projection import degrade_messages
+from pet.brain.tool_channel import is_tool_rejection, mark_downgraded, resolve_channel
 
 logger = logging.getLogger(__name__)
 
@@ -56,18 +58,32 @@ class LlmGateway:
         return "thinking" in f"{body}{exc}".lower()
 
     def _create_completion(self, kwargs: dict):
-        """发起补全请求；400 指向 thinking 参数时摘掉它重试一次，其余 400 原样抛出。"""
+        """发起补全请求：thinking 参数或工具协议被拒时各降级重试一次。"""
         global _thinking_unsupported
         try:
             return self._llm.client.chat.completions.create(**kwargs)
-        except BadRequestError as e:
-            if "extra_body" not in kwargs or not self._is_thinking_reject(e):
-                raise
-            logger.warning("[Behavior] 请求被拒绝(400)，可能不支持 thinking 参数，自动降级重试")
-            kwargs.pop("extra_body", None)
-            resp = self._llm.client.chat.completions.create(**kwargs)
-            _thinking_unsupported = True
-            return resp
+        except (BadRequestError, UnprocessableEntityError) as e:
+            if (isinstance(e, BadRequestError) and "extra_body" in kwargs
+                    and self._is_thinking_reject(e)):
+                logger.warning("[Behavior] 请求被拒绝(400)，可能不支持 thinking 参数，自动降级重试")
+                kwargs.pop("extra_body", None)
+                resp = self._llm.client.chat.completions.create(**kwargs)
+                _thinking_unsupported = True
+                return resp
+            if is_tool_rejection(e):
+                return self._retry_without_tool_channel(kwargs, e)
+            raise
+
+    def _retry_without_tool_channel(self, kwargs: dict, exc: BaseException):
+        """工具协议被端点明确拒绝：降一档通道，改写消息体后重试一次。"""
+        current = resolve_channel()
+        downgraded = mark_downgraded(current)
+        messages = degrade_messages(kwargs.get("messages") or [], downgraded)
+        if downgraded == current or not messages:
+            raise exc
+        kwargs["messages"] = messages
+        logger.warning(f"[Behavior] 端点拒绝工具协议，本次请求降级为 {downgraded} 重试")
+        return self._llm.client.chat.completions.create(**kwargs)
 
     def completion(self, messages: list, max_tokens: int = 4000, tools: list = None,
                    thinking: bool | None = None, temperature: float | None = None):

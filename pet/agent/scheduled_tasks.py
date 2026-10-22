@@ -191,11 +191,15 @@ class ScheduledTasks:
         self._agent.mood.check_thresholds()
 
     def _memory_maintenance(self):
-        """定期维护记忆：L3 硬清理 + 容量控制。"""
+        """定期维护记忆与事件 artifact。"""
         try:
             self._agent.memory_store.maintenance()
         except Exception as e:
             logger.warning(f"[ScheduledTasks] memory maintenance failed: {e}")
+        try:
+            self._agent.behavior.maintenance()
+        except Exception as e:
+            logger.warning(f"[ScheduledTasks] event maintenance failed: {e}")
 
     def _init_merge_marker(self):
         """重启后以库中最新的 marker 初始化游标，第一个整点不重复汇总已有条目。"""

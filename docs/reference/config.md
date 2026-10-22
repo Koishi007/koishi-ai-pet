@@ -151,6 +151,9 @@
 | `LLM_CREATE_TIMEOUT` | float | 30 |  |  | 建流超时(秒)：等待响应头超过该时长即放弃，避免服务端无响应时卡死 |
 | `LLM_STREAM_TIMEOUT` | float | 120 |  |  | 流式调用总超时(秒)，超过后降级到本地决策 |
 | `LLM_TOOL_PARALLEL` | bool | true | 是 |  | LLM 工具并行调用 |
+| `LLM_TOOL_ROLE_MODE` | str | `"auto"` | 是 |  | 历史工具记录通道：auto 默认 native，端点明确拒绝时逐档降级（可选：auto / native / user-note / system-note / minimal） |
+| `LLM_TOOL_ROLE_OVERRIDE` | str | `""` | 是 |  | 按模型前缀强制指定工具通道，形如 qwen2.5=system-note,glm=user-note |
+| `NATIVE_REPLAY_ARGS` | str | `"minimal"` | 是 |  | native 通道回放工具参数的还原方式（可选：minimal / empty） |
 
 ### category = `memory`
 
@@ -171,4 +174,4 @@
 - `hidden`：`true` 表示不在界面显示，只能直接编辑 `settings.json`
 - `enum` / `minimum` / `maximum`：取值约束，会写进 `settings-schema.json`
 
-共 108 项（其中 49 项未在界面列出）。
+共 111 项（其中 52 项未在界面列出）。
