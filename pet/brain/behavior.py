@@ -487,10 +487,13 @@ class Behavior(BrainMixin):
         return thinking
 
     def _note_budget_truncation(self, tag: str, output: BehaviorOutput):
-        """空输出且上一轮为 length 时点名原因，与格式类失败区分开。"""
-        if self._last_finish_reason == "length" and not output.actions and not output.speech:
+        """空输出时区分预算耗尽与格式失败，并把原文记为 failed_turn。"""
+        if output.actions or output.speech:
+            return
+        if self._last_finish_reason == "length":
             logger.warning(f"[Behavior] [{tag}] 空响应来自预算耗尽（finish_reason=length）："
                            f"内容被思考占满 max_tokens")
+        self.record_failed_turn(self._last_unparsed, self._last_finish_reason, tag)
 
     def _decide_with_repair(self, pipeline, tag: str) -> BehaviorOutput:
         """非流式入口的空响应修复：补 sit 兜底，已解析的摘要、记忆与增量都保留。"""
@@ -598,6 +601,9 @@ class _BehaviorToolSession:
 
     def add_context(self, role: str, content: str, is_summary: bool = False):
         self._behavior.add_context(role=role, content=content, is_summary=is_summary)
+
+    def record_tool_events(self, group_id: str, calls: list, results: list, asides=None):
+        self._behavior.record_tool_events(group_id, calls, results, asides)
 
     def executor(self):
         return ToolExecutor()

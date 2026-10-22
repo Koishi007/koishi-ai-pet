@@ -9,17 +9,21 @@ from typing import List, Optional
 
 from pet.config import config
 from pet.db import get_conn
+from pet.brain.events import EventStore
+from pet.brain.projection import Budget, project
+from pet.brain.tool_channel import current_profile
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class ContextEntry:
-    """一条结构化的上下文记录。"""
+    """一条上下文记录；`seq` 指向事件日志，仅调试快照使用。"""
     role: str           # "user" | "assistant" | "system"
     content: str
     timestamp: float = field(default_factory=time.time)
     is_summary: bool = False
+    seq: int = 0
 
 
 class BrainMixin:
@@ -59,9 +63,11 @@ class BrainMixin:
         self._context: List[ContextEntry] = []
         self._ctx_lock = threading.RLock()  # 使用可重入锁
         self._db_path = db_path
-        self._db_conn: Optional[sqlite3.Connection] = None
+        self._events: Optional[EventStore] = None
         self._save_debounce_timer: Optional[threading.Timer] = None
-        self._pending_summary_queue: List[str] = []
+        self._pending_summary_queue: List[tuple] = []  # (start_seq, end_seq, 文本)
+        self._drained_covers: List[tuple] = []
+        self._reported_groups: set = set()
 
         if db_path and config.CONTEXT_PERSIST_ENABLED:
             self._init_db()
@@ -69,104 +75,82 @@ class BrainMixin:
 
 
     def _init_db(self):
-        """初始化上下文持久化表。"""
+        """初始化事件日志；旧 context_entries 表保留但不再读写。"""
         try:
-            self._db_conn = get_conn(self._db_path)
-            self._db_conn.row_factory = sqlite3.Row
-            self._db_conn.execute("""
-                CREATE TABLE IF NOT EXISTS context_entries (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    role TEXT NOT NULL,
-                    content TEXT NOT NULL,
-                    timestamp REAL NOT NULL,
-                    is_summary INTEGER DEFAULT 0
-                )
-            """)
-            self._db_conn.execute("""
-                CREATE TABLE IF NOT EXISTS context_meta (
-                    key TEXT PRIMARY KEY,
-                    value TEXT
-                )
-            """)
-            self._db_conn.commit()
+            self._events = EventStore(self._db_path)
         except Exception as e:
             logger.warning(f"[BrainMixin] persistence init failed: {e}")
-            self._db_conn = None
+            self._events = None
 
     def _load_context(self):
-        """启动时从 SQLite 加载上下文 + 计算离开时长。"""
-        if not self._db_conn:
+        """启动时处理离开时长与未闭合工具组；历史由投影读取，不做旧表迁移。"""
+        if self._events is None or not self._events.available:
+            return
+        self._scan_unclosed_groups()
+        meta = self._events.meta_get("shutdown_time")
+        if not meta:
             return
         try:
-            rows = self._db_conn.execute(
-                "SELECT role, content, timestamp, is_summary FROM context_entries ORDER BY timestamp ASC"
-            ).fetchall()
-            
-            with self._ctx_lock:
-                self._context = [
-                    ContextEntry(
-                        role=r["role"], content=r["content"],
-                        timestamp=r["timestamp"], is_summary=bool(r["is_summary"])
-                    ) for r in rows
-                ]
+            shutdown_time = datetime.fromisoformat(meta)
+            away_seconds = (datetime.now() - shutdown_time).total_seconds()
+            if away_seconds > 60:
+                away_str = self.format_duration(away_seconds)
+                self.add_context(role="system", content=f"用户离开了 {away_str}，刚刚回来")
+                logger.info(f"[BrainMixin] user was away for {away_str}")
+        except Exception:
+            pass
 
-            meta = self._db_conn.execute(
-                "SELECT value FROM context_meta WHERE key='shutdown_time'"
-            ).fetchone()
-            
-            if meta:
-                try:
-                    shutdown_time = datetime.fromisoformat(meta["value"])
-                    away_seconds = (datetime.now() - shutdown_time).total_seconds()
-                    if away_seconds > 60:
-                        away_str = self.format_duration(away_seconds)
-                        self.add_context(role="system", content=f"用户离开了 {away_str}，刚刚回来")
-                        logger.info(f"[BrainMixin] user was away for {away_str}")
-                except Exception:
-                    pass
-
-            logger.info(f"[BrainMixin] loaded {len(self._context)} context entries from DB")
+    def _scan_unclosed_groups(self):
+        """崩溃窗口：未闭合组只记录，不重放、不重试。"""
+        try:
+            groups = self._events.unclosed_groups()
         except Exception as e:
-            logger.warning(f"[BrainMixin] load context failed: {e}")
+            logger.warning(f"[BrainMixin] scan unclosed groups failed: {e}")
+            return
+        for group in groups:
+            if group["group_id"] in self._reported_groups:
+                continue
+            self._reported_groups.add(group["group_id"])
+            logger.warning(f"[BrainMixin] 未闭合工具组 {group['group_id']}: "
+                           f"calls={group['calls']} results={group['results']}，不重放")
+
+    def maintenance(self):
+        """slow_tick：清理过期 artifact 并复查未闭合组。"""
+        if self._events is None or not self._events.available:
+            return
+        try:
+            self._events.cleanup_artifacts()
+        except Exception as e:
+            logger.warning(f"[BrainMixin] artifact cleanup failed: {e}")
+        self._scan_unclosed_groups()
+
+    def dump_events(self, limit: int = 50) -> List[dict]:
+        """调试入口：按时间列出最近事件。"""
+        if self._events is None or not self._events.available:
+            return []
+        rows = self._events.load()
+        return [{"seq": e.seq, "ts": e.ts, "type": e.type, "group_id": e.group_id,
+                 "payload": e.payload, "refs": e.refs} for e in rows[-limit:]]
+
+    def dump_projection(self) -> List[dict]:
+        """调试入口：按当前 Profile 与配置预算投影一次。"""
+        return self.get_multi_turn_messages(
+            max_entries=self._MAX_POOL_ENTRIES,
+            token_budget=config.CONTEXT_TOKEN_BUDGET,
+        )
 
     def _save_context(self, record_shutdown: bool = False):
-        """保存上下文到 SQLite（debounce 5 秒避免频繁写盘）。"""
-        if not self._db_conn:
-            return
-
-        if record_shutdown:
-            self._do_save(record_shutdown=True)
-            return
-
-        if self._save_debounce_timer:
-            self._save_debounce_timer.cancel()
-        self._save_debounce_timer = threading.Timer(5.0, self._do_save)
-        self._save_debounce_timer.daemon = True
-        self._save_debounce_timer.start()
-
-    def _do_save(self, record_shutdown: bool = False):
-        """实际执行保存。"""
-        if not self._db_conn:
+        """记录关机时刻，供下次启动计算离开时长。"""
+        if self._events is None or not self._events.available or not record_shutdown:
             return
         try:
-            with self._ctx_lock:
-                # 快照数据，减少锁占用时间
-                entries = [(e.role, e.content, e.timestamp, int(e.is_summary)) for e in self._context]
-
-            # 使用事务和 executemany 提升写入性能
-            with self._db_conn:  # 自动提交或回滚
-                self._db_conn.execute("DELETE FROM context_entries")
-                self._db_conn.executemany(
-                    "INSERT INTO context_entries (role, content, timestamp, is_summary) VALUES (?,?,?,?)",
-                    entries
-                )
-                if record_shutdown:
-                    self._db_conn.execute(
-                        "INSERT OR REPLACE INTO context_meta (key, value) VALUES ('shutdown_time', ?)",
-                        (datetime.now().isoformat(),)
-                    )
+            self._events.meta_set("shutdown_time", datetime.now().isoformat())
         except Exception as e:
             logger.warning(f"[BrainMixin] save context failed: {e}")
+
+    def _do_save(self, record_shutdown: bool = False):
+        """兼容旧调用名。"""
+        self._save_context(record_shutdown=record_shutdown)
 
     @staticmethod
     def format_duration(seconds: float) -> str:
@@ -183,45 +167,119 @@ class BrainMixin:
 
 
     def add_context(self, role: str, content: str, is_summary: bool = False):
+        """写一条事件，并维护供调试面板查看的内存快照。"""
         with self._ctx_lock:
-            if is_summary:
-                # 与最近 _MAX_DEDUP_COMPARE 条 summary 去重
-                compared = 0
-                replaced = False
-                for i in range(len(self._context) - 1, -1, -1):
-                    e = self._context[i]
-                    if e.is_summary:
-                        compared += 1
-                        if self._text_similarity(content, e.content) >= self._DEDUP_THRESHOLD:
-                            self._context[i] = ContextEntry(role=role, content=content, is_summary=True)
-                            replaced = True
-                            logger.debug(f"[BrainMixin] summary replaced: {content[:30]}...")
-                            break
-                        if compared >= self._MAX_DEDUP_COMPARE:
-                            break
-                
-                if replaced:
-                    if self._db_conn:
-                        self._save_context()
-                    return
-
-            self._context.append(ContextEntry(role=role, content=content, is_summary=is_summary))
+            if is_summary and self._replace_similar_summary(role, content):
+                return
+            event = self._write_event(role, content, is_summary)
+            self._context.append(ContextEntry(
+                role=role, content=content, is_summary=is_summary,
+                seq=event.seq if event else 0))
             self._evict_context()
-            
-        if self._db_conn:
-            self._save_context()
+
+    def _replace_similar_summary(self, role: str, content: str) -> bool:
+        """与最近 _MAX_DEDUP_COMPARE 条摘要去重；命中则只替换快照。"""
+        compared = 0
+        for i in range(len(self._context) - 1, -1, -1):
+            entry = self._context[i]
+            if not entry.is_summary:
+                continue
+            compared += 1
+            if self._text_similarity(content, entry.content) >= self._DEDUP_THRESHOLD:
+                self._context[i] = ContextEntry(role=role, content=content,
+                                                is_summary=True, seq=entry.seq)
+                logger.debug(f"[BrainMixin] summary replaced: {content[:30]}...")
+                return True
+            if compared >= self._MAX_DEDUP_COMPARE:
+                break
+        return False
+
+    def _write_event(self, role: str, content: str, is_summary: bool):
+        """把一次上下文写入映射为事件；失败不影响主流程。"""
+        if self._events is None or not self._events.available:
+            return None
+        try:
+            if is_summary:
+                covers = self._consume_covers()
+                refs = {"covers": list(covers)} if covers else None
+                return self._events.append("summary", {"text": content}, refs=refs)
+            if role == "user":
+                return self._events.append("user_msg", {"text": content})
+            if role == "assistant":
+                return self._events.append("assistant_turn", {"text": content})
+            return self._events.append("system_note", {"text": content})
+        except Exception as e:
+            logger.warning(f"[BrainMixin] append event failed: {e}")
+            return None
+
+    def _consume_covers(self) -> Optional[tuple]:
+        """摘要覆盖区间：取本轮淘汰事件的最小/最大 seq。"""
+        with self._ctx_lock:
+            ranges = list(self._drained_covers)
+            self._drained_covers.clear()
+        starts = [a for a, _ in ranges if a]
+        ends = [b for _, b in ranges if b]
+        if not starts or not ends:
+            return None
+        return (min(starts), max(ends))
+
+    def record_failed_turn(self, text: str, finish_reason: str = "", tag: str = ""):
+        """解析失败的响应只留档，不进入任何视图。"""
+        if self._events is None or not self._events.available or not text:
+            return
+        try:
+            self._events.append("failed_turn", {
+                "text": text[:1000], "finish_reason": finish_reason, "tag": tag})
+        except Exception as e:
+            logger.warning(f"[BrainMixin] append failed_turn failed: {e}")
+
+    def record_tool_events(self, group_id: str, calls: list, results: list,
+                           asides: Optional[list] = None):
+        """把一轮工具调用写成同组事件，供投影聚合成原子组。"""
+        if self._events is None or not self._events.available:
+            return
+        for call_id, text in (asides or []):
+            try:
+                self._events.append("assistant_speech", {"text": text},
+                                    group_id=group_id, refs={"parent_seq": None,
+                                                             "tool_call_id": call_id})
+            except Exception as e:
+                logger.warning(f"[BrainMixin] append assistant_speech failed: {e}")
+        for call in calls:
+            call_id = call.get("id", "")
+            try:
+                self._events.append(
+                    "tool_call",
+                    {"name": call.get("name", ""),
+                     "args_digest": call.get("args_digest", "-"),
+                     "side_effect": bool(call.get("side_effect", False))},
+                    group_id=group_id, refs={"tool_call_id": call_id})
+            except Exception as e:
+                logger.warning(f"[BrainMixin] append tool_call failed: {e}")
+        for result in results:
+            call_id = result.get("tool_call_id", "")
+            try:
+                self._events.append(
+                    "tool_result",
+                    {"ok": bool(result.get("ok", False)),
+                     "brief": result.get("brief", ""),
+                     "artifact_id": result.get("artifact_id")},
+                    group_id=group_id, refs={"tool_call_id": call_id})
+            except Exception as e:
+                logger.warning(f"[BrainMixin] append tool_result failed: {e}")
 
     def clear_context(self):
         with self._ctx_lock:
             self._context.clear()
             self._pending_summary_queue.clear()
-        
+            self._drained_covers.clear()
+
         if self._save_debounce_timer:
             self._save_debounce_timer.cancel()
             self._save_debounce_timer = None
 
-        if self._db_conn:
-            self._do_save()
+        if self._events is not None and self._events.available:
+            self._events.new_session()
 
     def context_count(self) -> int:
         with self._ctx_lock:
@@ -240,8 +298,40 @@ class BrainMixin:
         """立即落盘上下文，退出流程使用。"""
         self._save_context(record_shutdown=record_shutdown)
 
-    def get_multi_turn_messages(self, max_entries: int = 10, skip_last: int = 0, token_budget: int = 0) -> List[dict]:
-        """构建多轮消息列表。时间顺序优先，打分仅用于淘汰决策。"""
+    def get_multi_turn_messages(self, max_entries: int = 10, skip_last: int = 0,
+                                token_budget: int = 0) -> List[dict]:
+        """从事件日志投影出多轮消息；无持久化时退回内存快照。"""
+        if self._events is None or not self._events.available:
+            return self._legacy_multi_turn_messages(max_entries, skip_last, token_budget)
+
+        now = time.time()
+        budget = Budget(
+            max_entries=max_entries,
+            max_tokens=token_budget,
+            max_summaries=self._MAX_HISTORY_SUMMARIES,
+            evict_before_ts=now - config.CONTEXT_HALF_LIFE_S,
+            now=now,
+            skip_last=skip_last,
+        )
+        stats: dict = {}
+        started = time.perf_counter()
+        try:
+            profile = current_profile()
+            messages = project(self._events.load(), profile, budget, stats)
+        except Exception as e:
+            logger.warning(f"[BrainMixin] projection failed: {e}")
+            return []
+        logger.debug(
+            f"[BrainMixin] project session={self._events.current_session_id()[:8]} "
+            f"profile={profile.name} messages={len(messages)} "
+            f"dropped={stats.get('dropped_groups', 0)} orphan={stats.get('orphan_groups', 0)} "
+            f"sanitized={stats.get('sanitized_lines', 0)} "
+            f"elapsed={int((time.perf_counter() - started) * 1000)}ms")
+        return messages
+
+    def _legacy_multi_turn_messages(self, max_entries: int = 10, skip_last: int = 0,
+                                    token_budget: int = 0) -> List[dict]:
+        """内存快照路径，仅用于未启用持久化的调试与测试。"""
         with self._ctx_lock:
             if not self._context:
                 return []
@@ -393,7 +483,8 @@ class BrainMixin:
             normal_chats.sort(key=lambda e: e.timestamp, reverse=True)
             evicted = normal_chats[base_limit:]
             if evicted:
-                self._pending_summary_queue.extend(f"[{e.role}] {e.content}" for e in evicted)
+                self._pending_summary_queue.extend(
+                    (e.seq, e.seq, f"[{e.role}] {e.content}") for e in evicted)
                 if len(self._pending_summary_queue) > self._MAX_PENDING_QUEUE:
                     self._pending_summary_queue = self._pending_summary_queue[-self._MAX_PENDING_QUEUE:]
                 logger.info(f"[BrainMixin] evicted {len(evicted)}, queued for summarization")
@@ -403,11 +494,12 @@ class BrainMixin:
         self._context = sorted(summaries + tool_calls + normal_chats, key=lambda e: e.timestamp)
 
     def drain_pending_summaries(self) -> List[str]:
-        """取出并清空待摘要队列。"""
+        """取出待摘要文本，并记住对应 seq 区间供摘要事件标记 covers。"""
         with self._ctx_lock:
             items = self._pending_summary_queue[:]
             self._pending_summary_queue.clear()
-            return items
+            self._drained_covers = [(a, b) for a, b, _ in items if a or b]
+        return [text for _, _, text in items]
 
     @staticmethod
     def _build_fallback_summary(items: List[str]) -> str:
