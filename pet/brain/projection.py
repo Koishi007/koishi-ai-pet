@@ -249,9 +249,27 @@ def _hidden(seq: int, ranges: list[tuple[int, int]]) -> bool:
 
 def _build_items(events: list, snapshot: Optional[Event],
                  ranges: list[tuple[int, int]], stats: dict) -> list[_Item]:
+    # 第一遍先建组并填充内容：aside 与 turn 可能排在 tool_call 之前，第二遍必须能查到
     groups: dict[str, _Group] = {}
-    items: list[_Item] = []
+    for event in events:
+        if event.type not in ("tool_call", "tool_result"):
+            continue
+        if _hidden(event.seq, ranges):
+            continue
+        gid = event.group_id or f"orphan-{event.seq}"
+        group = groups.get(gid)
+        if group is None:
+            group = _Group(gid, event.seq, event.ts)
+            groups[gid] = group
+        else:
+            group.seq = min(group.seq, event.seq)
+        if event.type == "tool_call":
+            group.calls.append(event)
+        else:
+            call_id = event.refs.get("tool_call_id") or event.payload.get("tool_call_id") or ""
+            group.results[call_id] = event
 
+    items: list[_Item] = []
     if snapshot is not None:
         for summary in snapshot.payload.get("summaries") or []:
             text = (summary or {}).get("text") if isinstance(summary, dict) else None
@@ -260,6 +278,15 @@ def _build_items(events: list, snapshot: Optional[Event],
                                    event=Event(snapshot.seq, snapshot.session_id, snapshot.ts,
                                                "summary", None, {"text": text}, {})))
 
+    emitted: set[str] = set()
+
+    def emit_group(gid: str, seq: int, ts: float):
+        """组 item 首次出现时插入，保持 seq 顺序。"""
+        if gid in emitted:
+            return
+        emitted.add(gid)
+        items.append(_Item("group", seq, ts, group=groups[gid]))
+
     for event in events:
         if event.type == "failed_turn":
             stats["failed_turns"] = stats.get("failed_turns", 0) + 1
@@ -267,43 +294,18 @@ def _build_items(events: list, snapshot: Optional[Event],
         if _hidden(event.seq, ranges):
             continue
 
-        if event.type == "tool_call":
-            gid = event.group_id or f"orphan-{event.seq}"
-            group = groups.get(gid)
-            if group is None:
-                group = _Group(gid, event.seq, event.ts)
-                groups[gid] = group
-                items.append(_Item("group", event.seq, event.ts, group=group))
-            else:
-                group.seq = min(group.seq, event.seq)
-            group.calls.append(event)
-            continue
-
-        if event.type == "tool_result":
-            gid = event.group_id or ""
-            group = groups.get(gid)
-            if group is None:
-                group = _Group(gid or f"orphan-{event.seq}", event.seq, event.ts)
-                groups[gid or group.group_id] = group
-                items.append(_Item("group", event.seq, event.ts, group=group))
-            call_id = event.refs.get("tool_call_id") or (event.payload.get("tool_call_id") or "")
-            group.results[call_id] = event
-            continue
-
-        if event.type == "assistant_turn":
-            gid = event.group_id or ""
-            if gid and gid in groups:
-                groups[gid].turn = event
-                continue
-            items.append(_Item("assistant", event.seq, event.ts, event=event))
-            continue
-
-        if event.type == "assistant_speech":
-            gid = event.group_id or ""
-            if gid and gid in groups:
+        gid = event.group_id or f"orphan-{event.seq}"
+        if gid in groups:
+            if event.type == "assistant_speech":
                 groups[gid].speeches.append(event)
-                continue
-            items.append(_Item("speech", event.seq, event.ts, event=event))
+            elif event.type == "assistant_turn":
+                groups[gid].turn = event
+            emit_group(gid, event.seq, event.ts)
+            continue
+
+        if event.type in ("assistant_turn", "assistant_speech"):
+            kind = "assistant" if event.type == "assistant_turn" else "speech"
+            items.append(_Item(kind, event.seq, event.ts, event=event))
             continue
 
         if event.type == "user_msg":
