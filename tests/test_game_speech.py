@@ -102,12 +102,12 @@ def test_ended_round_hint(ctx):
 
     result = base.play("tic_tac_toe", ttt_move="A3")
 
-    assert result["data"]["ended"] and result["data"]["won"] is True
+    assert result["ended"] and result["won"] is True
     assert result["agent_hint"] is gamebase._MODEL_HINT_ENDED
 
 
-def test_tic_tac_toe_summary_excludes_board(ctx):
-    """井字棋 summary 只留自然语言，盘面仍由 board_text 字段交给模型。"""
+def test_tic_tac_toe_headline_excludes_board(ctx):
+    """井字棋 headline 只留自然语言，盘面仍由 board_text 字段交给模型。"""
     game = TicTacToeGame()
     state = game.new_state()
     pet = state["pet_mark"]
@@ -119,7 +119,7 @@ def test_tic_tac_toe_summary_excludes_board(ctx):
 
     assert result["ended"] and result["won"] is True
     for line in result["board_text"].splitlines():
-        assert line not in result["summary"]
+        assert line not in result["headline"]
 
 
 def test_headline_and_hint_are_separate_fields():

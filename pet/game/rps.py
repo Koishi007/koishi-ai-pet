@@ -68,7 +68,7 @@ class RockPaperScissorsGame(Game):
         pet_move = params.get("rps_move")
         if pet_move not in MOVES:
             return {
-                "summary": f"无效出拳 {pet_move!r}，请用 rock/paper/scissors",
+                "headline": f"无效出拳 {pet_move!r}，请用 rock/paper/scissors",
                 "ended": False,
                 "pet_move": pet_move,
             }
@@ -81,20 +81,20 @@ class RockPaperScissorsGame(Game):
             if state.get("_forfeit"):
                 # 用户主动关闭面板结束游戏：不算胜负
                 return {
-                    "summary": "用户主动结束了猜拳，不算胜负",
+                    "headline": "用户主动结束了猜拳，不算胜负",
                     "ended": True,
                     "won": None,
                     "forfeit": True,
                 }
             # 外部取消（stop/闲置收场）已由调用方播收场词，抑制兜底台词避免重复
-            return {"summary": "游戏已结束", "ended": True, "won": None,
+            return {"headline": "游戏已结束", "ended": True, "won": None,
                     "suppress_speech": True}
         if move is None:
             # 用户超时未出拳 → 结束本局，不算胜负
             self._emit_panel(state, waiting=False, pet_move=pet_move,
                              message="长时间未操作，本局结束")
             return {
-                "summary": f"你在 {self.MOVE_TIMEOUT} 秒内没有出拳，本局结束",
+                "headline": f"你在 {self.MOVE_TIMEOUT} 秒内没有出拳，本局结束",
                 "speech": random.choice(self._TIMEOUT_SPEECH),
                 "ended": True,
                 "won": None,
@@ -106,7 +106,7 @@ class RockPaperScissorsGame(Game):
         if user_move not in MOVES:
             # 防御：面板只提交合法出拳
             return {
-                "summary": f"无效出拳 {user_move!r}，请点击石头/剪刀/布按钮",
+                "headline": f"无效出拳 {user_move!r}，请点击石头/剪刀/布按钮",
                 "ended": False,
                 "pet_move": pet_move,
             }
@@ -117,7 +117,7 @@ class RockPaperScissorsGame(Game):
             self._emit_panel(state, waiting=False, pet_move=pet_move,
                              message=f"你出「{user_name}」，平局，重新出拳")
             return {
-                "summary": f"我出「{pet_name}」，你出「{user_name}」，平局，重新出拳",
+                "headline": f"我出「{pet_name}」，你出「{user_name}」，平局，重新出拳",
                 "ended": False,
                 "result": "draw",
                 "pet_move": pet_move,
@@ -137,7 +137,7 @@ class RockPaperScissorsGame(Game):
             self._emit_panel(state, waiting=False, pet_move=pet_move,
                              message=f"{result_text}，我获胜")
             return {
-                "summary": f"{result_text}。{score}，三局两胜我获胜",
+                "headline": f"{result_text}。{score}，三局两胜我获胜",
                 "ended": True,
                 "won": True,
                 "pet_move": pet_move,
@@ -149,7 +149,7 @@ class RockPaperScissorsGame(Game):
             self._emit_panel(state, waiting=False, pet_move=pet_move,
                              message=f"{result_text}，你获胜")
             return {
-                "summary": f"{result_text}。{score}，三局两胜你获胜",
+                "headline": f"{result_text}。{score}，三局两胜你获胜",
                 "ended": True,
                 "won": False,
                 "pet_move": pet_move,
@@ -161,7 +161,7 @@ class RockPaperScissorsGame(Game):
         self._emit_panel(state, waiting=False, pet_move=pet_move,
                          message=f"{result_text}，轮到我")
         return {
-            "summary": f"{result_text}。{score}，继续下一局",
+            "headline": f"{result_text}。{score}，继续下一局",
             "ended": False,
             "result": winner,
             "pet_move": pet_move,

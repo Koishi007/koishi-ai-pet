@@ -254,23 +254,23 @@ class GameBase:
                 pass
             if state.get("_forfeit"):
                 result = {
-                    "summary": f"用户主动结束了 {game_name} 游戏。",
+                    "headline": f"用户主动结束了 {game_name} 游戏。",
                     "ended": True,
                     "won": None,
                     "forfeit": True,
                 }
             else:
                 result = {
-                    "summary": f"{game_name} 游戏已结束",
+                    "headline": f"{game_name} 游戏已结束",
                     "ended": True,
                     "won": None,
                     "suppress_speech": True,
                 }
-            result["model_hint"] = _MODEL_HINT_ENDED_NEUTRAL
+            result["agent_hint"] = _MODEL_HINT_ENDED_NEUTRAL
             result.setdefault("success", True)
             result.setdefault("game_name", game_name)
             self._emit_speech(game, result)
-            return self._to_contract(result)
+            return result
         try:
             result = game.play(state, **params)
         except Exception as e:
@@ -292,23 +292,11 @@ class GameBase:
                     else _MODEL_HINT_ENDED)
         else:
             hint = _MODEL_HINT_RUNNING
-        result.setdefault("model_hint", hint)  # 游戏自带更精细的指令优先
+        result.setdefault("agent_hint", hint)  # 游戏自带更精细的指令优先
         result.setdefault("success", True)
         result.setdefault("game_name", game_name)
         self._emit_speech(game, result)
-        return self._to_contract(result)
-
-    @staticmethod
-    def _to_contract(result: dict) -> dict:
-        """内部结果 → 输出契约：summary 归 headline，model_hint 归 agent_hint。"""
-        out = {"headline": result.get("summary") or ""}
-        if result.get("model_hint"):
-            out["agent_hint"] = result["model_hint"]
-        rest = {k: v for k, v in result.items()
-                if k not in ("summary", "model_hint", "speech", "suppress_speech")}
-        if rest:
-            out["data"] = rest
-        return out
+        return result
 
     def stop(self, game_name: str) -> dict:
         """主动结束（模型 game__stop / 面板闲置超时）：普通收场，不算胜负。"""
