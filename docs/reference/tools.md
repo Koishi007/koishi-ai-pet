@@ -40,6 +40,7 @@
 |---|---|---|---|---|
 | `headline` | string | 是 | headline | 关键词与刷到的部数 |
 | `body` | string | 否 | body | 每部：标题、网址、字幕全文 |
+| `images` | array | 否 | images | 图片列表 |
 | `data` | object | 否 | data | 略过与统计 |
 
 **`status` 返回字段**

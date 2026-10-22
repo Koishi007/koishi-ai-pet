@@ -89,9 +89,9 @@ def test_running_round_hint(ctx):
 
     result = base.play("tic_tac_toe")
 
-    assert result["model_hint"] is gamebase._MODEL_HINT_RUNNING
-    assert result["model_hint"] not in result["summary"]
-    assert len(result["summary"].splitlines()) == 1
+    assert result["agent_hint"] is gamebase._MODEL_HINT_RUNNING
+    assert result["agent_hint"] not in result["headline"]
+    assert len(result["headline"].splitlines()) == 1
 
 
 def test_ended_round_hint(ctx):
@@ -103,8 +103,8 @@ def test_ended_round_hint(ctx):
 
     result = base.play("tic_tac_toe", ttt_move="A3")
 
-    assert result["ended"] and result["won"] is True
-    assert result["model_hint"] is gamebase._MODEL_HINT_ENDED
+    assert result["data"]["ended"] and result["data"]["won"] is True
+    assert result["agent_hint"] is gamebase._MODEL_HINT_ENDED
 
 
 def test_tic_tac_toe_summary_excludes_board(ctx):

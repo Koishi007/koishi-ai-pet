@@ -5,13 +5,12 @@
 
 from __future__ import annotations
 
-import functools
 import logging
 
 from pet.tools.bilibili import duty, schedule
 from pet.tools.bilibili.storage import BiliStorage
 from pet.tools.context import TOOL_CTX
-from pet.tools.output import ToolOutputDefinition
+from pet.tools.output import IMAGES_SCHEMA, ToolOutputDefinition
 
 logger = logging.getLogger(__name__)
 
@@ -37,36 +36,12 @@ BROWSE_OUTPUT = {
                      "description": "关键词与刷到的部数"},
         "body": {"type": "string", "x-role": "body",
                  "description": "每部：标题、网址、字幕全文"},
+        "images": IMAGES_SCHEMA,
         "data": {"type": "object", "x-role": "data", "description": "略过与统计"},
     },
 }
 
 _storage: BiliStorage | None = None
-
-# 转成规范值时保留为 data 的字段：ok/summary/videos 与图片魔法键另有归属
-_SKIP_KEYS = frozenset({"ok", "summary", "videos", "detail", "reason", "reason_code",
-                        "__image__", "__image_mime__", "__context__"})
-
-
-def _normalized(handler):
-    """把 duty 的 ok / reason / summary 返回映射成输出契约。"""
-    @functools.wraps(handler)
-    def _wrapper(**kwargs):
-        result = handler(**kwargs) or {}
-        if result.get("ok"):
-            out = {"headline": result.get("summary") or "操作完成"}
-            videos = result.get("videos") or []
-            if videos:
-                out["body"] = "\n\n".join(
-                    f"《{v.get('title', '')}》{v.get('url', '')}\n{v.get('subtitle', '')}"
-                    for v in videos)
-            rest = {k: v for k, v in result.items() if k not in _SKIP_KEYS}
-            if rest:
-                out["data"] = rest
-            return out
-        return {"error": result.get("summary") or "操作失败",
-                "code": result.get("reason") or "bili_failed"}
-    return _wrapper
 
 
 def _show_panel():
@@ -76,41 +51,34 @@ def _show_panel():
     show_panel()
 
 
-@_normalized
 def _browse(keyword: str = "", **_):
     if _storage is None:
-        return {"ok": False, "reason": "not_ready", "summary": "B 站工具未初始化"}
+        return {"error": "B 站工具未初始化", "code": "not_ready"}
     return duty.run_round(_storage, keyword=(keyword or "").strip())
 
 
-@_normalized
 def _status(**_):
     if _storage is None:
-        return {"ok": False, "reason": "not_ready", "summary": "B 站工具未初始化"}
+        return {"error": "B 站工具未初始化", "code": "not_ready"}
     return duty.status(_storage)
 
 
-@_normalized
 def _like(bvid: str, **_):
     return duty.write_action(_storage, "like", bvid=bvid)
 
 
-@_normalized
 def _coin(bvid: str, **_):
     return duty.write_action(_storage, "coin", bvid=bvid)
 
 
-@_normalized
 def _comment(bvid: str, text: str, **_):
     return duty.write_action(_storage, "comment", bvid=bvid, text=text)
 
 
-@_normalized
 def _dm(text: str, **_):
     return duty.write_action(_storage, "dm", text=text)
 
 
-@_normalized
 def _verify(limit: int = 10, **_):
     return duty.verify(_storage, limit=limit)
 
