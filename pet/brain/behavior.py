@@ -210,7 +210,7 @@ class Behavior(BrainMixin):
             messages = self.ctx.build_autonomous_decide(context, screenshot=screenshot)
             is_vision = isinstance(messages[-1]["content"], list)
             tag = "autonomous_decide_vision_stream" if is_vision else "autonomous_decide_stream"
-            return retry_if_empty(
+            return self._decide_with_repair(
                 lambda repair=False: self._stream_and_build_output(
                     messages, tag=tag, mode="autonomous", on_chunk=on_chunk,
                     on_stream_end=on_stream_end,
@@ -252,7 +252,7 @@ class Behavior(BrainMixin):
         try:
             messages = self.ctx.build_interact(event_hint, attachment_text=attachment_text,
                                                attachment_image=attachment_image)
-            return retry_if_empty(
+            return self._decide_with_repair(
                 lambda repair=False: self._stream_and_build_output(
                     messages, tag="interact", mode="interact", on_chunk=on_chunk,
                     on_stream_end=on_stream_end,
@@ -307,7 +307,7 @@ class Behavior(BrainMixin):
                                                   attachment_image=attachment_image)
             is_vision = isinstance(messages[-1]["content"], list)
             tag = "chat_decide_vision_stream" if is_vision else "chat_decide_stream"
-            return retry_if_empty(
+            return self._decide_with_repair(
                 lambda repair=False: self._stream_and_build_output(
                     messages, tag=tag, mode="chat", on_chunk=on_chunk,
                     on_stream_end=on_stream_end,
@@ -344,7 +344,7 @@ class Behavior(BrainMixin):
                                                      attachment_image=attachment_image)
             is_vision = isinstance(messages[-1]["content"], list)
             tag = "analyze_decide_vision_stream" if is_vision else "analyze_decide_stream"
-            return retry_if_empty(
+            return self._decide_with_repair(
                 lambda repair=False: self._stream_and_build_output(
                     messages, tag=tag, mode="analyze", on_chunk=on_chunk,
                     on_stream_end=on_stream_end,
@@ -415,7 +415,7 @@ class Behavior(BrainMixin):
                                  enable_tools: bool | None = None,
                                  cancel_check: callable = None,
                                  repair: bool = False) -> BehaviorOutput:
-        """跑一次流式管线；空响应的重试由调用方包 retry_if_empty 负责。"""
+        """跑一次流式管线；空响应的修复与兜底由入口的 _decide_with_repair 负责。"""
         if repair:
             thinking = self._thinking_for_repair(thinking)
             messages = repair_messages(messages, self._last_unparsed)
@@ -508,7 +508,10 @@ class Behavior(BrainMixin):
         self.record_failed_turn(self._last_unparsed, self._last_finish_reason, tag)
 
     def _decide_with_repair(self, pipeline, tag: str) -> BehaviorOutput:
-        """非流式入口的空响应修复：补 sit 兜底，已解析的摘要、记忆与增量都保留。"""
+        """入口的空响应修复：先跑一次修复轮，仍为空时补 sit 兜底。
+
+        已解析的摘要、记忆与增量都保留。
+        """
         output = retry_if_empty(pipeline, tag)
         if not output.actions and not output.speech:
             output.actions = [ActionStep("sit", kwargs={"duration": 5})]

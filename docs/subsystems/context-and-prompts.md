@@ -41,6 +41,10 @@
 - user 段承载**每轮都会变、又必须原样进上下文的东西**：时间前缀（`_time_prefix`）、窗口探测结果、
   用户消息或截图。感受/需求/旧事这类逐轮内容走 system 尾部的锚点（见上），不进静态前缀；
   静态前缀稳定才能命中 prompt 缓存（`LLM_CACHE_PROMPT`）。
+- 历史行的形态由投影决定：台词渲染成 `Speech: …`，本轮摘要渲染成 `Summary: 〔距现在多久〕…`，
+  用户行与 system 行用 `[距现在多久]` 前缀。时间只挂在 Summary 与用户行上，台词行不带时间 -
+  模型照抄历史行时仍落在协议字段上，时间也不会被念出来（`pet/brain/projection.py` 的 `_render`）。
+  模型照抄摘要行首的时间标签时由解析器剥掉（`pet/brain/parsing.py` 的 `_SUMMARY_TIME_LABEL`）。
 - 历史多轮由 `BrainMixin.get_multi_turn_messages` 装配，先按条数上限淘汰、再按 token 预算淘汰；
   历史里的 system 片段会被 `_merge_system_history` 并成一段 `[上下文备注]` 追加到 system 末尾，
   保持「一个 system + 若干 user/assistant」的干净结构。

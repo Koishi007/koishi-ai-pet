@@ -3,6 +3,7 @@
 import json
 import re
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Optional
 
 from pet.brain.events import Event
@@ -69,7 +70,7 @@ class _Group:
 
 @dataclass
 class _Item:
-    kind: str          # user | assistant | speech | system | summary | group
+    kind: str          # user | assistant | speech | assistant_summary | system | summary | group
     seq: int
     ts: float
     event: Optional[Event] = None
@@ -177,7 +178,6 @@ def replay_args(call: Event, mode: str = "minimal") -> str:
 
 def format_event_time(ts: float, now: float = 0.0) -> str:
     """事件时间前缀；now 为 0 时只输出时钟。"""
-    from datetime import datetime
     ref = datetime.fromtimestamp(ts)
     if not now:
         return ref.strftime("%H:%M")
@@ -185,6 +185,30 @@ def format_event_time(ts: float, now: float = 0.0) -> str:
     days = (today - ref.date()).days
     if days <= 0:
         return ref.strftime("%H:%M")
+    if days == 1:
+        return "昨天 " + ref.strftime("%H:%M")
+    if days == 2:
+        return "前天 " + ref.strftime("%H:%M")
+    return ref.strftime("%m-%d %H:%M")
+
+
+def format_relative_time(ts: float, now: float = 0.0) -> str:
+    """距今多久：刚刚 / N 分钟前 / N 小时前 / 昨天 22:10 / 前天 09:12 / 10-20 22:10。
+
+    分钟与小时只取整，提示词里的 5 分钟、30 分钟阈值可直接比较。
+    now 为 0 时退化为时钟，供未设时间的调试路径使用。
+    """
+    if not now:
+        return format_event_time(ts, 0)
+    ref = datetime.fromtimestamp(ts)
+    delta = max(0.0, now - ts)
+    if delta < 60:
+        return "刚刚"
+    if delta < 3600:
+        return f"{int(delta // 60)} 分钟前"
+    days = (datetime.fromtimestamp(now).date() - ref.date()).days
+    if days <= 0:
+        return f"{int(delta // 3600)} 小时前"
     if days == 1:
         return "昨天 " + ref.strftime("%H:%M")
     if days == 2:
@@ -308,8 +332,7 @@ def _build_items(events: list, snapshot: Optional[Event],
             continue
 
         if event.type in ("assistant_turn", "assistant_speech"):
-            kind = "assistant" if event.type == "assistant_turn" else "speech"
-            items.append(_Item(kind, event.seq, event.ts, event=event))
+            items.append(_Item(_assistant_kind(event), event.seq, event.ts, event=event))
             continue
 
         if event.type == "user_msg":
@@ -324,6 +347,18 @@ def _build_items(events: list, snapshot: Optional[Event],
         if missing:
             stats["orphan_groups"] = stats.get("orphan_groups", 0) + 1
     return items
+
+
+def _assistant_kind(event: Event) -> str:
+    """assistant_turn 的 payload.kind 决定渲染成 Summary 还是 Speech；无 kind 的旧事件按原样渲染。"""
+    if event.type == "assistant_speech":
+        return "speech"
+    kind = event.payload.get("kind")
+    if kind == "speech":
+        return "speech"
+    if kind == "summary":
+        return "assistant_summary"
+    return "assistant"
 
 
 def _expire_tool_groups(items: list[_Item], budget: Budget, stats: dict) -> list[_Item]:
@@ -341,7 +376,8 @@ def _expire_tool_groups(items: list[_Item], budget: Budget, stats: dict) -> list
 def _apply_skip_last(items: list[_Item], budget: Budget) -> list[_Item]:
     if budget.skip_last <= 0:
         return items
-    droppable = [i for i, item in enumerate(items) if item.kind in ("user", "assistant", "speech")]
+    droppable = [i for i, item in enumerate(items)
+                 if item.kind in ("user", "assistant", "speech", "assistant_summary")]
     drop = set(droppable[-budget.skip_last:])
     return [item for i, item in enumerate(items) if i not in drop]
 
@@ -395,11 +431,18 @@ def _render(items: list[_Item], profile: Profile, budget: Budget, stats: dict) -
             text, hits = sanitize_assistant_text(text)
             if hits:
                 stats["sanitized_lines"] = stats.get("sanitized_lines", 0) + hits
-        prefix = format_event_time(item.ts, budget.now)
+        if item.kind == "speech":
+            out.append({"role": "assistant", "content": f"Speech: {text}"})
+            continue
+        if item.kind == "assistant_summary":
+            label = format_relative_time(item.ts, budget.now)
+            out.append({"role": "assistant", "content": f"Summary: 〔{label}〕{text}"})
+            continue
+        prefix = format_relative_time(item.ts, budget.now)
         content = f"[{prefix}] {text}" if prefix else text
         if item.kind == "user":
             out.append({"role": "user", "content": content})
-        elif item.kind in ("assistant", "speech"):
+        elif item.kind == "assistant":
             out.append({"role": "assistant", "content": content})
         elif item.kind in ("system", "summary"):
             out.append({"role": "system", "content": content})

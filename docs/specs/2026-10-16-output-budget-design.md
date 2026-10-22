@@ -125,5 +125,5 @@ max_tokens = min(_CEILING, 基线 + (思考开启 ? 思考预留 : 0) + (带工�
 ## §8 风险与复测方法
 
 - 硬上限 8192 是常量。服务商拒绝较大的 `max_tokens` 时（400 参数非法），当前链路会退回本地兜底；后续可加「400 指向 max_tokens 时上限减半重试并记住」的降级，与 `_thinking_unsupported` 同款。
-- 工具轮的最终输出仍带动作兜底（`pet/brain/tool_loop.py` 的 `parse_behavior(content)`）：带工具的请求预算最大、输出最长，是最可能截断的一条路径，但该处的空输出会被补成 `sit 5s`，外层既不修复也不告警，截断在这条路径上尚不可辨识。补齐需要把 `action_fallback=False` 传下去，并确认工具链尾部的空响应是否值得再跑一整轮请求。
+- 工具轮的最终解析已关掉动作兜底（`pet/brain/tool_loop.py` 的 `parse_behavior(content, action_fallback=False)`），空响应保持为空，由入口补修复轮，`length` 截断在这条路径上可辨识。修复轮从最初的 messages 重跑，工具结果不在其中，可能重复执行有副作用的工具：`bilibili` 有 `claim_action` 幂等兜底，其余依赖工具自身幂等。
 - 配额数值取自当前模型的运行结果。换更重的思考模型后复测：以是否出现 `length`、以及 completion 是否贴近当前额度为准，按 §3.2 的同比例调整基线与思考预留。

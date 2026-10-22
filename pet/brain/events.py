@@ -266,6 +266,39 @@ class EventStore:
         logger.info(f"[EventStore] purged {removed} covered events")
         return removed
 
+    def purge_sessions(self, session_id: str) -> int:
+        """删除该会话之外的全部事件，并回收不再被引用的 artifact。
+
+        清空上下文按用户预期释放磁盘；旧会话没有查看入口，日志与对话历史另有存处。
+        """
+        if self._conn is None:
+            return 0
+        with self._lock:
+            referenced = set()
+            rows = self._conn.execute(
+                "SELECT payload FROM session_events "
+                "WHERE session_id=? AND type='tool_result'", (session_id,)).fetchall()
+            for row in rows:
+                try:
+                    artifact_id = json.loads(row["payload"]).get("artifact_id")
+                except (TypeError, ValueError):
+                    continue
+                if artifact_id:
+                    referenced.add(artifact_id)
+            removed = self._conn.execute(
+                "DELETE FROM session_events WHERE session_id<>?",
+                (session_id,)).rowcount or 0
+            if referenced:
+                marks = ",".join("?" * len(referenced))
+                self._conn.execute(
+                    f"DELETE FROM session_artifacts WHERE artifact_id NOT IN ({marks})",
+                    tuple(referenced))
+            else:
+                self._conn.execute("DELETE FROM session_artifacts")
+            self._conn.commit()
+        logger.info(f"[EventStore] purged {removed} events outside current session")
+        return removed
+
     def put_artifact(self, body: str, mime: str = "text/plain") -> Optional[str]:
         """超过内联阈值才落 artifact，返回 id；内联够用返回 None。"""
         if self._conn is None or len(body) <= ARTIFACT_INLINE_LIMIT:

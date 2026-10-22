@@ -704,20 +704,21 @@ class PetAgent(QObject):
             logger.info(f"[{ts}] [PetAgent] ← {result}")
             if not result.actions and not result.speech:
                 logger.warning(f"[{ts}] [PetAgent] empty response from LLM (no actions, no speech)")
-            self.behavior.add_context(
-                role="assistant",
-                content=f"{result.speech or '(silent)'}")
-            if result.speech and not result.speech_streamed:
-                parts = result.speech_parts if result.speech_parts else [result.speech]
-                for part in parts:
-                    self.speak_requested.emit(part, 5000)
+            # Summary 先写：投影把时间标签挂在 Summary 行上，历史顺序与协议一致
+            if result.summary:
+                self.behavior.add_context(role="assistant", content=result.summary,
+                                          kind="summary")
             if result.speech:
+                self.behavior.add_context(role="assistant", content=result.speech,
+                                          kind="speech")
+                if not result.speech_streamed:
+                    parts = result.speech_parts if result.speech_parts else [result.speech]
+                    for part in parts:
+                        self.speak_requested.emit(part, 5000)
                 try:
                     self.conversation_store.add("pet", result.speech)
                 except Exception:
                     pass
-            if result.summary:
-                self.behavior.add_context(role="assistant", content=result.summary)
             if result.actions:
                 self.action_batch_started.emit()
             for step in result.actions:

@@ -95,6 +95,43 @@ class TestPurge:
         assert s.count() == 2
 
 
+class TestPurgeSessions:
+    def test_removes_events_of_closed_sessions(self, tmp_path):
+        s = store(tmp_path)
+        s.append("user_msg", {"text": "上一会话"})
+        s.new_session()
+        current = s.current_session_id()
+        s.append("user_msg", {"text": "当前会话"})
+
+        removed = s.purge_sessions(current)
+
+        assert removed == 1
+        assert [e.payload["text"] for e in s.load()] == ["当前会话"]
+
+    def test_keeps_artifacts_referenced_by_current_session(self, tmp_path):
+        s = store(tmp_path)
+        old_artifact = s.put_artifact("旧" * (ARTIFACT_INLINE_LIMIT + 10))
+        s.append("tool_result", {"ok": True, "brief": "旧", "artifact_id": old_artifact})
+        s.new_session()
+        current = s.current_session_id()
+        kept_artifact = s.put_artifact("新" * (ARTIFACT_INLINE_LIMIT + 10))
+        s.append("tool_result", {"ok": True, "brief": "新", "artifact_id": kept_artifact})
+
+        s.purge_sessions(current)
+
+        assert s.get_artifact(old_artifact) is None
+        assert s.get_artifact(kept_artifact)
+
+    def test_drops_all_artifacts_when_current_session_has_none(self, tmp_path):
+        s = store(tmp_path)
+        old_artifact = s.put_artifact("旧" * (ARTIFACT_INLINE_LIMIT + 10))
+        s.new_session()
+
+        s.purge_sessions(s.current_session_id())
+
+        assert s.get_artifact(old_artifact) is None
+
+
 class TestArtifacts:
     def test_size_recorded_in_bytes(self, tmp_path):
         s = store(tmp_path)
