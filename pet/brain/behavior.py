@@ -218,6 +218,12 @@ class Behavior(BrainMixin):
                     cancel_check=cancel_check, repair=repair),
                 tag,
             )
+        except CancelledError:
+            raise
+        except Exception:
+            # 上下文构建失败不应让整轮崩掉：记完整堆栈后退回本地兜底
+            logger.exception("[Behavior] autonomous_decide_stream: build failed")
+            return decide_local(docked=self._docked())
         finally:
             self._lock.release()
 
@@ -310,6 +316,11 @@ class Behavior(BrainMixin):
                     cancel_check=cancel_check, repair=repair),
                 tag,
             )
+        except CancelledError:
+            raise
+        except Exception:
+            logger.exception("[Behavior] chat_decide_stream: build failed")
+            return chat_decide_local(user_message, docked=self._docked())
         finally:
             self._lock.release()
 

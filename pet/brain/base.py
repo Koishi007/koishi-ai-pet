@@ -326,17 +326,17 @@ class BrainMixin:
             return self._legacy_multi_turn_messages(max_entries, skip_last, token_budget)
 
         now = time.time()
-        budget = Budget(
-            max_entries=max_entries,
-            max_tokens=token_budget,
-            max_summaries=self._MAX_HISTORY_SUMMARIES,
-            evict_before_ts=now - config.CONTEXT_HALF_LIFE_S,
-            now=now,
-            skip_last=skip_last,
-        )
         stats: dict = {}
         started = time.perf_counter()
         try:
+            budget = Budget(
+                max_entries=max_entries,
+                max_tokens=token_budget,
+                max_summaries=self._MAX_HISTORY_SUMMARIES,
+                evict_before_ts=now - config.CONTEXT_HALF_LIFE_S,
+                now=now,
+                skip_last=skip_last,
+            )
             profile = current_profile()
             messages = project(self._events.load(), profile, budget, stats)
         except Exception as e:
