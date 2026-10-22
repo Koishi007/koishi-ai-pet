@@ -569,38 +569,25 @@ class ToolRegistry:
                            "total_items": total, "has_next": page < total_pages},
         }
 
-    @staticmethod
-    def _game_result(result: dict) -> dict:
-        """把 GAME 的 summary / model_hint 返回映射成输出契约。"""
-        out = {"headline": result.get("summary") or ""}
-        if result.get("model_hint"):
-            out["agent_hint"] = result["model_hint"]
-        # speech / suppress_speech 由 gamebase 内部消费，不进契约
-        rest = {k: v for k, v in result.items()
-                if k not in ("summary", "model_hint", "speech", "suppress_speech")}
-        if rest:
-            out["data"] = rest
-        return out
-
     def _game_list(self) -> dict:
         """game__list 工具实现。"""
         from pet.game.gamebase import GAME
-        return self._game_result(GAME.list_games())
+        return GAME.list_games()
 
     def _game_play(self, game_name: str, **params) -> dict:
         """game__play 工具实现。"""
         from pet.game.gamebase import GAME
-        return self._game_result(GAME.play(game_name, **params))
+        return GAME.play(game_name, **params)
 
     def _game_init(self, game_name: str) -> dict:
         """game__init 工具实现。"""
         from pet.game.gamebase import GAME
-        return self._game_result(GAME.init(game_name))
+        return GAME.init(game_name)
 
     def _game_stop(self, game_name: str) -> dict:
         """game__stop 工具实现。"""
         from pet.game.gamebase import GAME
-        return self._game_result(GAME.stop(game_name))
+        return GAME.stop(game_name)
 
     def _refresh_game_play_args(self):
         """每次生成工具列表前，用当前已注册游戏动态刷新 game__play/init 的参数 schema。"""
