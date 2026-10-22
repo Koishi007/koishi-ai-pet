@@ -155,6 +155,41 @@ class TestDeclaredTools:
         assert validate(definition, value) == []
         assert isinstance(render_turn(definition, value)[-1], ImageBlock)
 
+    def test_weather_current(self):
+        from pet.tools.weather import CURRENT_OUTPUT
+
+        definition = ToolOutputDefinition(schema=CURRENT_OUTPUT)
+        value = {"headline": "深圳 晴，29.6°C（体感 31°C）",
+                 "body": "湿度 62%，风速 12 km/h\n未来预报：",
+                 "data": {"city": "深圳", "temperature": 29.6}}
+        assert validate(definition, value) == []
+        blocks = render_turn(definition, value)
+        assert blocks[0].text == value["headline"]
+        assert blocks[-1].role == "data"
+        assert render_record(definition, value).startswith("深圳 晴")
+
+    def test_system_monitor_overview(self):
+        from pet.tools.system_monitor import WITH_DATA_OUTPUT
+
+        definition = ToolOutputDefinition(schema=WITH_DATA_OUTPUT)
+        value = {"headline": "CPU 12% (8核) | 内存 71% (15.7G/22G) | 磁盘 60%",
+                 "data": {"cpu_percent": 12, "memory_percent": 71}}
+        assert validate(definition, value) == []
+        assert render_turn(definition, value)[-1].role == "data"
+
+    def test_tool_search_hint_role(self):
+        from pet.tools.registry import SEARCH_OUTPUT
+
+        definition = ToolOutputDefinition(schema=SEARCH_OUTPUT)
+        value = {"headline": "搜到 1 个：weather",
+                 "body": "weather（info）：天气查询\n  - weather__get_current：查询当前天气",
+                 "agent_hint": "已命中：weather__get_current。下一轮直接调用。"}
+        assert validate(definition, value) == []
+        blocks = render_turn(definition, value)
+        assert blocks[0].text == value["headline"]
+        assert blocks[-1].role == "hint"
+        assert render_record(definition, value) == "搜到 1 个：weather"
+
     def test_knowledge_list_pagination(self):
         from pet.tools.knowledge import LIST_OUTPUT
 

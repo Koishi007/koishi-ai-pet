@@ -8,7 +8,7 @@ from typing import Callable, Any, Optional
 
 from pet.config import config
 from pet.tools.context import TOOL_CTX
-from pet.tools.output import ToolOutputDefinition
+from pet.tools.output import PAGINATION_SCHEMA, ToolOutputDefinition
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +39,39 @@ _SEARCH_SPLIT = re.compile(r"[\s,，、;；/|+&]+")
 
 # 单次搜索最多返回的工具数：与文件/浏览/知识库的分页同一个思路，避免一次吐出全部定义
 _MAX_SEARCH_RESULTS = 5
+
+_HEADLINE = {"type": "string", "maxLength": 120, "x-role": "headline",
+             "description": "一句话结论，进历史记录"}
+
+SEARCH_OUTPUT = {
+    "type": "object",
+    "required": ["headline"],
+    "properties": {
+        "headline": _HEADLINE,
+        "body": {"type": "string", "x-role": "body", "description": "命中的工具与方法清单"},
+        "agent_hint": {"type": "string", "x-role": "hint",
+                       "description": "下一步该直接调用哪个函数"},
+    },
+}
+
+GROUPS_OUTPUT = {
+    "type": "object",
+    "required": ["headline"],
+    "properties": {
+        "headline": _HEADLINE,
+        "body": {"type": "string", "x-role": "body", "description": "按分组列出的工具清单"},
+    },
+}
+
+RECALL_OUTPUT = {
+    "type": "object",
+    "required": ["headline"],
+    "properties": {
+        "headline": _HEADLINE,
+        "body": {"type": "string", "x-role": "body", "description": "每条记忆一行"},
+        "pagination": {**PAGINATION_SCHEMA},
+    },
+}
 
 
 def _search_normalize(text: str) -> str:
@@ -194,6 +227,7 @@ class ToolRegistry:
                 "仅需1次调用，无需参数，始终返回完整列表。"
             ),
             handler=self._tool_search_list_groups,
+            output=ToolOutputDefinition(schema=GROUPS_OUTPUT),
         )
         self.add_method(
             tool_name="tool_search",
@@ -213,6 +247,7 @@ class ToolRegistry:
                     "description": "一个或多个关键词，用空格分隔，如 '文件'、'天气 提醒'",
                 }
             },
+            output=ToolOutputDefinition(schema=SEARCH_OUTPUT),
         )
         # 觅食工具
         if config.FOOD_ENABLED:
@@ -359,6 +394,7 @@ class ToolRegistry:
                 },
             },
             timeout=30.0,
+            output=ToolOutputDefinition(schema=RECALL_OUTPUT),
         )
         self.add_method(
             tool_name="recall",
@@ -397,13 +433,13 @@ class ToolRegistry:
                     "desc": "页码(从1开始)",
                 },
             },
+            output=ToolOutputDefinition(schema=RECALL_OUTPUT),
         )
 
     @staticmethod
-    def _empty_recall(summary: str) -> dict:
+    def _empty_recall(msg: str) -> dict:
         """recall__browse 的空结果（含参数错误提示）。"""
-        return {"summary": summary, "memories": [], "total": 0,
-                "page": 1, "total_pages": 0}
+        return {"error": msg}
 
     @staticmethod
     def _normalize_date(value: str, name: str) -> tuple[str, str]:
@@ -438,20 +474,17 @@ class ToolRegistry:
         TOOL_CTX.speech_random(["让我想想…", "回忆一下…", "翻翻记忆…"])
         query = (query or "").strip()
         if not query:
-            return {"summary": "回忆线索为空，请提供人名、事件或话题关键词",
-                    "memories": [], "count": 0}
+            return {"error": "回忆线索为空，请提供人名、事件或话题关键词"}
         try:
             limit = max(1, min(int(limit), 10))
         except (TypeError, ValueError):
             limit = 5
         results = get_memory_store().search_memories(query, limit=limit)
         if not results:
-            return {"summary": "没有想起相关记忆", "memories": [], "count": 0}
-        memories = [self._format_recall_memory(r) for r in results]
+            return {"headline": f"没有想起与「{query}」相关的记忆"}
         return {
-            "summary": f"想起 {len(memories)} 条与「{query}」相关的记忆",
-            "memories": memories,
-            "count": len(memories),
+            "headline": f"想起 {len(results)} 条与「{query}」相关的记忆",
+            "body": "\n".join(self._format_recall_memory(r) for r in results),
         }
 
     def _recall_browse(self, start_date: str = "", end_date: str = "",
@@ -493,19 +526,18 @@ class ToolRegistry:
         total_pages = (total + page_size - 1) // page_size
         if not rows:
             if total == 0:
-                return {"summary": f"没有符合条件的记忆{filter_str}",
-                        "memories": [], "total": 0, "page": page, "total_pages": 0}
+                return {"headline": f"没有符合条件的记忆{filter_str}"}
             # 页码越界：明确告知范围，避免模型误判为「没有记忆」
-            return {"summary": f"第 {page} 页超出范围：共 {total} 条记忆，仅 {total_pages} 页{filter_str}",
-                    "memories": [], "total": total, "page": page,
-                    "total_pages": total_pages}
+            return {
+                "headline": (f"第 {page} 页超出范围：共 {total} 条记忆，"
+                             f"仅 {total_pages} 页{filter_str}"),
+            }
         memories = [self._format_recall_memory(r) for r in rows]
         return {
-            "summary": f"共 {total} 条记忆，第 {page}/{total_pages} 页{filter_str}",
-            "memories": memories,
-            "total": total,
-            "page": page,
-            "total_pages": total_pages,
+            "headline": f"共 {total} 条记忆，第 {page}/{total_pages} 页{filter_str}",
+            "body": "\n".join(memories),
+            "pagination": {"page": page, "page_size": page_size,
+                           "total_items": total, "has_next": page < total_pages},
         }
 
     def _game_list(self) -> dict:
@@ -558,7 +590,10 @@ class ToolRegistry:
                 "tool_count": len(enabled),
                 "tools": [{"name": t.name, "description": t.description} for t in enabled],
             })
-        return {"groups": groups}
+        return {
+            "headline": f"共 {len(groups)} 个工具分组，{sum(g['tool_count'] for g in groups)} 个工具",
+            "body": self._format_catalog(groups),
+        }
 
     @staticmethod
     def _tool_search_entry(tool: "ToolDef") -> dict:
@@ -612,15 +647,13 @@ class ToolRegistry:
                 + "。下一轮直接调用这些函数，不要再调用 tool_search。")
             brief = f"搜到 {len(matched)} 个：" + "、".join(t.name for t in matched[:3])
 
-        payload = {
-            "keyword": keyword,
-            "matches": [self._tool_search_entry(tool) for tool in matched],
-            "hint": hint,
-            "__context__": brief or f"列出全部 {len(matched)} 个可用工具",
+        return {
+            "headline": brief or f"列出全部 {len(matched)} 个可用工具",
+            "body": (self._format_catalog(catalog) if catalog
+                     else self._format_entries(
+                         [self._tool_search_entry(tool) for tool in matched])),
+            "agent_hint": hint or "",
         }
-        if catalog:
-            payload["groups"] = catalog
-        return payload
 
     @staticmethod
     def _group_catalog(tools: list) -> list[dict]:
@@ -630,6 +663,25 @@ class ToolRegistry:
             groups.setdefault(tool.group, []).append(
                 {"name": tool.name, "description": tool.description})
         return [{"group": name, "tools": items} for name, items in groups.items()]
+
+    @staticmethod
+    def _format_entries(entries: list[dict]) -> str:
+        """命中结果的可读文本：工具一行，方法缩进列出。"""
+        lines = []
+        for entry in entries:
+            lines.append(f"{entry['name']}（{entry['group']}）：{entry['description']}")
+            for method in entry.get("methods") or []:
+                lines.append(f"  - {method['name']}：{method['description']}")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _format_catalog(catalog: list[dict]) -> str:
+        lines = []
+        for group in catalog:
+            lines.append(f"[{group['group']}]")
+            for tool in group["tools"]:
+                lines.append(f"  - {tool['name']}：{tool['description']}")
+        return "\n".join(lines)
 
     _TYPE_TO_JSON_SCHEMA = {
         "str": "string",
