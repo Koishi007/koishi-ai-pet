@@ -2,7 +2,7 @@
 
 > 会话历史是一条只追加的事件日志（Session Event Log），作为唯一事实来源；每轮发给模型的 `Message[]` 只是从日志投影（Projection）出的视图。工具调用的记录形态、模型能力适配、条数与 token 裁剪、摘要覆盖，全部是投影策略，不再改写事实。
 >
-> 本文描述最终形态，不含过渡方案与灰度开关。修订：2026-10-22 初稿；同日按两轮评审收敛（assistant_turn 时序、native 参数回放、失败事件、裁剪边界、崩溃窗口、Profile 字段收敛），并放弃历史迁移，改为带发布说明的破坏性切换。
+> 本文描述最终形态，不含过渡方案与灰度开关。修订：2026-10-22 初稿；同日按两轮评审收敛（assistant_turn 时序、native 参数回放、失败事件、裁剪边界、崩溃窗口、Profile 字段收敛），并放弃历史迁移，改为带发布说明的破坏性切换；同日再收敛工具通道（native 首选、错误反馈降档、传输编码层预留）。
 
 ## §0 现状与问题
 
@@ -161,26 +161,28 @@ def project(events: list[Event], profile: Profile, budget: Budget) -> list[dict]
 
 | 字段 | 说明 | 取值来源 |
 |---|---|---|
-| `native_tool_role` | 历史中允许出现 `role="tool"` 与 `assistant.tool_calls` | 配置 + 探测 |
+| `tool_channel` | 工具记录的传输通道：`native` / `user-note` / `system-note` / `none` | 配置 + 运行时降级 |
 | `supports_image` | 是否允许工具结果附图 | 现有 `TOOL_CTX.has_vision()` |
 | `name` | 预设名，用于日志与缓存键 | 见下表 |
 
 `multi_system` 不在 Profile 中：投影器不负责 system 合并，是否允许多条 system 只影响组装阶段，由 `context_builder` 判断（当前恒为 false，统一走 `_merge_system_history`）。
 
-| 预设 | native_tool_role | 工具记录形态 |
+| 预设 | tool_channel | 工具记录形态 |
 |---|---|---|
-| `native` | true | `assistant.tool_calls` + `role="tool"` |
-| `degraded-system` | false | 一条 system，进 `[上下文备注]` |
-| `degraded-user` | false | 一条 user，前缀 `（环境记录）` |
-| `minimal` | false | 不投影工具记录，只保留对话 |
+| `native` | `native` | `assistant.tool_calls` + `role="tool"` |
+| `user-note` | `user-note` | assistant 正文 + 随后一条 user，前缀 `（环境记录）` |
+| `system-note` | `system-note` | 一条 system，进 `[上下文备注]` |
+| `minimal` | `none` | 不投影工具记录，只保留对话 |
 
-`LLM_TOOL_ROLE_MODE=auto` 的判定（映射表细节见 §10.1）：
+`tool_channel` 与 system 条数无关。历史中多条 system 引发 500（qwen3/ollama 模板）是组装阶段的问题，由 `_merge_system_history` 处理，不参与本档位判定。
+
+`LLM_TOOL_ROLE_MODE=auto` 的判定（细节见 §10.1）：
 
 1. 命中用户覆盖 `LLM_TOOL_ROLE_OVERRIDE` → 用指定预设；
-2. 命中内置前缀清单（如 `qwen3`、`qwen2.5`）→ `degraded-system`；
-3. 都未命中 → `degraded-system`（安全侧默认，不会 400）；
-4. 运行时收到 400/422 且错误信息含 `tool` / `tool_call_id` / `role` → 本次调用内降级并重试一次；
-5. 探测结果只写进程内缓存，不回写配置；重启后重新判定。
+2. 命中 `_TOOL_CHANNEL_HINTS` → 用提示档位，跳过首次尝试；
+3. 默认 `native`，直接按协议发送；
+4. 运行时 400/422 且错误文本命中 `tool` / `tool_call_id` / `role` / `function` → 同一次调用内降一档重试一次；单次调用最多降一档；
+5. 降级结果只写进程内缓存，不回写配置；重启后重新判定。
 
 ### §4.3 投影步骤
 
@@ -217,10 +219,10 @@ for group in groups(按首个 seq 升序):
     result = {r.tool_call_id: r for r in group.tool_results}
 
     if 任一 call 缺 result:
-        emit_degraded(group)             # 整组降级，绝不发半对
+        emit_note(group)                 # 整组降级为文本，绝不发半对
         continue
 
-    if profile.native_tool_role:
+    if profile.tool_channel == "native":
         out.append({
             "role": "assistant",
             "content": join_non_empty(turn.text, group.aside_text) or None,
@@ -236,8 +238,22 @@ for group in groups(按首个 seq 升序):
                 "tool_call_id": c.tool_call_id,
                 "content": result[c.tool_call_id].brief,
             })
-    else:
-        emit_degraded(group)
+
+    elif profile.tool_channel == "user-note":
+        if turn.text:
+            out.append({"role": "assistant", "content": turn.text})   # 不带 tool_calls
+        out.append({"role": "user",
+                    "content": "（环境记录）\n" + join_briefs(calls, result)})
+
+    elif profile.tool_channel == "system-note":
+        if turn.text:
+            out.append({"role": "assistant", "content": turn.text})
+        out.append({"role": "system",
+                    "content": "（环境记录）\n" + join_briefs(calls, result)})
+
+    else:                                                # minimal
+        if turn.text:
+            out.append({"role": "assistant", "content": turn.text})
 ```
 
 要点：
@@ -245,13 +261,16 @@ for group in groups(按首个 seq 升序):
 - `content` 与 `tool_calls` 是**同一条** assistant 消息的并列字段；`content` 为空时置 `null`（OpenAI 允许）。
 - 一轮多个工具：一条 assistant 的 `tool_calls` 数组包含多项，随后按 `tool_call_id` 顺序输出多条 `tool`。
 - `aside` 在 native 档并入 `content`（有正文时以换行追加），避免模型下一轮"忘记自己说过什么"；它不单独占一条消息，否则会破坏 `tool_calls` 后必须紧跟 tool 消息的顺序约束。
+- `user-note` 档**不输出** `tool_calls`：只带 `tool_calls` 而不跟 `role="tool"` 的请求会被严格端点判定为缺配对，降级档必须自称完整。
+- 三个降级档在 `turn.text` 为空时省略该条 assistant，避免产出空 `content` 消息被兼容端点拒绝。
+- `user-note` 优于 `system-note` 的原因只在位置：user 消息留在对话流的时序位置上，system 会全部挤进 `[上下文备注]`，离发生点远、模型更易忽略。两者文案一致。
 - `replay_args` 三级回退：
 
 | 档位 | 行为 |
 |---|---|
 | `minimal`（默认） | 按 `args_digest` 重建顶层标量 JSON；无法还原的嵌套字段省略 |
 | `empty` | `"{}"` |
-| 端点拒绝 | 该组整组降级为文本形态 |
+| 端点拒绝 | 本次调用降一档 `tool_channel`，重试一次 |
 
 配置项 `NATIVE_REPLAY_ARGS = minimal | empty`。选 `minimal` 是因为部分兼容端点（vLLM、Ollama、部分网关）会按 function schema 校验必填字段，`"{}"` 有 400 风险。
 
@@ -268,7 +287,7 @@ for group in groups(按首个 seq 升序):
 
 - 投影器是**唯一**的条数与 token 裁剪入口。组装阶段不再调用旧的 `get_multi_turn_messages` 裁剪，否则二次裁剪会按单条切组，产生孤立 `tool` 消息。
 - system 合并仍在 `_merge_system_history`（组装阶段），投影器只负责产出独立的 system 消息。
-- 组装顺序固定：主 prompt → `[上下文备注]`（含 system_note / summary / 降级工具记录）→ 对话消息 → 本轮 user 消息。
+- 组装顺序固定：主 prompt → `[上下文备注]`（含 system_note / summary / `system-note` 档的工具记录）→ 对话消息 → 本轮 user 消息。
 
 ### §4.7 assistant 文本的伪调用清洗
 
@@ -280,6 +299,37 @@ for group in groups(按首个 seq 升序):
 - 清洗规则可配置关闭；关闭时只计数不改写。
 
 这样既避免失败格式自我强化，又不会误伤"用户正在讨论工具调用"这类正常文本。
+
+### §4.8 传输编码层
+
+投影产出的是协议无关的逻辑消息，落到 wire 格式由编码器负责：
+
+```python
+class MessageEncoder(Protocol):
+    name: str
+    def encode(self, messages: list[dict], tools: list | None) -> dict:
+        """把逻辑消息编码成端点请求体。"""
+```
+
+| 编码器 | 状态 | 说明 |
+|---|---|---|
+| `OpenAIChatEncoder` | 现有唯一实现 | `chat.completions.create`，`role="tool"` + `tool_calls` |
+| `AnthropicMessagesEncoder` | 预留，引入原生 SDK 时实现 | 见下表约束 |
+| `GeminiEncoder` | 预留，引入原生 SDK 时实现 | 见下表约束 |
+
+当前所有请求（含 `LLM_URL` 指向的第三方网关）都是 OpenAI 格式，因此本层现在没有分支。`tool_channel` 是**同一个 OpenAI 协议内的**形态选择，不是编码器切换；两者不可混用。
+
+接入原生通道时需要处理的硬约束：
+
+| 项 | Anthropic Messages | Gemini generateContent |
+|---|---|---|
+| 工具调用 | `assistant.tool_use` block | `model.functionCall` |
+| 结果承载 | `user.tool_result` block，`tool_use_id` 必须匹配 | `user.functionResponse`，按 `name` 而非 id |
+| 顺序 | `tool_use` 后必须紧跟 `tool_result`，中间不可插入其他消息 | 同轮可交错 |
+| system | 顶层单条 `system` 字段 | `systemInstruction` 单条 |
+| 空正文 | `content` 可为空数组 | `parts` 不可为空 |
+
+投影器对此的义务只有两条：`tool_call_id` 稳定可复用、同组事件顺序稳定。满足这两条即可在不同编码器下得到等价视图。
 
 ## §5 工具调用记录
 
@@ -320,7 +370,7 @@ tool 返回的 __context__
 
 投影前扫描：`tool_call` 无对应 `tool_result`，或 `tool_result` 无对应 `tool_call`，视为不完整组。
 
-- `native` profile 下，不完整组整组降级为 `degraded-system` 形态，绝不发出半对消息。
+- 不完整组一律按 `user-note` 形态输出，绝不发出半对消息；已是 `system-note` / `minimal` 的保持原档。
 - 记 warning，计入 `orphan_groups`。
 
 崩溃窗口：启动时扫描未闭合组，`side_effect=true` 的组只标记为 `unknown`，**不重放、不自动重试**，必要时在日志/面板提示人工确认；`side_effect=false` 的组按普通不完整组降级即可。日志不完整不等于可以重放，尤其是点赞、投币、评论这类已对外生效的操作。
@@ -349,9 +399,9 @@ tool 返回的 __context__
 
 | 配置 | 取值 | 说明 |
 |---|---|---|
-| `LLM_TOOL_ROLE_MODE` | `auto` / `native` / `degraded-system` / `degraded-user` / `minimal` | 默认 `auto` |
+| `LLM_TOOL_ROLE_MODE` | `auto` / `native` / `user-note` / `system-note` / `minimal` | 默认 `auto` |
 | `NATIVE_REPLAY_ARGS` | `minimal` / `empty` | 默认 `minimal` |
-| `LLM_TOOL_ROLE_OVERRIDE` | 模型名前缀 → 预设名（hidden，不进设置页） | 覆盖内置清单 |
+| `LLM_TOOL_ROLE_OVERRIDE` | 模型名前缀 → 预设名（hidden，不进设置页） | 覆盖 `_TOOL_CHANNEL_HINTS` |
 
 ### §6.3 增长与 compaction
 
@@ -389,7 +439,7 @@ tool 返回的 __context__
 | 字段 | 说明 |
 |---|---|
 | `session_id` / `seq_range` | 本次投影覆盖的事件区间 |
-| `profile` | 预设名 |
+| `profile` / `tool_channel` | 预设名与当前工具通道 |
 | `messages` / `est_tokens` | 投影结果规模 |
 | `dropped_groups` | 因预算丢弃的组数 |
 | `orphan_groups` | 不完整组数量 |
@@ -402,22 +452,23 @@ tool 返回的 __context__
 - `empty LLM response ... retrying once` 次数。
 - 工具轮后落到 `sit` 兜底的占比。
 - `session_artifacts` 总字节数与条数。
+- 工具通道降档次数与最终停留档位，按 `(base_url, model)` 分组；`native` 占比应接近 100%。
 
 ## §8 风险
 
 | 风险 | 影响 | 缓解 |
 |---|---|---|
-| `arguments` 被 schema 校验 | `native` 档 400 | 默认 `minimal` 重建；失败退 `empty`；再失败整组降级 |
+| `arguments` 被 schema 校验 | `native` 档 400 | 默认 `minimal` 重建；失败退 `empty`；再失败降一档 `tool_channel` |
 | 二次裁剪 | 组被拆散、产生孤立 tool 消息 | 投影器为唯一裁剪入口（§4.6）；注入前扫描断言 |
 | 修复轮重跑工具循环 | 已执行工具被重复执行 | 依赖工具侧幂等（`claim_action`）；修复提示带上"上一轮已执行的操作" |
 | 事件增长 | 磁盘与查询变慢 | snapshot compaction；索引 `(session_id, seq)`、`(session_id, group_id)` |
 | artifact 增长 | 磁盘被长文本占满 | 2048 字符阈值、TTL、总体积上限、清理前引用扫描 |
 | 清洗误伤 | 正常文本被改写 | 条件清洗（行首+形态双条件）、可关闭、原文保留 |
 | 崩溃窗口 | `tool_call` 已写、`tool_result` 未写，副作用已发生 | `tool_call.side_effect` 标记；重启后只标记不重放（§5.3） |
-| 严格端点 | `native` 档 400 | 孤儿检测、id 稳定、失败即降级 |
-| Anthropic 兼容端点 | 无 `tool` 角色 | 投影层映射为 user `tool_result` block |
-| 多 system 端点 | qwen3/ollama 500 | 合并留在 `_merge_system_history`，投影器不自行产出 system 合并 |
-| 调试复杂度 | 分不清事实错还是投影错 | 提供 `dump_events` / `dump_projection` 两个入口 |
+| 严格端点 | `native` 档 400 | 错误反馈降档（§10.1）、孤儿检测、id 稳定 |
+| 原生协议端点 | Anthropic / Gemini 无 `role="tool"` | 走 `user-note` 降档可保语义；真正的 wire 转换留给 §4.8 编码器，届时不改投影器 |
+| 多 system 端点 | qwen3/ollama 500 | 与工具通道解耦：合并留在 `_merge_system_history`，不因 system 问题降 `tool_channel` |
+| 过度降级 | 首次请求的偶发 400 被记成永久能力缺失 | 单次调用最多降一档；缓存只记本次进程，重启重探 |
 
 ## §9 验收
 
@@ -427,7 +478,7 @@ tool 返回的 __context__
 2. 日志只追加：任意操作后 `SELECT COUNT(*)` 单调不减。
 3. `summary.covers` 内的事件不出现在投影里，但仍在表中。
 4. 工具组裁剪：只删 `tool_call` 不删 `tool_result` 的情况不可能出现。
-5. 不完整组在 `native` 下降级，且不产生 `role="tool"`。
+5. 不完整组降为 `user-note`，且不产生 `role="tool"`。
 6. 四档投影的**自然语言文本**（`content`、`brief`、system/user 文案）不含工具内部名、原始 JSON、`→`、`[工具调用]`；`native` 的 `function.name` / `arguments` 属协议字段，不受此限。
 7. `assistant_speech` 以独立台词出现，无标签；与 `content` 相同时不重复写。
 8. 升级：旧表存在时新代码对 `context_entries` / `context_meta` 零读写；新事件只写 `session_events`。
@@ -437,12 +488,15 @@ tool 返回的 __context__
 12. `content` 为空时 native 输出 `content: null`，不报错。
 13. 崩溃窗口：启动时未闭合组按 `side_effect` 分别处理，`side_effect=true` 只标记不重放。
 14. 投影器是唯一裁剪入口：组装阶段不再调用旧裁剪，输出消息序列与投影结果一致。
+15. `user-note` 档输出里不存在 `tool_calls`，也不存在 `role="tool"`。
+16. 降档：模拟 400 且错误文本含 `tool_call_id`，同一调用内 `tool_channel` 掉一档并重试一次；第二次成功则请求链成功。
+17. 降档次数有界：一次调用内连续两次 400 不会掉到 `minimal`，仍停在降一档后的档位并向上抛错。
 
 端到端：
 
 - MiMo 上完整跑一次"刷 B 站 → 点赞"，两轮历史重放不报错。
-- 强制 `degraded-system`，同样流程不 500，且模型不再输出伪调用。
-- 强制 `native` + `NATIVE_REPLAY_ARGS=empty`，确认 400 时能整组降级而不是整轮失败。
+- 强制 `system-note`，同样流程不 500，且模型不再输出伪调用。
+- 强制 `native` + `NATIVE_REPLAY_ARGS=empty`，确认 400 时降一档 `tool_channel` 而不是整轮失败。
 - 切主/备模型时，仅切换 profile，事件表无写入。
 - 复现 10-22 伪调用场景：`failed_turn` 落库但不出现在下一轮视图，修复轮产出正常行为。
 
@@ -450,17 +504,25 @@ tool 返回的 __context__
 
 四条均按现有代码核实。
 
-### §10.1 `auto` 映射表
+### §10.1 `auto` 的判定与降档
 
-仓库现有能力探测只有 `pet/brain/llm_gateway.py` 的模块级 `_thinking_unsupported`：首次 400 后置位，进程内生效、重启失效。`llm_client.py` 的 primary/alternative 与 `VISION_ENABLED` 都不是模型名到能力的映射。因此：
+仓库现有能力探测只有 `pet/brain/llm_gateway.py` 的模块级 `_thinking_unsupported`：首次 400 后置位，进程内生效、重启失效。仓库也没有模型名到能力的映射表，且 `llm_client._build_profile` 只构造 `OpenAI` 客户端，不存在原生协议分支。
+
+因此 `auto` 不按模型品牌预判，默认直接发 `native`：国内主流 OpenAI 兼容端点（DeepSeek、Qwen、GLM、Kimi、豆包、MiniMax）都支持 `role="tool"`；把 `system-note` 当默认会把工具结果降成纯文本，白丢协议级结构。
 
 | 项 | 结论 |
 |---|---|
-| 内置清单 | 代码内常量（如 `_TOOL_ROLE_UNSUPPORTED_PREFIXES`），与 `memory.py` 的分类常量同一路子 |
+| 首档 | `native`，不做探测请求 |
+| 触发降档 | 400 / 422，且错误文本命中 `tool` / `tool_call_id` / `role` / `function` |
+| 降档幅度 | 同一次调用内只降一档并重试一次，避免连续降级掩盖真实错误 |
+| 缓存 | 进程内 dict，键 `(base_url, model)`，值为已确认可用的最低档；重启清空 |
+| 提示清单 | `_TOOL_CHANNEL_HINTS` 默认空，只列确知完全不支持工具协议的模型；与 `memory.py` 的分类常量同一路子 |
 | 用户覆盖 | hidden 配置 `LLM_TOOL_ROLE_OVERRIDE`，进 `_KEY_META`、不进设置页 |
-| 优先级 | 用户覆盖 > 内置清单 > `degraded-system` |
-| 匹配方式 | **前缀匹配 + 分隔符边界**：`qwen3` 命中 `qwen3-32b`、`qwen3:8b`，不命中 `qwen2.5`；不用裸 substring |
-| 生效范围 | 只影响 `auto` 的初始判定；探测结果只写进程内，不回写配置 |
+| 优先级 | 用户覆盖 > 提示清单 > 运行时降档 |
+| 匹配方式 | **前缀 + 分隔符边界**：`qwen3` 命中 `qwen3-32b`、`qwen3:8b`，不命中 `qwen2.5`；不用裸 substring |
+| 不参与判定 | system 条数（归 `_merge_system_history`）、图像能力（归 `supports_image`） |
+
+不采用品牌清单做首判的原因：清单会随厂商迭代腐化，误判方向还是"多降一档"，代价高于一次 400 重试；而降档本身有缓存兜底，同一进程内只付一次。
 
 ### §10.2 `session_artifacts` 常量
 
