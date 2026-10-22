@@ -156,6 +156,34 @@
 | `get_memory_detail` | 无参数 | 获取详细内存信息（物理内存+交换分区） |
 | `get_network` | 无参数 | 获取网络流量统计（累计发送/接收字节数） |
 
+**`get_overview` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 一句话结论 |
+| `data` | object | 否 | data | 原始数值 |
+
+**`get_top_processes` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 进程条数 |
+| `body` | string | 否 | body | 每个进程一行 |
+
+**`get_memory_detail` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 一句话结论 |
+| `data` | object | 否 | data | 原始数值 |
+
+**`get_network` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 一句话结论 |
+| `data` | object | 否 | data | 原始数值 |
+
 ### `timer`
 
 - 目录：`pet/tools/timer/`
@@ -168,6 +196,33 @@
 | `list` | 无参数 | 查看当前所有活跃的定时器。 |
 | `cancel` | `timer_id`（str, 必需） 定时器ID | 取消指定定时器。 |
 | `cancel_all` | 无参数 | 取消所有活跃的定时器。 |
+
+**`set` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 确认设定的一句话 |
+| `data` | object | 否 | data | 定时器 id 与秒数 |
+
+**`list` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 活跃定时器数量 |
+| `body` | string | 否 | body | 每个定时器一行 |
+
+**`cancel` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 取消结果 |
+| `data` | object | 否 | data | 定时器 id |
+
+**`cancel_all` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 取消数量 |
 
 ### `todo`
 
@@ -183,6 +238,40 @@
 | `delete` | `todo_id`（int, 必需） 任务ID | 删除指定任务 |
 | `update` | `todo_id`（int, 必需） 任务ID<br>`title`（str, 必需） 新标题 | 修改已有任务的标题 |
 
+**`add` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 确认添加的一句话 |
+| `data` | object | 否 | data | 任务 id 与标题 |
+
+**`list` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 待办条数 |
+| `body` | string | 否 | body | 每条一行，含状态标记 |
+
+**`toggle` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 状态变化与任务名 |
+| `data` | object | 否 | data | 任务 id 与新状态 |
+
+**`delete` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 删除结果 |
+
+**`update` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 更新结果 |
+| `data` | object | 否 | data | 任务 id |
+
 ### `weather`
 
 - 目录：`pet/tools/weather/`
@@ -194,6 +283,21 @@
 | `get_current` | `city`（str, 默认 "Beijing"） 城市名（中英文均可，如 Beijing/北京/Tokyo/東京） | 查询指定城市当前天气（含未来3日简要预报） |
 | `get_forecast` | `city`（str, 默认 "Beijing"） 城市名（中英文均可）<br>`days`（int, 默认 3） 预报天数（1-7） | 查询指定城市未来N日天气预报 |
 
+**`get_current` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 城市、天气与气温 |
+| `body` | string | 否 | body | 湿度、风速与未来简报 |
+| `data` | object | 否 | data | 原始数值 |
+
+**`get_forecast` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 城市与预报天数 |
+| `body` | string | 否 | body | 每日一行 |
+
 ### `web_search`
 
 - 目录：`pet/tools/web_search/`
@@ -204,6 +308,21 @@
 |---|---|---|
 | `search` | `query`（str, 必需） 搜索关键词<br>`count`（int, 默认 5） 返回结果数量（1-10）<br>`language`（str, 默认 "zh-CN", 可选：zh-CN/en-US/ja-JP） 语言/区域代码（zh-CN / en-US / ja-JP 等）<br>`page`（int, 默认 1） 页码，从1开始（结果不够时翻页获取更多） | 搜索网络获取最新信息（返回标题和摘要），直接请求搜索 API，速度快 |
 | `fetch` | `url`（str, 必需） 要抓取的网页地址（含 http:// 或 https://）<br>`max_chars`（int, 默认 10000） 正文最大字符数 | 抓取指定 URL 的网页正文并转为纯文本，不支持 JS 渲染页面 |
+
+**`search` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 搜索词与结果条数 |
+| `body` | string | 否 | body | 每条三行：标题、摘要、网址 |
+| `pagination` | object | 否 | pagination | 分页信息 |
+
+**`fetch` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 网页标题与字符数 |
+| `body` | string | 否 | body | 正文纯文本 |
 
 ## 元工具（注册在 `pet/tools/registry.py`）
 

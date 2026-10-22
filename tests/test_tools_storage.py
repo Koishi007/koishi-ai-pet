@@ -107,7 +107,7 @@ class TestTimerRestore:
         assert fake_ctx.events[0][0] == "timer"
         assert fake_ctx.alarms == []
         assert timer_storage.load_all() == []
-        assert tool.list_timers()["count"] == 0
+        assert "没有" in tool.list_timers()["headline"]
 
     def test_offline_pending_timer_reregisters_alarm(self, fake_ctx, timer_storage):
         # 关机发生在 1 小时前，但 timer 尚未到点 → 仍应注册闹钟，不得立即触发
@@ -119,7 +119,7 @@ class TestTimerRestore:
         assert fake_ctx.alarms, "未到点的 timer 不应被立即触发"
         assert fake_ctx.alarms[0][2] == "timer_t1"
         assert fake_ctx.speeches == []
-        assert tool.list_timers()["count"] == 1
+        assert "1 个" in tool.list_timers()["headline"]
 
     def test_pending_timer_reregisters_alarm(self, fake_ctx, timer_storage):
         timer_storage.save("t2", "timer_t2", "喝水", 600, time.time() + 300)
@@ -127,7 +127,7 @@ class TestTimerRestore:
         tool.restore_from_storage()
         assert len(fake_ctx.alarms) == 1
         assert fake_ctx.alarms[0][2] == "timer_t2"
-        assert tool.list_timers()["count"] == 1
+        assert "1 个" in tool.list_timers()["headline"]
 
     def test_register_failure_cleans_up(self, fake_ctx, timer_storage, monkeypatch):
         def boom(*_args, **_kwargs):
@@ -137,7 +137,7 @@ class TestTimerRestore:
         timer_storage.save("t3", "timer_t3", "失败", 600, time.time() + 300)
         tool = TimerTool(storage=timer_storage)
         tool.restore_from_storage()
-        assert tool.list_timers()["count"] == 0
+        assert "没有" in tool.list_timers()["headline"]
         assert timer_storage.load_all() == []
 
 
@@ -151,8 +151,9 @@ class TestSetTimer:
     def test_valid_timer_persisted_and_registered(self, fake_ctx, timer_storage):
         tool = TimerTool(storage=timer_storage)
         result = tool.set_timer(90, "泡茶")
-        assert result["label"] == "泡茶"
-        assert TimerTool._format_duration(90) in result["summary"]
+        assert "泡茶" in result["headline"]
+        assert TimerTool._format_duration(90) in result["headline"]
+        assert result["data"]["id"]
         assert len(timer_storage.load_all()) == 1
         assert len(fake_ctx.alarms) == 1
 
@@ -163,12 +164,12 @@ class TestSetTimer:
         monkeypatch.setattr(fake_ctx, "register_alarm", boom)
         tool = TimerTool(storage=timer_storage)
         assert "error" in tool.set_timer(60, "回滚")
-        assert tool.list_timers()["count"] == 0
+        assert "没有" in tool.list_timers()["headline"]
         assert timer_storage.load_all() == []
 
     def test_cancel_removes_from_storage(self, fake_ctx, timer_storage):
         tool = TimerTool(storage=timer_storage)
-        timer_id = tool.set_timer(60, "取消我")["id"]
+        timer_id = tool.set_timer(60, "取消我")["data"]["id"]
         tool.cancel_timer(timer_id)
         assert timer_storage.load_all() == []
 

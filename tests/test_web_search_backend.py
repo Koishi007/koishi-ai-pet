@@ -46,7 +46,7 @@ def config(monkeypatch) -> dict:
 def test_deepseek_result_format(config, monkeypatch):
     monkeypatch.setattr(core.requests, "post",
                         lambda *a, **kw: _Resp(200, _deepseek_payload()))
-    summary = core.search("测试")["summary"]
+    summary = core.search("测试")["body"]
     assert "DeepSeek V4 发布" in summary
     assert "长摘要，面向模型阅读" in summary
     assert "https://example.com/v4" in summary
@@ -63,8 +63,8 @@ def test_auto_uses_deepseek_when_searxng_absent(config, monkeypatch):
 
     monkeypatch.setattr(core.requests, "get", _unexpected)
     result = core.search("测试", page=2)
-    assert "https://example.com/v4" in result["summary"]
-    assert result["has_next"] is False
+    assert "https://example.com/v4" in result["body"]
+    assert "pagination" not in result
 
 
 def test_deepseek_failure_falls_back_to_bing(config, monkeypatch):
@@ -80,20 +80,19 @@ def test_deepseek_failure_falls_back_to_bing(config, monkeypatch):
 
     monkeypatch.setattr(core.requests, "post", _post)
     monkeypatch.setattr(core.requests, "get", _get)
-    assert "https://bing.example" in core.search("测试")["summary"]
+    assert "https://bing.example" in core.search("测试")["body"]
 
 
 def test_deepseek_without_key_reports_failure(monkeypatch):
     monkeypatch.setattr(core, "_load_config",
                         lambda: {"backend": "deepseek", "deepseek_search_key": ""})
-    assert core.search("测试")["summary"]
+    assert core.search("测试")["error"]
 
 
 def test_deepseek_empty_results(config, monkeypatch):
     monkeypatch.setattr(core.requests, "post",
                         lambda *a, **kw: _Resp(200, {"results": []}))
-    summary = core.search("测试")["summary"]
-    assert summary and "测试" in summary
+    assert "没有结果" in core.search("测试")["headline"]
 
 
 def test_connectivity_detects_deepseek(monkeypatch):
@@ -107,10 +106,9 @@ def test_fetch_uses_deepseek(config, monkeypatch):
     monkeypatch.setattr(core, "_resolve_public_ips", lambda host, port: ["93.184.216.34"])
     monkeypatch.setattr(core.requests, "post",
                         lambda *a, **kw: _Resp(200, {"title": "页面标题", "content": "正文内容"}))
-    summary = core.fetch("https://example.com")["summary"]
-    assert "页面标题" in summary
-    assert "https://example.com" in summary
-    assert "正文内容" in summary
+    result = core.fetch("https://example.com")
+    assert "页面标题" in result["headline"]
+    assert "正文内容" in result["body"]
 
 
 def test_fetch_falls_back_to_local_extract(config, monkeypatch):
@@ -120,7 +118,7 @@ def test_fetch_falls_back_to_local_extract(config, monkeypatch):
     monkeypatch.setattr(core, "_resolve_public_ips", lambda host, port: ["93.184.216.34"])
     monkeypatch.setattr(core.requests, "post", _post)
     monkeypatch.setattr(core, "_extract_text", lambda url, max_chars: "本地提取正文")
-    assert "本地提取正文" in core.fetch("https://example.com")["summary"]
+    assert "本地提取正文" in core.fetch("https://example.com")["body"]
 
 
 def _reject_network(monkeypatch) -> None:
@@ -134,18 +132,18 @@ def _reject_network(monkeypatch) -> None:
 
 def test_fetch_rejects_bad_scheme(config, monkeypatch):
     _reject_network(monkeypatch)
-    assert "__context__" not in core.fetch("ftp://example.com/file")
+    assert "error" in core.fetch("ftp://example.com/file")
 
 
 def test_fetch_rejects_loopback(config, monkeypatch):
     _reject_network(monkeypatch)
-    assert "__context__" not in core.fetch("http://127.0.0.1/admin")
+    assert "error" in core.fetch("http://127.0.0.1/admin")
 
 
 def test_fetch_rejects_private_host(config, monkeypatch):
     monkeypatch.setattr(core, "_resolve_public_ips", lambda host, port: [])
     _reject_network(monkeypatch)
-    assert "__context__" not in core.fetch("https://intranet.example")
+    assert "error" in core.fetch("https://intranet.example")
 
 
 def test_pin_target_replaces_host_with_resolved_ip(monkeypatch):
@@ -206,7 +204,7 @@ def test_tavily_result_format(monkeypatch):
                         lambda: {"backend": "tavily", "tavily_api_key": "tvly-test"})
     monkeypatch.setattr(core.requests, "post",
                         lambda *a, **kw: _Resp(200, _tavily_payload()))
-    summary = core.search("测试")["summary"]
+    summary = core.search("测试")["body"]
     assert "Tavily 结果" in summary
     assert "相关片段" in summary
     assert "https://tavily.example" in summary
@@ -221,7 +219,7 @@ def test_auto_prefers_tavily_over_deepseek(monkeypatch):
     })
     monkeypatch.setattr(core.requests, "post",
                         lambda *a, **kw: _Resp(200, _tavily_payload()))
-    assert "https://tavily.example" in core.search("测试")["summary"]
+    assert "https://tavily.example" in core.search("测试")["body"]
 
 
 def test_fetch_uses_tavily(monkeypatch):
@@ -231,7 +229,7 @@ def test_fetch_uses_tavily(monkeypatch):
         "results": [{"url": "https://example.com", "raw_content": "Tavily 正文"}],
         "failed_results": [],
     }))
-    assert "Tavily 正文" in core.fetch("https://example.com")["summary"]
+    assert "Tavily 正文" in core.fetch("https://example.com")["body"]
 
 
 def test_connectivity_detects_tavily(monkeypatch):

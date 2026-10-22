@@ -2,10 +2,33 @@
 
 from pet.tools.web_search.core import search, fetch, check_connectivity
 from pet.tools.context import TOOL_CTX
+from pet.tools.output import PAGINATION_SCHEMA, ToolOutputDefinition
 
 TOOL_NAME = "web_search"
 TOOL_DESCRIPTION = "网络搜索与网页抓取：搜索直接请求搜索服务返回标题与摘要，抓取网页正文转为纯文本"
 TOOL_GROUP = "web"
+
+SEARCH_OUTPUT = {
+    "type": "object",
+    "required": ["headline"],
+    "properties": {
+        "headline": {"type": "string", "maxLength": 120, "x-role": "headline",
+                     "description": "搜索词与结果条数"},
+        "body": {"type": "string", "x-role": "body",
+                 "description": "每条三行：标题、摘要、网址"},
+        "pagination": {**PAGINATION_SCHEMA},
+    },
+}
+
+FETCH_OUTPUT = {
+    "type": "object",
+    "required": ["headline"],
+    "properties": {
+        "headline": {"type": "string", "maxLength": 120, "x-role": "headline",
+                     "description": "网页标题与字符数"},
+        "body": {"type": "string", "x-role": "body", "description": "正文纯文本"},
+    },
+}
 
 
 def _search(**kw):
@@ -55,6 +78,7 @@ def register(registry):
                 "desc": "页码，从1开始（结果不够时翻页获取更多）",
             },
         },
+        output=ToolOutputDefinition(schema=SEARCH_OUTPUT),
     )
     registry.add_method(
         TOOL_NAME, "fetch",
@@ -74,4 +98,5 @@ def register(registry):
                 "desc": "正文最大字符数",
             },
         },
+        output=ToolOutputDefinition(schema=FETCH_OUTPUT),
     )

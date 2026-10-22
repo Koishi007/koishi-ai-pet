@@ -17,21 +17,23 @@ class TodoListTool:
         todo = self._storage.add(title=title.strip())
         todo["todo_id"] = todo.pop("id")
         return {
-            **todo,
-            "summary": f"已添加待办: #{todo['todo_id']}「{todo['title']}」",
+            "headline": f"已添加待办 #{todo['todo_id']}「{todo['title']}」",
+            "data": {"id": todo["todo_id"], "title": todo["title"]},
         }
 
     def list_todos(self, status: str = "pending") -> dict:
         items = self._storage.list(status=None if status == "all" else status)
         if not items:
-            return {"summary": "没有待办事项。", "items": []}
+            return {"headline": "没有待办事项"}
+        lines = []
         for t in items:
             t["todo_id"] = t.pop("id")
-        lines = [f"共 {len(items)} 条："]
-        for t in items:
             mark = "✓" if t["status"] == "done" else "○"
-            lines.append(f"  #{t['todo_id']} {mark} {t['title']}")
-        return {"summary": "\n".join(lines), "items": items}
+            lines.append(f"#{t['todo_id']} {mark} {t['title']}")
+        return {
+            "headline": f"共 {len(items)} 条待办",
+            "body": "\n".join(lines),
+        }
 
     def toggle(self, todo_id: int) -> dict:
         """切换任务完成状态。「帮我完成/恢复 #3」→ 切换 pending↔done。"""
@@ -41,15 +43,15 @@ class TodoListTool:
         label = "已完成" if result["status"] == "done" else "已恢复为待办"
         result["todo_id"] = result.pop("id")
         return {
-            "summary": f"{label}: #{todo_id}「{result['title']}」",
-            "item": result,
+            "headline": f"{label}：#{todo_id}「{result['title']}」",
+            "data": {"id": todo_id, "status": result["status"]},
         }
 
     def delete(self, todo_id: int) -> dict:
         ok = self._storage.delete(todo_id)
         if not ok:
             return {"error": f"未找到 id={todo_id} 的任务或删除失败"}
-        return {"summary": f"已删除任务 #{todo_id}"}
+        return {"headline": f"已删除任务 #{todo_id}"}
 
     def update(self, todo_id: int, title: str = "") -> dict:
         if not title or not title.strip():
@@ -59,8 +61,8 @@ class TodoListTool:
             return {"error": f"未找到 id={todo_id} 的任务"}
         result["todo_id"] = result.pop("id")
         return {
-            "summary": f"已更新 #{todo_id}「{result['title']}」",
-            "item": result,
+            "headline": f"已更新 #{todo_id}「{result['title']}」",
+            "data": {"id": todo_id},
         }
 
     def close(self):
