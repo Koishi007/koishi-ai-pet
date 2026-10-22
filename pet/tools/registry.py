@@ -35,6 +35,9 @@ class ToolDef:
 
 _SEARCH_SPLIT = re.compile(r"[\s,，、;；/|+&]+")
 
+# 单次搜索最多返回的工具数：与文件/浏览/知识库的分页同一个思路，避免一次吐出全部定义
+_MAX_SEARCH_RESULTS = 5
+
 
 def _search_normalize(text: str) -> str:
     """搜索归一化：小写并去掉全部空白。"""
@@ -197,8 +200,8 @@ class ToolRegistry:
                 "多个关键词用空格分开，返回命中全部关键词的工具；都不满足时退回命中任一关键词的工具。"
                 "搜索返回的分组会在后续请求中自动变为可用。"
                 "命中后必须直接调用返回的函数，不要为同一件事重复搜索。"
-                "如无匹配结果会自动返回全部工具列表。"
-                "提示：不确定关键词时优先用 list_groups 浏览全部。"
+                "单次最多返回 5 个工具；无匹配时返回全部分组清单，请换个词再搜。"
+                "提示：要浏览全部工具用 list_groups。"
             ),
             handler=self._tool_search_search,
             args={
@@ -587,24 +590,43 @@ class ToolRegistry:
 
         hint = None
         brief = None
+        catalog = None
         if kw and not matched:
-            # 无匹配：fallback 返回全部工具，引导用 list_groups
-            matched = tools
-            hint = (f"没有工具匹配「{keyword}」，下面列出全部 {len(tools)} 个工具。"
-                    f"直接调用其中需要的函数，不要重复搜索。")
-            brief = f"未匹配「{keyword}」，列出全部 {len(tools)} 个工具"
+            # 未命中：回全量分组清单（只有名称与描述），让模型换个词再搜
+            catalog = self._group_catalog(tools)
+            hint = (f"没有工具匹配「{keyword}」。下面按分组列出全部工具，"
+                    f"请用其中的工具名或描述里的词重新搜索；"
+                    f"这些工具需要先搜索命中才会出现在你的工具列表里。")
+            brief = f"未匹配「{keyword}」，已列出全部 {len(tools)} 个工具的分组清单"
         elif kw:
+            if len(matched) > _MAX_SEARCH_RESULTS:
+                hint = (f"命中 {len(matched)} 个，已列出前 {_MAX_SEARCH_RESULTS} 个；"
+                        f"需要更多请换更具体的关键词。")
+                matched = matched[:_MAX_SEARCH_RESULTS]
             names = [f"{t.name}__{m.name}" for t in matched[:2] for m in t.methods.values()]
-            hint = ("已命中：" + "、".join(names[:4])
-                    + "。下一轮直接调用这些函数，不要再调用 tool_search。")
-            brief = "搜到 " + "、".join(t.name for t in matched[:3])
+            hint = (hint + " " if hint else "") + (
+                "已命中：" + "、".join(names[:4])
+                + "。下一轮直接调用这些函数，不要再调用 tool_search。")
+            brief = f"搜到 {len(matched)} 个：" + "、".join(t.name for t in matched[:3])
 
-        return {
+        payload = {
             "keyword": keyword,
             "matches": [self._tool_search_entry(tool) for tool in matched],
             "hint": hint,
             "__context__": brief or f"列出全部 {len(matched)} 个可用工具",
         }
+        if catalog:
+            payload["groups"] = catalog
+        return payload
+
+    @staticmethod
+    def _group_catalog(tools: list) -> list[dict]:
+        """全量工具的分组清单：只给名称与描述，不含方法与参数。"""
+        groups: dict[str, list] = {}
+        for tool in tools:
+            groups.setdefault(tool.group, []).append(
+                {"name": tool.name, "description": tool.description})
+        return [{"group": name, "tools": items} for name, items in groups.items()]
 
     _TYPE_TO_JSON_SCHEMA = {
         "str": "string",

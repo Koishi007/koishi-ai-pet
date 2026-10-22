@@ -165,22 +165,43 @@ class TestToolGroup:
                    refs={"tool_call_id": f"c{seq}"}),
             ]
             seq += 3
-        messages = project(events, Profile(), Budget(max_entries=1, now=T0 + 1000))
+        messages = project(events, Profile(), Budget(max_groups=1, now=T0 + 1000))
         assert len(messages) == 2
         assert "第2句" in messages[0]["content"]
         assert "第0句" not in messages[0]["content"]
 
-    def test_tool_groups_dropped_before_dialogue(self):
+    def test_groups_do_not_consume_dialogue_quota(self):
         events = []
         seq = 1
         for i in range(3):
             events += tool_group(seq, brief=f"第{i}次")
             seq += 3
         events.append(dialogue("要紧的话", seq, role="assistant"))
-        messages = project(events, Profile(), Budget(max_entries=1, now=T0 + 1000))
+        messages = project(events, Profile(),
+                           Budget(max_entries=1, max_groups=8, now=T0 + 1000))
         contents = [m.get("content") or "" for m in messages]
         assert any("要紧的话" in c for c in contents)
-        assert len(messages) == 1
+        assert sum(1 for m in messages if m["role"] == "tool") == 3
+
+    def test_group_quota_follows_entries_ratio(self):
+        events = []
+        seq = 1
+        for i in range(6):
+            events += tool_group(seq, brief=f"第{i}次")
+            seq += 3
+        # max_entries=5 → 0.4 比例得 2，下限 3
+        messages = project(events, Profile(), Budget(max_entries=5, now=T0 + 1000))
+        assert sum(1 for m in messages if m["role"] == "tool") == 3
+
+    def test_max_groups_keeps_newest(self):
+        events = []
+        seq = 1
+        for i in range(3):
+            events += tool_group(seq, brief=f"第{i}次")
+            seq += 3
+        messages = project(events, Profile(), Budget(max_groups=1, now=T0 + 1000))
+        assert sum(1 for m in messages if m["role"] == "tool") == 1
+        assert "第2次" in messages[-1]["content"]
 
     def test_expired_groups_filtered(self):
         events = tool_group(1)

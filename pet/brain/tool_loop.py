@@ -239,13 +239,18 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
     return result
 
 
-def _tool_brief(result, tool_brief: str) -> str:
-    """结果短句：人类可读、去 JSON、截 120 字符。"""
+def _tool_brief(result, tool_brief: str, result_text: str = "") -> str:
+    """结果短句：context_brief → summary → 结果文本首行，去掉 JSON 后截 120 字符。"""
     text = (result.context_brief or tool_brief or "").strip()
-    if not text or text.startswith("{") or text.startswith("["):
-        text = ""
     if not text and not result.success:
         text = str(result.error or "").strip()
+    if not text and result_text:
+        # 纯文本结果才取首行；JSON 结果没有可读结论，跳过
+        head = result_text.strip().splitlines()[0].strip() if result_text.strip() else ""
+        if head and not head.startswith(("{", "[")):
+            text = head
+    if text.startswith(("{", "[")):
+        text = ""
     if not text:
         text = "操作已完成" if result.success else "操作失败"
     return text[:120]
@@ -270,7 +275,8 @@ def _record_tool_events(session, tool_calls_map: dict, sorted_indices: list,
                       "args_digest": args_digest(args),
                       "side_effect": TOOL_REGISTRY.is_side_effect(tc["name"])})
         results.append({"tool_call_id": tc["id"], "ok": bool(result.success),
-                        "brief": _tool_brief(result, tool_brief), "raw": result_text})
+                        "brief": _tool_brief(result, tool_brief, result_text),
+                        "raw": result_text})
         if tool_aside:
             asides.append((tc["id"], str(tool_aside)))
     try:
