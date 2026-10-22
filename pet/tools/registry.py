@@ -4,10 +4,11 @@ import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Callable, Any
+from typing import Callable, Any, Optional
 
 from pet.config import config
 from pet.tools.context import TOOL_CTX
+from pet.tools.output import ToolOutputDefinition
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +20,7 @@ class ToolMethod:
     args: dict = field(default_factory=dict)
     handler: Callable = None
     timeout: float = 30.0
+    output: Optional["ToolOutputDefinition"] = None  # 输出契约，None 表示走旧渲染
 
 
 @dataclass
@@ -83,12 +85,13 @@ class ToolRegistry:
 
     def add_method(self, tool_name: str, method_name: str,
                    description: str, handler: Callable, args: dict = None,
-                   timeout: float = None):
+                   timeout: float = None, output: "ToolOutputDefinition | None" = None):
         tool = self._tools[tool_name]
         tool.methods[method_name] = ToolMethod(
             name=method_name, description=description,
             args=args or {}, handler=handler,
             timeout=timeout if timeout is not None else 30.0,
+            output=output,
         )
 
     def add_menu_action(self, tool_name: str, label: str,

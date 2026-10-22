@@ -1,0 +1,131 @@
+"""工具输出契约：schema 校验、当轮渲染、历史记录与预算裁剪。"""
+
+import pytest
+
+from pet.tools.output import (IMAGES_SCHEMA, PAGINATION_SCHEMA, ImageBlock,
+                              TextBlock, ToolOutputDefinition, render_record,
+                              render_turn, validate)
+
+WEATHER_SCHEMA = {
+    "type": "object",
+    "required": ["headline"],
+    "properties": {
+        "headline": {"type": "string", "maxLength": 120, "x-role": "headline"},
+        "body":     {"type": "string", "x-role": "body"},
+        "data":     {"type": "object", "x-role": "data"},
+        "pagination": {**PAGINATION_SCHEMA},
+        "images":   IMAGES_SCHEMA,
+        "agent_hint": {"type": "string", "x-role": "hint"},
+    },
+}
+
+
+def definition() -> ToolOutputDefinition:
+    return ToolOutputDefinition(schema=WEATHER_SCHEMA)
+
+
+class TestValidate:
+    def test_ok(self):
+        value = {"headline": "深圳 晴", "data": {"temperature": 29.6}}
+        assert validate(definition(), value) == []
+
+    def test_missing_required(self):
+        problems = validate(definition(), {"body": "正文"})
+        assert any("headline" in p for p in problems)
+
+    def test_wrong_type(self):
+        problems = validate(definition(), {"headline": 123})
+        assert any("期望 string" in p for p in problems)
+
+    def test_max_length(self):
+        problems = validate(definition(), {"headline": "长" * 121})
+        assert any("120" in p for p in problems)
+
+    def test_nested_items(self):
+        schema = {
+            "type": "object",
+            "properties": {
+                "items": {"type": "array", "x-role": "data",
+                          "items": {"type": "object",
+                                    "properties": {"name": {"type": "string"}}}},
+            },
+        }
+        problems = validate(ToolOutputDefinition(schema=schema),
+                            {"items": [{"name": "ok"}, {"name": 1}]})
+        assert any("items[1].name" in p for p in problems)
+
+    def test_enum(self):
+        schema = {"type": "object",
+                  "properties": {"kind": {"type": "string", "enum": ["a", "b"]}}}
+        assert validate(ToolOutputDefinition(schema=schema), {"kind": "c"})
+
+    def test_additional_properties_false(self):
+        schema = {"type": "object", "additionalProperties": False,
+                  "properties": {"headline": {"type": "string", "x-role": "headline"}}}
+        problems = validate(ToolOutputDefinition(schema=schema),
+                            {"headline": "x", "extra": 1})
+        assert any("未在 schema 中声明" in p for p in problems)
+
+
+class TestRenderTurn:
+    def test_role_order_fixed(self):
+        value = {"agent_hint": "下一步", "data": {"a": 1},
+                 "body": "正文", "headline": "结论"}
+        blocks = render_turn(definition(), value)
+        assert [b.text for b in blocks] == ["结论", "正文", "a: 1", "下一步"]
+
+    def test_data_flattened(self):
+        blocks = render_turn(definition(), {"data": {"memory": {"used": "4G"}}})
+        assert blocks[0].text == "memory.used: 4G"
+        assert blocks[0].role == "data"
+
+    def test_undeclared_fields_go_to_data(self):
+        blocks = render_turn(definition(), {"headline": "结论", "extra": 1})
+        assert any("extra: 1" in b.text for b in blocks)
+
+    def test_pagination_hint(self):
+        value = {"pagination": {"page": 2, "total_items": 50, "has_next": True}}
+        blocks = render_turn(definition(), value)
+        assert blocks[-1].role == "hint"
+        assert "page=3" in blocks[-1].text
+
+    def test_no_hint_without_next(self):
+        value = {"pagination": {"page": 3, "has_next": False}}
+        assert render_turn(definition(), value) == []
+
+    def test_images(self):
+        value = {"images": [{"base64": "AAA", "mime": "image/png", "caption": "截图"}]}
+        blocks = render_turn(definition(), value)
+        assert isinstance(blocks[0], ImageBlock)
+        assert blocks[0].caption == "截图"
+
+    def test_suppress_not_rendered(self):
+        blocks = render_turn(definition(), {"pagination": {"page": 1, "page_size": 20}})
+        assert all("page_size" not in b.text for b in blocks)
+
+    def test_renderer_override(self):
+        custom = ToolOutputDefinition(schema={}, renderer=lambda v: [TextBlock("自定义")])
+        assert render_turn(custom, {"x": 1})[0].text == "自定义"
+
+
+class TestRenderRecord:
+    def test_headline(self):
+        assert render_record(definition(), {"headline": "深圳 晴"}) == "深圳 晴"
+
+    def test_appends_more_hint(self):
+        value = {"headline": "读取网页", "pagination": {"has_next": True}}
+        assert render_record(definition(), value).endswith("还有更多")
+
+    def test_truncates(self):
+        value = {"headline": "长" * 200}
+        assert len(render_record(definition(), value)) == 120
+
+    def test_missing_headline(self):
+        assert render_record(definition(), {"body": "正文"}) == ""
+
+
+class TestBudgets:
+    def test_text_blocks_only(self):
+        blocks = render_turn(definition(), {"headline": "结论"})
+        assert all(isinstance(b, TextBlock) for b in blocks)
+        assert blocks[0].role == "primary"
