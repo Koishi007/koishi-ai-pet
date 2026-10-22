@@ -43,6 +43,29 @@ _MAX_SEARCH_RESULTS = 5
 _HEADLINE = {"type": "string", "maxLength": 120, "x-role": "headline",
              "description": "一句话结论，进历史记录"}
 
+FOOD_OUTPUT = {
+    "type": "object",
+    "required": ["headline"],
+    "properties": {
+        "headline": _HEADLINE,
+        "data": {"type": "object", "x-role": "data",
+                 "description": "食物位置与相对宠物的偏移"},
+    },
+}
+
+GAME_OUTPUT = {
+    "type": "object",
+    "required": ["headline"],
+    "properties": {
+        "headline": _HEADLINE,
+        "body": {"type": "string", "x-role": "body", "description": "局面与规则"},
+        "agent_hint": {"type": "string", "x-role": "hint",
+                       "description": "下一步该传什么参数"},
+        "data": {"type": "object", "x-role": "data",
+                 "description": "ended / won / round 等状态"},
+    },
+}
+
 SEARCH_OUTPUT = {
     "type": "object",
     "required": ["headline"],
@@ -270,6 +293,7 @@ class ToolRegistry:
                 "用 walk/drive 接近、bounce 原地跳起来吃，走到附近自动开吃；已有食物时不重复生成。"
             ),
             handler=self._food_spawn,
+            output=ToolOutputDefinition(schema=FOOD_OUTPUT),
             args={
                 "food_type": {
                     "type": "str",
@@ -287,6 +311,7 @@ class ToolRegistry:
                 "无食物则确认是否需要生成。"
             ),
             handler=self._food_status,
+            output=ToolOutputDefinition(schema=FOOD_OUTPUT),
         )
 
     def _food_spawn(self, food_type: str = None) -> dict:
@@ -310,6 +335,7 @@ class ToolRegistry:
                 "列出当前可玩的游戏及规则。想玩游戏时先调用此方法了解可选游戏。"
             ),
             handler=self._game_list,
+            output=ToolOutputDefinition(schema=GAME_OUTPUT),
         )
         self.add_method(
             tool_name="game",
@@ -327,6 +353,7 @@ class ToolRegistry:
                     "description": "要初始化/重新初始化的游戏名",
                 },
             },
+            output=ToolOutputDefinition(schema=GAME_OUTPUT),
         )
         self.add_method(
             tool_name="game",
@@ -339,6 +366,7 @@ class ToolRegistry:
                 "你可以在一次输出里连续调用多次 game__play，根据每次返回结果继续，直到某次返回 ended=True。"
             ),
             handler=self._game_play,
+            output=ToolOutputDefinition(schema=GAME_OUTPUT),
         )
         self.add_method(
             tool_name="game",
@@ -354,6 +382,7 @@ class ToolRegistry:
                     "description": "要结束的游戏名",
                 },
             },
+            output=ToolOutputDefinition(schema=GAME_OUTPUT),
         )
 
     def _register_recall_tools(self):
@@ -540,25 +569,38 @@ class ToolRegistry:
                            "total_items": total, "has_next": page < total_pages},
         }
 
+    @staticmethod
+    def _game_result(result: dict) -> dict:
+        """把 GAME 的 summary / model_hint 返回映射成输出契约。"""
+        out = {"headline": result.get("summary") or ""}
+        if result.get("model_hint"):
+            out["agent_hint"] = result["model_hint"]
+        # speech / suppress_speech 由 gamebase 内部消费，不进契约
+        rest = {k: v for k, v in result.items()
+                if k not in ("summary", "model_hint", "speech", "suppress_speech")}
+        if rest:
+            out["data"] = rest
+        return out
+
     def _game_list(self) -> dict:
         """game__list 工具实现。"""
         from pet.game.gamebase import GAME
-        return GAME.list_games()
+        return self._game_result(GAME.list_games())
 
     def _game_play(self, game_name: str, **params) -> dict:
         """game__play 工具实现。"""
         from pet.game.gamebase import GAME
-        return GAME.play(game_name, **params)
+        return self._game_result(GAME.play(game_name, **params))
 
     def _game_init(self, game_name: str) -> dict:
         """game__init 工具实现。"""
         from pet.game.gamebase import GAME
-        return GAME.init(game_name)
+        return self._game_result(GAME.init(game_name))
 
     def _game_stop(self, game_name: str) -> dict:
         """game__stop 工具实现。"""
         from pet.game.gamebase import GAME
-        return GAME.stop(game_name)
+        return self._game_result(GAME.stop(game_name))
 
     def _refresh_game_play_args(self):
         """每次生成工具列表前，用当前已注册游戏动态刷新 game__play/init 的参数 schema。"""

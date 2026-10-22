@@ -91,6 +91,17 @@ registry.add_method(
 
 
 class TestRealTools:
+    def test_every_method_declares_output(self):
+        """阶段 4 之后，所有注册方法都应有输出契约。"""
+        data = gen_docs.load_tools()
+        missing = [
+            f"{tool['name']}__{method['name']}"
+            for tool in data["tools"] + data["meta_tools"]
+            for method in tool["methods"]
+            if not method.get("has_output")
+        ]
+        assert not missing
+
     def test_declared_output_always_parsable(self):
         """声明了 output 的方法必须能静态解析出字段，否则文档会静默缺列。"""
         data = gen_docs.load_tools()

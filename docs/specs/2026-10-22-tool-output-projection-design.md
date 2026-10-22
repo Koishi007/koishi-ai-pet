@@ -452,3 +452,21 @@ class ToolResult:
 `gen_docs` 与 `load_tools` 只做 AST 解析，不运行时导入工具：导入会触发工具私有 `requirements.txt` 的 pip 安装，文档生成不该有这种副作用。因此 `output=` 的实参必须能在语法树里读出来，函数调用会让字段表静默缺列。跨文件复用只能靠 `**常量名` 展开一层。
 
 代价是 schema 里不能做计算，换来的是 `gen_docs.py --check` 能真正守住文档与代码的一致性。
+
+## §12 落地记录
+
+模块：`pet/tools/output.py`（声明与投影）、`pet/tools/executor.py`（`ToolResult`）、`pet/tools/registry.py`（`ToolMethod.output`）。接入点：`tool_loop._exec_tool` 在方法声明了 `output` 时改走 `render_turn` / `render_record`，未声明时仍用 `executor.normalize`。
+
+覆盖范围：13 个工具全部声明，含 `food` / `game` 与三个元工具。配两条测试守住：所有 `add_method` 必须带 `output=`，且必须能被静态解析出字段。
+
+与上文不同的实现取舍：
+
+| 项 | 实现 | 原因 |
+|---|---|---|
+| 业务失败 | 工具返回 `{"error": ..., "code": ...}`，执行器转成 `ToolResult.error_code` | 复用既有 `{"error": ...}` 写法，不新造成败字段；`code` 稳定便于观测 |
+| 返回键动态的工具 | `bilibili` 用 `_normalized`、`game` 用 `_game_result` 在注册层映射，不动 `duty.py` / `gamebase.py` | 两处状态分支多（登录、配额、风控、回合），就地改写风险高于在注册层收口 |
+| `tool_search` 结果 | 不回 `matches` JSON，改渲染成「工具一行 + 方法缩进」的可读文本 | 模型需要的是方法名与用途，JSON 化后既冗长又易被当成过场信息 |
+| `web_search` 无结果 | 「没有结果」算成功，headline 写「没有结果」，只有后端失败才回退下一个 | 原逻辑靠「搜索失败」子串判断，空结果与后端失败混在一起 |
+| 数据字段 | 统一收进 `data`，由 render 压成 `key: value` 行 | 顶层只留投影角色字段，未声明字段也归入 `data`，不判违约 |
+
+未实现：`validate` 仍固定 `warn`，未接观测与 `strict` 开关；`supports_image` 未接入；`_normalize` 保留给未声明 `output` 的第三方工具。
