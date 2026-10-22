@@ -230,6 +230,11 @@ class PetAgent(QObject):
             self.mood.close()
         if hasattr(self, 'conversation_store'):
             self.conversation_store.close()
+        if hasattr(self, 'behavior'):
+            try:
+                self.behavior.close_events()
+            except Exception:
+                logger.warning("[PetAgent] close event store failed")
         logger.info("[PetAgent] stopped")
 
     def trigger(self, intent: str, **kwargs):

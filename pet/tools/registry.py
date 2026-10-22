@@ -30,6 +30,7 @@ class ToolDef:
     file_actions: list[dict] = field(default_factory=list)
     group: str = "default"
     meta: bool = False  # 元工具：系统内置，不可禁用、不出现在工具管理列表
+    side_effect: bool = False  # 是否对外产生副作用（点赞、写文件等），用于崩溃窗口判定
 
 
 _SEARCH_SPLIT = re.compile(r"[\s,，、;；/|+&]+")
@@ -62,12 +63,18 @@ class ToolRegistry:
         self._register_default_tools()
 
     def register(self, tool_name: str, description: str, group: str = None,
-                 meta: bool = False) -> "ToolDef":
-        tool = ToolDef(name=tool_name, description=description, meta=meta)
+                 meta: bool = False, side_effect: bool = False) -> "ToolDef":
+        tool = ToolDef(name=tool_name, description=description, meta=meta,
+                       side_effect=side_effect)
         if group:
             tool.group = group
         self._tools[tool_name] = tool
         return tool
+
+    def is_side_effect(self, full_name: str) -> bool:
+        """工具是否有对外副作用；未注册的工具按有副作用处理。"""
+        tool = self._tools.get(full_name.split("__", 1)[0])
+        return True if tool is None else tool.side_effect
 
     def add_method(self, tool_name: str, method_name: str,
                    description: str, handler: Callable, args: dict = None,
@@ -209,7 +216,7 @@ class ToolRegistry:
     def _register_food_tools(self):
         """注册觅食工具（FOOD_ENABLED=True 时调用）。"""
         self.register("food", "觅食：在桌面上生成食物，或查询食物状态与距离",
-                      group="default", meta=True)
+                      group="default", meta=True, side_effect=True)
         self.add_method(
             tool_name="food",
             method_name="spawn",
@@ -251,7 +258,7 @@ class ToolRegistry:
     def _register_game_tools(self):
         """注册游戏元工具：回合制游戏，模型通过 game__play 连续调用游玩。"""
         self.register("game", "游戏：玩回合制小游戏，如猜数字",
-                      group="default", meta=True)
+                      group="default", meta=True, side_effect=True)
         self.add_method(
             tool_name="game",
             method_name="list",

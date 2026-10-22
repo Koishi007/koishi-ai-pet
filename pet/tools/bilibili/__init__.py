@@ -67,7 +67,7 @@ def register(registry):
         logger.error(f"[bili] 初始化失败：{exc}")
         return
 
-    registry.register(TOOL_NAME, TOOL_DESCRIPTION, group=TOOL_GROUP)
+    registry.register(TOOL_NAME, TOOL_DESCRIPTION, group=TOOL_GROUP, side_effect=True)
 
     registry.add_method(
         TOOL_NAME, "browse",

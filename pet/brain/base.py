@@ -114,14 +114,23 @@ class BrainMixin:
             logger.warning(f"[BrainMixin] 未闭合工具组 {group['group_id']}: "
                            f"calls={group['calls']} results={group['results']}，不重放")
 
+    def close_events(self):
+        """关闭事件日志连接。"""
+        if self._events is not None:
+            self._events.close()
+
     def maintenance(self):
-        """slow_tick：清理过期 artifact 并复查未闭合组。"""
+        """slow_tick：清理过期 artifact、回收被覆盖事件并复查未闭合组。"""
         if self._events is None or not self._events.available:
             return
         try:
             self._events.cleanup_artifacts()
         except Exception as e:
             logger.warning(f"[BrainMixin] artifact cleanup failed: {e}")
+        try:
+            self._events.purge_covered()
+        except Exception as e:
+            logger.warning(f"[BrainMixin] covered event purge failed: {e}")
         self._scan_unclosed_groups()
 
     def dump_events(self, limit: int = 50) -> List[dict]:
@@ -241,8 +250,8 @@ class BrainMixin:
         for call_id, text in (asides or []):
             try:
                 self._events.append("assistant_speech", {"text": text},
-                                    group_id=group_id, refs={"parent_seq": None,
-                                                             "tool_call_id": call_id})
+                                    group_id=group_id,
+                                    refs={"tool_call_id": call_id})
             except Exception as e:
                 logger.warning(f"[BrainMixin] append assistant_speech failed: {e}")
         for call in calls:
@@ -258,15 +267,27 @@ class BrainMixin:
                 logger.warning(f"[BrainMixin] append tool_call failed: {e}")
         for result in results:
             call_id = result.get("tool_call_id", "")
+            artifact_id = None
+            raw = result.get("raw") or ""
+            if raw:
+                artifact_id = self._store_artifact(raw)
             try:
                 self._events.append(
                     "tool_result",
                     {"ok": bool(result.get("ok", False)),
                      "brief": result.get("brief", ""),
-                     "artifact_id": result.get("artifact_id")},
+                     "artifact_id": artifact_id},
                     group_id=group_id, refs={"tool_call_id": call_id})
             except Exception as e:
                 logger.warning(f"[BrainMixin] append tool_result failed: {e}")
+
+    def _store_artifact(self, raw: str) -> Optional[str]:
+        """原文超过内联阈值时落 artifacts，返回 id；否则不建。"""
+        try:
+            return self._events.put_artifact(raw)
+        except Exception as e:
+            logger.warning(f"[BrainMixin] put artifact failed: {e}")
+            return None
 
     def clear_context(self):
         with self._ctx_lock:

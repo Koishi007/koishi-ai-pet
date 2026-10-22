@@ -429,8 +429,8 @@ tool 返回的 __context__
 
 - 优先级：`snapshot` > `summary` > 原始事件。
 - snapshot 内 summary 的 `covers` 只作元数据，不参与"跳过原始事件"的判断，因为原始事件已被整体覆盖。
-- 物理清理只允许删除"已被 snapshot 覆盖且超过保留期"的事件。
-- 触发条件：事件数阈值或按天。
+- 物理清理只删除"落在有效 `summary.covers` 区间内"的原始事件：投影本就跳过它们，删除不改变视图。`summary` 与 `snapshot` 自身不删。
+- 触发条件：清理挂在 slow_tick，事件数低于阈值（默认 800）直接跳过；本版不生成新 snapshot，只有历史遗留或将来写入的 snapshot 参与投影。
 
 ## §7 观测
 
@@ -562,5 +562,8 @@ snapshot 一旦写入不可变，格式变更只能靠 `v` 迁移，因此：`su
 | 无事件能力时 | 退回 `[工具调用]` 文本与内存裁剪 | 测试替身与未启用持久化的调试场景；生产恒走事件路径 |
 | 降档方式 | `degrade_messages` 改写本次请求体 | 重投影需要回传原始事件与 Profile，代价高于就地改写；缓存保证下一次投影直接是低档 |
 | `assistant_speech` | 与 `tool_call` 同组，投影时并入 assistant `content` | 满足"紧随 tool 消息"的顺序约束 |
+| `side_effect` | 由 `ToolDef` 声明，未注册工具按有副作用处理 | 崩溃窗口只关心"是否动过外部世界"；未知即保守 |
+| artifact 生产 | `record_tool_events` 收到原文超 2048 字符时落表 | `brief` 只是短句，原文需要可追溯的落点 |
+| 增长控制 | 按摘要覆盖区间物理回收（`purge_covered`），不写 snapshot 折叠 | 被覆盖事件投影本就跳过，删除不改视图；snapshot 折叠需要连续前缀覆盖，现实中难满足且收益低 |
 
-未实现：`supports_image` 未接入（图片仍只在当轮请求里）；snapshot compaction 只有读写支持，无触发逻辑；`failed_turn` 在两条非流式与流式入口都会落库，修复轮会再记一条。
+未实现：`supports_image` 未接入（图片仍只在当轮请求里）；`failed_turn` 在两条非流式与流式入口都会落库，修复轮会再记一条。

@@ -40,7 +40,7 @@ def _module_lock():
 def is_tool_rejection(exc: BaseException) -> bool:
     """400/422 且明确表示不支持工具字段，才算通道被拒。"""
     status = getattr(exc, "status_code", None)
-    if status not in (400, 422, None):
+    if status not in (400, 422):
         return False
     text = f"{getattr(exc, 'body', '')}{exc}"
     return bool(_TOOL_FIELD.search(text) and _REJECTED.search(text))

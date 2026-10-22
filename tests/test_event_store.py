@@ -67,7 +67,44 @@ class TestSession:
         assert other.current_session_id() == sid
 
 
+class TestPurge:
+    def test_purges_only_covered_events(self, tmp_path):
+        s = store(tmp_path)
+        for i in range(20):
+            s.append("user_msg", {"text": f"m{i}"})
+        s.append("summary", {"text": "前十条"}, refs={"covers": [1, 10]})
+        s.append("user_msg", {"text": "保留"})
+        assert s.purge_covered(min_events=10) == 10
+        texts = [e.payload.get("text") for e in s.load()]
+        assert "m0" not in texts
+        assert "保留" in texts
+        assert "前十条" in texts
+
+    def test_no_summary_means_no_purge(self, tmp_path):
+        s = store(tmp_path)
+        for _ in range(12):
+            s.append("user_msg", {"text": "x"})
+        assert s.purge_covered(min_events=10) == 0
+        assert s.count() == 12
+
+    def test_below_threshold_skips_scan(self, tmp_path):
+        s = store(tmp_path)
+        s.append("user_msg", {"text": "a"})
+        s.append("summary", {"text": "摘要"}, refs={"covers": [1, 1]})
+        assert s.purge_covered(min_events=10) == 0
+        assert s.count() == 2
+
+
 class TestArtifacts:
+    def test_size_recorded_in_bytes(self, tmp_path):
+        s = store(tmp_path)
+        body = "中" * (ARTIFACT_INLINE_LIMIT + 10)
+        artifact_id = s.put_artifact(body)
+        size = s._conn.execute(
+            "SELECT size FROM session_artifacts WHERE artifact_id=?",
+            (artifact_id,)).fetchone()[0]
+        assert size == len(s.get_artifact(artifact_id).encode("utf-8"))
+
     def test_short_body_not_stored(self, tmp_path):
         s = store(tmp_path)
         assert s.put_artifact("x" * 10) is None
