@@ -22,9 +22,9 @@ BRIEF_OUTPUT = {
     "type": "object",
     "required": ["headline"],
     "properties": {
-        "headline": {"type": "string", "maxLength": 120, "x-role": "headline",
+        "headline": {"type": "string", "x-role": "headline",
                      "description": "操作结果的一句话"},
-        "data": {"type": "object", "x-role": "data", "description": "计数与开关"},
+        "data": {"type": "object", "x-role": "data", "description": "结构化明细"},
     },
 }
 
@@ -32,7 +32,7 @@ BROWSE_OUTPUT = {
     "type": "object",
     "required": ["headline"],
     "properties": {
-        "headline": {"type": "string", "maxLength": 120, "x-role": "headline",
+        "headline": {"type": "string", "x-role": "headline",
                      "description": "关键词与刷到的部数"},
         "body": {"type": "string", "x-role": "body",
                  "description": "每部：标题、网址、字幕全文"},

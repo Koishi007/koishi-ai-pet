@@ -10,7 +10,7 @@ WITH_DATA_OUTPUT = {
     "type": "object",
     "required": ["headline"],
     "properties": {
-        "headline": {"type": "string", "maxLength": 120, "x-role": "headline",
+        "headline": {"type": "string", "x-role": "headline",
                      "description": "一句话结论"},
         "data": {"type": "object", "x-role": "data", "description": "原始数值"},
     },
@@ -20,7 +20,7 @@ PROCESS_OUTPUT = {
     "type": "object",
     "required": ["headline"],
     "properties": {
-        "headline": {"type": "string", "maxLength": 120, "x-role": "headline",
+        "headline": {"type": "string", "x-role": "headline",
                      "description": "进程条数"},
         "body": {"type": "string", "x-role": "body", "description": "每个进程一行"},
     },

@@ -122,14 +122,13 @@ class TestReadFile:
         target.write_text("甲" * 50, encoding="utf-8")
         result = FileOpsTool().read_file(str(target), max_chars=20, offset=0)
         assert result["body"] == "甲" * 20
-        assert "还有更多" in result["headline"]
+        assert result["headline"]
         assert "offset=20" in result["agent_hint"]
 
     def test_last_page_has_no_next(self, sandbox):
         target = sandbox / "短文.txt"
         target.write_text("乙" * 10, encoding="utf-8")
         result = FileOpsTool().read_file(str(target), max_chars=100, offset=0)
-        assert "还有更多" not in result["headline"]
         assert result["agent_hint"] == ""
 
     def test_illegal_path_raises_permission_error(self, sandbox):
@@ -201,7 +200,7 @@ class TestWriteOps:
 
     def test_write_note_writes_into_sandbox(self, sandbox):
         result = FileOpsTool().write_note("备忘.txt", "你好")
-        assert "写入文件" in result["headline"]
+        assert result["headline"]
         assert (sandbox / "备忘.txt").read_text(encoding="utf-8") == "你好"
 
     def test_write_file_rejects_unknown_mode(self, sandbox):

@@ -68,7 +68,8 @@ class RockPaperScissorsGame(Game):
         pet_move = params.get("rps_move")
         if pet_move not in MOVES:
             return {
-                "headline": f"无效出拳 {pet_move!r}，请用 rock/paper/scissors",
+                "headline": f"无效出拳 {pet_move!r}",
+                "agent_hint": "请用 rock/paper/scissors 重新调用 game__play。",
                 "ended": False,
                 "pet_move": pet_move,
             }
@@ -106,7 +107,8 @@ class RockPaperScissorsGame(Game):
         if user_move not in MOVES:
             # 防御：面板只提交合法出拳
             return {
-                "headline": f"无效出拳 {user_move!r}，请点击石头/剪刀/布按钮",
+                "headline": f"用户出拳 {user_move!r} 无效",
+                "agent_hint": "请重新调用 game__play 等待用户出拳。",
                 "ended": False,
                 "pet_move": pet_move,
             }
@@ -117,7 +119,8 @@ class RockPaperScissorsGame(Game):
             self._emit_panel(state, waiting=False, pet_move=pet_move,
                              message=f"你出「{user_name}」，平局，重新出拳")
             return {
-                "headline": f"我出「{pet_name}」，你出「{user_name}」，平局，重新出拳",
+                "headline": f"我出「{pet_name}」，你出「{user_name}」，平局",
+                "agent_hint": "请重新调用 game__play 出下一拳。",
                 "ended": False,
                 "result": "draw",
                 "pet_move": pet_move,

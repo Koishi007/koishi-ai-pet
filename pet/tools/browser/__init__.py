@@ -15,7 +15,7 @@ SEARCH_OUTPUT = {
     "type": "object",
     "required": ["headline"],
     "properties": {
-        "headline": {"type": "string", "maxLength": 120, "x-role": "headline",
+        "headline": {"type": "string", "x-role": "headline",
                      "description": "搜索词与命中条数"},
         "body": {"type": "string", "x-role": "body",
                  "description": "每条结果三行：标题、网址、摘要"},
@@ -26,7 +26,7 @@ READ_URL_OUTPUT = {
     "type": "object",
     "required": ["headline"],
     "properties": {
-        "headline": {"type": "string", "maxLength": 120, "x-role": "headline",
+        "headline": {"type": "string", "x-role": "headline",
                      "description": "网页标题与分页概况"},
         "body": {"type": "string", "x-role": "body", "description": "当前页正文"},
         "pagination": {**PAGINATION_SCHEMA},
@@ -37,7 +37,7 @@ SCREENSHOT_OUTPUT = {
     "type": "object",
     "required": ["headline"],
     "properties": {
-        "headline": {"type": "string", "maxLength": 120, "x-role": "headline",
+        "headline": {"type": "string", "x-role": "headline",
                      "description": "截图对象与尺寸"},
         "images": IMAGES_SCHEMA,
     },
@@ -47,7 +47,7 @@ CLOSE_OUTPUT = {
     "type": "object",
     "required": ["headline"],
     "properties": {
-        "headline": {"type": "string", "maxLength": 120, "x-role": "headline",
+        "headline": {"type": "string", "x-role": "headline",
                      "description": "关闭结果"},
     },
 }

@@ -16,7 +16,7 @@ from pet.brain.parsing import (BehaviorParser, parse_behavior, parse_stream_chun
                                _UNPARSED_SAMPLE_LIMIT)
 from pet.brain.repair import repair_messages, retry_if_empty, RETRY_TEMPERATURE
 from pet.brain.summary import SummaryHooks, flush_summaries, summarize_with_llm
-from pet.brain.tool_loop import output_stats as _output_stats, run_tool_loop
+from pet.brain.tool_loop import run_tool_loop
 from pet.tools.executor import ToolExecutor
 from pet.config import config
 from pet.tools.context import TOOL_CTX
@@ -138,10 +138,9 @@ class Behavior(BrainMixin):
             return None
         return TOOL_REGISTRY.to_openai_tools(groups=self._active_tool_groups)
 
-    def _activate_tool_groups_from_search(self, matches: list[dict]):
-        """根据搜索返回的匹配结果激活分组。"""
-        for item in matches:
-            grp = item.get("group")
+    def _activate_tool_groups_from_search(self, groups: list[str]):
+        """根据搜索命中的分组名激活分组。"""
+        for grp in groups:
             if grp and grp != "default" and grp not in self._active_tool_groups:
                 self._active_tool_groups.add(grp)
                 logger.info(f"[Behavior] activated tool group: {grp} (from search result)")
@@ -551,10 +550,6 @@ class Behavior(BrainMixin):
             {"type": "text", "text": content, "cache_control": {"type": "ephemeral"}}
         ]
 
-    def tool_output_stats(self) -> dict:
-        """工具输出契约的观测快照：覆盖比例与违约数。"""
-        return _output_stats()
-
     def _dump_context(self, tag: str, messages: list):
         t = datetime.now().strftime("%H:%M:%S")
         logger.debug(f"[{t}] [Behavior] ====== FULL CONTEXT ({tag}) ======")
@@ -603,12 +598,14 @@ class _BehaviorToolSession:
             return
         try:
             keyword = arguments.get("keyword", "")
-            if result.ok and isinstance(result.output, dict):
-                self._behavior._activate_tool_groups_from_search(result.output.get("matches", []))
+            groups = (result.output.get("groups")
+                      if result.ok and isinstance(result.output, dict) else None)
+            if isinstance(groups, list):
+                self._behavior._activate_tool_groups_from_search(groups)
             # 兜底：keyword 直接匹配组名
             self._behavior._activate_groups_from_keyword(keyword)
         except Exception:
-            pass
+            logger.exception("[Behavior] activate tool groups failed")
 
     def note_progress(self):
         self._behavior.note_progress()

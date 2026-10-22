@@ -20,7 +20,7 @@ SEARCH_OUTPUT = {
     "type": "object",
     "required": ["headline"],
     "properties": {
-        "headline": {"type": "string", "maxLength": 120, "x-role": "headline",
+        "headline": {"type": "string", "x-role": "headline",
                      "description": "查询词与命中条数"},
         "body": {"type": "string", "x-role": "body", "description": "命中的知识片段"},
     },
@@ -30,7 +30,7 @@ LIST_OUTPUT = {
     "type": "object",
     "required": ["headline"],
     "properties": {
-        "headline": {"type": "string", "maxLength": 120, "x-role": "headline",
+        "headline": {"type": "string", "x-role": "headline",
                      "description": "知识库总量与分页概况"},
         "body": {"type": "string", "x-role": "body", "description": "每条一行：编号与标题"},
         "pagination": {**PAGINATION_SCHEMA},

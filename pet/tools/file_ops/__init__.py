@@ -10,7 +10,7 @@ LIST_DIR_OUTPUT = {
     "type": "object",
     "required": ["headline"],
     "properties": {
-        "headline": {"type": "string", "maxLength": 120, "x-role": "headline",
+        "headline": {"type": "string", "x-role": "headline",
                      "description": "一句话结论，进历史记录"},
         "body": {"type": "string", "x-role": "body", "description": "文件名列表，每行一项"},
         "pagination": {**PAGINATION_SCHEMA},
@@ -21,7 +21,7 @@ READ_FILE_OUTPUT = {
     "type": "object",
     "required": ["headline"],
     "properties": {
-        "headline": {"type": "string", "maxLength": 120, "x-role": "headline",
+        "headline": {"type": "string", "x-role": "headline",
                      "description": "一句话结论，进历史记录"},
         "body": {"type": "string", "x-role": "body", "description": "文本内容"},
         "images": IMAGES_SCHEMA,
@@ -34,7 +34,7 @@ WRITE_FILE_OUTPUT = {
     "type": "object",
     "required": ["headline"],
     "properties": {
-        "headline": {"type": "string", "maxLength": 120, "x-role": "headline",
+        "headline": {"type": "string", "x-role": "headline",
                      "description": "一句话结论，进历史记录"},
     },
 }

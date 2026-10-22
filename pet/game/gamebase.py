@@ -87,7 +87,7 @@ class GameBase:
         return {
             "headline": "暂无可玩的游戏" if not games else "可玩游戏：" + ", ".join(
                 f"{n}（{self._games[n].description()}）" for n in games),
-            "data": {"success": True, "games": games},
+            "data": {"games": games},
         }
 
     def submit(self, game_name: str, payload: dict) -> bool:
@@ -182,7 +182,7 @@ class GameBase:
             return {
                 "headline": f"没有叫 {game_name} 的游戏，可玩：{', '.join(self._games) or '无'}",
                 "agent_hint": _MODEL_HINT_ABORT,
-                "data": {"success": False, "ended": True},
+                "data": {"ended": True},
             }
         old = self._sessions.pop(game_name, None)
         if old is not None:
@@ -206,7 +206,7 @@ class GameBase:
                 f"开启第一回合并持续推进，不要在此输出最终答复；"
                 f"只有某次 game__play 返回 ended=True 才代表游戏结束。"
             ),
-            "data": {"success": True, "ended": False},
+            "data": {"ended": False},
         }
 
     def play(self, game_name: str, **params) -> dict:
@@ -215,7 +215,7 @@ class GameBase:
             return {
                 "headline": f"没有叫 {game_name} 的游戏，可玩：{', '.join(self._games) or '无'}",
                 "agent_hint": _MODEL_HINT_ABORT,
-                "data": {"success": False, "ended": True},
+                "data": {"ended": True},
             }
         # 参数归属校验：传入的参数必须属于该游戏，避免模型把别家参数传过来
         # 参数名全局唯一（guess/ttt_move/rps_move），通过 参数名→游戏 映射判定
@@ -227,7 +227,7 @@ class GameBase:
                 "headline": f"参数 {', '.join(unknown)} 不属于 {game_name}，"
                             f"{game_name} 需要的参数：{', '.join(game_args) or '无'}。",
                 "agent_hint": "请用正确的参数重新调用 game__play 继续游戏，不要输出最终答复。",
-                "data": {"success": False, "ended": False},
+                "data": {"ended": False},
             }
         state = self._sessions.get(game_name)
         if state is not None and time.time() - state.get("last_active", 0) > self.SESSION_TTL:
@@ -240,7 +240,7 @@ class GameBase:
             return {
                 "headline": f"{game_name} 游戏未开始或已结束",
                 "agent_hint": _MODEL_HINT_NEED_INIT,
-                "data": {"success": False, "ended": True},
+                "data": {"ended": True},
             }
         state["last_active"] = time.time()
         # 预检：会话已被外部取消（用户点×/stop/换脑线程）但 play 尚未退出。
@@ -267,7 +267,6 @@ class GameBase:
                     "suppress_speech": True,
                 }
             result["agent_hint"] = _MODEL_HINT_ENDED_NEUTRAL
-            result.setdefault("success", True)
             result.setdefault("game_name", game_name)
             self._emit_speech(game, result)
             return result
@@ -280,7 +279,7 @@ class GameBase:
             return {
                 "headline": f"游戏 {game_name} 出错了：{e}",
                 "agent_hint": _MODEL_HINT_ABORT,
-                "data": {"success": False, "ended": True},
+                "data": {"ended": True},
             }
         # 明确告知游戏已结束，避免模型继续调用 game__play/game__stop
         if result.get("ended"):
@@ -293,7 +292,6 @@ class GameBase:
         else:
             hint = _MODEL_HINT_RUNNING
         result.setdefault("agent_hint", hint)  # 游戏自带更精细的指令优先
-        result.setdefault("success", True)
         result.setdefault("game_name", game_name)
         self._emit_speech(game, result)
         return result
@@ -304,7 +302,7 @@ class GameBase:
             return {
                 "headline": f"{game_name} 没有进行中的对局（已结束或未开始）。",
                 "agent_hint": "无需调用 game__stop；想再玩一局请先调用 game__init，否则直接输出最终回复。",
-                "data": {"success": False, "ended": True},
+                "data": {"ended": True},
             }
         self._teardown(game_name)
         if TOOL_CTX.is_model_aside_pending():
@@ -334,7 +332,7 @@ class GameBase:
         return {
             "headline": f"你结束了 {game_name} 游戏",
             "agent_hint": _MODEL_HINT_ENDED_NEUTRAL,
-            "data": {"success": True, "ended": True, "won": None},
+            "data": {"ended": True, "won": None},
         }
 
     @staticmethod
@@ -343,7 +341,7 @@ class GameBase:
         return {
             "headline": f"已结束 {game_name} 游戏",
             "agent_hint": _MODEL_HINT_ENDED_NEUTRAL,
-            "data": {"success": True, "ended": True},
+            "data": {"ended": True},
         }
 
     def _teardown(self, game_name: str):

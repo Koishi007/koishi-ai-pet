@@ -134,17 +134,15 @@ class _FakeResult:
     """与 ToolResult 同形：output / error_code / error_message / meta / ok。"""
 
     def __init__(self, name="tool", success=True, data=None, brief="", image_b64=None,
-                 context_brief=""):
+                 caption=""):
         self.name = name
         self.error_code = "" if success else "handler_error"
         self.error_message = "" if success else "boom"
         self.output = data if data is not None else {"summary": brief}
         self.meta = {}
-        if context_brief:
-            self.meta["context_brief"] = context_brief
         if image_b64:
             self.meta["images"] = [{"base64": image_b64, "mime": "image/png",
-                                   "caption": context_brief}]
+                                   "caption": caption}]
 
     @property
     def ok(self):
@@ -154,18 +152,15 @@ class _FakeResult:
 class _FakeExecutor:
     """记录每次执行的工具名，返回固定结果。"""
 
-    def __init__(self, image_b64=None, context_brief=""):
+    def __init__(self, image_b64=None, caption=""):
         self.calls = []
         self.image_b64 = image_b64
-        self.context_brief = context_brief
+        self.caption = caption
 
     def execute_one(self, call):
         self.calls.append(call.name)
         return _FakeResult(name=call.name, image_b64=self.image_b64,
-                           context_brief=self.context_brief)
-
-    def normalize(self, data):
-        return str(data)
+                           caption=self.caption)
 
 
 class _FakeSession:
@@ -176,13 +171,13 @@ class _FakeSession:
     recall_tool_names = frozenset({"recall__search"})
     has_vision = True
 
-    def __init__(self, rounds, raise_on_stream=None, image_b64=None, context_brief=""):
+    def __init__(self, rounds, raise_on_stream=None, image_b64=None, caption=""):
         self.rounds = list(rounds)
         self.raise_on_stream = raise_on_stream
         self.streams = 0
         self.progress = 0
         self.contexts = []
-        self.executor_obj = _FakeExecutor(image_b64, context_brief)
+        self.executor_obj = _FakeExecutor(image_b64, caption)
         self.activated = []
         self.unparsed = []
         self.last_messages = []
@@ -303,6 +298,89 @@ class TestToolLoopRounds:
         assert out.actions[0].name == "sit"  # 最后一轮无内容 → 兜底动作
 
 
+class TestToolGroupActivation:
+    """tool_search 的命中分组必须传给行为层激活。"""
+
+    class _Probe:
+        def __init__(self):
+            self._active_tool_groups = {"default"}
+
+        _activate_tool_groups_from_search = Behavior._activate_tool_groups_from_search
+        _activate_groups_from_keyword = Behavior._activate_groups_from_keyword
+
+    @staticmethod
+    def _activate(probe, result, keyword=""):
+        session = SimpleNamespace(_behavior=probe)
+        behavior_module._BehaviorToolSession.activate_groups(
+            session, "tool_search__search", result, {"keyword": keyword})
+
+    def test_search_result_activates_groups(self):
+        probe = self._Probe()
+        result = SimpleNamespace(ok=True, output={"groups": ["info", "web"]})
+        self._activate(probe, result, "天气")
+        assert probe._active_tool_groups == {"default", "info", "web"}
+
+    def test_default_group_is_ignored(self):
+        probe = self._Probe()
+        result = SimpleNamespace(ok=True, output={"groups": ["default", "info"]})
+        self._activate(probe, result)
+        assert probe._active_tool_groups == {"default", "info"}
+
+    def test_failed_search_keeps_groups(self):
+        probe = self._Probe()
+        result = SimpleNamespace(ok=False, output=None)
+        self._activate(probe, result)
+        assert probe._active_tool_groups == {"default"}
+
+
+class TestStrictValidation:
+    """声明了 output 的方法，返回值不符合 schema 时本次调用失败。"""
+
+    SCHEMA = {
+        "type": "object",
+        "required": ["headline"],
+        "properties": {
+            "headline": {"type": "string", "x-role": "headline"},
+            "body": {"type": "string", "x-role": "body"},
+        },
+    }
+
+    @classmethod
+    def _run(cls, handler):
+        from pet.tools.executor import ToolExecutor
+        from pet.tools.output import ToolOutputDefinition
+        from pet.tools.registry import TOOL_REGISTRY
+
+        TOOL_REGISTRY.register("probe_out", "probe")
+        TOOL_REGISTRY.add_method(
+            "probe_out", "value", "value", handler=handler,
+            output=ToolOutputDefinition(schema=cls.SCHEMA))
+        try:
+            tc = {"id": "c1", "name": "probe_out__value", "arguments": "{}"}
+            session = SimpleNamespace(speak_aside=lambda text: None,
+                                      end_aside=lambda: None)
+            return tool_loop_mod._exec_tool({0: tc}, 0, ToolExecutor(), session)
+        finally:
+            TOOL_REGISTRY._tools.pop("probe_out", None)
+
+    def test_valid_output_renders(self):
+        out = self._run(lambda: {"headline": "ok"})
+        assert out[2].ok is True
+        assert out[4] == "ok"
+
+    def test_missing_headline_is_error(self):
+        out = self._run(lambda: {"body": "正文"})
+        assert out[2].ok is False
+        assert out[2].error_code == "output_violation"
+        assert out[2].error_message == "headline: 缺少必填字段"
+        assert out[4].startswith("[FAIL probe_out__value] output_violation:")
+
+    def test_wrong_type_is_error(self):
+        out = self._run(lambda: {"headline": 123})
+        assert out[2].error_code == "output_violation"
+        assert "期望 string" in out[2].error_message
+
+
 class TestToolLoopImages:
     """工具图片只在这轮请求里可见：tool 消息只放文本，图片紧随其后作为 user 内容。"""
 
@@ -317,7 +395,7 @@ class TestToolLoopImages:
 
     def test_image_result_attached_with_source_label(self):
         session = _FakeSession([("Speech: 看到了\n", {})], image_b64="QUJD",
-                               context_brief="查看图片 图.png")
+                               caption="查看图片 图.png")
         run_tool_loop([], _tool_calls("file_ops__read_file"), "", session, max_rounds=3)
         content = self._image_message(session)
         assert {"type": "image_url", "image_url": {"url": "data:image/png;base64,QUJD"}} in content
@@ -325,14 +403,14 @@ class TestToolLoopImages:
 
     def test_image_read_kept_as_reusable_context(self):
         session = _FakeSession([("Speech: 看到了\n", {})], image_b64="QUJD",
-                               context_brief="查看图片 图.png")
+                               caption="查看图片 图.png")
         run_tool_loop([], _tool_calls("file_ops__read_file"), "", session, max_rounds=3)
         logs = [content for role, content in session.contexts if role == "assistant"]
-        assert any("图.png" in text and "可再次调用查看" in text for text in logs)
+        assert any("可再次调用查看" in text for text in logs)
 
     def test_image_result_dropped_without_vision(self):
         session = _FakeSession([("Speech: 看不到\n", {})], image_b64="QUJD",
-                               context_brief="查看图片 图.png")
+                               caption="查看图片 图.png")
         session.has_vision = False
         run_tool_loop([], _tool_calls("file_ops__read_file"), "", session, max_rounds=3)
         assert self._image_message(session) == []

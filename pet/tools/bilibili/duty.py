@@ -443,7 +443,11 @@ def _open(cfg: dict, credential: Credential):
 def _as_tool_result(result: dict) -> dict:
     """把一次写操作的内部结果映射成输出契约。"""
     if result.get("ok"):
-        return {"headline": f"{_KIND_TEXT.get(result.get('kind', ''), '操作')}完成"}
+        return {
+            "headline": f"{_KIND_TEXT.get(result.get('kind', ''), '操作')}完成",
+            "data": {"kind": result.get("kind", ""),
+                     "target": result.get("target", "")},
+        }
     return {"error": result.get("detail") or "操作失败",
             "code": result.get("reason") or "write_failed"}
 

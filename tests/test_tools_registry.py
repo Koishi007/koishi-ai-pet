@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from pet.tools import executor as executor_mod
+from pet.tools import registry as registry_module
 from pet.tools.context import ToolContext
 from pet.tools.executor import ToolCall, ToolExecutor
 from pet.tools.registry import ToolRegistry
@@ -37,6 +38,14 @@ def _with_image() -> dict:
             "__image_mime__": "image/jpeg", "__context__": "已截图"}
 
 
+def _business_fail() -> dict:
+    return {"error": "没做成", "code": "denied"}
+
+
+def _business_fail_plain() -> dict:
+    return {"error": "失败了"}
+
+
 @pytest.fixture
 def registry() -> ToolRegistry:
     reg = ToolRegistry()
@@ -52,6 +61,8 @@ def registry() -> ToolRegistry:
                    args={"other": {"type": "str", "required": True}})
     reg.add_method("demo", "slow", "慢方法", handler=_slow, timeout=0.05)
     reg.add_method("demo", "shot", "带图", handler=_with_image)
+    reg.add_method("demo", "fail", "业务失败", handler=_business_fail)
+    reg.add_method("demo", "fail_plain", "业务失败无码", handler=_business_fail_plain)
     return reg
 
 
@@ -89,11 +100,15 @@ class TestRegistryLookup:
 
 
 class TestToolSearch:
+    @staticmethod
+    def _body_lines(result) -> list[str]:
+        return [line for line in result["body"].splitlines() if line.strip()]
+
     def test_single_keyword_matches_description(self, registry):
         result = registry._tool_search_search("演示")
-        assert "demo（test）" in result["body"]
-        assert "直接调用" in result["agent_hint"]
-        assert result["headline"].startswith("搜到 1 个：demo")
+        assert "demo__echo" in result["body"]
+        assert result["groups"] == ["test"]
+        assert result["agent_hint"]
 
     def test_full_method_name_is_searchable(self, registry):
         # 模型常直接拿 demo__echo 去搜，整串必须命中
@@ -103,47 +118,86 @@ class TestToolSearch:
     def test_all_terms_must_hit(self, registry):
         registry.register("bili", "B 站：点赞、投币、评论", group="info")
         result = registry._tool_search_search("点赞 评论")
-        assert "bili（info）" in result["body"]
+        assert "bili" in result["body"]
+        assert result["groups"] == ["info"]
 
     def test_partial_terms_fall_back_to_any_term(self, registry):
         registry.register("bili", "B 站：点赞、投币、评论", group="info")
         result = registry._tool_search_search("点赞 天气")
-        assert "bili（info）" in result["body"]
+        assert "bili" in result["body"]
+        assert result["groups"] == ["info"]
 
     def test_separators_split_keywords(self, registry):
         registry.register("bili", "B 站：点赞、投币、评论", group="info")
         result = registry._tool_search_search("点赞、评论")
-        assert "bili（info）" in result["body"]
+        assert "bili" in result["body"]
 
     def test_whitespace_difference_ignored(self, registry):
         registry.register("bili", "B 站：点赞", group="info")
         result = registry._tool_search_search("B站")
-        assert "bili（info）" in result["body"]
+        assert "bili" in result["body"]
 
     def test_method_description_is_searchable(self, registry):
         result = registry._tool_search_search("回显")
-        assert "demo（test）" in result["body"]
+        assert "demo__echo" in result["body"]
 
     def test_no_match_returns_group_catalog(self, registry):
         registry.register("bili", "B 站：点赞、投币、评论", group="info")
         result = registry._tool_search_search("查无此工具")
-        assert "未匹配" in result["headline"]
+        assert result["groups"] == []
         assert "[test]" in result["body"] and "[info]" in result["body"]
-        assert "重新搜索" in result["agent_hint"]
 
     def test_results_capped_per_search(self, registry):
         for i in range(8):
             registry.register(f"t{i}", "天气 查询", group="info")
         result = registry._tool_search_search("天气")
-        assert "5 个" in result["headline"]
-        assert "前 5 个" in result["agent_hint"]
+        assert len(self._body_lines(result)) == 5
+        assert result["agent_hint"]
 
     def test_default_group_never_returned(self, registry):
         assert "tool_search" not in registry._tool_search_search("工具")["body"]
 
     def test_disabled_tool_excluded(self, registry):
         registry.set_enabled("demo", False)
-        assert "demo（test）" not in registry._tool_search_search("演示")["body"]
+        assert "demo" not in registry._tool_search_search("演示")["body"]
+
+
+class TestRecallOutput:
+    @staticmethod
+    def _store(rows):
+        class Store:
+            def search_memories(self, query, limit=5):
+                return rows
+
+            def list_memories(self, search="", start_date="", end_date="",
+                              page=0, page_size=10):
+                return rows, len(rows)
+
+            def format_memory_time(self, value):
+                return value
+
+        return Store()
+
+    @staticmethod
+    def _patch(monkeypatch, rows):
+        monkeypatch.setattr("pet.brain.memory.get_memory_store",
+                            lambda: TestRecallOutput._store(rows))
+        monkeypatch.setattr(registry_module.TOOL_CTX, "speech_random",
+                            lambda *args, **kwargs: None)
+
+    def test_search_returns_body_lines(self, registry, monkeypatch):
+        rows = [{"content": "喜欢猫", "level": "L2", "created_at": "2026-10-01"}]
+        self._patch(monkeypatch, rows)
+        result = registry._recall_search("猫")
+        assert result["body"] == "[2026-10-01]（L2）喜欢猫"
+
+    def test_browse_returns_body_and_pagination(self, registry, monkeypatch):
+        rows = [{"content": "喜欢猫", "level": "L2", "created_at": "2026-10-01"}]
+        self._patch(monkeypatch, rows)
+        result = registry._recall_browse(page=1)
+        assert result["body"] == "[2026-10-01]（L2）喜欢猫"
+        assert result["pagination"]["total_items"] == 1
+        assert result["pagination"]["has_next"] is False
 
 
 class TestOpenAiSchema:
@@ -199,6 +253,17 @@ class TestExecutorRouting:
         result = executor.execute([ToolCall("demo__boom", {})])[0]
         assert result.ok is False
         assert "工具炸了" in result.error_message
+
+    def test_business_error_maps_code(self, executor):
+        result = executor.execute([ToolCall("demo__fail", {})])[0]
+        assert result.ok is False
+        assert result.error_code == "denied"
+        assert result.error_message == "没做成"
+
+    def test_business_error_without_code_falls_back(self, executor):
+        result = executor.execute([ToolCall("demo__fail_plain", {})])[0]
+        assert result.ok is False
+        assert result.error_code == "tool_error"
 
     def test_timeout_reported(self, executor):
         try:
