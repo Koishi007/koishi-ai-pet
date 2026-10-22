@@ -136,6 +136,40 @@ class TestToolGroup:
         messages = project(tool_group(1), Profile(), Budget(now=T0 + 1000))
         assert messages[0]["content"] is None
 
+    def test_aside_before_call_stays_in_group(self):
+        # 事件顺序是 speech → tool_call → tool_result，单遍扫描会把台词落成孤立消息
+        gid = "g5"
+        events = [
+            ev(5, "assistant_speech", {"text": "查一下天气"}, group=gid,
+               refs={"tool_call_id": "c6"}),
+            ev(6, "tool_call", {"name": "weather__get_current", "args_digest": "city=深圳"},
+               group=gid, refs={"tool_call_id": "c6"}),
+            ev(7, "tool_result", {"ok": True, "brief": "深圳晴"}, group=gid,
+               refs={"tool_call_id": "c6"}),
+        ]
+        messages = project(events, Profile(), Budget(now=T0 + 1000))
+        assert len(messages) == 2
+        assert messages[0]["content"].endswith("查一下天气")
+        assert messages[1]["role"] == "tool"
+
+    def test_dropped_group_takes_its_aside_with_it(self):
+        events = []
+        seq = 1
+        for i in range(3):
+            gid = f"g{seq}"
+            events += [
+                ev(seq, "assistant_speech", {"text": f"第{i}句"}, group=gid),
+                ev(seq + 1, "tool_call", {"name": "a__x", "args_digest": "-"},
+                   group=gid, refs={"tool_call_id": f"c{seq}"}),
+                ev(seq + 2, "tool_result", {"brief": "好"}, group=gid,
+                   refs={"tool_call_id": f"c{seq}"}),
+            ]
+            seq += 3
+        messages = project(events, Profile(), Budget(max_entries=1, now=T0 + 1000))
+        assert len(messages) == 2
+        assert "第2句" in messages[0]["content"]
+        assert "第0句" not in messages[0]["content"]
+
     def test_tool_groups_dropped_before_dialogue(self):
         events = []
         seq = 1
