@@ -92,7 +92,13 @@ class TestToolSearch:
     def test_single_keyword_matches_description(self, registry):
         result = registry._tool_search_search("演示")
         assert [m["name"] for m in result["matches"]] == ["demo"]
-        assert result["hint"] is None
+        assert "直接调用" in result["hint"]
+        assert result["__context__"].startswith("搜到 demo")
+
+    def test_full_method_name_is_searchable(self, registry):
+        # 模型常直接拿 demo__echo 去搜，整串必须命中
+        result = registry._tool_search_search("demo__echo")
+        assert [m["name"] for m in result["matches"]] == ["demo"]
 
     def test_all_terms_must_hit(self, registry):
         registry.register("bili", "B 站：点赞、投币、评论", group="info")
@@ -121,7 +127,8 @@ class TestToolSearch:
     def test_no_match_returns_all_tools_with_hint(self, registry):
         result = registry._tool_search_search("查无此工具")
         assert [m["name"] for m in result["matches"]] == ["demo"]
-        assert result["hint"] is not None
+        assert "不要重复搜索" in result["hint"]
+        assert result["__context__"].startswith("未匹配")
 
     def test_default_group_never_returned(self, registry):
         names = [m["name"] for m in registry._tool_search_search("工具")["matches"]]

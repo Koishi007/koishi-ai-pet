@@ -204,8 +204,10 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
 
         # 再次调用 LLM（每轮重建 tools_param，包含新激活的分组）
         _chunk_invoked[0] = False
+        round_tools = session.tools_param(enable_tools)
+        logger.info(f"[Behavior] tool_round_{display_round} tools={len(round_tools or [])}")
         content, new_tool_calls = session.stream(
-            current_messages, tools=session.tools_param(enable_tools),
+            current_messages, tools=round_tools,
             max_tokens=max_tokens, thinking=thinking,
             tag=f"{tag}_round_{display_round}", on_chunk=_wrapped_chunk,
             on_stream_end=on_stream_end,

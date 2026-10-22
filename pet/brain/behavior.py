@@ -429,6 +429,8 @@ class Behavior(BrainMixin):
         self.gateway.log_prompt_size(messages, tag)
         try:
             tools_param = self._build_tools_param(enable_tools)
+            logger.info(f"[Behavior] {tag} tools={len(tools_param or [])} "
+                        f"groups={sorted(self._active_tool_groups)}")
             max_tokens = output_budget(mode, thinking=thinking, has_tools=bool(tools_param))
             stream = self.gateway.stream_chat(messages, max_tokens=max_tokens, tools=tools_param,
                                               thinking=thinking,
@@ -553,14 +555,18 @@ class Behavior(BrainMixin):
         t = datetime.now().strftime("%H:%M:%S")
         logger.debug(f"[{t}] [Behavior] ====== FULL CONTEXT ({tag}) ======")
         for i, m in enumerate(messages):
-            if isinstance(m["content"], str):
-                logger.debug(f"[{t}] [Behavior] --- msg[{i}] role={m['role']} ---\n{m['content']}")
-            else:
-                for j, part in enumerate(m["content"]):
+            content = m.get("content")
+            if isinstance(content, str):
+                logger.debug(f"[{t}] [Behavior] --- msg[{i}] role={m['role']} ---\n{content}")
+            elif isinstance(content, list):
+                for j, part in enumerate(content):
                     if part["type"] == "text":
                         logger.debug(f"[{t}] [Behavior] --- msg[{i}] role={m['role']} part[{j}] text ---\n{part['text']}")
                     else:
                         logger.debug(f"[{t}] [Behavior] --- msg[{i}] role={m['role']} part[{j}] {part['type']} len={len(str(part))} --- (binary omitted)")
+            else:
+                # 工具调用的 assistant 消息 content 为 null，属协议允许
+                logger.debug(f"[{t}] [Behavior] --- msg[{i}] role={m['role']} content={content!r}")
         logger.debug(f"[{t}] [Behavior] ====== END CONTEXT ({tag}) ======")
 
 class _BehaviorToolSession:

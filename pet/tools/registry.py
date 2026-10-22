@@ -47,10 +47,12 @@ def _search_terms(keyword: str) -> list[str]:
 
 
 def _tool_search_text(tool: "ToolDef") -> str:
-    """工具的可搜索文本：名称、分组、描述，以及每个方法的名称与说明。"""
+    """工具的可搜索文本：名称、分组、描述，以及每个方法的短名与全名。"""
     parts = [tool.name, tool.group, tool.description]
     for method in tool.methods.values():
         parts.append(method.name)
+        # 全名也进索引
+        parts.append(f"{tool.name}__{method.name}")
         parts.append(method.description)
     return _search_normalize(" ".join(parts))
 
@@ -194,6 +196,7 @@ class ToolRegistry:
                 "按关键词搜索工具，匹配工具名、方法名、描述与分组名。"
                 "多个关键词用空格分开，返回命中全部关键词的工具；都不满足时退回命中任一关键词的工具。"
                 "搜索返回的分组会在后续请求中自动变为可用。"
+                "命中后必须直接调用返回的函数，不要为同一件事重复搜索。"
                 "如无匹配结果会自动返回全部工具列表。"
                 "提示：不确定关键词时优先用 list_groups 浏览全部。"
             ),
@@ -583,15 +586,24 @@ class ToolRegistry:
                        if any(term in texts[tool.name] for term in terms)]
 
         hint = None
+        brief = None
         if kw and not matched:
             # 无匹配：fallback 返回全部工具，引导用 list_groups
             matched = tools
-            hint = f"未找到与「{keyword}」匹配的工具，已返回全部可用工具。"
+            hint = (f"没有工具匹配「{keyword}」，下面列出全部 {len(tools)} 个工具。"
+                    f"直接调用其中需要的函数，不要重复搜索。")
+            brief = f"未匹配「{keyword}」，列出全部 {len(tools)} 个工具"
+        elif kw:
+            names = [f"{t.name}__{m.name}" for t in matched[:2] for m in t.methods.values()]
+            hint = ("已命中：" + "、".join(names[:4])
+                    + "。下一轮直接调用这些函数，不要再调用 tool_search。")
+            brief = "搜到 " + "、".join(t.name for t in matched[:3])
 
         return {
             "keyword": keyword,
             "matches": [self._tool_search_entry(tool) for tool in matched],
             "hint": hint,
+            "__context__": brief or f"列出全部 {len(matched)} 个可用工具",
         }
 
     _TYPE_TO_JSON_SCHEMA = {
