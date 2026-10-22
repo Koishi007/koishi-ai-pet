@@ -16,7 +16,7 @@ from pet.brain.parsing import (BehaviorParser, parse_behavior, parse_stream_chun
                                _UNPARSED_SAMPLE_LIMIT)
 from pet.brain.repair import repair_messages, retry_if_empty, RETRY_TEMPERATURE
 from pet.brain.summary import SummaryHooks, flush_summaries, summarize_with_llm
-from pet.brain.tool_loop import run_tool_loop
+from pet.brain.tool_loop import output_stats as _output_stats, run_tool_loop
 from pet.tools.executor import ToolExecutor
 from pet.config import config
 from pet.tools.context import TOOL_CTX
@@ -550,6 +550,10 @@ class Behavior(BrainMixin):
         messages[0]["content"] = [
             {"type": "text", "text": content, "cache_control": {"type": "ephemeral"}}
         ]
+
+    def tool_output_stats(self) -> dict:
+        """工具输出契约的观测快照：覆盖比例与违约数。"""
+        return _output_stats()
 
     def _dump_context(self, tag: str, messages: list):
         t = datetime.now().strftime("%H:%M:%S")

@@ -25,10 +25,10 @@
 |---|---|---|---|---|
 | [architecture.md](architecture.md) | 架构解释 | 手写 | 分层与线程模型、启动链路、数据流、状态机、模块职责、红线与常见改动入口 | 改架构时人工更新 |
 | [glossary.md](glossary.md) | 事实参考 | 手写 | 项目专有术语表 | 新增术语时人工补充 |
-| [tool-development.md](tool-development.md) | 操作指南 | 手写 | 工具开发：目录约定、`register()` 模板、参数与返回值约定、`TOOL_CTX` 能力、`aside`、启用方式 | 改工具约定时人工更新 |
+| [tool-development.md](tool-development.md) | 操作指南 | 手写 | 工具开发：目录约定、`register()` 模板、参数与输出契约（`output.schema` 与 `x-role`）、`TOOL_CTX` 能力、`aside`、启用方式 | 改工具约定时人工更新 |
 | [reference/config.md](reference/config.md) | 事实参考 | 生成 | 配置项全量（按设置页签分组）+ 字段含义 | `pet/config.py` 的 `_KEY_META` |
 | [reference/actions.md](reference/actions.md) | 事实参考 | 生成 | 动作表：分类、参数、示例、时长范围 | `pet/action/registry.py` |
-| [reference/tools.md](reference/tools.md) | 事实参考 | 生成 | 工具分组、方法、参数 | `pet/tools/**/__init__.py` 与 `pet/tools/registry.py` |
+| [reference/tools.md](reference/tools.md) | 事实参考 | 生成 | 工具分组、方法、参数，以及已声明方法的返回字段表 | `pet/tools/**/__init__.py` 与 `pet/tools/registry.py` |
 | [reference/effects.md](reference/effects.md) | 事实参考 | 生成 | 粒子特效名、生成函数、默认位置 | `pet/ui/particle.py` 的 `_SPAWNERS` |
 | [reference/prompt-blocks.md](reference/prompt-blocks.md) | 事实参考 | 生成 | 提示词块、感知段/任务段组合、合法组合白名单 | `pet/brain/prompts.py` |
 | [reference/modules.md](reference/modules.md) | 事实参考 | 生成 | 每个模块的一句话职责 | 模块 docstring |

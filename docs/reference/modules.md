@@ -49,7 +49,7 @@
 | `pet/brain/repair.py` | 空响应修复重试：一次决策无动作无台词时，改写 messages 再跑一次。 | `retry_if_empty()` `repair_messages()` |
 | `pet/brain/summary.py` | 摘要流水线的执行端：把上下文淘汰产生的待摘要条目压成一句写回上下文。 | `SummaryHooks` `flush_summaries()` `summarize_with_llm()` |
 | `pet/brain/tool_channel.py` | 工具通道选择：默认 native，端点明确拒绝时逐档降级并缓存结果。 | `is_tool_rejection()` `next_channel()` `channel_for()` `mark_downgraded()` `reset_cache()` `current_profile()` |
-| `pet/brain/tool_loop.py` | 工具轮次：执行 LLM 请求的工具并循环，直到模型不再请求工具。 | `ToolSession` `run_tool_loop()` |
+| `pet/brain/tool_loop.py` | 工具轮次：执行 LLM 请求的工具并循环，直到模型不再请求工具。 | `record_output_stat()` `output_stats()` `ToolSession` `run_tool_loop()` |
 | `pet/brain/win_detector.py` | Win32 窗口枚举 | `is_window_alive()` `get_window_rect()` `is_window_occluded()` `get_visible_windows()` |
 | `pet/brain/window_detector.py` | 窗口枚举 — 根据平台分发到 Win32 / Quartz / X11 后端 |  |
 | `pet/config.py` | 配置系统：`_KEY_META` 是所有配置项的唯一真源，`settings.json` 存用户覆盖（路径见 `pet/settings.py`）。 | `Config` |

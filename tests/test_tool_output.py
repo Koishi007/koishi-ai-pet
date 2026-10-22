@@ -131,6 +131,22 @@ class TestBudgets:
         assert blocks[0].role == "primary"
 
 
+    def test_mixed_paths(self):
+        from pet.brain import tool_loop
+
+        tool_loop._OUTPUT_STATS.clear()
+        tool_loop.record_output_stat("a__x", "declared", 0)
+        tool_loop.record_output_stat("a__x", "declared", 2)
+        tool_loop.record_output_stat("b__y", "legacy")
+        stats = tool_loop.output_stats()
+        assert stats["total"] == 3
+        assert stats["legacy"] == 1
+        assert stats["violations"] == 2
+        assert stats["declared_ratio"] == round(2 / 3, 3)
+        assert stats["by_tool"]["b__y"]["path"] == "legacy"
+        tool_loop._OUTPUT_STATS.clear()
+
+
 class TestDeclaredTools:
     """已声明 output 的工具：规范值与 schema 必须对得上。"""
 
