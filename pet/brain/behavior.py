@@ -12,8 +12,7 @@ from pet.brain.llm_gateway import LlmGateway
 from pet.brain.llm_stats import LlmStats
 from pet.brain.local_fallback import chat_decide_local, decide_local, interact_decide_local
 from pet.brain.output import ActionStep, BehaviorOutput, CancelledError
-from pet.brain.parsing import (BehaviorParser, parse_behavior, parse_stream_chunks,
-                               _UNPARSED_SAMPLE_LIMIT)
+from pet.brain.parsing import BehaviorParser, parse_behavior, parse_stream_chunks
 from pet.brain.repair import (repair_messages, retry_if_incomplete,
                               action_requirement, RETRY_TEMPERATURE)
 from pet.brain.summary import SummaryHooks, flush_summaries, summarize_with_llm
@@ -26,6 +25,9 @@ from pet.tools.registry import TOOL_REGISTRY
 logger = logging.getLogger(__name__)
 
 _ARGS_LOG_LIMIT = 500
+
+# 修复轮回传的上轮原文上限：容得下完整字段行，模型才能只补缺失字段
+_REPAIR_SAMPLE_LIMIT = 1000
 
 
 def _one_line(text: str) -> str:
@@ -422,7 +424,7 @@ class Behavior(BrainMixin):
                                            temperature=RETRY_TEMPERATURE if repair else None)
             msg = resp.choices[0].message
             content = msg.content or ""
-            self._last_unparsed = content[:_UNPARSED_SAMPLE_LIMIT]
+            self._last_unparsed = content[:_REPAIR_SAMPLE_LIMIT]
             self._last_finish_reason = resp.choices[0].finish_reason or ""
             logger.info(f"[{t}] [Behavior] === LLM RESPONSE ({tag}) ===")
             logger.info(f"[{t}] [Behavior]   finish_reason: {self._last_finish_reason}")
@@ -494,6 +496,9 @@ class Behavior(BrainMixin):
                 action_fallback=False,
             )
             speech_streamed = chunk_sent[0]
+            if raw:
+                # 解析成功也留一份：修复轮只需补齐缺失字段，不必重新推理
+                self._last_unparsed = raw[:_REPAIR_SAMPLE_LIMIT]
 
             if tool_calls_map:
                 # 之后每轮由 tool_loop 在 stream 返回后调用 on_stream_end 断句，
