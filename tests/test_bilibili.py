@@ -510,6 +510,22 @@ def test_set_dm_uid_persists(monkeypatch, tmp_path):
     assert duty.set_dm_uid("")["dm_uid"] == 0
 
 
+def test_set_interval_minutes_persists(monkeypatch, tmp_path):
+    path = tmp_path / "config.json"
+    path.write_text('{"schedule_interval_minutes": 300}', encoding="utf-8")
+    monkeypatch.setattr(duty, "_CONFIG_FILE", path)
+    assert duty.set_interval_minutes("240")["schedule_interval_minutes"] == 240
+    assert json.loads(path.read_text(encoding="utf-8"))["schedule_interval_minutes"] == 240
+    assert duty.set_interval_minutes("  ")["schedule_interval_minutes"] == 180
+
+
+@pytest.mark.parametrize("text", ["30", "1441", "abc", "-60", "60.5"])
+def test_set_interval_minutes_rejects_invalid(monkeypatch, tmp_path, text):
+    monkeypatch.setattr(duty, "_CONFIG_FILE", tmp_path / "config.json")
+    with pytest.raises(ValueError):
+        duty.set_interval_minutes(text)
+
+
 def test_dm_without_uid_reports_error(monkeypatch, tmp_path, store):
     path = tmp_path / "config.json"
     path.write_text('{"allow_dm": true, "dm_uid": 0}', encoding="utf-8")

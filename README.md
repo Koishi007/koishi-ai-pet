@@ -236,7 +236,7 @@ chmod +x update.sh && ./update.sh
 | `coin_per_day` | int | 2 | 每日投币上限 |
 | `dm_uid` | int | 0 | 私信收件人 UID，面板里填写，0 表示不发 |
 | `schedule_enabled` | bool | `false` | 定时提醒总开关 |
-| `schedule_interval_minutes` | int | 180 | 两次提醒的最小间隔，最小 60 |
+| `schedule_interval_minutes` | int | 180 | 两次提醒的最小间隔，面板里可改，范围 60-1440 |
 | `schedule_active_hours` | str | `09:00-23:00` | 允许触发的作息窗口 |
 | `schedule_backoff_base_minutes` | int | 5 | 桌宠忙碌时的退避起点 |
 | `schedule_pause_hours` | str | 空 | 禁用时段，逗号分隔多个区间；非空且格式正确时生效 |
