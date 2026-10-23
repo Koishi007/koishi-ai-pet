@@ -160,7 +160,7 @@ def set_dm_uid(text: str) -> dict:
 
 
 def set_interval_minutes(text: str) -> dict:
-    """保存定时任务间隔；空输入回退默认值，非数字或超出 60-1440 抛 ValueError。"""
+    """保存定时任务间隔，非法值抛 ValueError。"""
     raw = (text or "").strip()
     if not raw:
         return update_config(
