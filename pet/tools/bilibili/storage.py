@@ -199,10 +199,10 @@ class BiliStorage:
 
     def claim_action(self, uid: int, kind: str, target: str, content: str = "",
                      limit: int = 1) -> int | None:
-        """占位成功返回台账 id；有效记录达到 limit 时返回 None。"""
+        """占位成功返回台账 id；有效记录达到 limit 时返回 None，limit 为 0 时不按目标去重。"""
         now = _now()
         with self._lock:
-            if self._live_count(uid, kind, target) >= max(1, int(limit)):
+            if limit > 0 and self._live_count(uid, kind, target) >= int(limit):
                 return None
             cur = self._conn.execute(
                 "INSERT INTO bili_actions"

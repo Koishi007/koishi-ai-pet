@@ -172,7 +172,7 @@ wbi 签名约定：
 - 投币前检查硬币余额，低于 `coin_floor + 1` 时跳过；`multiply` 固定 1，`select_like` 固定 0，由点赞操作单独控制。
 - 私信只发给配置里的 `dm_uid`；未配置时返回错误，不静默跳过。
 - 该视频存在未回复的 @ 时，评论挂在 @ 那条评论下（`root` 与 `parent` 填它的 `rpid`），正文前缀 `@昵称 `，前缀不计入 filter 长度；发送成功后把该 @ 标为已回复。
-- 点赞、投币、私信每个目标 1 条有效记录；评论每个目标最多 3 条，由台账计数保证。
+- 点赞、投币每个目标 1 条有效记录；评论每个目标最多 3 条，由台账计数保证。私信目标恒定，只按每日配额限流，不做目标去重。
 - 每个写开关独立，默认全部关闭；刷视频自身由 `allow_browse` 控制，默认开启。
 - 五个开关都在账号面板里，改动即时写回 `config.json`；关闭 `allow_browse` 时 `bilibili__browse` 直接返回原因，不发起请求。
 
@@ -345,7 +345,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_bili_actions_live
 | `dm_uid` | int | 0 | 私信收件人 UID，0 表示不发 |
 | `dm_per_day` | int | 10 | 每日私信上限 |
 | `schedule_enabled` | bool | false | 定时提醒总开关 |
-| `schedule_interval_minutes` | int | 180 | 两次提醒的最小间隔，最小 60 |
+| `schedule_interval_minutes` | int | 180 | 两次提醒的最小间隔，最小 10 |
 | `schedule_active_hours` | str | `09:00-23:00` | 允许触发的作息窗口 |
 | `schedule_backoff_base_minutes` | int | 5 | 状态不可用时的退避起点 |
 | `schedule_pause_hours` | str | 空 | 禁用时段，逗号分隔多个区间；非空且格式正确时生效 |
@@ -441,7 +441,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_bili_actions_live
 
 | 项 | 约定 |
 |---|---|
-| 频率 | `schedule_interval_minutes`，最小 60，低于按 60 处理 |
+| 频率 | `schedule_interval_minutes`，最小 10，低于按 10 处理 |
 | 窗口 | `schedule_active_hours` 默认 09:00-23:00，窗口外顺延到下一个窗口开始，不计退避 |
 | 状态守卫 | `TOOL_CTX.is_idle()` 为假时指数退避，`5 × 2^n` 分钟，上限 60，触发成功后清零 |
 | 重启 | 从当前时间加一个间隔重新排，不补跑 |

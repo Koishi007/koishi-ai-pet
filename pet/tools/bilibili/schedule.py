@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 _SCHEDULE_FILE = Path(__file__).parent / "schedule.md"
 _ALARM_KEY = "bilibili_schedule"
-_MIN_INTERVAL = 60
+_MIN_INTERVAL = 10
 _BACKOFF_MAX = 60
 _DEFAULT_WINDOW = (9 * 60, 23 * 60)
 
