@@ -106,7 +106,7 @@ CREATE TABLE IF NOT EXISTS session_artifacts (
 | type | payload | 参与投影 | 说明 |
 |---|---|---|---|
 | `user_msg` | `{text}` | 是 | 用户消息 |
-| `assistant_turn` | `{text, kind?}` | 是 | 一次**有效**的模型响应；`text` 即该次响应的内容；`kind` 取 `speech`（台词）/ `summary`（本轮摘要），缺省按纯文本渲染 |
+| `assistant_turn` | `{text, kind?, turn_id?}` | 是 | 一次**有效**的模型响应；`text` 即该次响应的内容；`kind` 取 `speech`（台词）/ `summary`（本轮摘要），缺省按纯文本渲染；`turn_id` 标识同一回合 |
 | `assistant_speech` | `{text}` | 条件 | 工具 `arguments.aside` 产生的台词；与 `assistant_turn.text` 不同时才单独记 |
 | `tool_call` | `{name, args_digest, side_effect}` | 是 | 一次工具调用；不含原始参数；`side_effect` 由工具注册表声明 |
 | `tool_result` | `{ok, brief, artifact_id?}` | 是 | 结果摘要；大结果落 artifacts |
@@ -155,7 +155,7 @@ def project(events: list[Event], profile: Profile, budget: Budget) -> list[dict]
 时间相关规则：
 
 - **相对时间由事件 `ts` 与 `Budget.now` 共同决定**：`刚刚` / `N 分钟前` / `N 小时前` / `昨天 22:10`。重放要固定 `now`，同一份事件在不同 `now` 下渲染不同。
-- 时间只出现在 `user_msg` / `system_note` / `summary` 与 `Summary:` 行上；`Speech:` 行不带时间，模型照抄历史行也不会把时间念出来。
+- 时间只出现在 `user_msg` / `system_note` / `summary` 与 `Summary:` 行上；`Speech:` 行不带时间，模型照抄历史行也不会把时间念出来。模型自造的绝对时间标签（如 `〔11:18〕`）按时间样式剥掉，不进入历史。
 - `evict_before_ts` 只用于**读取前过滤**，不进入投影器内部的判断。
 - 缓存键：`(session_id, last_seq, profile.name, max_entries, max_tokens, evict_before_ts, now)`；两处时间都按分钟取整，跨过分钟或半衰期边界才失效。
 
@@ -195,6 +195,7 @@ def project(events: list[Event], profile: Profile, budget: Budget) -> list[dict]
 5. 事件 → 逻辑消息：
    - `user_msg` / `system_note` / `summary` 渲染成 `[相对时间] 正文`；
    - `assistant_turn` 按 `payload.kind` 渲染：`speech` → `Speech: 正文`，`summary` → `Summary: 〔相对时间〕正文`，缺省 → `[相对时间] 正文`；
+   - 同一 `payload.turn_id` 的多条 `assistant_turn` 合并成一条 assistant 消息（Summary 在前、Speech 在后），让历史呈现完整回合而不是两行孤立消息；
    - `assistant_speech` 渲染成 `Speech: 正文`；
    - `tool_call` + `tool_result` 按 `group_id` 聚合为 `ToolExchange`；
    - `failed_turn` 直接丢弃。

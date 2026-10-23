@@ -115,6 +115,17 @@ class TestProjectionEntry:
         assert messages[0]["content"].endswith("〕连输三局")
         assert messages[1]["content"] == "Speech: 唔...又猜输了"
 
+    def test_turn_id_merges_summary_and_speech(self, tmp_path):
+        brain = _brain(tmp_path)
+        brain.add_context("assistant", "连输三局", kind="summary", turn_id="t1")
+        brain.add_context("assistant", "唔...又猜输了", kind="speech", turn_id="t1")
+
+        messages = brain.get_multi_turn_messages()
+
+        assert len(messages) == 1
+        assert messages[0]["content"].startswith("Summary: 〔")
+        assert messages[0]["content"].endswith("〕连输三局\nSpeech: 唔...又猜输了")
+
     def test_untagged_assistant_keeps_clock_prefix(self, tmp_path):
         brain = _brain(tmp_path)
         brain.add_context("assistant", "旧台词")

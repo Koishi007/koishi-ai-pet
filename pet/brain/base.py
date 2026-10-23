@@ -200,17 +200,19 @@ class BrainMixin:
 
 
     def add_context(self, role: str, content: str, is_summary: bool = False,
-                    kind: str = "", covers: Optional[tuple] = None):
+                    kind: str = "", turn_id: str = "",
+                    covers: Optional[tuple] = None):
         """写一条事件，并维护供调试面板查看的内存快照。
 
         `kind` 标记 assistant 内容的用途：speech（台词）/ summary（本轮摘要），
-        供投影决定渲染成哪一行；为空时按旧形态输出。
+        供投影决定渲染成哪一行；`turn_id` 把同一回合的两次写入合并成一条历史消息。
         covers 是摘要覆盖的事件区间，由排空待摘要队列的一方传入。
         """
         with self._ctx_lock:
             if is_summary and self._replace_similar_summary(role, content):
                 return
-            event = self._write_event(role, content, is_summary, kind, covers)
+            event = self._write_event(role, content, is_summary, kind, turn_id,
+                                      covers)
             self._context.append(ContextEntry(
                 role=role, content=content, is_summary=is_summary,
                 seq=event.seq if event else 0))
@@ -234,7 +236,8 @@ class BrainMixin:
         return False
 
     def _write_event(self, role: str, content: str, is_summary: bool,
-                     kind: str = "", covers: Optional[tuple] = None):
+                     kind: str = "", turn_id: str = "",
+                     covers: Optional[tuple] = None):
         """把一次上下文写入映射为事件；失败不影响主流程。"""
         if self._events is None or not self._events.available:
             return None
@@ -245,6 +248,8 @@ class BrainMixin:
             payload = {"text": content}
             if kind:
                 payload["kind"] = kind
+            if turn_id:
+                payload["turn_id"] = turn_id
             if role == "user":
                 return self._events.append("user_msg", payload)
             if role == "assistant":
