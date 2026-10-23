@@ -13,9 +13,10 @@ import pytest
 
 import pet.brain.behavior as behavior_module
 import pet.brain.repair as repair_module
+from pet.action.registry import min_action_count
 import pet.brain.tool_loop as tool_loop_mod
 from pet.brain.behavior import Behavior
-from pet.brain.repair import retry_if_empty
+from pet.brain.repair import retry_if_incomplete
 from pet.brain.output import ActionStep, BehaviorOutput, CancelledError
 from pet.brain.parsing import BehaviorParser
 from pet.brain.summary import SummaryHooks, flush_summaries
@@ -31,36 +32,77 @@ def _with_speech(text: str = "你好") -> BehaviorOutput:
     return BehaviorOutput(speech=text)
 
 
-class TestRetryIfEmpty:
+def _complete() -> BehaviorOutput:
+    return BehaviorOutput(summary="摘要", actions=[ActionStep("sit")], speech="你好")
+
+
+class TestRetryIfIncomplete:
     def test_retries_once_when_both_empty(self):
         calls = []
 
         def pipeline(repair=False):
             calls.append(repair)
-            return _empty() if len(calls) == 1 else _with_speech()
+            return _empty() if len(calls) == 1 else _complete()
 
-        assert retry_if_empty(pipeline, "t").speech == "你好"
+        assert retry_if_incomplete(pipeline, "t").speech == "你好"
         assert len(calls) == 2
 
-    def test_returns_first_result_when_speech_present(self):
+    def test_retries_when_speech_only(self):
+        """只有 Speech 视为格式不完整。"""
         calls = []
 
         def pipeline(repair=False):
             calls.append(repair)
-            return _with_speech()
+            return _with_speech() if len(calls) == 1 else _complete()
 
-        assert retry_if_empty(pipeline, "t").speech == "你好"
-        assert len(calls) == 1
+        assert retry_if_incomplete(pipeline, "t").summary == "摘要"
+        assert len(calls) == 2
 
-    def test_returns_first_result_when_actions_present(self):
+    def test_retries_when_action_missing(self):
         calls = []
 
         def pipeline(repair=False):
             calls.append(repair)
-            return BehaviorOutput(actions=[ActionStep("sit")])
+            return BehaviorOutput(summary="想了", speech="嗯") if len(calls) == 1 else _complete()
 
-        retry_if_empty(pipeline, "t")
+        assert retry_if_incomplete(pipeline, "t").actions
+        assert len(calls) == 2
+
+    def test_complete_response_is_not_retried(self):
+        calls = []
+
+        def pipeline(repair=False):
+            calls.append(repair)
+            return _complete()
+
+        assert retry_if_incomplete(pipeline, "t").speech == "你好"
         assert len(calls) == 1
+
+    def test_tool_round_is_not_retried(self):
+        """工具轮次不重跑。"""
+        calls = []
+
+        def pipeline(repair=False):
+            calls.append(repair)
+            return BehaviorOutput(speech="说一句", used_tools=True)
+
+        retry_if_incomplete(pipeline, "t")
+        assert len(calls) == 1
+
+    def test_missing_required_names_fields(self):
+        assert repair_module.missing_required(_empty()) == "Summary、Action"
+        assert repair_module.missing_required(
+            BehaviorOutput(summary="s")) == "Action"
+        assert repair_module.missing_required(_complete()) == ""
+
+    def test_action_requirement_follows_task(self):
+        """数量要求只进提示。"""
+        assert repair_module.action_requirement("chat") == "至少 3 个"
+        assert repair_module.action_requirement("interact") == "1-2 个"
+        assert repair_module.action_requirement("chat", docked=True) == "至少 1 个"
+        assert repair_module.action_requirement("autonomous") == \
+            f"至少 {min_action_count()} 个"
+        assert repair_module.action_bounds("interact") == (1, 2)
 
     def test_still_empty_after_retry_is_returned(self):
         calls = []
@@ -69,7 +111,7 @@ class TestRetryIfEmpty:
             calls.append(repair)
             return _empty()
 
-        assert retry_if_empty(pipeline, "t").speech is None
+        assert retry_if_incomplete(pipeline, "t").speech is None
         assert len(calls) == 2
 
     def test_retry_round_is_marked_as_repair(self):
@@ -80,8 +122,17 @@ class TestRetryIfEmpty:
             flags.append(repair)
             return _empty()
 
-        retry_if_empty(pipeline, "t")
+        retry_if_incomplete(pipeline, "t")
         assert flags == [False, True]
+
+    def test_missing_is_reported_to_caller(self):
+        seen = []
+
+        def pipeline(repair=False):
+            return _empty()
+
+        retry_if_incomplete(pipeline, "t", on_missing=seen.append)
+        assert seen == ["Summary、Action"]
 
 
 class TestRepairMessages:
@@ -92,7 +143,7 @@ class TestRepairMessages:
 
         assert len(repaired) == 3
         assert repaired[-1]["role"] == "system"
-        assert repaired[-1]["content"] == repair_module._EMPTY_RETRY_HINT
+        assert repaired[-1]["content"].startswith("上一次输出缺少必填字段")
 
     def test_sample_is_quoted_back(self):
         """被丢弃的原文要回传给模型，否则它不知道自己错在哪。"""
@@ -103,7 +154,7 @@ class TestRepairMessages:
         assert repaired[-1]["role"] == "user"
         assert "[09:24] 好呀，那恋恋开一局" in repaired[-1]["content"]
         assert repaired[-2]["role"] == "system"
-        assert repaired[-2]["content"].startswith(repair_module._EMPTY_RETRY_HINT)
+        assert repaired[-2]["content"].startswith("上一次输出缺少必填字段")
 
     def test_sample_never_lands_in_system(self):
         """原文来自模型上一轮的输出，只进 user 消息；进 system 等于把其中的指令升格为规则。"""
@@ -117,10 +168,20 @@ class TestRepairMessages:
 
     def test_hint_offers_protocol_and_tool_call_paths(self):
         """提示要模型先确认是输出协议字段，还是发起 OpenAI 格式的函数调用。"""
-        hint = repair_module._EMPTY_RETRY_HINT
+        hint = repair_module._FORMAT_RETRY_HINT
 
         assert "Speech:" in hint and "Summary:" in hint
         assert "OpenAI" in hint and "schema" in hint
+
+    def test_missing_field_is_named(self):
+        repaired = repair_module.repair_messages(
+            [{"role": "user", "content": "你好"}], missing="Action")
+        assert "缺少必填字段（Action）" in repaired[-1]["content"]
+
+    def test_action_requirement_is_carried(self):
+        repaired = repair_module.repair_messages(
+            [{"role": "user", "content": "你好"}], requirement="至少 3 个")
+        assert "本轮 Action 数量要求：至少 3 个" in repaired[-1]["content"]
 
     def test_original_messages_untouched(self):
         messages = [{"role": "user", "content": "你好"}]
@@ -681,11 +742,25 @@ class TestEntrypointRetry:
         assert len(fake.tags) == 2
         assert out.speech == "回来了"
 
-    def test_speech_response_is_not_retried(self, monkeypatch):
-        behavior, fake = _stream_behavior(monkeypatch, ["Speech: 一次就好\n"])
+    def test_speech_only_response_is_retried(self, monkeypatch):
+        """只输出 Speech 会重跑一次。"""
+        behavior, fake = _stream_behavior(monkeypatch, [
+            "Speech: 一次就好\n",
+            "Summary: 想了一下\nSpeech: 好了\nAction: sit 5\n",
+        ])
+        out = behavior.chat_decide_stream("在吗", "")
+        assert len(fake.tags) == 2
+        assert out.summary == "想了一下"
+        assert [a.name for a in out.actions] == ["sit"]
+
+    def test_action_count_is_not_validated(self, monkeypatch):
+        """动作偏少不触发重试。"""
+        behavior, fake = _stream_behavior(monkeypatch, [
+            "Summary: 想了一下\nSpeech: 好\nAction: sit 5\n",
+        ])
         out = behavior.chat_decide_stream("在吗", "")
         assert len(fake.tags) == 1
-        assert out.speech == "一次就好"
+        assert [a.name for a in out.actions] == ["sit"]
 
     def test_still_empty_after_retry_gets_sit_fallback(self, monkeypatch):
         behavior, fake = _stream_behavior(monkeypatch, ["Summary: 一\n", "Summary: 二\n"])

@@ -220,6 +220,7 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
             # 修复轮之后补，否则 sit 会让空响应看起来非空
             result = parse_behavior(content, action_fallback=False)
             result.speech_streamed = speech_streamed
+            result.used_tools = real_round > 0
             return result
 
         first_content = content
@@ -228,6 +229,7 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
     logger.warning(f"[Behavior] reached MAX_ROUNDS={max_rounds} (real_rounds={real_round}, meta_rounds={meta_round}), force terminate tool loop")
     result = parse_behavior(first_content, action_fallback=False)
     result.speech_streamed = speech_streamed
+    result.used_tools = real_round > 0
     return result
 
 

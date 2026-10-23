@@ -120,10 +120,11 @@ flowchart TB
 4. **输出解析**：按行前缀分派 - `Summary` / `Speech` / `Action` / `Memory` / `Emotion` / `Mood` / `Vitals`
    （`pet/brain/parsing.py`，流式与非流式共用一套行标签，聚合为 `BehaviorOutput`）。
    同一字段出现多行时，`Summary` / `Memory` / `Mood` / `Vitals` 只取第一条，`Speech` 全部保留并拼接。
-   结束原因（`finish_reason`）由解析器回传给编排方，空响应由 `pet/brain/repair.py` 的 `retry_if_empty`
-   重试一次：只有上一轮 `length`（上限被思考占满）才在修复轮关掉思考，其余失败保持调用方与用户设定。
-   两次都为空时入口补 `sit 5s`（`Behavior._decide_with_repair`，流式与非流式一致）；
-   工具轮的最终解析关掉动作兜底（`action_fallback=False`），空响应保持为空才进得了这条重试。
+   结束原因（`finish_reason`）由解析器回传给编排方；缺少必填字段（`Summary`、`Action`）时由
+   `pet/brain/repair.py` 的 `retry_if_incomplete` 重试一次：修复提示点明缺了哪个字段，并按任务给出 Action 数量要求，
+   原文作为待修复数据回传；有副作用的工具轮次不重试。只有上一轮 `length`（上限被思考占满）才在修复轮关掉思考，其余失败保持调用方与用户设定。
+   两次都缺 `Action` 时入口补 `sit 5s`（`Behavior._decide_with_repair`，流式与非流式一致）；
+   工具轮的最终解析关掉动作兜底（`action_fallback=False`），缺字段才能被这条重试看见。
 5. **工具轮次**：`pet/brain/tool_loop.py` 循环执行 LLM 请求的工具，最多 `LLM_TOOL_MAX_ROUNDS` 轮；
    元工具（`tool_search`、`recall` 等）不占配额。单个工具在 `pet/tools/executor.py` 里带超时执行。
 6. **动作执行**：`BehaviorOutput` 里的动作交给 `ActionQueue`（`pet/action/action_queue.py`）串行播放，
