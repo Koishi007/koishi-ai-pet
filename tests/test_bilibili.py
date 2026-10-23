@@ -279,6 +279,13 @@ def test_claim_action_scoped_by_account(store):
     assert store.claim_action(2, "like", "BV1") is not None
 
 
+def test_claim_action_without_limit_skips_dedupe(store):
+    """私信目标恒定，靠每日配额限流，不做目标去重。"""
+    assert store.claim_action(1, "dm", "9", limit=0) is not None
+    assert store.claim_action(1, "dm", "9", limit=0) is not None
+    assert store.count_live(1, "dm", "9") == 2
+
+
 def test_count_today(store):
     store.claim_action(1, "like", "BV1")
     store.claim_action(1, "like", "BV2")
@@ -519,7 +526,7 @@ def test_set_interval_minutes_persists(monkeypatch, tmp_path):
     assert duty.set_interval_minutes("  ")["schedule_interval_minutes"] == 180
 
 
-@pytest.mark.parametrize("text", ["30", "1441", "abc", "-60", "60.5"])
+@pytest.mark.parametrize("text", ["9", "1441", "abc", "-60", "60.5"])
 def test_set_interval_minutes_rejects_invalid(monkeypatch, tmp_path, text):
     monkeypatch.setattr(duty, "_CONFIG_FILE", tmp_path / "config.json")
     with pytest.raises(ValueError):

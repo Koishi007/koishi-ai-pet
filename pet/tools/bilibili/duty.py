@@ -72,7 +72,7 @@ _DEFAULTS: dict = {
 }
 
 # 定时任务间隔的上下限（分钟）
-_INTERVAL_MIN = 60
+_INTERVAL_MIN = 10
 _INTERVAL_MAX = 1440
 
 def _coerce(value, default):
@@ -489,7 +489,7 @@ def write_action(storage: BiliStorage, kind: str, *, bvid: str = "", text: str =
             return {"error": f"私信没发出去：{describe(code)}", "code": "filtered"}
         with _open(cfg, credential) as client:
             result = _guarded_write(storage, uid, "dm", str(target_uid), text,
-                                    lambda: client.dm(target_uid, text))
+                                    lambda: client.dm(target_uid, text), limit=0)
         return _as_tool_result(result)
 
     target = recent_target(bvid)
