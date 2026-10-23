@@ -284,25 +284,53 @@ class TestActionTable:
 
 
 class TestActionLimits:
-    """动作数量策略集中在 _ACTION_LIMITS / _DOCKED_ACTION_LIMIT。"""
+    """动作数量策略集中在 _ACTION_RANGE / _DOCKED_ACTION_RANGE。"""
 
     def test_docked_uses_shared_limit(self):
-        for task in prompts._ACTION_LIMITS:
+        for task in prompts._ACTION_RANGE:
             assert prompts._action_limit(task, True) == prompts._DOCKED_ACTION_LIMIT
 
-    def test_undocked_uses_task_limit(self):
-        for task in prompts._ACTION_LIMITS:
-            expected = prompts._ACTION_LIMITS[task]
+    def test_undocked_uses_task_range(self):
+        for task in prompts._ACTION_RANGE:
+            low, high = prompts.action_range(task)
             label, text = prompts._action_limit(task, False)
             assert (label, text) != prompts._DOCKED_ACTION_LIMIT
-            if "{n}" not in expected[0] and "{n}" not in expected[1]:
-                assert (label, text) == expected
+            assert label == (f"{low}-{high}" if high else f"≥{low}")
+            assert str(low) in text
 
     def test_autonomous_free_reads_min_action_count(self):
         n = prompts.min_action_count()
         label, text = prompts._action_limit("autonomous", False)
         assert label == f"≥{n}"
         assert str(n) in text
+
+    @staticmethod
+    def _action_lines(block: str) -> int:
+        return sum(1 for line in block.splitlines() if line.strip().startswith("Action:"))
+
+    def test_examples_match_action_limit(self):
+        cases = [
+            (prompts._autonomous_task, "autonomous", False),
+            (prompts._chat_task, "chat", False),
+            (prompts._analyze_task, "analyze", False),
+            (prompts._interact_task, "interact", False),
+            (prompts._chat_task, "chat", True),
+        ]
+        for fn, task, docked in cases:
+            low, high = prompts.action_range(task, docked)
+            count = self._action_lines(fn(docked=docked)[0])
+            assert count >= low
+            if high:
+                assert count <= high
+
+    def test_format_block_states_required_fields(self):
+        block = prompts._chat_task(False)[0]
+        assert "必填：第一行 Summary、至少 3 个 Action" in block
+        assert "只含 Speech 的输出无效" in block
+
+    def test_user_prompt_carries_action_count(self):
+        assert "Actions(至少" in prompts.chat_vision_user_prompt("在吗", "")
+        assert "Actions(至少" in prompts.autonomous_vision_user_prompt("", "")
 
     def test_examples_only_use_shared_actions(self):
         for fn in (prompts._autonomous_task, prompts._chat_task,
