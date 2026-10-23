@@ -32,10 +32,10 @@ _TAG_SCAN_LIMIT = 8
 # 静音标记：Speech 行取这些值时不产出语音
 _SILENCE_MARKERS = ("none", "", "null", "无")
 
-# 投影写在 Summary 行首的相对时间标签；模型照抄时剥掉，时间由投影按当前时刻重算
-_SUMMARY_TIME_LABEL = re.compile(
-    r"^〔(?:刚刚|\d+ 分钟前|\d+ 小时前|昨天 \d{1,2}:\d{2}|前天 \d{1,2}:\d{2}"
-    r"|\d{2}-\d{2} \d{1,2}:\d{2})〕\s*")
+# 投影写在 Summary 行首的时间标签；模型照抄时剥掉（可能连写多层），时间由投影按当前时刻重算
+_TIME_LABEL = (r"(?:刚刚|\d+\s*(?:分钟|小时)前|(?:昨天|前天|大前天)\s*\d{1,2}:\d{2}"
+               r"|\d{1,2}-\d{1,2}\s*\d{1,2}:\d{2}|\d{1,2}:\d{2})")
+_SUMMARY_TIME_LABEL = re.compile(rf"^(?:〔{_TIME_LABEL}〕\s*)+")
 
 # 行内标签切行
 _TAG_NAMES = ("Speech", "Action", "Summary", "Memory", "Emotion", "Mood", "Vitals")

@@ -188,6 +188,14 @@ class TestParseBehavior:
         out = parse_behavior("Summary: 〔3 分钟前〕连输三局\nSpeech: 唔...\n")
         assert out.summary == "连输三局"
 
+    def test_summary_clock_label_is_stripped(self):
+        out = parse_behavior("Summary: 〔11:18〕看清单\n")
+        assert out.summary == "看清单"
+
+    def test_summary_double_label_is_stripped(self):
+        out = parse_behavior("Summary: 〔3 分钟前〕〔11:18〕看清单\n")
+        assert out.summary == "看清单"
+
     def test_non_time_bracket_prefix_survives(self):
         out = parse_behavior("Summary: 〔备注〕连输三局\n")
         assert out.summary == "〔备注〕连输三局"
