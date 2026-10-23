@@ -173,15 +173,31 @@ class TestRepairMessages:
         assert "Speech:" in hint and "Summary:" in hint
         assert "OpenAI" in hint and "schema" in hint
 
+    def test_sample_asks_to_keep_previous_fields(self):
+        """有原文时提示只补缺失字段，不重新推理。"""
+        repaired = repair_module.repair_messages(
+            [{"role": "user", "content": "你好"}], sample="Speech: 好", missing="Summary")
+
+        assert "不必重新推理" in repaired[-2]["content"]
+        assert "只补齐缺失字段" in repaired[-1]["content"]
+
+    def test_action_rule_falls_back_to_one_line(self):
+        """没有数量要求时退到至少一行。"""
+        repaired = repair_module.repair_messages([{"role": "user", "content": "你好"}])
+        assert "并且至少有一行 `Action:`" in repaired[-1]["content"]
+
     def test_missing_field_is_named(self):
         repaired = repair_module.repair_messages(
             [{"role": "user", "content": "你好"}], missing="Action")
         assert "缺少必填字段（Action）" in repaired[-1]["content"]
 
     def test_action_requirement_is_carried(self):
+        """数量要求并进 Summary 那一句，不再单起一行。"""
         repaired = repair_module.repair_messages(
             [{"role": "user", "content": "你好"}], requirement="至少 3 个")
-        assert "本轮 Action 数量要求：至少 3 个" in repaired[-1]["content"]
+
+        assert "并且按本轮要求输出 Action（至少 3 个）" in repaired[-1]["content"]
+        assert "Action 数量要求：" not in repaired[-1]["content"]
 
     def test_original_messages_untouched(self):
         messages = [{"role": "user", "content": "你好"}]
@@ -636,6 +652,7 @@ class _FakeStreamLlm:
         self.thinkings = []
         self.temperatures = []
         self.max_tokens = []
+        self.messages_log = []
         self.model = "fake-model"
         self.client = None  # stream_chat 被替换，不经过真实 client
 
@@ -659,6 +676,7 @@ def _stream_behavior(monkeypatch, texts, stream_factory=None):
 
     def fake_stream_chat(messages, max_tokens=4000, tools=None, thinking=None, temperature=None):
         fake.tags.append("stream")
+        fake.messages_log.append(list(messages))
         fake.thinkings.append(thinking)
         fake.temperatures.append(temperature)
         fake.max_tokens.append(max_tokens)
@@ -730,6 +748,22 @@ class TestEntrypointRetry:
         assert len(fake.tags) == 2
         assert out.summary == "想了一下"
         assert [a.name for a in out.actions] == ["sit"]
+
+    def test_repair_round_carries_previous_output(self, monkeypatch):
+        """缺 Summary 也要把上一轮原文回传，修复轮只补字段。"""
+        previous = "Speech: 一次就好\nAction: sit 5\n"
+        behavior, fake = _stream_behavior(monkeypatch, [
+            previous,
+            "Summary: 想了一下\nSpeech: 一次就好\nAction: sit 5\n",
+        ])
+        out = behavior.chat_decide_stream("在吗", "")
+
+        assert len(fake.messages_log) == 2
+        tail = fake.messages_log[1][-1]
+        assert tail["role"] == "user"
+        assert "Speech: 一次就好" in tail["content"]
+        assert "只补齐缺失字段" in tail["content"]
+        assert out.summary == "想了一下"
 
     def test_action_count_is_not_validated(self, monkeypatch):
         """动作偏少不触发重试。"""
