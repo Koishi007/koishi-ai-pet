@@ -24,6 +24,38 @@ from pet.tools.registry import TOOL_REGISTRY
 
 logger = logging.getLogger(__name__)
 
+# dump 上下文时单个工具调用参数的打印上限
+_ARGS_LOG_LIMIT = 500
+
+
+def _one_line(text: str) -> str:
+    """换行折成字面 \\n，保证一条消息占一行日志。"""
+    return str(text).replace("\r\n", "\n").replace("\n", "\\n")
+
+
+def _msg_brief(message: dict) -> str:
+    """把 content 与 tool_calls 压成一行，避免同一索引散成多条日志。"""
+    parts: list[str] = []
+    content = message.get("content")
+    if isinstance(content, str):
+        parts.append(_one_line(content))
+    elif isinstance(content, list):
+        for j, part in enumerate(content):
+            if part["type"] == "text":
+                parts.append(f"part[{j}]={_one_line(part['text'])}")
+            else:
+                parts.append(f"part[{j}]={part['type']} len={len(str(part))} (binary omitted)")
+    else:
+        # 工具调用的 assistant 消息 content 为 null，属协议允许
+        parts.append(f"content={content!r}")
+    for k, call in enumerate(message.get("tool_calls") or []):
+        fn = call.get("function") or {}
+        args = str(fn.get("arguments") or "")
+        if len(args) > _ARGS_LOG_LIMIT:
+            args = f"{args[:_ARGS_LOG_LIMIT]}…(+{len(args) - _ARGS_LOG_LIMIT})"
+        parts.append(f"call[{k}]={fn.get('name', '')} id={call.get('id', '')} args={args}")
+    return " | ".join(parts)
+
 
 class Behavior(BrainMixin):
 
@@ -557,18 +589,10 @@ class Behavior(BrainMixin):
         t = datetime.now().strftime("%H:%M:%S")
         logger.debug(f"[{t}] [Behavior] ====== FULL CONTEXT ({tag}) ======")
         for i, m in enumerate(messages):
-            content = m.get("content")
-            if isinstance(content, str):
-                logger.debug(f"[{t}] [Behavior] --- msg[{i}] role={m['role']} ---\n{content}")
-            elif isinstance(content, list):
-                for j, part in enumerate(content):
-                    if part["type"] == "text":
-                        logger.debug(f"[{t}] [Behavior] --- msg[{i}] role={m['role']} part[{j}] text ---\n{part['text']}")
-                    else:
-                        logger.debug(f"[{t}] [Behavior] --- msg[{i}] role={m['role']} part[{j}] {part['type']} len={len(str(part))} --- (binary omitted)")
-            else:
-                # 工具调用的 assistant 消息 content 为 null，属协议允许
-                logger.debug(f"[{t}] [Behavior] --- msg[{i}] role={m['role']} content={content!r}")
+            role = m.get("role")
+            # tool 消息补调用 id，一条消息只打一行
+            meta = f" tool_call_id={m.get('tool_call_id', '')}" if role == "tool" else ""
+            logger.debug(f"[{t}] [Behavior] --- msg[{i}] role={role}{meta} --- {_msg_brief(m)}")
         logger.debug(f"[{t}] [Behavior] ====== END CONTEXT ({tag}) ======")
 
 class _BehaviorToolSession:
