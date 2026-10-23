@@ -229,7 +229,7 @@ for group in groups(按首个 seq 升序):
     if profile.tool_channel == "native":
         out.append({
             "role": "assistant",
-            "content": join_non_empty(turn.text, group.aside_text) or None,
+            "content": join_non_empty(turn.text, group.aside_rendered) or None,
             "tool_calls": [
                 {"id": c.tool_call_id, "type": "function",
                  "function": {"name": c.name, "arguments": replay_args(c)}}
@@ -265,6 +265,7 @@ for group in groups(按首个 seq 升序):
 - `content` 与 `tool_calls` 是**同一条** assistant 消息的并列字段；`content` 为空时置 `null`（OpenAI 允许）。
 - 一轮多个工具：一条 assistant 的 `tool_calls` 数组包含多项，随后按 `tool_call_id` 顺序输出多条 `tool`。
 - `aside` 在 native 档并入 `content`（有正文时以换行追加），避免模型下一轮"忘记自己说过什么"；它不单独占一条消息，否则会破坏 `tool_calls` 后必须紧跟 tool 消息的顺序约束。
+- 并入 `content` 的 aside 与独立 `assistant_speech` 同形，都带 `Speech: ` 前缀：同一语义只有一种历史形态，不给模型裸文本＝正文的示范。降级档同样使用带前缀的文本。
 - `user-note` 档**不输出** `tool_calls`：只带 `tool_calls` 而不跟 `role="tool"` 的请求会被严格端点判定为缺配对，降级档必须自称完整。
 - 三个降级档在 `turn.text` 为空时省略该条 assistant，避免产出空 `content` 消息被兼容端点拒绝。
 - `user-note` 优于 `system-note` 的原因只在位置：user 消息留在对话流的时序位置上，system 会全部挤进 `[上下文备注]`，离发生点远、模型更易忽略。两者文案一致。

@@ -60,6 +60,14 @@ class _Group:
         parts.extend(e.payload.get("text", "") for e in self.speeches)
         return join_non_empty(*parts)
 
+    @property
+    def rendered_text(self) -> str:
+        """给模型的形态：aside 带 Speech 标签，与独立 speech 的渲染一致。"""
+        parts = [self.turn.payload.get("text", "") if self.turn else ""]
+        parts.extend(f"Speech: {e.payload['text']}" if e.payload.get("text") else ""
+                     for e in self.speeches)
+        return join_non_empty(*parts)
+
     def result_for(self, call: Event) -> Optional[Event]:
         return self.results.get(call.refs.get("tool_call_id", ""))
 
@@ -450,7 +458,7 @@ def _render(items: list[_Item], profile: Profile, budget: Budget, stats: dict) -
 
 
 def _render_group(group: _Group, profile: Profile, stats: dict) -> list[dict]:
-    text, hits = sanitize_assistant_text(group.text)
+    text, hits = sanitize_assistant_text(group.rendered_text)
     if hits:
         stats["sanitized_lines"] = stats.get("sanitized_lines", 0) + hits
     channel = profile.tool_channel

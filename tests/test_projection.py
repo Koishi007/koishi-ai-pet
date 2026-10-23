@@ -150,8 +150,22 @@ class TestToolGroup:
         ]
         messages = project(events, Profile(), Budget(now=T0 + 1000))
         assert len(messages) == 2
-        assert messages[0]["content"].endswith("查一下天气")
+        assert messages[0]["content"] == "Speech: 查一下天气"
         assert messages[1]["role"] == "tool"
+
+    def test_aside_after_turn_keeps_speech_prefix(self):
+        gid = "g9"
+        events = [
+            ev(9, "assistant_turn", {"text": "我查查"}, group=gid),
+            ev(10, "assistant_speech", {"text": "查一下天气"}, group=gid,
+               refs={"tool_call_id": "c11"}),
+            ev(11, "tool_call", {"name": "weather__get_current", "args_digest": "-"},
+               group=gid, refs={"tool_call_id": "c11"}),
+            ev(12, "tool_result", {"brief": "深圳晴"}, group=gid,
+               refs={"tool_call_id": "c11"}),
+        ]
+        messages = project(events, Profile(), Budget(now=T0 + 1000))
+        assert messages[0]["content"] == "我查查\nSpeech: 查一下天气"
 
     def test_dropped_group_takes_its_aside_with_it(self):
         events = []
