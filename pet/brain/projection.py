@@ -62,7 +62,7 @@ class _Group:
 
     @property
     def rendered_text(self) -> str:
-        """给模型的形态：aside 带 Speech 标签，与独立 speech 的渲染一致。"""
+        """给模型的文本：aside 带 Speech 标签。"""
         parts = [self.turn.payload.get("text", "") if self.turn else ""]
         parts.extend(f"Speech: {e.payload['text']}" if e.payload.get("text") else ""
                      for e in self.speeches)
@@ -78,15 +78,18 @@ class _Group:
 
 @dataclass
 class _Item:
-    kind: str          # user | assistant | speech | assistant_summary | system | summary | group
+    kind: str          # user | assistant | speech | assistant_summary | system | summary | group | turn_block
     seq: int
     ts: float
     event: Optional[Event] = None
     group: Optional[_Group] = None
+    events: list = field(default_factory=list)
 
     def text(self) -> str:
         if self.kind == "group":
             return self.group.text
+        if self.kind == "turn_block":
+            return "\n".join(e.payload.get("text") or "" for e in self.events)
         return (self.event.payload.get("text") or "") if self.event else ""
 
 
@@ -305,6 +308,13 @@ def _build_items(events: list, snapshot: Optional[Event],
             call_id = event.refs.get("tool_call_id") or event.payload.get("tool_call_id") or ""
             group.results[call_id] = event
 
+    # 同一回合的 Summary 与 Speech 按 turn_id 归并，投影成一条 assistant 消息
+    turns: dict[str, list[Event]] = {}
+    for event in events:
+        turn_id = event.payload.get("turn_id") if event.type == "assistant_turn" else ""
+        if turn_id and not _hidden(event.seq, ranges):
+            turns.setdefault(turn_id, []).append(event)
+
     items: list[_Item] = []
     if snapshot is not None:
         for summary in snapshot.payload.get("summaries") or []:
@@ -315,6 +325,7 @@ def _build_items(events: list, snapshot: Optional[Event],
                                                "summary", None, {"text": text}, {})))
 
     emitted: set[str] = set()
+    emitted_turns: set[str] = set()
 
     def emit_group(gid: str, seq: int, ts: float):
         """组 item 首次出现时插入，保持 seq 顺序。"""
@@ -337,6 +348,14 @@ def _build_items(events: list, snapshot: Optional[Event],
             elif event.type == "assistant_turn":
                 groups[gid].turn = event
             emit_group(gid, event.seq, event.ts)
+            continue
+
+        turn_id = event.payload.get("turn_id") if event.type == "assistant_turn" else ""
+        if turn_id and turn_id in turns:
+            if turn_id not in emitted_turns:
+                emitted_turns.add(turn_id)
+                items.append(_Item("turn_block", event.seq, event.ts,
+                                   events=turns[turn_id]))
             continue
 
         if event.type in ("assistant_turn", "assistant_speech"):
@@ -385,7 +404,8 @@ def _apply_skip_last(items: list[_Item], budget: Budget) -> list[_Item]:
     if budget.skip_last <= 0:
         return items
     droppable = [i for i, item in enumerate(items)
-                 if item.kind in ("user", "assistant", "speech", "assistant_summary")]
+                 if item.kind in ("user", "assistant", "speech",
+                                  "assistant_summary", "turn_block")]
     drop = set(droppable[-budget.skip_last:])
     return [item for i, item in enumerate(items) if i not in drop]
 
@@ -432,6 +452,9 @@ def _render(items: list[_Item], profile: Profile, budget: Budget, stats: dict) -
         if item.kind == "group":
             out.extend(_render_group(item.group, profile, stats))
             continue
+        if item.kind == "turn_block":
+            out.extend(_render_turn_block(item.events, budget))
+            continue
         text = item.text()
         if not text:
             continue
@@ -455,6 +478,22 @@ def _render(items: list[_Item], profile: Profile, budget: Budget, stats: dict) -
         elif item.kind in ("system", "summary"):
             out.append({"role": "system", "content": content})
     return out
+
+
+def _render_turn_block(events: list, budget: Budget) -> list[dict]:
+    """同一回合的 Summary 与 Speech 合成一条 assistant 消息。"""
+    lines = []
+    for event in events:
+        text = event.payload.get("text") or ""
+        if not text:
+            continue
+        if event.payload.get("kind") == "summary":
+            label = format_relative_time(event.ts, budget.now)
+            lines.append(f"Summary: 〔{label}〕{text}")
+        else:
+            text, _ = sanitize_assistant_text(text)
+            lines.append(f"Speech: {text}")
+    return [{"role": "assistant", "content": "\n".join(lines)}] if lines else []
 
 
 def _render_group(group: _Group, profile: Profile, stats: dict) -> list[dict]:

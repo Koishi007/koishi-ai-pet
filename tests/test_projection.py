@@ -351,3 +351,26 @@ class TestHistoryFormat:
                            Budget(now=T0 + 600))
         assert messages[0]["content"].startswith("[")
         assert "旧台词" in messages[0]["content"]
+
+    def test_turn_id_merges_summary_and_speech(self):
+        events = [
+            ev(1, "assistant_turn",
+               {"text": "发呆了一轮", "kind": "summary", "turn_id": "t1"}),
+            ev(2, "assistant_turn",
+               {"text": "唔…", "kind": "speech", "turn_id": "t1"}),
+        ]
+        messages = project(events, Profile(), Budget(now=T0 + 600))
+        assert len(messages) == 1
+        assert re.fullmatch(r"Summary: 〔\d+ 分钟前〕发呆了一轮\nSpeech: 唔…",
+                            messages[0]["content"])
+
+    def test_turn_block_counts_as_one_entry(self):
+        events = [
+            ev(1, "assistant_turn",
+               {"text": "发呆了一轮", "kind": "summary", "turn_id": "t1"}),
+            ev(2, "assistant_turn",
+               {"text": "唔…", "kind": "speech", "turn_id": "t1"}),
+        ]
+        messages = project(events, Profile(), Budget(max_entries=1, now=T0 + 600))
+        assert len(messages) == 1
+        assert "Speech: 唔…" in messages[0]["content"]

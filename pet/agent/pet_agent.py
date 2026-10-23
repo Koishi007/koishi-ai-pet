@@ -8,6 +8,7 @@ from datetime import datetime
 from PySide6.QtCore import QObject, QThread, QThreadPool, QTimer, Qt, Signal, Slot
 
 from pet.brain.behavior import Behavior
+from pet.brain.events import new_group_id
 from pet.brain.output import BehaviorOutput, CancelledError
 from pet.agent.scheduler import Scheduler
 from pet.agent.scheduled_tasks import ScheduledTasks
@@ -705,12 +706,13 @@ class PetAgent(QObject):
             if not result.actions and not result.speech:
                 logger.warning(f"[{ts}] [PetAgent] empty response from LLM (no actions, no speech)")
             # Summary 先写：投影把时间标签挂在 Summary 行上，历史顺序与协议一致
+            turn_id = new_group_id()
             if result.summary:
                 self.behavior.add_context(role="assistant", content=result.summary,
-                                          kind="summary")
+                                          kind="summary", turn_id=turn_id)
             if result.speech:
                 self.behavior.add_context(role="assistant", content=result.speech,
-                                          kind="speech")
+                                          kind="speech", turn_id=turn_id)
                 if not result.speech_streamed:
                     parts = result.speech_parts if result.speech_parts else [result.speech]
                     for part in parts:
