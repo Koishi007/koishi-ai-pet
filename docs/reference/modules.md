@@ -45,8 +45,8 @@
 | `pet/brain/output.py` | LLM 决策的输出契约：行为输出与取消信号，供解析、工具轮次与编排共同引用。 | `CancelledError` `ActionStep` `BehaviorOutput` |
 | `pet/brain/parsing.py` | LLM 输出解析：把文本行 / 流式 chunk 收敛成 BehaviorOutput。 | `BehaviorSink` `parse_deltas()` `parse_mood_line()` `parse_vitals_line()` `parse_action_line()` `InlineTagNormalizer` |
 | `pet/brain/projection.py` | 事件日志到 `Message[]` 的投影：纯函数，只依赖事件、Profile 与 Budget。 | `Profile` `Budget` `_Group` `_Item` `project()` `degrade_messages()` |
-| `pet/brain/prompts.py` | 系统提示词分层组装 | `_Lazy` `invalidate_action_section()` `build_attention_hint()` `build_system_prompt()` `dock_note()` `autonomous_vision_user_prompt()` |
-| `pet/brain/repair.py` | 空响应修复重试：一次决策无动作无台词时，改写 messages 再跑一次。 | `retry_if_empty()` `repair_messages()` |
+| `pet/brain/prompts.py` | 系统提示词分层组装 | `_Lazy` `invalidate_action_section()` `action_range()` `build_attention_hint()` `build_system_prompt()` `dock_note()` |
+| `pet/brain/repair.py` | 格式修复重试：缺少必填字段时改写 messages 再跑一次。 | `action_bounds()` `action_requirement()` `missing_required()` `retry_if_incomplete()` `repair_messages()` |
 | `pet/brain/summary.py` | 摘要流水线的执行端：把上下文淘汰产生的待摘要条目压成一句写回上下文。 | `SummaryHooks` `flush_summaries()` `summarize_with_llm()` |
 | `pet/brain/tool_channel.py` | 工具通道选择：默认 native，端点明确拒绝时逐档降级并缓存结果。 | `is_tool_rejection()` `next_channel()` `channel_for()` `mark_downgraded()` `reset_cache()` `current_profile()` |
 | `pet/brain/tool_loop.py` | 工具轮次：执行 LLM 请求的工具并循环，直到模型不再请求工具。 | `ToolSession` `run_tool_loop()` |

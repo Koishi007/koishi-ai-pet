@@ -75,7 +75,7 @@ max_tokens = min(_CEILING, 基线 + (思考开启 ? 思考预留 : 0) + (带工�
 
 `pet/brain/parsing.py` 的 `BehaviorSink` 增加 `note_finish_reason(reason)`：流式在 `collect_stream` 消费结束后上报，非流式在 `_call_llm_and_parse` 直接读 `resp.choices[0].finish_reason`。`Behavior` 用与 `_last_unparsed` 相同的线程本地属性存放，管线入口（非修复轮）重置为 `""`。
 
-非流式解析同时关掉动作兜底（`action_fallback=False`）：`retry_if_empty` 以「无动作且无台词」判定空响应，兜底补出的 `sit` 会让空响应看不出来。`sit 5s` 改由 `Behavior._decide_with_repair` 在修复轮之后仍为空时补上，与原行为等价。
+非流式解析同时关掉动作兜底（`action_fallback=False`）：`retry_if_incomplete` 以「缺少必填字段（Summary/Action）」判定是否需要修复，兜底补出的 `sit` 会让缺 Action 看不出来。`sit 5s` 改由 `Behavior._decide_with_repair` 在修复轮之后仍缺 Action 时补上。
 
 诊断日志随之带上结束原因：`响应未解析出字段：content X 字符、reasoning Y 字符、finish_reason length`。
 

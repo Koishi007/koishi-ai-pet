@@ -14,7 +14,8 @@ from pet.brain.local_fallback import chat_decide_local, decide_local, interact_d
 from pet.brain.output import ActionStep, BehaviorOutput, CancelledError
 from pet.brain.parsing import (BehaviorParser, parse_behavior, parse_stream_chunks,
                                _UNPARSED_SAMPLE_LIMIT)
-from pet.brain.repair import repair_messages, retry_if_empty, RETRY_TEMPERATURE
+from pet.brain.repair import (repair_messages, retry_if_incomplete,
+                              action_requirement, RETRY_TEMPERATURE)
 from pet.brain.summary import SummaryHooks, flush_summaries, summarize_with_llm
 from pet.brain.tool_loop import run_tool_loop
 from pet.tools.executor import ToolExecutor
@@ -24,17 +25,16 @@ from pet.tools.registry import TOOL_REGISTRY
 
 logger = logging.getLogger(__name__)
 
-# dump 上下文时单个工具调用参数的打印上限
 _ARGS_LOG_LIMIT = 500
 
 
 def _one_line(text: str) -> str:
-    """换行折成字面 \\n，保证一条消息占一行日志。"""
+    """换行折成字面 \\n。"""
     return str(text).replace("\r\n", "\n").replace("\n", "\\n")
 
 
 def _msg_brief(message: dict) -> str:
-    """把 content 与 tool_calls 压成一行，避免同一索引散成多条日志。"""
+    """content 与 tool_calls 压成一行。"""
     parts: list[str] = []
     content = message.get("content")
     if isinstance(content, str):
@@ -152,6 +152,15 @@ class Behavior(BrainMixin):
     @_last_unparsed.setter
     def _last_unparsed(self, value: str):
         self._unparsed_local.text = value
+
+    @property
+    def _repair_missing(self) -> str:
+        """修复轮指出的缺失字段，按线程隔离。"""
+        return getattr(self._unparsed_local, "missing", "")
+
+    @_repair_missing.setter
+    def _repair_missing(self, value: str):
+        self._unparsed_local.missing = value
 
     @property
     def _last_finish_reason(self) -> str:
@@ -394,10 +403,13 @@ class Behavior(BrainMixin):
         t = datetime.now().strftime("%H:%M:%S")
         if repair:
             thinking = self._thinking_for_repair(thinking)
-            messages = repair_messages(messages, self._last_unparsed)
+            messages = repair_messages(
+                messages, self._last_unparsed, self._repair_missing,
+                action_requirement(mode, self._docked()))
         else:
             self._last_unparsed = ""
             self._last_finish_reason = ""
+            self._repair_missing = ""
         self._llm.reset_effective()  # 新请求链从首选方案开始
         self._apply_cache_control(messages)
         self._dump_context(tag, messages)
@@ -447,13 +459,16 @@ class Behavior(BrainMixin):
                                  enable_tools: bool | None = None,
                                  cancel_check: callable = None,
                                  repair: bool = False) -> BehaviorOutput:
-        """跑一次流式管线；空响应的修复与兜底由入口的 _decide_with_repair 负责。"""
+        """跑一次流式管线；修复与兜底由入口负责。"""
         if repair:
             thinking = self._thinking_for_repair(thinking)
-            messages = repair_messages(messages, self._last_unparsed)
+            messages = repair_messages(
+                messages, self._last_unparsed, self._repair_missing,
+                action_requirement(mode, self._docked()))
         else:
             self._last_unparsed = ""
             self._last_finish_reason = ""
+            self._repair_missing = ""
         self._llm.reset_effective()  # 新请求链从首选方案开始
         self._apply_cache_control(messages)
         self._dump_context(tag, messages)
@@ -540,12 +555,11 @@ class Behavior(BrainMixin):
         self.record_failed_turn(self._last_unparsed, self._last_finish_reason, tag)
 
     def _decide_with_repair(self, pipeline, tag: str) -> BehaviorOutput:
-        """入口的空响应修复：先跑一次修复轮，仍为空时补 sit 兜底。
-
-        已解析的摘要、记忆与增量都保留。
-        """
-        output = retry_if_empty(pipeline, tag)
-        if not output.actions and not output.speech:
+        """缺 Summary/Action 时重跑一次，仍缺时补 sit 兜底。"""
+        output = retry_if_incomplete(
+            pipeline, tag,
+            on_missing=lambda missing: setattr(self, "_repair_missing", missing))
+        if not output.actions:
             output.actions = [ActionStep("sit", kwargs={"duration": 5})]
         return output
 
@@ -590,7 +604,7 @@ class Behavior(BrainMixin):
         logger.debug(f"[{t}] [Behavior] ====== FULL CONTEXT ({tag}) ======")
         for i, m in enumerate(messages):
             role = m.get("role")
-            # tool 消息补调用 id，一条消息只打一行
+            # tool 消息补调用 id
             meta = f" tool_call_id={m.get('tool_call_id', '')}" if role == "tool" else ""
             logger.debug(f"[{t}] [Behavior] --- msg[{i}] role={role}{meta} --- {_msg_brief(m)}")
         logger.debug(f"[{t}] [Behavior] ====== END CONTEXT ({tag}) ======")
