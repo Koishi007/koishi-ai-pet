@@ -221,6 +221,7 @@ def _food_guide_available() -> bool:
 
 def _task_format(*, header: str, summary: str, emotion: str,
                  speech: list[str], actions: list[str], mood: str,
+                 action_text: str = "",
                  memory: str | None = None, vitals: str | None = None) -> str:
     """任务段的输出格式块：示例行按传入顺序展开，Memory/Vitals 按需出现。"""
     lines = [
@@ -238,33 +239,46 @@ def _task_format(*, header: str, summary: str, emotion: str,
         lines.append(f"  Vitals: {vitals}")
     lines.append("")
     lines.append(f"可用 Emotion: {_EMOTION_LIST}")
+    if action_text:
+        lines.append(f"必填：第一行 Summary、{action_text} 个 Action；其余可省略")
+        lines.append("Speech 可省略，Action 不可省略；只含 Speech 的输出无效")
     return "\n".join(lines) + "\n"
 
 
-# 任务 -> (格式标签, 约束文案)；贴边统一取 _DOCKED_ACTION_LIMIT，{n} 由 min_action_count() 填充
-_ACTION_LIMITS = {
-    "autonomous": ("≥{n}", "最少 {n}"),
-    "chat": ("≥3", "至少 3"),
-    "interact": ("1-2", "只输出 1-2"),
-    "analyze": ("≥3", "至少 3"),
+# 任务 -> (最少, 最多) 动作数；最多 0 表示不限，autonomous 的下限按调度间隔动态计算
+_ACTION_RANGE = {
+    "autonomous": (min_action_count, 0),
+    "chat": (3, 0),
+    "interact": (1, 2),
+    "analyze": (3, 0),
 }
+_DOCKED_ACTION_RANGE = (1, 0)
 _DOCKED_ACTION_LIMIT = ("≥1", "至少 1")
+
+
+def action_range(task: str, docked: bool = False) -> tuple[int, int]:
+    """任务的动作数量 (最少, 最多)；最多 0 表示不限。"""
+    if docked:
+        return _DOCKED_ACTION_RANGE
+    low, high = _ACTION_RANGE.get(task, (1, 0))
+    return (low() if callable(low) else low), high
 
 
 def _action_limit(task: str, docked: bool) -> tuple[str, str]:
     """返回任务的动作数量 (格式标签, 约束文案)。"""
     if docked:
         return _DOCKED_ACTION_LIMIT
-    label, text = _ACTION_LIMITS[task]
-    if "{n}" in label or "{n}" in text:
-        n = min_action_count()
-        label, text = label.format(n=n), text.format(n=n)
-    return label, text
+    low, high = action_range(task)
+    if high:
+        return f"{low}-{high}", f"只输出 {low}-{high}"
+    text = "最少" if task == "autonomous" else "至少"
+    return f"≥{low}", f"{text} {low}"
 
 
 def _autonomous_task(docked: bool = False) -> list[str]:
     action_label, action_text = _action_limit("autonomous", docked)
-    actions = ["thinking 5", "sleep 30", "shake_arms"]
+    pool = ["thinking 5", "sleep 20", "shake_arms", "rotate", "confuse"]
+    actions = [pool[i % len(pool)] for i in range(1 if docked else min_action_count())]
     target_s = target_sequence_duration() if not docked else 0
 
     format_guide = _task_format(
@@ -276,6 +290,7 @@ def _autonomous_task(docked: bool = False) -> list[str]:
         emotion="happy",
         speech=["先安静待一会儿..."] if docked else ["又在写代码呀...", "嘿嘿"],
         actions=actions,
+        action_text=action_text,
         memory=(
             "user_fact 用户习惯在晚上工作 | keywords:[工作习惯] | importance:3 | level:L2"
             if docked else
@@ -324,7 +339,8 @@ def _chat_task(docked: bool = False) -> list[str]:
         summary="<对话内容和行为决策，≤50字>",
         emotion="happy",
         speech=["嗯..."] if docked else ["跳过去嘛...好的", "会有奖励嘛..."],
-        actions=["thinking 5", "shake_arms"],
+        actions=["thinking 5"] if docked else ["thinking 5", "shake_arms", "rotate"],
+        action_text=action_text,
         memory=(
             "user_fact 用户习惯在晚上工作 | keywords:[工作习惯] | importance:3 | level:L2"
             if docked else
@@ -365,7 +381,8 @@ def _interact_task(docked: bool = False) -> list[str]:
         summary="<互动内容和反应，≤30字>",
         emotion="happy",
         speech=["嗯..."] if docked else ["你怎么抓我呀", "哇——放开"],
-        actions=["thinking 5", "shake_arms"],
+        actions=["thinking 5"] if docked else ["thinking 5", "shake_arms"],
+        action_text=action_text,
         mood="affection+1 joy+1" if docked else "affection+1 joy-1 sanity-5",
         vitals="satiety-2 energy+3",
     )
@@ -391,7 +408,8 @@ def _analyze_task(docked: bool = False) -> list[str]:
         summary="<对象是什么 + 你的结论，≤50字>",
         emotion="curious",
         speech=["这份笔记写了三件事…", "最有意思的是第二件"],
-        actions=["thinking 5", "shake_arms"],
+        actions=["thinking 5"] if docked else ["thinking 5", "shake_arms", "rotate"],
+        action_text=action_text,
         memory="event 用户给你看过一张旅行照片 | keywords:[照片] | importance:2 | level:L3",
         mood="joy+1",
     )
@@ -523,6 +541,7 @@ def _with_dock_note(body: str, dock_note: str) -> str:
 
 
 def autonomous_vision_user_prompt(context: str, dock_note: str = "") -> str:
+    action_min = action_range("autonomous", bool(dock_note))[0]
     return _with_dock_note(
         f"{context}\n\n"
         f"【自主决策触发】当前是定时器自动唤醒，用户没有在和你说话、互动，也没有给你喂食！\n"
@@ -544,12 +563,14 @@ def autonomous_vision_user_prompt(context: str, dock_note: str = "") -> str:
         f"5. 理智不正常时话语可以混乱，但行为必须无害——不做破坏性操作，不主动写/覆盖文件、打开未知网页或改动用户环境；多个独立工具可一次并行调用\n"
         f"6. 画面没什么变化时不要硬找新话题、不要给画面加戏或堆砌修辞；可以说当下的感受，也可以用很短的句子\n"
         f"7. 记忆：本轮是否出现了值得记住的新信息（环境里暴露的稳定事实、明确的偏好或安排）？有就写一行 Memory，没有就省略\n"
-        f"8. 按顺序写出完整输出（Summary → Emotion → Speech(可选，可多个) → Actions → Memory(可选) → Mood）",
+        f"8. 按顺序写出完整输出（Summary → Emotion → Speech(可选，可多个) → "
+        f"Actions(至少 {action_min} 个) → Memory(可选) → Mood）",
         dock_note,
     )
 
 
 def autonomous_non_vision_user_prompt(context: str, dock_note: str = "") -> str:
+    action_min = action_range("autonomous", bool(dock_note))[0]
     return _with_dock_note(
         f"{context}\n\n"
         f"【自主决策触发】当前是定时器自动唤醒，用户没有在和你说话、互动，也没有给你喂食！\n"
@@ -567,13 +588,15 @@ def autonomous_non_vision_user_prompt(context: str, dock_note: str = "") -> str:
         f"4. 理智不正常时话语可以混乱，但行为必须无害——不做破坏性操作，不主动写/覆盖文件、打开未知网页或改动用户环境；多个独立工具可一次并行调用\n"
         f"5. 避免与近期台词重复；没什么想说就简短表达当下的感觉\n"
         f"6. 记忆：本轮是否出现了值得记住的新信息（窗口标题、记忆段里没有的稳定事实或偏好）？有就写一行 Memory，没有就省略\n"
-        f"7. 按顺序写出完整输出（Summary → Emotion → Speech(可选，可多个) → Actions → Memory(可选) → Mood）",
+        f"7. 按顺序写出完整输出（Summary → Emotion → Speech(可选，可多个) → "
+        f"Actions(至少 {action_min} 个) → Memory(可选) → Mood）",
         dock_note,
     )
 
 
 
 def chat_vision_user_prompt(user_message: str, context: str, dock_note: str = "") -> str:
+    action_min = action_range("chat", bool(dock_note))[0]
     return _with_dock_note(
         f"=== 用户对你说 ===\n{user_message}\n\n"
         f"{context}\n\n"
@@ -583,12 +606,14 @@ def chat_vision_user_prompt(user_message: str, context: str, dock_note: str = ""
         "3. 结合「你现在的状态」和截图内容，用符合人格和当下心境的话回应，可以输出多个 Speech 分句；「你惦记着的事」里有未满足的需求，可以顺口带一句，禁止和工具调用时说的话重复，需要保持连续性\n"
         "4. 规划配合对话的动作序列\n"
         "5. 记忆：用户本轮是否说出了值得记住的新信息（姓名、住址、偏好、确定的安排、刚发生的事）？有就写一行 Memory，没有就省略\n"
-        "6. 按顺序写出完整输出（Summary → Emotion → Speech(可多个) → Actions → Memory(可选) → Mood）",
+        f"6. 按顺序写出完整输出（Summary → Emotion → Speech(可多个) → "
+        f"Actions(至少 {action_min} 个) → Memory(可选) → Mood）",
         dock_note,
     )
 
 
 def chat_non_vision_user_prompt(user_message: str, context: str, dock_note: str = "") -> str:
+    action_min = action_range("chat", bool(dock_note))[0]
     return _with_dock_note(
         f"=== 用户对你说 ===\n{user_message}\n\n"
         f"{context}\n\n"
@@ -597,12 +622,14 @@ def chat_non_vision_user_prompt(user_message: str, context: str, dock_note: str 
         "2. 结合「你现在的状态」和用户消息内容，用符合人格和当下心境的话回应，可以输出多个 Speech 分句；「你惦记着的事」里有未满足的需求，可以顺口带一句，禁止和工具调用时说的话重复，需要保持连续性\n"
         "3. 规划配合对话的动作序列\n"
         "4. 记忆：用户本轮是否说出了值得记住的新信息（姓名、住址、偏好、确定的安排、刚发生的事）？有就写一行 Memory，没有就省略\n"
-        "5. 按顺序写出完整输出（Summary → Emotion → Speech(可多个) → Actions → Memory(可选) → Mood）",
+        f"5. 按顺序写出完整输出（Summary → Emotion → Speech(可多个) → "
+        f"Actions(至少 {action_min} 个) → Memory(可选) → Mood）",
         dock_note,
     )
 
 
 def analyze_vision_user_prompt(user_message: str, context: str, dock_note: str = "") -> str:
+    action_min = action_range("analyze", bool(dock_note))[0]
     return _with_dock_note(
         f"=== 用户交给你看的东西 ===\n{user_message}\n\n"
         f"{context}\n\n"
@@ -610,12 +637,14 @@ def analyze_vision_user_prompt(user_message: str, context: str, dock_note: str =
         "1. 先看完对象（文字读完、图看清楚），弄清它是什么、讲了什么，不熟悉时可以使用工具获取信息（搜索、回忆、知识库等）\n"
         "2. 提炼要点和你自己的判断\n"
         "3. 用符合人格的话说出来（可输出多个 Speech 分句），不要复述原文\n"
-        "4. 按输出格式写完整输出（Summary → Emotion → Speech(可多个) → Action → Memory(可选) → Mood）",
+        f"4. 按输出格式写完整输出（Summary → Emotion → Speech(可多个) → "
+        f"Actions(至少 {action_min} 个) → Memory(可选) → Mood）",
         dock_note,
     )
 
 
 def analyze_non_vision_user_prompt(user_message: str, context: str, dock_note: str = "") -> str:
+    action_min = action_range("analyze", bool(dock_note))[0]
     return _with_dock_note(
         f"=== 用户交给你看的东西 ===\n{user_message}\n\n"
         f"{context}\n\n"
@@ -623,7 +652,8 @@ def analyze_non_vision_user_prompt(user_message: str, context: str, dock_note: s
         "1. 先读完对象，弄清它是什么、讲了什么，不熟悉时可以使用工具获取信息（搜索、回忆、知识库等）\n"
         "2. 提炼要点和你自己的判断\n"
         "3. 用符合人格的话说出来（可输出多个 Speech 分句），不要复述原文\n"
-        "4. 按输出格式写完整输出（Summary → Emotion → Speech(可多个) → Action → Memory(可选) → Mood）",
+        f"4. 按输出格式写完整输出（Summary → Emotion → Speech(可多个) → "
+        f"Actions(至少 {action_min} 个) → Memory(可选) → Mood）",
         dock_note,
     )
 
