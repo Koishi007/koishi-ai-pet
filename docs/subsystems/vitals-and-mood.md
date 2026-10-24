@@ -55,11 +55,11 @@
 
 ### (d) 自然衰减（仅 mood，仅 slow tick）
 
-`Mood.apply_decay`（slow tick，默认 5 分钟）：
+`Mood.apply_decay`（slow tick，默认 10 分钟）：
 
 - **只处理 `joy` 与 `affection`**：高于基线就减一个步长、低于基线就加一个步长，**不越过基线**；
 - 基线来自 `MOOD_{JOY,AFFECTION}_BASELINE`（默认 50 / 50），步长来自 `MOOD_*_DECAY_PER_TICK`（默认 2.0 / 0.2）；
-  config 描述写的是「点/300 秒」，实现是「每 slow tick 一步」，只有调度间隔是默认值时才等价；
+  config 描述写的是「点/600 秒」，实现是「每 slow tick 一步」，只有调度间隔是默认值时才等价；
 - `MOOD_GRACE_SECONDS`（默认 60）内的任何 `modify_*` / `set_*` 都会重置免衰减窗口，
   模型每轮小幅调整就能长期压制衰减；
 - **`sanity` 不参与衰减**：它完全由事件与模型驱动（见 `MoodDecayConfig` 的注释）；
@@ -110,7 +110,7 @@
 
 - 保存时机：slow tick **无条件** `save()`（`_vitals_save` / `_mood_save`），退出时 `close()` 再存一次；
   `apply_decay` 有变化时也会立即保存。**没有脏标记或 debounce**。
-- 崩溃/强杀最多丢 300 秒：vitals 丢的是这段时间的动作消耗累计，mood 丢的是 LLM 增量、摸头加成与衰减步进。
+- 崩溃/强杀最多丢 600 秒：vitals 丢的是这段时间的动作消耗累计，mood 丢的是 LLM 增量、摸头加成与衰减步进。
 - 写失败只告警、值留在内存等下轮；连接 `busy_timeout` 建表后收紧到 500ms。
 - 精度：vitals 存 `round(...,3)`，mood 原值直存。
 
