@@ -125,17 +125,17 @@ slow tick 触发（默认每 5 分钟）：
 
 整点（本地时间）由 `ScheduledTasks._memory_event_merge` 触发，`pet/brain/memory_merge.py` 执行：
 
-- 输入：全部 `event` 记忆，一行一条 `#id MM-DD HH:MM 内容`；
-- 输出：模型按 `Group: #id,#id | 汇总内容` 返回分组，解析时只保留输入集合内的 id、组内 ≥2 条、内容 ≤400 字；
-- 写回：每组插入一条新记忆（`created_at` 取组内最大值、级别保底 `L2`、组内含 `L1` 时取 `L1`、`last_accessed_at` 取当前时间），删除组内旧条目，单事务；
+- 输入：全部 `event` 与 `conversation` 记忆，一行一条 `#id [类别] MM-DD HH:MM 内容`；
+- 输出：模型按 `Group: #id,#id | 汇总内容` 返回分组，解析时只保留输入集合内的 id、组内 ≥2 条、至少含一条 `event`（纯 `conversation` 组忽略）、内容 ≤400 字；
+- 写回：每组插入一条新 `event` 记忆（`created_at` 取组内最大值、级别保底 `L2`、组内含 `L1` 时取 `L1`、`last_accessed_at` 取当前时间），删除组内旧条目（含 `conversation`），单事务；
 - 汇总产物不继承组内 `L3`：`created_at` 回填历史时间，若同时是 `L3` 会在下一个 slow tick 被过期清理删掉；
 - L3 过期清理与低访问淘汰都会输出删除条数日志，便于排查「写入后消失」。
-- 失败：请求失败不推进游标，下一个整点重试同一批；解析无可应用组时正常推进；新增 `event` 不足 6 条时跳过。
-- 增量口径：上次汇总后的 `(created_at, id)` marker 起算；汇总产物回填组内最大 `created_at`，写回后刷新 marker，避免被算作新增。
+- 失败：请求失败不推进游标，下一个整点重试同一批；解析无可应用组时正常推进；新增 `event`/`conversation` 不足 6 条，或候选中没有 `event` 时跳过。
+- 增量口径：上次汇总后的 `(created_at, id)` marker 起算，覆盖 `event` 与 `conversation` 两类（只新增对话也会触发）；汇总产物回填组内最大 `created_at`，写回后刷新 marker，避免被算作新增。
 - 游标只在内存，`register_all` 用库中最新 marker 初始化，重启后不重复汇总已有条目。
 - 写回前在事务内按成员 id 复核 `content`，成员已删除或改写时跳过该组。
 
-逐条写入仍走 `Memory:` 行，汇总只处理 `event` 类；汇总产物与逐条记忆同表，召回与注入路径不再区分。
+逐条写入仍走 `Memory:` 行；汇总只把「同一件事」的 `conversation` 并入 `event`，未分组的 `conversation` 保持原类别与召回语义。
 
 ## 5. 开关与可见性
 

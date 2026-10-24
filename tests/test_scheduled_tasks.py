@@ -167,10 +167,10 @@ class _FakeStore:
         self._marker = marker
         self._pending = pending
 
-    def latest_event_marker(self):
+    def latest_merge_marker(self):
         return self._marker
 
-    def pending_events(self, marker):
+    def pending_merge_items(self, marker):
         return self._pending, self._marker
 
 
