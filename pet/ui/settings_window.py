@@ -1388,7 +1388,7 @@ class SettingsWindow(QWidget):
         self._merge_thread.start()
 
     def _release_merge_thread(self):
-        """汇总线程跑完自行退出；关闭设置页时不再等它。"""
+        """汇总线程跑完自行退出"""
         self._merge_thread = None
         self._merge_worker = None
 
@@ -1657,8 +1657,6 @@ class SettingsWindow(QWidget):
             self._merge_test_thread.quit()
             self._merge_test_thread.wait(2000)
         if self._merge_thread is not None and self._merge_thread.isRunning():
-            # 汇总在后台跑模型与写库，quit 打断不了阻塞中的 run，
-            # 等待只会让关闭卡顿；完成信号照常回主线程，线程退出后自行释放
             self._merge_thread.quit()
         super().closeEvent(event)
 
