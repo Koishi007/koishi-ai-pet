@@ -532,9 +532,10 @@ def parse_stream_chunks(stream, total_timeout: float, sink: BehaviorSink, tag: s
 
 
 def _build_output(acc: dict, speech_streamed: bool) -> BehaviorOutput:
+    # 保留分段换行：落库后投影按行还原成多个 Speech 行
     return BehaviorOutput(
         actions=acc["actions"],
-        speech=" ".join(acc["speech_parts"]) if acc["speech_parts"] else None,
+        speech="\n".join(acc["speech_parts"]) if acc["speech_parts"] else None,
         speech_parts=list(acc["speech_parts"]),
         speech_streamed=speech_streamed,
         summary=acc["summary"][0] if acc["summary"] else None,

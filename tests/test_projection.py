@@ -333,6 +333,23 @@ class TestHistoryFormat:
         messages = project([self._speech(1, "你好")], Profile(), Budget(now=T0 + 600))
         assert messages == [{"role": "assistant", "content": "Speech: 你好"}]
 
+    def test_speech_segments_each_get_a_label(self):
+        """多段台词逐行成行，模型能照着输出多个 Speech。"""
+        messages = project([self._speech(1, "第一句\n第二句")], Profile(),
+                           Budget(now=T0 + 600))
+        assert messages[0]["content"] == "Speech: 第一句\nSpeech: 第二句"
+
+    def test_turn_block_keeps_speech_segments(self):
+        events = [
+            ev(1, "assistant_turn",
+               {"text": "发呆了一轮", "kind": "summary", "turn_id": "t1"}),
+            ev(2, "assistant_turn",
+               {"text": "唔…\n好困", "kind": "speech", "turn_id": "t1"}),
+        ]
+        messages = project(events, Profile(), Budget(now=T0 + 600))
+        assert messages[0]["content"].endswith(
+            "〕发呆了一轮\nSpeech: 唔…\nSpeech: 好困")
+
     def test_summary_line_carries_relative_label(self):
         messages = project([self._summary(1, "发呆了一轮")], Profile(),
                            Budget(now=T0 + 600))

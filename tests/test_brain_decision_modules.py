@@ -749,6 +749,32 @@ class TestDecideWithRepair:
         assert out.memory_line == "记住的事"
         assert out.mood_deltas == {"joy": 2}
 
+    def test_repair_discards_streamed_speech(self, monkeypatch):
+        """触发修复轮时先作废已流出的半截台词，免得重复播出。"""
+        behavior, _fake = _stream_behavior(monkeypatch, [])
+        calls = []
+        behavior._repair_fn = lambda: calls.append("discard")
+
+        def pipeline(repair=False):
+            return _empty() if not repair else _complete()
+
+        behavior._decide_with_repair(pipeline, "t", stream=True)
+
+        assert calls == ["discard"]
+
+    def test_non_stream_repair_keeps_bubble(self, monkeypatch):
+        """非流式路径没有在输出的气泡，不触发丢弃。"""
+        behavior, _fake = _stream_behavior(monkeypatch, [])
+        calls = []
+        behavior._repair_fn = lambda: calls.append("discard")
+
+        def pipeline(repair=False):
+            return _empty() if not repair else _complete()
+
+        behavior._decide_with_repair(pipeline, "t")
+
+        assert calls == []
+
 
 class TestEntrypointRetry:
     """决策入口的空响应重试：整轮既无动作也无台词时再跑一次。"""

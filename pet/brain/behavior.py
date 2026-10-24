@@ -63,7 +63,7 @@ class Behavior(BrainMixin):
 
     def __init__(self, memory_store=None, screen_reader=None, vitals=None, mood=None,
                  recent_events_fn=None, once_events_fn=None, progress_fn=None,
-                 dock_side_fn=None):
+                 dock_side_fn=None, repair_fn=None):
         db_path = memory_store.db_path if memory_store else None
         super().__init__(db_path=db_path)
         self._llm = LLMClient()
@@ -71,6 +71,8 @@ class Behavior(BrainMixin):
         # 进展心跳回调：每产生一次实质进展（chunk / 工具轮次 / LLM 返回）通知一次，
         # 供看门狗区分「跑得慢」与「挂死」，避免长流程被误判
         self._progress_fn = progress_fn
+        # 修复轮开始前的回调：作废已流出的半截台词，避免补写时重复播出
+        self._repair_fn = repair_fn
         self._lock = threading.RLock()
         self._counter_lock = threading.Lock()  # 仅保护 _rounds_without_user，避免主线程等待 LLM 长锁
         self._rounds_without_user = 0
@@ -258,7 +260,7 @@ class Behavior(BrainMixin):
                     messages, tag=tag, mode="autonomous", on_chunk=on_chunk,
                     on_stream_end=on_stream_end,
                     cancel_check=cancel_check, repair=repair),
-                tag,
+                tag, stream=True,
             )
         except CancelledError:
             raise
@@ -301,7 +303,7 @@ class Behavior(BrainMixin):
                     on_stream_end=on_stream_end,
                     thinking=thinking, enable_tools=enable_tools,
                     cancel_check=cancel_check, repair=repair),
-                "interact",
+                "interact", stream=True,
             )
         finally:
             self._lock.release()
@@ -356,7 +358,7 @@ class Behavior(BrainMixin):
                     on_stream_end=on_stream_end,
                     thinking=thinking, enable_tools=enable_tools,
                     cancel_check=cancel_check, repair=repair),
-                tag,
+                tag, stream=True,
             )
         except CancelledError:
             raise
@@ -393,7 +395,7 @@ class Behavior(BrainMixin):
                     on_stream_end=on_stream_end,
                     thinking=thinking, enable_tools=enable_tools,
                     cancel_check=cancel_check, repair=repair),
-                tag,
+                tag, stream=True,
             )
         finally:
             self._lock.release()
@@ -559,14 +561,26 @@ class Behavior(BrainMixin):
                            f"内容被思考占满 max_tokens")
         self.record_failed_turn(self._last_unparsed, self._last_finish_reason, tag)
 
-    def _decide_with_repair(self, pipeline, tag: str) -> BehaviorOutput:
+    def _decide_with_repair(self, pipeline, tag: str, stream: bool = False) -> BehaviorOutput:
         """缺 Summary/Action 时重跑一次，仍缺时补 sit 兜底。"""
-        output = retry_if_incomplete(
-            pipeline, tag,
-            on_missing=lambda missing: setattr(self, "_repair_missing", missing))
+        def _on_missing(missing: str):
+            self._repair_missing = missing
+            if stream:
+                self._discard_stream_before_repair()
+
+        output = retry_if_incomplete(pipeline, tag, on_missing=_on_missing)
         if not output.actions:
             output.actions = [ActionStep("sit", kwargs={"duration": 5})]
         return output
+
+    def _discard_stream_before_repair(self):
+        """重试会整段重写：已经流出的半截台词先作废，免得补写后重复。"""
+        if self._repair_fn is None:
+            return
+        try:
+            self._repair_fn()
+        except Exception:
+            logger.warning("[Behavior] repair hook failed", exc_info=True)
 
     def flush_summaries(self):
         """把上下文淘汰产生的待摘要条目统一处理（实现见 pet/brain/summary.py）。"""

@@ -193,6 +193,16 @@ class SpeechBubble(QLabel):
         """停止接收新内容：已收到的句子与队列继续播完，不清空。"""
         self._close_sentence()
 
+    def discard_stream(self):
+        """作废正在流式输出的这句：已流出的字与未接上的 chunk 都不再显示"""
+        self._stream_open = False
+        if self._buffering:
+            self._buffering = False
+            self._incoming_chunks.clear()
+            return
+        self._hide_bubble()
+        self._dispatch()  # 队列里还有更早的句子就接着播
+
     def flush_pending(self):
         """清空待播队列与缓冲：窗口隐藏时调用，旧台词不该再冒出来。"""
         self._speech_queue.clear()

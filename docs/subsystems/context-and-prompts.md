@@ -42,7 +42,7 @@
   用户消息或截图。感受/需求/旧事这类逐轮内容走 system 尾部的锚点（见上），不进静态前缀；
   静态前缀稳定才能命中 prompt 缓存（`LLM_CACHE_PROMPT`）。
 - 历史行的形态由投影决定：同一回合的摘要与台词合并成一条 assistant 消息（`Summary: …` 在前、`Speech: …` 在后），
-  台词渲染成 `Speech: …`，本轮摘要渲染成 `Summary: 〔距现在多久〕…`，
+  台词按分段逐行渲染成多个 `Speech: …`（落库保留换行，历史里能看到多段台词的实例），本轮摘要渲染成 `Summary: 〔距现在多久〕…`，
   用户行与 system 行用 `[距现在多久]` 前缀。时间只挂在 Summary 与用户行上，台词行不带时间 -
   模型照抄历史行时仍落在协议字段上，时间也不会被念出来（`pet/brain/projection.py` 的 `_render`）。
   模型照抄摘要行首的时间标签时由解析器剥掉（`pet/brain/parsing.py` 的 `_SUMMARY_TIME_LABEL`）。
