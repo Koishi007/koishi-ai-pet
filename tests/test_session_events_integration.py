@@ -3,6 +3,7 @@
 import sqlite3
 
 from pet.brain.base import BrainMixin
+from pet.brain.events import ASSISTANT_TEXT_LIMIT
 from pet.brain.tool_channel import reset_cache
 
 
@@ -96,44 +97,49 @@ class TestProjectionEntry:
         assert messages[0]["tool_calls"][0]["function"]["name"] == "bilibili__like"
         assert messages[1]["role"] == "tool"
 
-    def test_user_and_assistant_roundtrip(self, tmp_path):
+    def test_user_roundtrip(self, tmp_path):
         brain = _brain(tmp_path)
         brain.add_context("user", "在吗")
-        brain.add_context("assistant", "在的")
         messages = brain.get_multi_turn_messages()
-        assert [m["role"] for m in messages] == ["user", "assistant"]
+        assert [m["role"] for m in messages] == ["user"]
         assert "在吗" in messages[0]["content"]
 
-    def test_kinds_render_as_protocol_lines(self, tmp_path):
+    def test_structured_assistant_roundtrip(self, tmp_path):
         brain = _brain(tmp_path)
-        brain.add_context("assistant", "连输三局", kind="summary")
-        brain.add_context("assistant", "唔...又猜输了", kind="speech")
+        fields = {"summary": "想了",
+                  "actions": [{"name": "sit", "kwargs": {"duration": 5}}]}
+        raw = "Summary: 想了\nAction: sit 5"
+        brain.add_assistant_turn(fields, raw)
 
-        messages = brain.get_multi_turn_messages()
+        event = [e for e in brain.dump_events() if e["type"] == "assistant_turn"][0]
+        assert event["payload"]["v"] == 1
+        assert event["payload"]["text"] == raw
+        assert brain.get_multi_turn_messages() == [
+            {"role": "assistant",
+             "content": "Summary: 想了\nAction: sit duration=5"}]
 
-        assert messages[0]["content"].startswith("Summary: 〔")
-        assert messages[0]["content"].endswith("〕连输三局")
-        assert messages[1]["content"] == "Speech: 唔...又猜输了"
-
-    def test_turn_id_merges_summary_and_speech(self, tmp_path):
+    def test_long_text_is_truncated_but_fields_survive(self, tmp_path):
         brain = _brain(tmp_path)
-        brain.add_context("assistant", "连输三局", kind="summary", turn_id="t1")
-        brain.add_context("assistant", "唔...又猜输了", kind="speech", turn_id="t1")
+        brain.add_assistant_turn({"summary": "长了"}, "字" * 2000)
 
-        messages = brain.get_multi_turn_messages()
+        payload = [e for e in brain.dump_events()
+                   if e["type"] == "assistant_turn"][0]["payload"]
+        assert payload["text_truncated"] is True
+        assert len(payload["text"].encode("utf-8")) <= ASSISTANT_TEXT_LIMIT
+        assert brain.get_multi_turn_messages() == [
+            {"role": "assistant", "content": "Summary: 长了"}]
 
-        assert len(messages) == 1
-        assert messages[0]["content"].startswith("Summary: 〔")
-        assert messages[0]["content"].endswith("〕连输三局\nSpeech: 唔...又猜输了")
-
-    def test_untagged_assistant_keeps_clock_prefix(self, tmp_path):
+    def test_invalid_emotion_dropped_before_store(self, tmp_path):
         brain = _brain(tmp_path)
-        brain.add_context("assistant", "旧台词")
+        raw = "Emotion: hungy\nSummary: 想"
+        brain.add_assistant_turn({"emotion": "hungy", "summary": "想"}, raw)
 
-        content = brain.get_multi_turn_messages()[0]["content"]
-
-        assert content.startswith("[")
-        assert content.endswith("] 旧台词")
+        payload = [e for e in brain.dump_events()
+                   if e["type"] == "assistant_turn"][0]["payload"]
+        assert "emotion" not in payload
+        assert payload["text"] == raw
+        assert brain.get_multi_turn_messages() == [
+            {"role": "assistant", "content": "Summary: 想"}]
 
     def test_clear_context_deletes_history(self, tmp_path):
         brain = _brain(tmp_path)
@@ -161,7 +167,7 @@ class TestSnapshotRestore:
         db = str(tmp_path / "pet.db")
         first = _brain(tmp_path)
         first.add_context("user", "重启前的话")
-        first.add_context("assistant", "记住了")
+        first.add_assistant_turn({"summary": "记住了"}, "Summary: 记住了")
         first.close_events()
 
         reset_cache()
@@ -169,6 +175,7 @@ class TestSnapshotRestore:
         entries = second.context_entries()
         assert [e.role for e in entries] == ["user", "assistant"]
         assert entries[0].content == "重启前的话"
+        assert entries[1].content == "Summary: 记住了"
         assert entries[0].seq > 0
 
     def test_summary_restored_flag(self, tmp_path):

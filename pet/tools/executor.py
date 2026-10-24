@@ -51,7 +51,7 @@ class ToolCall:
 @dataclass
 class ToolResult:
     name: str
-    output: Any = None                    # 规范值；未声明 output 的方法为原始返回值
+    output: Any = None                    # 规范值，符合方法声明的 output.schema
     error_code: str = ""                  # 空即成功
     error_message: str = ""
     meta: dict = field(default_factory=dict)

@@ -28,6 +28,12 @@ EMOTION_MAP = {
 }
 
 
+def known_emotions(text: str) -> list[str]:
+    """拆分情绪文本，只保留映射表里的名字，未知名字直接丢弃。"""
+    names = [e.strip() for e in re.split(r"[,，、\s]+", text or "") if e.strip()]
+    return [name for name in names if name.lower() in EMOTION_MAP]
+
+
 def emotion_to_emoji(name: str) -> str:
     """将情绪名映射为 emoji；未知名直接返回原文本。"""
     return EMOTION_MAP.get(name.lower().strip(), name)
@@ -64,12 +70,10 @@ class EmotionBubble(QLabel):
         self.hide()
 
     def show_emotion(self, emotion: str, duration: int = 3000, parent_pos=None):
-        """显示情绪 emoji。emotion 可为情绪名、emoji 文本，或逗号分隔的多个情绪（按序播放）。"""
-        names = [e.strip() for e in re.split(r"[,，、\s]+", emotion) if e.strip()]
-        valid = [e for e in names if e.lower() in EMOTION_MAP]
+        """显示情绪 emoji。emotion 可为情绪名或逗号分隔的多个情绪；未知名字丢弃。"""
+        valid = known_emotions(emotion)
         if not valid:
-            # 无合法情绪（如直接传入 emoji 文本）：原样显示一次
-            valid = [emotion]
+            return
 
         self._emotion_queue = valid
         self._emotion_index = 0

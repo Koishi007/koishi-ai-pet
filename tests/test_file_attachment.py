@@ -4,7 +4,7 @@ import pytest
 
 from pet.brain import prompts
 from pet.brain.context_builder import ContextBuilder
-from pet.brain.parsing import _MOOD_FIELDS, _VITALS_FIELDS
+from pet.brain.output import MOOD_FIELDS, VITALS_FIELDS
 from pet.brain.prompts import interact_take_a_bite_prompt, interact_file_reject_prompt
 from pet.config import config
 
@@ -101,8 +101,8 @@ class TestPrompts:
         names = "报告.md、图.png"
         text = interact_take_a_bite_prompt(names)
         assert names in text
-        assert all(field in text for field in _MOOD_FIELDS)
-        assert not any(field in text for field in _VITALS_FIELDS)
+        assert all(field in text for field in MOOD_FIELDS)
+        assert not any(field in text for field in VITALS_FIELDS)
 
     def test_taste_template_override(self, monkeypatch):
         monkeypatch.setattr(config, "INTERACT_TAKE_A_BITE_PROMPT", "只认「{names}」")
@@ -152,7 +152,7 @@ class TestAnalyzeTask:
         for reason, (tail, delta) in prompts._FILE_REJECT_SCENES.items():
             assert tail in replies[reason]
             assert delta in replies[reason]
-            assert not any(field in replies[reason] for field in _VITALS_FIELDS)
+            assert not any(field in replies[reason] for field in VITALS_FIELDS)
 
     def test_reject_prompt_lists_names(self):
         single = interact_file_reject_prompt("too_large", ("big.zip",))

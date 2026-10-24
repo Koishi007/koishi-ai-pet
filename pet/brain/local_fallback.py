@@ -100,7 +100,7 @@ def interact_decide_local(event_hint: str, docked: bool = False) -> BehaviorOutp
         return BehaviorOutput(
             actions=[ActionStep("shake_arms", kwargs={"duration": 3})],
             speech=speech,
-            emotion="grim",
+            emotion="surprised",
         )
 
     # 检测释放事件

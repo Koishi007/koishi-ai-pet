@@ -119,8 +119,9 @@ flowchart TB
    维护首选/备选两套方案，重试与降级策略在 `pet/brain/llm_retry.py`。
 4. **输出解析**：按行前缀分派 - `Summary` / `Speech` / `Action` / `Memory` / `Emotion` / `Mood` / `Vitals`
    （`pet/brain/parsing.py`，流式与非流式共用一套行标签，聚合为 `BehaviorOutput`）。
-   同一字段出现多行时，`Summary` / `Memory` / `Mood` / `Vitals` 只取第一条，`Speech` 全部保留且按换行分段落库，
-   投影时逐行还原成多个 `Speech:` 行。
+   同一字段出现多行时，`Summary` / `Memory` / `Mood` / `Vitals` 只取第一条，`Speech` 全部保留且按换行分段。
+   解析出的字段与原文一起写入会话事件日志（`BehaviorOutput.assistant_fields`）：字段供投影，
+   原文（≤4KB）只作审计；投影按协议顺序还原字段行（见[投影设计](specs/2026-10-22-session-event-log-projection-design.md) §3.2）。
    结束原因（`finish_reason`）由解析器回传给编排方；缺少必填字段（`Summary`、`Action`）时由
    `pet/brain/repair.py` 的 `retry_if_incomplete` 重试一次：修复提示点明缺了哪个字段，并按任务给出 Action 数量要求，
    上一轮原文（截断后）作为待修复数据回传，要求保留已符合协议的字段行、只补齐缺失字段；流式与非流式都回传；

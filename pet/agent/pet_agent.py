@@ -8,7 +8,6 @@ from datetime import datetime
 from PySide6.QtCore import QObject, QThread, QThreadPool, QTimer, Qt, Signal, Slot
 
 from pet.brain.behavior import Behavior
-from pet.brain.events import new_group_id
 from pet.brain.output import BehaviorOutput, CancelledError
 from pet.agent.scheduler import Scheduler
 from pet.agent.scheduled_tasks import ScheduledTasks
@@ -710,14 +709,10 @@ class PetAgent(QObject):
             logger.info(f"[{ts}] [PetAgent] ← {result}")
             if not result.actions and not result.speech:
                 logger.warning(f"[{ts}] [PetAgent] empty response from LLM (no actions, no speech)")
-            # Summary 先写：投影把时间标签挂在 Summary 行上，历史顺序与协议一致
-            turn_id = new_group_id()
-            if result.summary:
-                self.behavior.add_context(role="assistant", content=result.summary,
-                                          kind="summary", turn_id=turn_id)
+            # 只有模型响应进历史：结构化字段供投影，原文留审计
+            if result.raw:
+                self.behavior.add_assistant_turn(result.assistant_fields(), result.raw)
             if result.speech:
-                self.behavior.add_context(role="assistant", content=result.speech,
-                                          kind="speech", turn_id=turn_id)
                 if not result.speech_streamed:
                     parts = result.speech_parts if result.speech_parts else [result.speech]
                     for part in parts:
@@ -734,7 +729,6 @@ class PetAgent(QObject):
                 self.emotion_requested.emit(result.emotion, 3000)
         elif isinstance(result, str):
             logger.info(f"[{ts}] [PetAgent] ← \"{result[:60]}\"")
-            self.behavior.add_context(role="assistant", content=result[:100])
             self.speak_requested.emit(result, 5000)
             try:
                 self.conversation_store.add("pet", result)

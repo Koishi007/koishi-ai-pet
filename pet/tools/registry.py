@@ -17,10 +17,10 @@ logger = logging.getLogger(__name__)
 class ToolMethod:
     name: str
     description: str
+    output: "ToolOutputDefinition"  # 输出契约，注册时必须声明
     args: dict = field(default_factory=dict)
     handler: Callable = None
     timeout: float = 30.0
-    output: Optional["ToolOutputDefinition"] = None  # 输出契约，None 表示走旧渲染
 
 
 @dataclass
@@ -146,13 +146,16 @@ class ToolRegistry:
 
     def add_method(self, tool_name: str, method_name: str,
                    description: str, handler: Callable, args: dict = None,
-                   timeout: float = None, output: "ToolOutputDefinition | None" = None):
+                   timeout: float = None, *,
+                   output: "ToolOutputDefinition"):
+        """注册方法；output 必填，缺失直接报错。"""
+        if output is None:
+            raise ValueError(f"{tool_name}__{method_name} 必须声明 output")
         tool = self._tools[tool_name]
         tool.methods[method_name] = ToolMethod(
-            name=method_name, description=description,
+            name=method_name, description=description, output=output,
             args=args or {}, handler=handler,
             timeout=timeout if timeout is not None else 30.0,
-            output=output,
         )
 
     def add_menu_action(self, tool_name: str, label: str,

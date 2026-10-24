@@ -14,11 +14,21 @@ from pet.brain.events import args_digest, new_group_id
 from pet.brain.output import BehaviorOutput
 from pet.brain.parsing import parse_behavior
 from pet.tools.executor import ToolCall, ToolExecutor
-from pet.tools.output import (RECORD_LIMIT, ImageBlock, TextBlock, render_record,
-                              render_turn, validate)
+from pet.tools.output import (RECORD_LIMIT, ImageBlock, render_failure, render_record,
+                              render_text, render_turn, validate)
 from pet.tools.registry import TOOL_REGISTRY
 
 logger = logging.getLogger(__name__)
+
+# 失败视图的下一步提示：只进当轮视图，不进历史
+_FAILURE_HINTS = {
+    "bad_arguments": "检查参数名与类型后重试。",
+    "timeout": "稍后重试，或换用其他工具；有副作用的操作不要重复调用。",
+    "handler_error": "稍后重试，或换用其他工具。",
+    "unknown_tool": "检查工具名是否存在于工具列表，并使用完整函数名重新调用；动作名不能当作工具。",
+    "output_violation": "换用其他工具，或调整输入避免触发该输出。",
+}
+_DEFAULT_FAILURE_HINT = "根据错误信息调整后重试。"
 
 class ToolSession(Protocol):
     """工具轮次需要的会话能力：轮次策略、工具开关、分组激活与流式回传。
@@ -48,8 +58,6 @@ class ToolSession(Protocol):
     def speak_aside(self, text: str) -> None: ...
 
     def end_aside(self) -> None: ...
-
-    def add_context(self, role: str, content: str, is_summary: bool = False) -> None: ...
 
     def executor(self) -> ToolExecutor: ...
 
@@ -122,28 +130,22 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
 
         # 按 index 排序后依次 append（保持顺序一致性）
         round_images = []
-        round_log = []
         for idx in sorted_indices:
-            _, tc, result, tool_brief, result_text, tool_aside = tool_results[idx]
+            _, tc, result, _, result_text, _ = tool_results[idx]
             current_messages.append({
                 "role": "tool",
                 "tool_call_id": tc["id"],
                 "content": result_text,
             })
             logger.info(f"[Behavior] tool_round_{display_round} {tc['name']} -> {'OK' if result.ok else 'FAIL'}")
-            log_entry = f"{tc['name']} → {result.meta.get('record') or tool_brief or result_text[:200]}"
-            if tool_aside:
-                log_entry = f"（自言自语：{tool_aside}）{log_entry}"
             images = result.meta.get("images") or []
             if images and session.has_vision:
                 # 图片只在当轮上下文里，工具记录留一条可再次读取的引用
-                log_entry = f"{log_entry}（图片已读取，可再次调用查看）"
                 for image in images:
                     round_images.append((
                         f"data:{image.get('mime', 'image/png')};base64,{image.get('base64', '')}",
                         image.get("caption") or tc["name"],
                     ))
-            round_log.append(log_entry)
 
             # 搜索工具执行后自动激活匹配的分组
             try:
@@ -155,10 +157,7 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
             if tc["name"] in session.recall_tool_names:
                 used_recall = True
 
-        if not _record_tool_events(session, tool_calls_map, sorted_indices, tool_results):
-            # 事件写入失败时，本轮退回文本记录，不留空档
-            session.add_context(
-                role="assistant", content=f"[工具调用] {' | '.join(round_log)}")
+        _record_tool_events(session, tool_calls_map, sorted_indices, tool_results)
 
         # tool 角色只承载文本，图片另起一条 user 消息附在紧接的一次请求里
         image_msg = None
@@ -234,7 +233,7 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
 
 
 def _tool_brief(result, result_text: str = "") -> str:
-    """未声明输出契约时的历史短句：结果文本首行，去 JSON 后截 120 字符。"""
+    """历史短句：失败取错误消息，成功取结果首行；截 120 字符。"""
     text = ""
     if not result.ok:
         text = str(result.error_message or "").strip()
@@ -246,11 +245,11 @@ def _tool_brief(result, result_text: str = "") -> str:
 
 
 def _record_tool_events(session, tool_calls_map: dict, sorted_indices: list,
-                        tool_results: dict) -> bool:
-    """把本轮工具调用写成同组事件；失败返回 False 由调用方退回文本记录。"""
+                        tool_results: dict) -> None:
+    """把本轮工具调用写成同组事件；会话不支持事件时跳过。"""
     recorder = getattr(session, "record_tool_events", None)
     if recorder is None:
-        return False
+        return
     group_id = new_group_id()
     calls, results, asides = [], [], []
     for idx in sorted_indices:
@@ -269,10 +268,9 @@ def _record_tool_events(session, tool_calls_map: dict, sorted_indices: list,
         if tool_aside:
             asides.append((tc["id"], str(tool_aside)))
     try:
-        return bool(recorder(group_id, calls, results, asides))
+        recorder(group_id, calls, results, asides)
     except Exception:
         logger.exception("[Behavior] record tool events failed")
-        return False
 
 
 def _execute_round(tool_calls_map: dict, sorted_indices: list, executor: ToolExecutor,
@@ -303,9 +301,9 @@ def _execute_round(tool_calls_map: dict, sorted_indices: list, executor: ToolExe
     return tool_results
 
 
-def _fail_text(name: str, result) -> str:
-    """失败调用的模型可见文本。"""
-    return f"[FAIL {name}] {result.error_code}: {result.error_message}"
+def _failure_hint(result) -> str:
+    """失败视图的下一步提示；只进当轮视图，不进历史。"""
+    return _FAILURE_HINTS.get(result.error_code, _DEFAULT_FAILURE_HINT)
 
 
 def _exec_tool(tool_calls_map: dict, idx: int, executor: ToolExecutor, session: ToolSession):
@@ -327,23 +325,21 @@ def _exec_tool(tool_calls_map: dict, idx: int, executor: ToolExecutor, session: 
         if tool_aside:
             session.end_aside()
     if not result.ok:
-        return idx, tc, result, "", _fail_text(tc["name"], result), tool_aside
+        blocks = render_failure(tc["name"], result.error_code, result.error_message,
+                                _failure_hint(result))
+        return idx, tc, result, "", render_text(blocks), tool_aside
 
     definition = _output_of(tc["name"])
-    if definition is None:
-        # 没有输出契约：整体当文本交给模型，历史记录走首行兜底
-        text = (result.output if isinstance(result.output, str)
-                else json.dumps(result.output, ensure_ascii=False))
-        return idx, tc, result, "", text, tool_aside
-
     problems = validate(definition, result.output)
     if problems:
         logger.warning(f"[Behavior] {tc['name']} 输出不符合 schema: {problems[:3]}")
         result.error_code = "output_violation"
         result.error_message = problems[0]
-        return idx, tc, result, "", _fail_text(tc["name"], result), tool_aside
+        blocks = render_failure(tc["name"], result.error_code, result.error_message,
+                                _failure_hint(result))
+        return idx, tc, result, "", render_text(blocks), tool_aside
     blocks = render_turn(definition, result.output)
-    text = "\n\n".join(b.text for b in blocks if isinstance(b, TextBlock)).strip()
+    text = render_text(blocks)
     images = [b for b in blocks if isinstance(b, ImageBlock)]
     if images:
         result.meta["images"] = [
@@ -354,6 +350,5 @@ def _exec_tool(tool_calls_map: dict, idx: int, executor: ToolExecutor, session: 
 
 
 def _output_of(name: str):
-    """取方法声明的输出契约；未声明返回 None，调用方整体当文本。"""
-    method = TOOL_REGISTRY.get_method(name)
-    return getattr(method, "output", None)
+    """取方法声明的输出契约；注册时已强制声明。"""
+    return TOOL_REGISTRY.get_method(name).output

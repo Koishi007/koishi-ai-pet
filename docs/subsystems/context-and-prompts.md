@@ -41,22 +41,19 @@
 - user 段承载**每轮都会变、又必须原样进上下文的东西**：时间前缀（`_time_prefix`）、窗口探测结果、
   用户消息或截图。感受/需求/旧事这类逐轮内容走 system 尾部的锚点（见上），不进静态前缀；
   静态前缀稳定才能命中 prompt 缓存（`LLM_CACHE_PROMPT`）。
-- 历史行的形态由投影决定：同一回合的摘要与台词合并成一条 assistant 消息（`Summary: …` 在前、`Speech: …` 在后），
-  台词按分段逐行渲染成多个 `Speech: …`（落库保留换行，历史里能看到多段台词的实例），本轮摘要渲染成 `Summary: 〔距现在多久〕…`，
-  用户行与 system 行用 `[距现在多久]` 前缀。时间只挂在 Summary 与用户行上，台词行不带时间 -
-  模型照抄历史行时仍落在协议字段上，时间也不会被念出来（`pet/brain/projection.py` 的 `_render`）。
+- 历史行的形态由投影决定：最终响应以结构化字段落库（`assistant_turn.v=1`），投影按协议顺序还原
+  `Summary` / `Emotion` / `Speech` / `Action` / `Memory` / `Mood` / `Vitals` 行，
+  不追加时间标签、不清洗；`text` 原文只作审计，不参与投影。
+  用户行与 system 行用 `[距现在多久]` 前缀（`pet/brain/projection.py` 的 `_render_assistant_fields`）。
   模型照抄摘要行首的时间标签时由解析器剥掉（`pet/brain/parsing.py` 的 `_SUMMARY_TIME_LABEL`）。
-- 历史多轮由 `BrainMixin.get_multi_turn_messages` 装配，先按条数上限淘汰、再按 token 预算淘汰；
+  结构化落库的约定见 [投影设计](../specs/2026-10-22-session-event-log-projection-design.md) §3.2。
+- 历史多轮由 `BrainMixin.get_multi_turn_messages` 从事件日志投影，先按条数上限淘汰、再按 token 预算淘汰；
   历史里的 system 片段会被 `_merge_system_history` 并成一段 `[上下文备注]` 追加到 system 末尾，
   保持「一个 system + 若干 user/assistant」的干净结构。
-- **候选池与每轮注入是同一条上限**：`CONTEXT_HISTORY_ENTRIES`（默认 15）是 `_context` 池子的容量
-  （`_evict_context()` 的超限淘汰依据），而每轮注入的条数上限取池子的常态上界
-  `_MAX_POOL_ENTRIES = _MAX_ENTRIES + _EVICT_BATCH_SIZE`（默认 21） - 淘汰是批量触发的
-  （攒够 6 条才裁一批），池子会在容量之上再多挂几条，注入上限必须跟着池子的真实上界走，
-  否则多出来的那几条每轮都被条数裁剪排除、又够不上淘汰。池内条目正常都会入选本轮
-  （例外只有 token 预算超限，以及工具调用挤占配额把池子顶到上界之外时的兜底）；
-  被淘汰的普通对话**必定**进 `_pending_summary_queue`，压成摘要后回到池子。
-  取这个不变式的原因见 [设计文档](../specs/2026-09-29-context-injection-pool-unify-design.md) §3。
+- `CONTEXT_HISTORY_ENTRIES`（默认 15）是 `_context` 池子的容量，`_evict_context()` 超出批量淘汰；
+  被淘汰的普通对话**必定**进 `_pending_summary_queue`，压成摘要事件后由 `covers` 隐藏原文。
+  每轮注入的条数上限取 `_MAX_POOL_ENTRIES = _MAX_ENTRIES + _EVICT_BATCH_SIZE`（默认 21），
+  对事件日志做投影，不读 `_context` 快照。
 - 交互任务（`interact`）只发 system + user 两条，不带历史。
 
 ## 3. 动态块的生命周期

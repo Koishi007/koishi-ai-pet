@@ -204,7 +204,7 @@ class TestDockedPrompts:
 
         messages = ContextBuilder(brain_mixin=_Brain()).build_chat_decide(
             "在吗", "ctx", screenshot=False)
-        assert messages[-1]["content"].startswith(prompts.history_note("chat"))
+        assert messages[-1]["content"].startswith(prompts.history_note())
 
     def test_history_note_skipped_without_history(self):
         """首轮没有历史样例，不必花这段 token。"""
@@ -351,13 +351,12 @@ class TestActionLimits:
         block = prompts._chat_task(False)[0]
         assert "必填：第一行 Summary、至少 3 个 Action" in block
 
-    def test_history_note_carries_action_count(self):
-        """字段说明紧贴历史，数量随任务与贴边状态变化。"""
-        note = prompts.history_note("chat")
-        assert "其余字段未存入历史" in note
-        assert "至少 3 个 Action" in note
-        assert "至少 1 个 Action" in prompts.history_note("chat", docked=True)
-        assert "只输出 1-2 个 Action" in prompts.history_note("interact")
+    def test_every_task_offers_vitals(self):
+        for build in (prompts._autonomous_task, prompts._chat_task,
+                      prompts._interact_task, prompts._analyze_task):
+            sections = build(False)
+            assert "Vitals(可选)" in sections[0]
+            assert prompts._VITALS_GUIDE in sections
 
     def test_user_prompt_leaves_field_list_to_format_block(self):
         """字段顺序只在[输出格式]里写一次，user 段不再重复清单。"""

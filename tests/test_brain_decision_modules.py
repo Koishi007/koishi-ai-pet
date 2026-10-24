@@ -17,11 +17,27 @@ from pet.action.registry import min_action_count
 import pet.brain.tool_loop as tool_loop_mod
 from pet.brain.behavior import Behavior
 from pet.brain.repair import retry_if_incomplete
-from pet.brain.output import ActionStep, BehaviorOutput, CancelledError
+from pet.brain.output import (ActionStep, BehaviorOutput, CancelledError,
+                              sanitize_assistant_fields)
 from pet.brain.parsing import BehaviorParser
 from pet.brain.summary import SummaryHooks, flush_summaries
 from pet.brain.tool_loop import run_tool_loop
 from pet.config import config
+from pet.tools.output import ToolOutputDefinition
+
+
+@pytest.fixture(autouse=True)
+def _fake_tool_output(monkeypatch):
+    """测试替身使用未注册的工具名；给缺失方法一个宽松契约。"""
+    original = tool_loop_mod._output_of
+
+    def resolve(name):
+        try:
+            return original(name)
+        except AttributeError:
+            return ToolOutputDefinition(schema={"type": "object"})
+
+    monkeypatch.setattr(tool_loop_mod, "_output_of", resolve)
 
 
 def _empty() -> BehaviorOutput:
@@ -253,7 +269,6 @@ class _FakeSession:
         self.raise_on_stream = raise_on_stream
         self.streams = 0
         self.progress = 0
-        self.contexts = []
         self.executor_obj = _FakeExecutor(image_b64, caption)
         self.activated = []
         self.unparsed = []
@@ -278,9 +293,6 @@ class _FakeSession:
     def end_aside(self):
         pass
 
-    def add_context(self, role, content, is_summary=False):
-        self.contexts.append((role, content))
-
     def executor(self):
         return self.executor_obj
 
@@ -304,11 +316,20 @@ class _FailingEventSession(_FakeSession):
         raise RuntimeError("event store unavailable")
 
 
-class _RefusingEventSession(_FakeSession):
-    """事件库不可用：record_tool_events 返回 False。"""
+class TestFailureHints:
+    """失败视图的下一步提示：只进当轮视图，按错误类型给出通用建议。"""
 
-    def record_tool_events(self, group_id, calls, results, asides=None):
-        return False
+    @staticmethod
+    def _result(code):
+        return SimpleNamespace(error_code=code, error_message="")
+
+    def test_unknown_tool_hint_is_generic(self):
+        hint = tool_loop_mod._failure_hint(self._result("unknown_tool"))
+        assert "工具" in hint
+        assert "bounce" not in hint
+
+    def test_unknown_code_uses_default_hint(self):
+        assert tool_loop_mod._failure_hint(self._result("business_error"))
 
 
 class TestToolBrief:
@@ -330,12 +351,49 @@ class TestToolBrief:
         assert tool_loop_mod._tool_brief(result) == "网络超时"
 
 
+class TestAssistantFields:
+    """结构化落库字段：空字段省略，动作保留位置/键值参数，兜底动作不写。"""
+
+    def test_empty_fields_omitted(self):
+        assert BehaviorOutput().assistant_fields() == {}
+
+    def test_actions_keep_positional_and_named(self):
+        out = BehaviorOutput(actions=[ActionStep("walk", ("left", 300)),
+                                      ActionStep("sit", kwargs={"duration": 43})])
+        assert out.assistant_fields()["actions"] == [
+            {"name": "walk", "args": ["left", 300]},
+            {"name": "sit", "kwargs": {"duration": 43}},
+        ]
+
+    def test_fallback_action_excluded(self):
+        out = BehaviorOutput(actions=[ActionStep("sit", kwargs={"duration": 5})],
+                             action_fallback=True)
+        assert "actions" not in out.assistant_fields()
+
+    def test_invalid_emotion_dropped(self):
+        assert sanitize_assistant_fields({"emotion": "hungy"}) == {}
+        assert sanitize_assistant_fields({"emotion": "HAPPY, hungy"}) == {"emotion": "happy"}
+
+    def test_reserved_keys_ignored(self):
+        clean = sanitize_assistant_fields({"v": 99, "text": "原文", "summary": "想"})
+        assert clean == {"summary": "想"}
+
+    def test_invalid_shapes_dropped(self):
+        clean = sanitize_assistant_fields({
+            "speech_parts": "不是列表",
+            "mood": {"joy": "1", "unknown": 2},
+            "actions": [{"name": "not_an_action"},
+                        {"name": "sit", "kwargs": {"duration": 5}}],
+        })
+        assert clean == {"actions": [{"name": "sit", "kwargs": {"duration": 5}}]}
+
+
 class TestToolLoopRounds:
-    def test_event_failure_falls_back_to_text_log(self):
+    def test_event_failure_does_not_block_tools(self):
         session = _FailingEventSession([("Speech: 好\n", {})])
-        run_tool_loop([], _tool_calls("timer__set"), "", session, max_rounds=3)
-        contents = [content for _, content in session.contexts]
-        assert any(content.startswith("[工具调用]") for content in contents)
+        out = run_tool_loop([], _tool_calls("timer__set"), "", session, max_rounds=3)
+        assert out.speech == "好"
+        assert session.executor_obj.calls == ["timer__set"]
 
     def test_event_refusal_falls_back_to_text_log(self):
         session = _RefusingEventSession([("Speech: 好\n", {})])
@@ -362,6 +420,18 @@ class TestToolLoopRounds:
         assert session.streams == 1
         assert out.speech == "第 1 轮"
         assert len(session.executor_obj.calls) == 1
+
+    def test_final_response_keeps_raw_text(self):
+        """最终响应带原文：事件日志与投影都靠它还原模型输出。"""
+        content = "Summary: 好了\nAction: sit 5\nMood: joy+1\n"
+        session = _FakeSession([(content, {})])
+        out = run_tool_loop([], _tool_calls("timer__set"), "", session, max_rounds=3)
+        assert out.raw == content
+
+    def test_unparsed_final_response_has_no_raw(self):
+        session = _FakeSession([("恋恋没有开始游戏哦", {})])
+        out = run_tool_loop([], _tool_calls("timer__set"), "", session, max_rounds=3)
+        assert out.raw is None
 
     def test_meta_tool_rounds_do_not_consume_budget(self):
         # 元工具轮次不计数：连续 5 轮 recall 后仍能继续请求普通工具
@@ -431,7 +501,6 @@ class TestStrictValidation:
     @classmethod
     def _run(cls, handler):
         from pet.tools.executor import ToolExecutor
-        from pet.tools.output import ToolOutputDefinition
         from pet.tools.registry import TOOL_REGISTRY
 
         TOOL_REGISTRY.register("probe_out", "probe")
@@ -484,20 +553,12 @@ class TestToolLoopImages:
         assert {"type": "image_url", "image_url": {"url": "data:image/png;base64,QUJD"}} in content
         assert {"type": "text", "text": "来源：查看图片 图.png"} in content
 
-    def test_image_read_kept_as_reusable_context(self):
-        session = _FakeSession([("Speech: 看到了\n", {})], image_b64="QUJD",
-                               caption="查看图片 图.png")
-        run_tool_loop([], _tool_calls("file_ops__read_file"), "", session, max_rounds=3)
-        logs = [content for role, content in session.contexts if role == "assistant"]
-        assert any("可再次调用查看" in text for text in logs)
-
     def test_image_result_dropped_without_vision(self):
         session = _FakeSession([("Speech: 看不到\n", {})], image_b64="QUJD",
                                caption="查看图片 图.png")
         session.has_vision = False
         run_tool_loop([], _tool_calls("file_ops__read_file"), "", session, max_rounds=3)
         assert self._image_message(session) == []
-        assert not any("图片已读取" in text for _, text in session.contexts)
 
     def test_image_message_sent_once(self):
         session = _FakeSession([("Speech: 看到了\n", _tool_calls("timer__set")),
@@ -745,6 +806,7 @@ class TestDecideWithRepair:
         out = behavior._decide_with_repair(pipeline, "t")
 
         assert [a.name for a in out.actions] == ["sit"]
+        assert out.action_fallback is True
         assert out.summary == "只有摘要"
         assert out.memory_line == "记住的事"
         assert out.mood_deltas == {"joy": 2}

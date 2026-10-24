@@ -1,4 +1,4 @@
-"""工具输出的声明与投影：schema 约束规范值，render 产出模型可见的块。"""
+"""工具输出的声明与投影：schema 约束规范值，render 产出内部内容块，由编码层压平成 wire 格式。"""
 
 import json
 from dataclasses import dataclass
@@ -104,6 +104,22 @@ def render_turn(definition: ToolOutputDefinition, value: Any) -> list[ContentBlo
                     blocks.append(TextBlock(text=hint, role="hint"))
             elif role == "hint":
                 blocks.append(TextBlock(text=str(item), role="hint"))
+    return blocks
+
+
+def render_text(blocks: list[ContentBlock]) -> str:
+    """把内容块压平成 wire 用的文本；图片块由调用方单独处理。"""
+    return "\n\n".join(block.text for block in blocks if isinstance(block, TextBlock)).strip()
+
+
+def render_failure(name: str, error_code: str, error_message: str,
+                   hint: str = "") -> list[ContentBlock]:
+    """失败视图：主错误行 + 可选的下一步提示。"""
+    blocks: list[ContentBlock] = [
+        TextBlock(text=f"[FAIL {name}] {error_code}: {error_message}", role="primary"),
+    ]
+    if hint:
+        blocks.append(TextBlock(text=hint, role="hint"))
     return blocks
 
 
