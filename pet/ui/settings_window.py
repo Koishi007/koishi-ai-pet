@@ -1342,6 +1342,7 @@ class SettingsWindow(QWidget):
         """手动汇总事件记忆：先确认风险，再在子线程执行。"""
         if self._merge_thread is not None and self._merge_thread.isRunning():
             logger.info("[Settings] 手动汇总忽略：上一轮仍在执行")
+            self._label_merge.setText("上一轮汇总仍在后台执行…")
             return
 
         store = getattr(self.agent, "memory_store", None)
@@ -1383,7 +1384,13 @@ class SettingsWindow(QWidget):
         self._merge_thread.started.connect(self._merge_worker.run)
         self._merge_worker.finished.connect(self._on_merge_result)
         self._merge_worker.finished.connect(self._merge_thread.quit)
+        self._merge_thread.finished.connect(self._release_merge_thread)
         self._merge_thread.start()
+
+    def _release_merge_thread(self):
+        """汇总线程跑完自行退出；关闭设置页时不再等它。"""
+        self._merge_thread = None
+        self._merge_worker = None
 
     def _on_merge_result(self, applied: int, note: str):
         self._btn_merge_now.setEnabled(True)
@@ -1650,8 +1657,9 @@ class SettingsWindow(QWidget):
             self._merge_test_thread.quit()
             self._merge_test_thread.wait(2000)
         if self._merge_thread is not None and self._merge_thread.isRunning():
+            # 汇总在后台跑模型与写库，quit 打断不了阻塞中的 run，
+            # 等待只会让关闭卡顿；完成信号照常回主线程，线程退出后自行释放
             self._merge_thread.quit()
-            self._merge_thread.wait(2000)
         super().closeEvent(event)
 
 
