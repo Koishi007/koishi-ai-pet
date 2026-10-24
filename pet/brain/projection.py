@@ -62,10 +62,10 @@ class _Group:
 
     @property
     def rendered_text(self) -> str:
-        """给模型的文本：aside 带 Speech 标签。"""
+        """给模型的文本：aside 带 Speech 标签，各自分段。"""
         parts = [self.turn.payload.get("text", "") if self.turn else ""]
-        parts.extend(f"Speech: {e.payload['text']}" if e.payload.get("text") else ""
-                     for e in self.speeches)
+        for e in self.speeches:
+            parts.extend(_speech_lines(e.payload.get("text") or ""))
         return join_non_empty(*parts)
 
     def result_for(self, call: Event) -> Optional[Event]:
@@ -159,6 +159,11 @@ def sanitize_assistant_text(text: str) -> tuple[str, int]:
         else:
             lines.append(line)
     return ("\n".join(lines), hits) if hits else (text, 0)
+
+
+def _speech_lines(text: str) -> list[str]:
+    """一段或多段台词：逐行加 Speech 标签，分段不合并不丢行。"""
+    return [f"Speech: {line}" for line in text.splitlines() if line.strip()]
 
 
 def replay_args(call: Event, mode: str = "minimal") -> str:
@@ -463,7 +468,7 @@ def _render(items: list[_Item], profile: Profile, budget: Budget, stats: dict) -
             if hits:
                 stats["sanitized_lines"] = stats.get("sanitized_lines", 0) + hits
         if item.kind == "speech":
-            out.append({"role": "assistant", "content": f"Speech: {text}"})
+            out.append({"role": "assistant", "content": "\n".join(_speech_lines(text))})
             continue
         if item.kind == "assistant_summary":
             label = format_relative_time(item.ts, budget.now)
@@ -492,7 +497,7 @@ def _render_turn_block(events: list, budget: Budget) -> list[dict]:
             lines.append(f"Summary: 〔{label}〕{text}")
         else:
             text, _ = sanitize_assistant_text(text)
-            lines.append(f"Speech: {text}")
+            lines.extend(_speech_lines(text))
     return [{"role": "assistant", "content": "\n".join(lines)}] if lines else []
 
 
