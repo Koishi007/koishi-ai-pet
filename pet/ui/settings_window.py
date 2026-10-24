@@ -31,6 +31,23 @@ _W = 520
 _H = 720
 
 
+_UI_UNIT_SCALE = {"SCHEDULER_MID_MS": 1000}
+
+
+def _display_value(key: str, value):
+    """配置值 → 界面值。"""
+    scale = _UI_UNIT_SCALE.get(key)
+    if not scale or not isinstance(value, int):
+        return value
+    return value // scale
+
+
+def _stored_value(key: str, value):
+    """界面值 → 配置值。"""
+    scale = _UI_UNIT_SCALE.get(key)
+    return value * scale if scale else value
+
+
 class _LLMTestWorker(QObject):
     """子线程执行 LLM 连通性测试。"""
     finished = Signal(bool, str, float)  # 成功, 内容或错误, 耗时
@@ -278,6 +295,7 @@ class SettingsWindow(QWidget):
         self._capture_listener = None
         self._fields = {}
         self._snapshot = {}
+        self._label_cache: dict[str, str] | None = None
         self._key_captured.connect(self._apply_captured_key)
 
         self.setObjectName("settingsWindow")
@@ -493,22 +511,6 @@ class SettingsWindow(QWidget):
         model_row.addWidget(self._btn_fetch_models)
         form.addRow("首选模型名称:", model_row)
 
-        self._timeout_edit = self._line("LLM_TIMEOUT", "20", QDoubleValidator(1, 300, 1))
-        self._timeout_edit.setMaxLength(5)
-        form.addRow("请求超时(秒):", self._timeout_edit)
-
-        self._retries_edit = self._line("LLM_MAX_RETRIES", "2", QIntValidator(0, 10))
-        self._retries_edit.setMaxLength(2)
-        form.addRow("最大重试次数:", self._retries_edit)
-
-        self._retry_delay_edit = self._line("LLM_RETRY_DELAY", "1", QDoubleValidator(0, 60, 1))
-        self._retry_delay_edit.setMaxLength(4)
-        form.addRow("重试延迟(秒):", self._retry_delay_edit)
-
-        self._retry_max_delay_edit = self._line("LLM_RETRY_MAX_DELAY", "4", QDoubleValidator(0, 300, 1))
-        self._retry_max_delay_edit.setMaxLength(5)
-        form.addRow("最大重试延迟(秒):", self._retry_max_delay_edit)
-
         self._temperature_edit = self._line("LLM_TEMPERATURE", "0.7", QDoubleValidator(0, 2, 2))
         self._temperature_edit.setMaxLength(4)
         form.addRow("采样温度:", self._temperature_edit)
@@ -624,8 +626,6 @@ class SettingsWindow(QWidget):
         common_fields = [self._model_edit, self._btn_fetch_models,
                          self._alt_model_edit, self._btn_fetch_models_alt,
                          self._btn_switch_profile, self._fallback_check,
-                         self._timeout_edit, self._retries_edit,
-                         self._retry_delay_edit, self._retry_max_delay_edit,
                          self._temperature_edit,
                          self._tool_rounds_edit,
                          self._thinking_check, self._thinking_hint,
@@ -719,7 +719,7 @@ class SettingsWindow(QWidget):
         sched_form = QFormLayout(sched_group)
         sched_form.setSpacing(8)
         sched_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-        sched_form.addRow("自主行动间隔(ms):", self._line("SCHEDULER_MID_MS", "300000", QIntValidator(60000, 3600000)))
+        sched_form.addRow("自主行动间隔(秒):", self._line("SCHEDULER_MID_MS", "300", QIntValidator(60, 3600)))
         sched_form.addRow("", self._check("SCHEDULER_AUTO_START_MID", "默认开启自动行动"))
         sched_form.addRow("每轮注入上下文数量上限:", self._line("CONTEXT_HISTORY_ENTRIES", "15", QIntValidator(1, 50)))
         inner.addWidget(sched_group)
@@ -1024,6 +1024,7 @@ class SettingsWindow(QWidget):
             value = getattr(config, key, None)
             if value is None:
                 continue
+            value = _display_value(key, value)
             if isinstance(widget, QLineEdit):
                 if isinstance(value, list):
                     widget.setText(",".join(value))
@@ -1074,7 +1075,7 @@ class SettingsWindow(QWidget):
     def _collect_values(self) -> tuple[dict, list[str]]:
         """从控件收集当前值，返回 (values, invalid_keys)。
 
-        invalid_keys 包含无法转换为目标类型的字段 key，
+        invalid_keys 包含无法转换、或被输入校验器判定越界/留空的字段 key，
         调用方应向用户提示这些字段未保存。
         """
         result = {}
@@ -1082,10 +1083,14 @@ class SettingsWindow(QWidget):
         for key, widget in self._fields.items():
             type_name = _KEY_META[key]["type"]
             if isinstance(widget, QLineEdit):
+                # validator 只拦输入层
+                if not widget.hasAcceptableInput():
+                    invalid_keys.append(key)
+                    continue
                 raw = widget.text().strip()
                 if type_name == "int":
                     try:
-                        result[key] = int(raw)
+                        result[key] = _stored_value(key, int(raw))
                     except ValueError:
                         invalid_keys.append(key)
                         continue
@@ -1112,13 +1117,36 @@ class SettingsWindow(QWidget):
                 result[key] = widget.toPlainText()
         return result, invalid_keys
 
+    def _field_label(self, key: str) -> str:
+        """字段的界面标签：优先 QFormLayout 的 buddy，回退到配置描述。"""
+        if self._label_cache is None:
+            self._label_cache = {}
+            for label in self.findChildren(QLabel):
+                buddy = label.buddy()
+                if buddy is None:
+                    continue
+                for k, w in self._fields.items():
+                    if w is buddy:
+                        self._label_cache[k] = label.text().rstrip(":：")
+                        break
+        return self._label_cache.get(key) or _KEY_META.get(key, {}).get("description", key)
+
+    def _invalid_hint(self, key: str) -> str:
+        """无效字段的提示行：界面标签 + 输入框允许的范围。"""
+        label = self._field_label(key)
+        widget = self._fields.get(key)
+        validator = widget.validator() if isinstance(widget, QLineEdit) else None
+        if isinstance(validator, (QIntValidator, QDoubleValidator)):
+            return f"{label}（允许 {validator.bottom()}–{validator.top()}）"
+        return f"{label}（不能为空）"
+
     def _on_save(self):
         """保存所有修改并即时生效。"""
         values, invalid_keys = self._collect_values()
         if invalid_keys:
-            bad_names = ", ".join(invalid_keys)
+            details = "\n".join(f"· {self._invalid_hint(k)}" for k in invalid_keys)
             self._msg("输入有误",
-                      f"以下字段包含无效数值，未能保存：\n{bad_names}\n\n请检查数值型字段.")
+                      f"以下字段的数值无效，未能保存：\n{details}\n\n请按提示范围修改后再保存。")
             return
         needs_restart_keys = []
         needs_rebuild_client = False
@@ -1194,10 +1222,7 @@ class SettingsWindow(QWidget):
             self._label_test.setText("未配置")
             return
 
-        try:
-            timeout = float(self._fields["LLM_TIMEOUT"].text().strip() or "30")
-        except ValueError:
-            timeout = 30.0
+        timeout = float(config.LLM_TIMEOUT or 30)
 
         self._test_output.clear()
         self._test_output.append(f"测试中...（{profile_name}模型）")
@@ -1305,10 +1330,7 @@ class SettingsWindow(QWidget):
             self._label_merge_test.setText("未配置")
             return
 
-        try:
-            timeout = float(self._fields["LLM_TIMEOUT"].text().strip() or "30")
-        except ValueError:
-            timeout = 30.0
+        timeout = float(config.LLM_TIMEOUT or 30)
 
         self._conn_test_output.clear()
         self._conn_test_output.append(
