@@ -1,4 +1,4 @@
-"""事件记忆汇总：整点把同主题的 event 记忆合并成一条。"""
+"""事件记忆汇总：整点把同主题的 event 与 conversation 记忆合并成一条 event。"""
 
 import logging
 import re
@@ -35,7 +35,7 @@ def _resolve_connection() -> tuple[str, str, str] | None:
 
 
 def _format_records(rows: list[dict]) -> str:
-    """候选记录渲染成输入协议：#id MM-DD HH:MM 内容；跨年时补年份。"""
+    """候选记录渲染成输入协议：#id [类别] MM-DD HH:MM 内容；跨年时补年份。"""
     current_year = datetime.now().year
     lines = []
     for r in rows:
@@ -46,7 +46,8 @@ def _format_records(rows: list[dict]) -> str:
                 stamp = created[:16].replace("T", " ")
         else:
             stamp = created
-        lines.append(f"#{r['id']} {stamp} {r['content']}")
+        category = r.get("category") or "event"
+        lines.append(f"#{r['id']} [{category}] {stamp} {r['content']}")
     return "\n".join(lines)
 
 
@@ -73,11 +74,14 @@ def _call_llm(messages: list[dict]) -> str:
     return resp.choices[0].message.content or ""
 
 
-def parse_groups(text: str, valid_ids: set[int]) -> list[tuple[list[int], str]]:
+def parse_groups(text: str, rows: list[dict]) -> list[tuple[list[int], str]]:
     """解析 Group 行，返回 [(ids, summary)]。
 
     只接受输入集合内的 id；同一 id 只归首组；去重后不足两条的组忽略。
+    纯 conversation 组忽略：对话记录不单独汇总，只允许与 event 同组。
     """
+    valid_ids = {r["id"] for r in rows}
+    categories = {r["id"]: r.get("category") for r in rows}
     groups: list[tuple[list[int], str]] = []
     used: set[int] = set()
     for raw in text.splitlines():
@@ -105,6 +109,9 @@ def parse_groups(text: str, valid_ids: set[int]) -> list[tuple[list[int], str]]:
         # 无效组不占用 id，后面的组仍可拿到这些 id
         if len(ids) < 2 or not summary:
             continue
+        if not any(categories.get(i) == "event" for i in ids):
+            logger.info(f"[MemoryMerge] 跳过纯 conversation 组 {ids}")
+            continue
         used.update(ids)
         groups.append((ids, summary))
     return groups
@@ -112,9 +119,12 @@ def parse_groups(text: str, valid_ids: set[int]) -> list[tuple[list[int], str]]:
 
 def run_merge(memory_store) -> int:
     """执行一次汇总，返回应用的组数；无候选或输出无可应用组时返回 0，请求失败时抛出。"""
-    rows = memory_store.list_event_candidates()
+    rows = memory_store.list_merge_candidates()
     if len(rows) < 2:
-        logger.info(f"[MemoryMerge] event 记忆不足两条，跳过（当前 {len(rows)} 条）")
+        logger.info(f"[MemoryMerge] 可汇总记忆不足两条，跳过（当前 {len(rows)} 条）")
+        return 0
+    if not any(r.get("category") == "event" for r in rows):
+        logger.info("[MemoryMerge] 候选里没有 event，跳过（纯 conversation 不汇总）")
         return 0
     messages = [
         {"role": "system", "content": MEMORY_MERGE_PROMPT},
@@ -125,7 +135,7 @@ def run_merge(memory_store) -> int:
     except Exception as e:
         logger.warning(f"[MemoryMerge] 请求失败: {e}")
         raise
-    groups = parse_groups(text, {r["id"] for r in rows})
+    groups = parse_groups(text, rows)
     if not groups:
         logger.info("[MemoryMerge] 输出无可应用的组")
         return 0

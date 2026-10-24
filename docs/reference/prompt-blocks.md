@@ -12,7 +12,7 @@ system prompt 是拼出来的：`pet/brain/prompts.py` 提供块与组合表，
 |---|---|
 | `FEELING_MARKER` | <<FEELING>> |
 | `_MEMORY_GUIDE` | [记忆] Memory: 类别 内容 ｜ keywords:词1,词2 ｜ importance:1-5 ｜ level:L1/L2/L3 |
-| `MEMORY_MERGE_PROMPT` | [任务] 下面的事件记录中，哪些是同一件事的连续进展？只把这类记录汇总成组，其余记录不必处理。 |
+| `MEMORY_MERGE_PROMPT` | [任务] 下面的记忆记录分 event（事件）与 conversation（对话）两类，哪些是同一件事的连续进展？只把这类记录汇总成组，其余记录不必处理。 |
 | `_IDENTITY_GUIDE` | 你是桌面宠物，生活在电脑桌面上。 |
 | `_PERSONALITY_EXAMPLES_TITLE` | [人格台词范例] 下面是这个角色说话的真实样例，请模仿其语感、节奏和语癖——只参考风格，不要照搬内容： |
 | `_WINDOW_GUIDE` | [感知] 窗口探测 参考「窗口探测」数据（系统API精确坐标）： |

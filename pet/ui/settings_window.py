@@ -120,9 +120,9 @@ class _MemoryMergeWorker(QObject):
 
     def run(self):
         try:
-            rows = self._store.list_event_candidates()
+            rows = self._store.list_merge_candidates()
             if len(rows) < 2:
-                self.finished.emit(0, "event 记忆不足 2 条，已跳过")
+                self.finished.emit(0, "可汇总的记忆不足 2 条，已跳过")
                 return
             applied = run_merge(self._store)
         except Exception as e:
@@ -793,7 +793,7 @@ class SettingsWindow(QWidget):
             f" border-radius:8px; font-size:11px; }}"
         )
         merge_help.setToolTip(
-            "整点（或点下方「立即汇总」）把同主题的 event 记忆交给模型，合并成一条汇总：\n"
+            "整点（或点下方「立即汇总」）把同主题的 event 与 conversation 记忆交给模型，合并成一条 event 汇总：\n"
             "将散落的同一主题事件合并成一条，记忆召回内容更加完整。\n\n"
             "风险：\n"
             "· 被合并的原始记忆会被删除，只留汇总，不可撤销\n"
@@ -1350,19 +1350,19 @@ class SettingsWindow(QWidget):
             self._msg("提示", "当前没有可用的记忆库。", warning=True)
             return
         try:
-            count = len(store.list_event_candidates())
+            count = len(store.list_merge_candidates())
         except Exception as e:
             logger.info(f"[Settings] 手动汇总中止：读取候选失败 {e}")
-            self._msg("提示", f"读取 event 记忆失败：{e}", warning=True)
+            self._msg("提示", f"读取记忆候选失败：{e}", warning=True)
             return
         if count < 2:
             logger.info(f"[Settings] 手动汇总中止：候选仅 {count} 条")
-            self._msg("提示", f"当前 event 记忆只有 {count} 条，不足 2 条，无需汇总。")
+            self._msg("提示", f"当前可汇总的记忆只有 {count} 条，不足 2 条，无需汇总。")
             return
 
         reply = QMessageBox.question(
             self, "确认汇总",
-            f"将把当前 {count} 条 event 记忆交给汇总模型，同主题的会被合并成一条汇总。\n\n"
+            f"将把当前 {count} 条记忆（event 与 conversation）交给汇总模型，同主题的会被合并成一条 event 汇总。\n\n"
             "· 被合并的原始记忆会被删除，只留汇总，不可撤销\n"
             "· 判定为无需合并的独立记忆不受影响\n"
             "· 汇总由模型生成，可能丢细节或概括偏差\n"
