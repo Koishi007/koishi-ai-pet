@@ -34,6 +34,10 @@ class SingleInstanceGuard:
         """上次 try_acquire 失败是否因另一实例持有锁。"""
         return self._lock.error() == QLockFile.LockError.LockFailedError
 
+    def error(self) -> "QLockFile.LockError":
+        """上次 try_acquire 的失败原因。"""
+        return self._lock.error()
+
     def release(self) -> None:
         """释放锁（正常退出时调用，幂等）。"""
         try:
