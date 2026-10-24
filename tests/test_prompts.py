@@ -194,6 +194,30 @@ class TestDockedPrompts:
         analyze = builder.build_analyze_decide("hi", "ctx", screenshot=False)
         assert analyze[-1]["content"].startswith(prompts.dock_note("left", "analyze"))
 
+    def test_history_note_precedes_current_prompt(self):
+        """历史非空时，字段说明紧贴历史放在 user 段最前。"""
+        class _Brain:
+            _MAX_POOL_ENTRIES = 21
+
+            def get_multi_turn_messages(self, **_kw):
+                return [{"role": "assistant", "content": "Speech: 嗯"}]
+
+        messages = ContextBuilder(brain_mixin=_Brain()).build_chat_decide(
+            "在吗", "ctx", screenshot=False)
+        assert messages[-1]["content"].startswith(prompts.history_note("chat"))
+
+    def test_history_note_skipped_without_history(self):
+        """首轮没有历史样例，不必花这段 token。"""
+        class _Brain:
+            _MAX_POOL_ENTRIES = 21
+
+            def get_multi_turn_messages(self, **_kw):
+                return []
+
+        messages = ContextBuilder(brain_mixin=_Brain()).build_chat_decide(
+            "在吗", "ctx", screenshot=False)
+        assert "[历史说明]" not in messages[-1]["content"]
+
     def test_interact_note_from_context(self):
         messages = ContextBuilder(dock_side_fn=lambda: "right").build_interact("用户摸了摸你的头")
         content = messages[1]["content"]
@@ -326,11 +350,20 @@ class TestActionLimits:
     def test_format_block_states_required_fields(self):
         block = prompts._chat_task(False)[0]
         assert "必填：第一行 Summary、至少 3 个 Action" in block
-        assert "只含 Speech 的输出无效" in block
 
-    def test_user_prompt_carries_action_count(self):
-        assert "Actions(至少" in prompts.chat_vision_user_prompt("在吗", "")
-        assert "Actions(至少" in prompts.autonomous_vision_user_prompt("", "")
+    def test_history_note_carries_action_count(self):
+        """字段说明紧贴历史，数量随任务与贴边状态变化。"""
+        note = prompts.history_note("chat")
+        assert "其余字段未存入历史" in note
+        assert "至少 3 个 Action" in note
+        assert "至少 1 个 Action" in prompts.history_note("chat", docked=True)
+        assert "只输出 1-2 个 Action" in prompts.history_note("interact")
+
+    def test_user_prompt_leaves_field_list_to_format_block(self):
+        """字段顺序只在[输出格式]里写一次，user 段不再重复清单。"""
+        prompt = prompts.chat_vision_user_prompt("在吗", "")
+        assert "按[输出格式]写出完整输出" in prompt
+        assert "Actions(至少" not in prompt
 
     def test_examples_only_use_shared_actions(self):
         for fn in (prompts._autonomous_task, prompts._chat_task,
