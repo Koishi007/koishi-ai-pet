@@ -49,6 +49,9 @@ def _ensure_tool_deps(tool_dir: Path):
     if not req_file.is_file():
         return
 
+    if getattr(sys, "frozen", False):
+        return
+
     stamp_file = tool_dir / ".deps_installed"
 
     if stamp_file.is_file():
