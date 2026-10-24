@@ -3,8 +3,8 @@
 import pytest
 
 from pet.tools.output import (IMAGES_SCHEMA, PAGINATION_SCHEMA, ImageBlock,
-                              TextBlock, ToolOutputDefinition, render_record,
-                              render_turn, validate)
+                              TextBlock, ToolOutputDefinition, render_failure,
+                              render_record, render_text, render_turn, validate)
 
 WEATHER_SCHEMA = {
     "type": "object",
@@ -22,6 +22,25 @@ WEATHER_SCHEMA = {
 
 def definition() -> ToolOutputDefinition:
     return ToolOutputDefinition(schema=WEATHER_SCHEMA)
+
+
+class TestRenderText:
+    def test_joins_text_blocks_and_skips_images(self):
+        blocks = [TextBlock("甲"), ImageBlock(base64="x", mime="image/png"),
+                  TextBlock("乙")]
+        assert render_text(blocks) == "甲\n\n乙"
+
+    def test_failure_renders_primary_line(self):
+        blocks = render_failure("probe__x", "timeout", "工具执行超时（30s）")
+        assert blocks == [TextBlock("[FAIL probe__x] timeout: 工具执行超时（30s）",
+                                    role="primary")]
+        assert render_text(blocks) == "[FAIL probe__x] timeout: 工具执行超时（30s）"
+
+    def test_failure_hint_is_appended_last(self):
+        blocks = render_failure("probe__x", "timeout", "工具执行超时（30s）",
+                                "稍后重试，或换用其他工具。")
+        assert [block.role for block in blocks] == ["primary", "hint"]
+        assert render_text(blocks).endswith("\n\n稍后重试，或换用其他工具。")
 
 
 class TestValidate:

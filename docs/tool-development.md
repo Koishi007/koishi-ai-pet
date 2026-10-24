@@ -77,7 +77,7 @@ def register(registry):
 
 ## 返回值与输出契约
 
-handler 返回**规范值**，形状由 `add_method(output=...)` 声明的 schema 约束。框架按 schema 里的 `x-role` 把它渲染成模型可见的内容。
+handler 返回**规范值**，形状由 `add_method(output=...)` 声明的 schema 约束。`output` 是注册必填项，未声明的方法注册即报错。框架按 schema 里的 `x-role` 把它渲染成内部内容块，再由编码层压平成模型可见的文本与多模态消息。
 
 ```python
 from pet.tools.output import PAGINATION_SCHEMA, ToolOutputDefinition
@@ -130,9 +130,9 @@ registry.add_method(TOOL_NAME, "read_file", "读取文件", handler=read_file,
 
 ### 失败
 
-业务失败返回 `{"error": "...", "code": "..."}`，执行器转成 `ToolResult.error_code`，模型看到 `[FAIL 工具名] code: 文案`，历史记录取该错误文案。不要自己造 `ok=False` 之类的成功标记。
+业务失败返回 `{"error": "...", "code": "..."}`，执行器转成 `ToolResult.error_code`，模型看到 `[FAIL 工具名] code: 文案`，随后框架按错误码追加一条下一步提示（与成功输出的 `agent_hint` 同语义）；历史记录仍只取错误文案。不要自己造 `ok=False` 之类的成功标记。
 
-返回值不符合 `output.schema` 时同样失败，`code` 为 `output_violation`，模型看到首个违约路径，返回值不渲染。
+返回值不符合 `output.schema` 时同样失败，`code` 为 `output_violation`，模型看到首个违约路径和框架提示，返回值不渲染。
 
 ### 校验
 

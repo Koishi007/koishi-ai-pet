@@ -1,6 +1,6 @@
 # 工具输出声明与投影设计
 
-> 工具的返回值从「随手返回一个 dict」改为「按 `output.schema` 声明的规范值」；框架用统一的 render 把规范值投影成模型可见的 `ContentBlock[]`。统一的是声明与投影的机制，不是各工具的具体字段。
+> 工具的返回值从「随手返回一个 dict」改为「按 `output.schema` 声明的规范值」；框架用统一的 render 把规范值投影成内部 `ContentBlock[]`，再由编码层压平成 wire 格式的文本或多模态消息。统一的是声明与投影的机制，不是各工具的具体字段。
 >
 > 本文描述最终形态。修订：2026-10-22 初稿；同日按评审收敛（删除 schema 回退、补齐 `$ref` 与 `model_hint` 的归属、校验改为严格模式、artifact 正文定义）。
 
@@ -313,6 +313,8 @@ class ToolResult:
 
 模型看到的是 `[FAIL name] timeout: 工具执行超时（30s）`，历史记录取 `error_message`。`code` 稳定；输出不符合 schema 时本次调用失败，返回值不渲染。
 
+失败视图与当轮视图走同一条投影：`render_failure` 产出主错误行 `TextBlock(role="primary")`，再按错误码追加一条 `TextBlock(role="hint")`（与成功输出的 `agent_hint` 同语义），由 `render_text` 压平；提示只进当轮视图，历史仍取 `error_message`。
+
 ### §6.5 文件动作
 
 `add_file_action` 的 handler 返回 `{"ok", "summary"}`，由文件气泡直接调用，不经过 LLM 工具循环，也不进 `session_events`。
@@ -323,7 +325,7 @@ class ToolResult:
 
 13 个工具（含 `tool_search` / `food` / `game` / `recall` 四个元工具）全部声明 `output`；`gen_docs` 的守卫测试拒绝遗漏，并保证每个已声明 schema 能从 AST 解析。
 
-`add_method(output=None)` 的方法没有契约，运行时把返回值原样交给模型，不参与校验；内置工具不使用这条路径。
+`output` 是注册必填项：`add_method` 缺失直接报错，不存在无契约方法；运行时一律按 `output.schema` 校验与渲染。
 
 ## §8 风险
 
@@ -346,7 +348,7 @@ class ToolResult:
 4. `suppress` 字段在任何投影里都不出现
 5. `images` 产出的 `ImageBlock` 数量与 `caption` 正确
 6. `render_record` 截断到 120 字符，且保留 `has_next` 提示
-7. 未声明 output 的方法把返回值原样交给模型
+7. 未声明 output 的方法在注册时报错，不存在无契约路径
 8. `brief` 写入事件后，投影层直接读它，不走回退链
 9. 声明了 `output` 的方法返回值不符合 schema 时判为 `output_violation`，不渲染
 10. 分页字段类型错误时 `render_turn` 不抛异常

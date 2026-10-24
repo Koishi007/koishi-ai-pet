@@ -12,7 +12,8 @@ import re
 from typing import Callable, Optional, Protocol
 
 from pet.action.registry import ACTION_NAMES
-from pet.brain.output import ActionStep, BehaviorOutput, CancelledError
+from pet.brain.output import (ActionStep, BehaviorOutput, CancelledError, MOOD_FIELDS,
+                              VITALS_FIELDS, normalize_emotion)
 
 logger = logging.getLogger(__name__)
 
@@ -47,10 +48,6 @@ _TAG_PREFIXES: frozenset[str] = frozenset(
 )
 _HOLD_MAX = max(len(token) for token in _TAG_TOKENS)
 
-# 增量字段白名单：Mood / Vitals 各自可出现的键
-_MOOD_FIELDS = ("affection", "joy", "sanity")
-_VITALS_FIELDS = ("satiety", "energy")
-
 # 「字段±值」增量：字段名后允许空格，数字必须带符号
 _DELTA = re.compile(r"([A-Za-z]+)\s*([+-]\s*\d+)")
 
@@ -82,12 +79,12 @@ def parse_deltas(raw: str, fields: tuple[str, ...]) -> Optional[dict]:
 
 def parse_mood_line(raw: str) -> Optional[dict]:
     """解析 Mood 行，格式: affection+5 joy+3 sanity-2"""
-    return parse_deltas(raw, _MOOD_FIELDS)
+    return parse_deltas(raw, MOOD_FIELDS)
 
 
 def parse_vitals_line(raw: str) -> Optional[dict]:
     """解析 Vitals 行，格式: satiety+15 energy-3（仅生理参数）"""
-    return parse_deltas(raw, _VITALS_FIELDS)
+    return parse_deltas(raw, VITALS_FIELDS)
 
 
 def parse_action_line(raw: str, resolve=ACTION_NAMES.__contains__) -> Optional[ActionStep]:
@@ -312,7 +309,7 @@ class BehaviorParser:
 
         if action_fallback and not acc["actions"]:
             acc["actions"].append(ActionStep("sit", kwargs={"duration": 5}))
-        return _build_output(acc, speech_streamed=False)
+        return _attach_raw(_build_output(acc, speech_streamed=False), content)
 
     @staticmethod
     def _emit_speech(tagger: LineTagger, pending: list, on_chunk) -> None:
@@ -340,6 +337,8 @@ class BehaviorParser:
         elif tag == "speech":
             if value.lower() not in _SILENCE_MARKERS:
                 acc["speech_parts"].append(value)
+        elif tag == "emotion":
+            acc["emotion"].extend(normalize_emotion(value))
         elif tag == "summary":
             acc[tag].append(_SUMMARY_TIME_LABEL.sub("", value))
         else:
@@ -421,19 +420,19 @@ class BehaviorParser:
         if len(usable) != len(tool_calls_map):
             logger.warning(f"[Behavior] dropped {len(tool_calls_map) - len(usable)} tool call(s) "
                            f"without function name ({tag})")
-        raw = build_raw_text(acc)
-        counts = (f"content {sum(map(len, received))} 字符、reasoning {reasoning_len} 字符"
+        # 返回模型原文，调用方据此记录历史与回传修复轮；不做字段重排
+        raw = "".join(received)
+        counts = (f"content {len(raw)} 字符、reasoning {reasoning_len} 字符"
                   f"、finish_reason {finish_reason}")
-        if raw:
+        if any(acc.values()):
             logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] [Behavior] === LLM RESPONSE ({tag}) ===")
             logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] [Behavior]   raw: {raw}")
         elif usable and (received or reasoning_len):
             logger.debug(f"[Behavior] [{tag}] 工具轮次无正文：{counts}")
         elif received or reasoning_len:
-            body_text = "".join(received)
-            self._sink.note_unparsed(body_text[:_UNPARSED_SAMPLE_LIMIT])
+            self._sink.note_unparsed(raw[:_UNPARSED_SAMPLE_LIMIT])
             logger.warning(f"[Behavior] [{tag}] 响应未解析出字段：{counts}"
-                           f"；正文：{body_text[:_UNPARSED_SAMPLE_LIMIT]!r}")
+                           f"；正文：{raw[:_UNPARSED_SAMPLE_LIMIT]!r}")
         return raw, usable
 
     def iter_stream_with_timeout(self, stream, total_timeout: float,
@@ -532,7 +531,7 @@ def parse_stream_chunks(stream, total_timeout: float, sink: BehaviorSink, tag: s
 
 
 def _build_output(acc: dict, speech_streamed: bool) -> BehaviorOutput:
-    # 保留分段换行：落库后投影按行还原成多个 Speech 行
+    # 保留分段换行：台词按段播出；没有原文的路径投影逐行还原成 Speech 行
     return BehaviorOutput(
         actions=acc["actions"],
         speech="\n".join(acc["speech_parts"]) if acc["speech_parts"] else None,
@@ -546,25 +545,11 @@ def _build_output(acc: dict, speech_streamed: bool) -> BehaviorOutput:
     )
 
 
-def build_raw_text(acc: dict) -> str:
-    """把累加器还原成原始输出文本，用于日志与工具轮次的中间内容。"""
-    lines = []
-    if acc["summary"]:
-        lines.append(f"Summary: {acc['summary'][0]}")
-    if acc["emotion"]:
-        lines.append(f"Emotion: {', '.join(acc['emotion'])}")
-    lines += [f"Speech: {s}" for s in acc["speech_parts"]]
-    lines += [
-        f"Action: {a.name} {' '.join(map(str, a.args))} {' '.join(f'{k}={v}' for k, v in a.kwargs.items())}".strip()
-        for a in acc["actions"]
-    ]
-    if acc["memory"]:
-        lines.append(f"Memory: {acc['memory'][0]}")
-    if acc["mood"]:
-        lines.append(f"Mood: {acc['mood'][0]}")
-    if acc["vitals"]:
-        lines.append(f"Vitals: {acc['vitals'][0]}")
-    return "\n".join(lines)
+def _attach_raw(output: BehaviorOutput, raw: str) -> BehaviorOutput:
+    """把响应原文挂到输出；没有解析出字段的正文由调用方记为 failed_turn，不进历史。"""
+    if raw and output.has_fields():
+        output.raw = raw
+    return output
 
 
 def _log_stream_done(tag: str, elapsed: float, finish_reason, stream_usage) -> None:

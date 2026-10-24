@@ -9,7 +9,10 @@ from pet.tools import executor as executor_mod
 from pet.tools import registry as registry_module
 from pet.tools.context import ToolContext
 from pet.tools.executor import ToolCall, ToolExecutor
+from pet.tools.output import ToolOutputDefinition
 from pet.tools.registry import ToolRegistry
+
+_OUTPUT = ToolOutputDefinition(schema={"type": "object"})
 
 
 def _echo(text: str = "") -> dict:
@@ -51,18 +54,23 @@ def registry() -> ToolRegistry:
     reg = ToolRegistry()
     reg.register("demo", "演示工具", group="test")
     reg.add_method("demo", "echo", "回显文本", handler=_echo,
-                   args={"text": {"type": "str", "desc": "要回显的文本"}})
+                   args={"text": {"type": "str", "desc": "要回显的文本"}},
+                   output=_OUTPUT)
     reg.add_method("demo", "count", "计数", handler=lambda n=1: {"summary": f"n={n}"},
                    args={"n": {"type": "int", "desc": "次数"},
                          "mode": {"type": "str", "desc": "模式",
-                                  "enum": ["fast", "slow"], "default": "fast"}})
-    reg.add_method("demo", "boom", "抛异常", handler=_boom)
+                                  "enum": ["fast", "slow"], "default": "fast"}},
+                   output=_OUTPUT)
+    reg.add_method("demo", "boom", "抛异常", handler=_boom, output=_OUTPUT)
     reg.add_method("demo", "bad", "签名不匹配", handler=_bad_signature,
-                   args={"other": {"type": "str", "required": True}})
-    reg.add_method("demo", "slow", "慢方法", handler=_slow, timeout=0.05)
-    reg.add_method("demo", "shot", "带图", handler=_with_image)
-    reg.add_method("demo", "fail", "业务失败", handler=_business_fail)
-    reg.add_method("demo", "fail_plain", "业务失败无码", handler=_business_fail_plain)
+                   args={"other": {"type": "str", "required": True}},
+                   output=_OUTPUT)
+    reg.add_method("demo", "slow", "慢方法", handler=_slow, timeout=0.05,
+                   output=_OUTPUT)
+    reg.add_method("demo", "shot", "带图", handler=_with_image, output=_OUTPUT)
+    reg.add_method("demo", "fail", "业务失败", handler=_business_fail, output=_OUTPUT)
+    reg.add_method("demo", "fail_plain", "业务失败无码", handler=_business_fail_plain,
+                   output=_OUTPUT)
     return reg
 
 
@@ -77,6 +85,13 @@ class TestRegistryLookup:
         method = registry.get_method("demo__echo")
         assert method is not None
         assert method.handler is _echo
+
+    def test_add_method_requires_output(self, registry):
+        with pytest.raises(TypeError):
+            registry.add_method("demo", "no_output", "缺少契约", handler=_echo)
+        with pytest.raises(ValueError):
+            registry.add_method("demo", "no_output", "缺少契约", handler=_echo,
+                                output=None)
 
     def test_missing_separator_returns_none(self, registry):
         assert registry.get_method("demo.echo") is None
@@ -217,7 +232,8 @@ class TestOpenAiSchema:
 
     def test_groups_filter_excludes_other_groups(self, registry):
         registry.register("other", "其他工具", group="other")
-        registry.add_method("other", "ping", "ping", handler=lambda: {"summary": "pong"})
+        registry.add_method("other", "ping", "ping", handler=lambda: {"summary": "pong"},
+                                output=_OUTPUT)
         names = {t["function"]["name"] for t in registry.to_openai_tools(groups={"test"})}
         assert "other__ping" not in names
         assert "demo__echo" in names

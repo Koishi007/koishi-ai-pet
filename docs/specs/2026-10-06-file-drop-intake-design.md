@@ -218,7 +218,7 @@ if im.size[0] * im.size[1] >= config.FILE_DROP_MAX_PIXELS:
 
 属性变化由 LLM 输出 `Mood:` / `Vitals:` 行，字段限于 `affection`、`joy`、`sanity`、`satiety`、`energy`（`pet/brain/parsing.py:37-39`）。投喂与尝一口在模板层分工：`INTERACT_FED_PROMPT` 专注生理参数（satiety/energy 的数值规则），`INTERACT_TAKE_A_BITE_PROMPT` 专注味道的想象与心理方向（Mood 的数值规则），并明确不输出 Vitals 行；数值规则都写在模板里，不在 drop 处理代码中直写。
 
-看一看只改心理不改生理：`_analyze_task` 注入 `_MOOD_GUIDE` 与工具 aside，不注入 `_VITALS_GUIDE`，因此它不产生 `Vitals:` 行（与「看一看不是进食」一致）。尝一口与拒收走 `interact` 任务，两个指南都在系统段；但尝一口的 hint 明确不要 Vitals 行，拒收的增量只有 sanity/joy，两条路径实际都不产生生理变化。
+看一看不要求生理变化：`_analyze_task` 与其他任务一样注入 `_MOOD_GUIDE` 与 `_VITALS_GUIDE`，格式块保留 `Vitals(可选)` 供统一协议使用；user 段只要求心理判断，模型可按需省略 Vitals（与「看一看不是进食」一致）。尝一口与拒收走 `interact` 任务，两个指南都在系统段；但尝一口的 hint 明确不要 Vitals 行，拒收的增量只有 sanity/joy，两条路径实际都不产生生理变化。
 
 图片与正文都只进当轮 messages，不落盘；各路径写入上下文池、聊天历史与记忆库的范围见 §5.2。
 

@@ -436,6 +436,24 @@ class TestFullWidthColon:
         assert out.speech == "你好"
 
 
+class TestEmotionWhitelist:
+    """Emotion 只保留白名单内的名字，拼错或自造的名字直接丢弃。"""
+
+    def test_unknown_emotion_dropped(self):
+        out = parse_behavior("Emotion: hungy\n", action_fallback=False)
+        assert out.emotion is None
+
+    def test_valid_emotions_kept_in_order(self):
+        out = parse_behavior("Emotion: HAPPY, hungy\nEmotion: shy\n", action_fallback=False)
+        assert out.emotion == "happy, shy"
+
+    def test_stream_path_filters_unknown(self):
+        parser = BehaviorParser(_Sink())
+        raw, _ = parser.collect_stream(_stream_text("Emotion: happy, hungy\n"), 5.0, tag="test")
+        out = parser.parse_behavior(raw, action_fallback=False)
+        assert out.emotion == "happy"
+
+
 class TestUntaggedContentDiag:
     """未带标签的内容按格式契约整行丢弃，日志记字符数与正文原文。"""
 
@@ -444,7 +462,7 @@ class TestUntaggedContentDiag:
         parser = BehaviorParser(_Sink())
         with caplog.at_level(logging.WARNING, logger="pet.brain.parsing"):
             raw, _ = parser.collect_stream(_stream_text(raw_text), 5.0, tag="test")
-        assert raw == ""
+        assert raw == raw_text
         records = [r.getMessage() for r in caplog.records
                    if r.levelno >= logging.WARNING and r.name == "pet.brain.parsing"]
         assert records
@@ -476,6 +494,26 @@ class TestUntaggedContentDiag:
         warnings = [r for r in caplog.records
                     if r.levelno >= logging.WARNING and r.name == "pet.brain.parsing"]
         assert not warnings
+
+
+class TestRawCapture:
+    """输出原文用于事件日志：解析出字段才挂 raw，未解析的正文留给 failed_turn。"""
+
+    CONTENT = ("Summary: 想了\nEmotion: happy\nSpeech: 嗯\n"
+               "Action: sit 5\nMood: joy+1\n")
+
+    def test_parsed_content_attaches_raw(self):
+        out = parse_behavior(self.CONTENT, action_fallback=False)
+        assert out.raw == self.CONTENT
+
+    def test_prose_only_has_no_raw(self):
+        out = parse_behavior("恋恋没有开始游戏哦", action_fallback=False)
+        assert out.raw is None
+
+    def test_stream_returns_exact_content(self):
+        parser = BehaviorParser(_Sink())
+        raw, _ = parser.collect_stream(_stream_text(self.CONTENT, size=3), 5.0, tag="test")
+        assert raw == self.CONTENT
 
 
 class TestInlineTags:

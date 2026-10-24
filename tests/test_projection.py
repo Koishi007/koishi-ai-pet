@@ -1,13 +1,11 @@
-"""会话投影测试：纯函数、摘要覆盖、工具组原子裁剪、四档通道与伪调用清洗。"""
+"""会话投影测试：纯函数、摘要覆盖、工具组原子裁剪、四档通道与结构化响应渲染。"""
 
-import re
 import time
 
 import pytest
 
 from pet.brain.events import Event, args_digest
-from pet.brain.projection import (Budget, Profile, project, replay_args,
-                                  sanitize_assistant_text)
+from pet.brain.projection import Budget, Profile, project, replay_args
 
 T0 = time.time() - 600
 
@@ -17,22 +15,24 @@ def ev(seq, type_, payload=None, *, group=None, refs=None, ts=None):
                  group, payload or {}, refs or {})
 
 
-def dialogue(text, seq, role="user"):
-    return ev(seq, "user_msg" if role == "user" else "assistant_turn",
-              {"text": text}, group=f"g{seq}" if role == "assistant" else None)
+def dialogue(text, seq):
+    return ev(seq, "user_msg", {"text": text})
+
+
+def assistant(payload, seq):
+    return ev(seq, "assistant_turn", {"v": 1, **payload})
 
 
 def tool_group(seq, name="bilibili__like", digest="bvid=BV1aPJR6oExx",
-               brief="点赞成功", text="", results=True):
+               brief="点赞成功", results=True):
     gid = f"g{seq}"
     events = [
-        ev(seq, "assistant_turn", {"text": text}, group=gid, refs={"tool_call_id": f"c{seq}"}),
-        ev(seq + 1, "tool_call", {"name": name, "args_digest": digest, "side_effect": True},
+        ev(seq, "tool_call", {"name": name, "args_digest": digest, "side_effect": True},
            group=gid, refs={"tool_call_id": f"c{seq}"}),
     ]
     if results:
-        events.append(ev(seq + 2, "tool_result", {"ok": True, "brief": brief},
-                         group=gid, refs={"tool_call_id": f"c{seq}", "parent_seq": seq + 1}))
+        events.append(ev(seq + 1, "tool_result", {"ok": True, "brief": brief},
+                         group=gid, refs={"tool_call_id": f"c{seq}", "parent_seq": seq}))
     return events
 
 
@@ -113,16 +113,15 @@ class TestToolGroup:
         assert messages[-1]["role"] == "system"
 
     def test_none_channel_drops_tool_records(self):
-        messages = project(tool_group(1, text="我在看视频"), Profile(tool_channel="none"),
-                           Budget(now=T0 + 1000))
+        events = [ev(0, "assistant_speech", {"text": "我在看视频"}, group="g1")] + tool_group(1)
+        messages = project(events, Profile(tool_channel="none"), Budget(now=T0 + 1000))
         assert len(messages) == 1
-        assert "tool_calls" not in messages[0]
+        assert messages[0]["content"] == "Speech: 我在看视频"
         assert "点赞成功" not in messages[0]["content"]
 
     def test_multiple_tools_keep_order_and_ids(self):
         gid = "g9"
         events = [
-            ev(9, "assistant_turn", {"text": "一起做"}, group=gid),
             ev(10, "tool_call", {"name": "a__x", "args_digest": "k=1"}, group=gid,
                refs={"tool_call_id": "c10"}),
             ev(11, "tool_call", {"name": "b__y", "args_digest": "k=2"}, group=gid,
@@ -153,20 +152,6 @@ class TestToolGroup:
         assert messages[0]["content"] == "Speech: 查一下天气"
         assert messages[1]["role"] == "tool"
 
-    def test_aside_after_turn_keeps_speech_prefix(self):
-        gid = "g9"
-        events = [
-            ev(9, "assistant_turn", {"text": "我查查"}, group=gid),
-            ev(10, "assistant_speech", {"text": "查一下天气"}, group=gid,
-               refs={"tool_call_id": "c11"}),
-            ev(11, "tool_call", {"name": "weather__get_current", "args_digest": "-"},
-               group=gid, refs={"tool_call_id": "c11"}),
-            ev(12, "tool_result", {"brief": "深圳晴"}, group=gid,
-               refs={"tool_call_id": "c11"}),
-        ]
-        messages = project(events, Profile(), Budget(now=T0 + 1000))
-        assert messages[0]["content"] == "我查查\nSpeech: 查一下天气"
-
     def test_dropped_group_takes_its_aside_with_it(self):
         events = []
         seq = 1
@@ -190,8 +175,8 @@ class TestToolGroup:
         seq = 1
         for i in range(3):
             events += tool_group(seq, brief=f"第{i}次")
-            seq += 3
-        events.append(dialogue("要紧的话", seq, role="assistant"))
+            seq += 2
+        events.append(assistant({"summary": "要紧的话"}, seq))
         messages = project(events, Profile(),
                            Budget(max_entries=1, max_groups=8, now=T0 + 1000))
         contents = [m.get("content") or "" for m in messages]
@@ -203,7 +188,7 @@ class TestToolGroup:
         seq = 1
         for i in range(6):
             events += tool_group(seq, brief=f"第{i}次")
-            seq += 3
+            seq += 2
         # max_entries=5 → 0.4 比例得 2，下限 3
         messages = project(events, Profile(), Budget(max_entries=5, now=T0 + 1000))
         assert sum(1 for m in messages if m["role"] == "tool") == 3
@@ -213,7 +198,7 @@ class TestToolGroup:
         seq = 1
         for i in range(3):
             events += tool_group(seq, brief=f"第{i}次")
-            seq += 3
+            seq += 2
         messages = project(events, Profile(), Budget(max_groups=1, now=T0 + 1000))
         assert sum(1 for m in messages if m["role"] == "tool") == 1
         assert "第2次" in messages[-1]["content"]
@@ -223,27 +208,6 @@ class TestToolGroup:
         budget = Budget(evict_before_ts=T0 + 100, now=T0 + 1000)
         messages = project(events, Profile(), budget)
         assert all(m["role"] != "tool" for m in messages)
-
-
-class TestSanitize:
-    def test_fake_tool_line_replaced(self):
-        clean, hits = sanitize_assistant_text("好呀\n[工具调用] bilibili__like → {...}\n完结")
-        assert hits == 1
-        assert "[工具调用]" not in clean
-        assert "[已省略]" in clean
-        assert "好呀" in clean
-
-    def test_plain_discussion_untouched(self):
-        text = "用户问我 [工具调用] 是什么，我解释了一下"
-        clean, hits = sanitize_assistant_text(text)
-        assert hits == 0
-        assert clean == text
-
-    def test_projection_sanitizes_but_event_keeps_original(self):
-        event = dialogue("[工具调用] a__b → {\"x\": 1}", 1, role="assistant")
-        messages = project([event], Profile(), Budget(now=T0 + 1000))
-        assert "[已省略]" in messages[0]["content"]
-        assert event.payload["text"].startswith("[工具调用]")
 
 
 class TestFailedTurn:
@@ -290,7 +254,7 @@ class TestArgsDigest:
 class TestChannelText:
     def test_degraded_text_has_no_internal_names(self):
         events = tool_group(1, digest="bvid=BV1aP", brief="点赞成功")
-        for channel in ("user-note", "system-note", "none"):
+        for channel in ("user-note", "system-note"):
             messages = project(events, Profile(tool_channel=channel), Budget(now=T0 + 1000))
             for msg in messages:
                 assert "bilibili__like" not in (msg.get("content") or "")
@@ -315,79 +279,57 @@ class TestTimePrefix:
         assert "保留" in messages[0]["content"]
 
 
-class TestHistoryFormat:
-    """历史形态：assistant 行首是协议标签，时间只挂在 Summary 行与用户行上。
+class TestStructuredAssistant:
+    """结构化响应按字段规则渲染：固定顺序、无时间标签、不清洗。"""
 
-    时间进不了 Speech 行，模型照抄也不会把时间念出来；assistant 行照抄后仍是合法字段行。
-    """
+    PAYLOAD = {
+        "text": "<原始文本，不参与投影>",
+        "summary": "摔了一跤",
+        "emotion": "curious",
+        "speech_parts": ["痛痛", "去钓鱼"],
+        "actions": [
+            {"name": "dejected"},
+            {"name": "walk", "args": ["left", 300]},
+            {"name": "sit", "kwargs": {"duration": 43}},
+        ],
+        "memory": "user_fact 晚上工作 | keywords:[工作习惯] | importance:3 | level:L2",
+        "mood": {"joy": 1.0, "sanity": -1.0},
+        "vitals": {"satiety": 15.0},
+    }
 
-    @staticmethod
-    def _speech(seq, text):
-        return ev(seq, "assistant_turn", {"text": text, "kind": "speech"})
+    def test_fields_render_in_protocol_order(self):
+        messages = project([assistant(self.PAYLOAD, 1)], Profile(), Budget(now=T0 + 600))
+        assert messages == [{"role": "assistant", "content": (
+            "Summary: 摔了一跤\n"
+            "Emotion: curious\n"
+            "Speech: 痛痛\n"
+            "Speech: 去钓鱼\n"
+            "Action: dejected\n"
+            "Action: walk left 300\n"
+            "Action: sit duration=43\n"
+            "Memory: user_fact 晚上工作 | keywords:[工作习惯] | importance:3 | level:L2\n"
+            "Mood: joy+1 sanity-1\n"
+            "Vitals: satiety+15"
+        )}]
 
-    @staticmethod
-    def _summary(seq, text):
-        return ev(seq, "assistant_turn", {"text": text, "kind": "summary"})
+    def test_text_is_not_projected(self):
+        messages = project([assistant(self.PAYLOAD, 1)], Profile(), Budget(now=T0 + 600))
+        assert "原始文本" not in messages[0]["content"]
 
-    def test_speech_line_is_protocol_only(self):
-        messages = project([self._speech(1, "你好")], Profile(), Budget(now=T0 + 600))
-        assert messages == [{"role": "assistant", "content": "Speech: 你好"}]
+    def test_empty_fields_are_skipped(self):
+        event = assistant({"text": "只有原文", "summary": "只有摘要"}, 1)
+        messages = project([event], Profile(), Budget(now=T0 + 600))
+        assert messages[0]["content"] == "Summary: 只有摘要"
 
-    def test_speech_segments_each_get_a_label(self):
-        """多段台词逐行成行，模型能照着输出多个 Speech。"""
-        messages = project([self._speech(1, "第一句\n第二句")], Profile(),
-                           Budget(now=T0 + 600))
-        assert messages[0]["content"] == "Speech: 第一句\nSpeech: 第二句"
+    def test_payload_without_fields_is_skipped(self):
+        event = assistant({"text": "只有原文"}, 1)
+        assert project([event], Profile(), Budget(now=T0 + 600)) == []
 
-    def test_turn_block_keeps_speech_segments(self):
-        events = [
-            ev(1, "assistant_turn",
-               {"text": "发呆了一轮", "kind": "summary", "turn_id": "t1"}),
-            ev(2, "assistant_turn",
-               {"text": "唔…\n好困", "kind": "speech", "turn_id": "t1"}),
-        ]
-        messages = project(events, Profile(), Budget(now=T0 + 600))
-        assert messages[0]["content"].endswith(
-            "〕发呆了一轮\nSpeech: 唔…\nSpeech: 好困")
+    def test_unstructured_assistant_is_not_projected(self):
+        event = ev(1, "assistant_turn", {"text": "旧台词"})
+        assert project([event], Profile(), Budget(now=T0 + 600)) == []
 
-    def test_summary_line_carries_relative_label(self):
-        messages = project([self._summary(1, "发呆了一轮")], Profile(),
-                           Budget(now=T0 + 600))
-        assert re.fullmatch(r"Summary: 〔\d+ 分钟前〕发呆了一轮", messages[0]["content"])
-
-    def test_user_line_carries_relative_label(self):
-        messages = project([dialogue("在吗", 1)], Profile(), Budget(now=T0 + 600))
-        assert re.fullmatch(r"\[\d+ 分钟前\] 在吗", messages[0]["content"])
-
-    def test_just_now_label_for_recent_event(self):
-        messages = project([dialogue("在吗", 1)], Profile(), Budget(now=T0 + 5))
-        assert messages[0]["content"].startswith("[刚刚]")
-
-    def test_legacy_assistant_event_keeps_clock_shape(self):
-        messages = project([dialogue("旧台词", 1, role="assistant")], Profile(),
-                           Budget(now=T0 + 600))
-        assert messages[0]["content"].startswith("[")
-        assert "旧台词" in messages[0]["content"]
-
-    def test_turn_id_merges_summary_and_speech(self):
-        events = [
-            ev(1, "assistant_turn",
-               {"text": "发呆了一轮", "kind": "summary", "turn_id": "t1"}),
-            ev(2, "assistant_turn",
-               {"text": "唔…", "kind": "speech", "turn_id": "t1"}),
-        ]
-        messages = project(events, Profile(), Budget(now=T0 + 600))
-        assert len(messages) == 1
-        assert re.fullmatch(r"Summary: 〔\d+ 分钟前〕发呆了一轮\nSpeech: 唔…",
-                            messages[0]["content"])
-
-    def test_turn_block_counts_as_one_entry(self):
-        events = [
-            ev(1, "assistant_turn",
-               {"text": "发呆了一轮", "kind": "summary", "turn_id": "t1"}),
-            ev(2, "assistant_turn",
-               {"text": "唔…", "kind": "speech", "turn_id": "t1"}),
-        ]
-        messages = project(events, Profile(), Budget(max_entries=1, now=T0 + 600))
-        assert len(messages) == 1
-        assert "Speech: 唔…" in messages[0]["content"]
+    def test_skip_last_drops_structured_assistant(self):
+        events = [dialogue("在吗", 1), assistant(self.PAYLOAD, 2)]
+        messages = project(events, Profile(), Budget(skip_last=1, now=T0 + 600))
+        assert [m["role"] for m in messages] == ["user"]

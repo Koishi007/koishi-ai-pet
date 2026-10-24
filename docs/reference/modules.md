@@ -32,7 +32,7 @@
 | `pet/brain/context_builder.py` | LLM 请求上下文的构建 | `ContextBuilder` |
 | `pet/brain/conversation_store.py` | 对话历史持久化存储 — 记录所有 speech 输出和用户 chat 输入，按天切分，至多保存 7 天。 | `ConversationStore` |
 | `pet/brain/embedding_client.py` | OpenAI 兼容的嵌入向量客户端。 | `EmbeddingError` `EmbeddingClient` |
-| `pet/brain/events.py` | 会话事件日志：只追加的事件存储，`Message[]` 由 `projection.project` 从这里投影。 | `Event` `new_group_id()` `args_digest()` `EventStore` |
+| `pet/brain/events.py` | 会话事件日志：只追加的事件存储，`Message[]` 由 `projection.project` 从这里投影。 | `Event` `truncate_bytes()` `new_group_id()` `args_digest()` `EventStore` |
 | `pet/brain/linux_detector.py` | Linux X11 窗口枚举 —— 基于 python-xlib + EWMH，与 Win32/macOS 版保持相同接口。 | `is_window_alive()` `get_window_rect()` `is_window_occluded()` `get_visible_windows()` |
 | `pet/brain/llm_client.py` | OpenAI-compatible LLM client（支持首选/备选两套模型方案） | `normalize_profile()` `active_llm_profile()` `other_profile()` `resolve_llm_profile()` `LLMClient` |
 | `pet/brain/llm_gateway.py` | LLM 调用封装：补全请求、流式建流与重试参数，供决策编排直接调用。 | `LlmGateway` |
@@ -42,7 +42,7 @@
 | `pet/brain/mac_detector.py` | macOS 窗口枚举 —— 基于 Quartz CGWindow API，与 Win32 版保持相同接口。 | `is_window_alive()` `get_window_rect()` `is_window_occluded()` `get_visible_windows()` |
 | `pet/brain/memory.py` | SQLite 持久化记忆存储 | `LightweightDeduplicator` `_MemoryRetriever` `KeywordRetriever` `VectorRetriever` `MemoryStore` `get_memory_store()` |
 | `pet/brain/memory_merge.py` | 事件记忆汇总：整点把同主题的 event 与 conversation 记忆合并成一条 event。 | `parse_groups()` `run_merge()` |
-| `pet/brain/output.py` | LLM 决策的输出契约：行为输出与取消信号，供解析、工具轮次与编排共同引用。 | `CancelledError` `ActionStep` `BehaviorOutput` |
+| `pet/brain/output.py` | LLM 决策的输出契约：行为输出、字段白名单与取消信号，供解析、存储与编排共同引用。 | `normalize_emotion()` `CancelledError` `ActionStep` `BehaviorOutput` `sanitize_assistant_fields()` |
 | `pet/brain/parsing.py` | LLM 输出解析：把文本行 / 流式 chunk 收敛成 BehaviorOutput。 | `BehaviorSink` `parse_deltas()` `parse_mood_line()` `parse_vitals_line()` `parse_action_line()` `InlineTagNormalizer` |
 | `pet/brain/projection.py` | 事件日志到 `Message[]` 的投影：纯函数，只依赖事件、Profile 与 Budget。 | `Profile` `Budget` `_Group` `_Item` `project()` `degrade_messages()` |
 | `pet/brain/prompts.py` | 系统提示词分层组装 | `_Lazy` `invalidate_action_section()` `action_range()` `history_note()` `build_attention_hint()` `build_system_prompt()` |
@@ -94,7 +94,7 @@
 | `pet/tools/knowledge/chunker.py` | 轻量文本分块器 — 按段落 + 字数窗口切分。 | `chunk_text()` |
 | `pet/tools/knowledge/panel.py` | 知识库管理面板 — 添加、导入文件、搜索、删除。 | `KnowledgePanel` `show_panel()` |
 | `pet/tools/knowledge/storage.py` | 知识库存储层 — SQLite + sqlite-vec 向量检索。 | `KnowledgeStorage` |
-| `pet/tools/output.py` | 工具输出的声明与投影：schema 约束规范值，render 产出模型可见的块。 | `TextBlock` `ImageBlock` `ToolOutputDefinition` `validate()` `render_turn()` `render_record()` |
+| `pet/tools/output.py` | 工具输出的声明与投影：schema 约束规范值，render 产出内部内容块，由编码层压平成 wire 格式。 | `TextBlock` `ImageBlock` `ToolOutputDefinition` `validate()` `render_turn()` `render_text()` |
 | `pet/tools/registry.py` | 工具注册表 — 自动发现、注册、描述可用工具。 | `ToolMethod` `ToolDef` `ToolRegistry` `food_tool_available()` |
 | `pet/tools/system_monitor/__init__.py` | （模块未提供 docstring） | `register()` |
 | `pet/tools/system_monitor/core.py` | （模块未提供 docstring） | `get_overview()` `get_top_processes()` `get_memory_detail()` `get_network()` |
@@ -118,7 +118,7 @@
 | `pet/ui/debounce.py` | 按钮与提交的防抖：一次物理操作只产生一次请求。 | `Debounce` |
 | `pet/ui/debug_window.py` | 调试面板 | `DebugWindow` |
 | `pet/ui/edge_dock.py` | 屏幕边缘贴边的纯几何与策略计算。 | `pick_dock_side()` `dock_x()` `edge_mask_rect()` |
-| `pet/ui/emotion.py` | 桌宠情绪气泡显示 emoji 表情 | `emotion_to_emoji()` `EmotionBubble` |
+| `pet/ui/emotion.py` | 桌宠情绪气泡显示 emoji 表情 | `known_emotions()` `emotion_to_emoji()` `EmotionBubble` |
 | `pet/ui/feed_bubble.py` | 桌宠喂食交互组件 | `FeedBubble` |
 | `pet/ui/file_bubble.py` | 文件气泡 - 拖入文件后显示摘要与动作按钮，单例复用。 | `describe_ref()` `FileBubble` |
 | `pet/ui/file_drop_handler.py` | 拖放判定层：悬停与放下两层的判定、回调分发。 | `paths_from_mime()` `busy_event_text()` `FileDropHandler` |
