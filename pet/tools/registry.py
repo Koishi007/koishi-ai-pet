@@ -671,11 +671,12 @@ class ToolRegistry:
             closed = [tool for tool in candidates
                       if not self.is_enabled(tool.name) and (_hits(tool) or _partial(tool))]
             if closed:
-                names = "、".join(tool.name for tool in closed[:3])
+                shown = closed[:3]
+                names = "、".join(tool.name for tool in shown)
                 return {
                     "headline": f"「{keyword}」匹配到已关闭的工具：{names}",
                     "body": self._format_entries(
-                        [self._tool_search_entry(tool) for tool in closed]),
+                        [self._tool_search_entry(tool) for tool in shown]),
                     "hint": (f"「{keyword}」对应的工具 {names} 当前被关闭，"
                                    f"需要提示用户开启。"),
                     "groups": [],

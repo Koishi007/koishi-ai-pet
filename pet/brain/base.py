@@ -65,7 +65,7 @@ class BrainMixin:
         self._pending_summary_queue: List[tuple] = []  # (start_seq, end_seq, 文本)
         self._reported_groups: set = set()
 
-        if db_path and config.CONTEXT_PERSIST_ENABLED:
+        if db_path:
             self._init_db()
             self._load_context()
 

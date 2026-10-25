@@ -123,8 +123,7 @@ _KEY_META = {
     "CONTEXT_HISTORY_ENTRIES":   {"type": "int",      "default": 15,              "category": "behavior", "needs_restart": False, "hidden": False, "description": "每轮注入上下文数量上限(同时也是候选池容量)"},
     "CONTEXT_HALF_LIFE_S":       {"type": "int",      "default": 1800,           "category": "behavior", "needs_restart": False, "hidden": True,  "description": "上下文评分半衰期(秒)"},
     "CONTEXT_TOKEN_BUDGET":      {"type": "int",      "default": 8192,           "category": "behavior", "needs_restart": False, "hidden": True,  "description": "上下文token预算上限"},
-    
-    "CONTEXT_PERSIST_ENABLED":   {"type": "bool",     "default": True,           "category": "behavior", "needs_restart": False, "hidden": True,  "description": "启用上下文持久化"},
+
     "FOOD_ENABLED":              {"type": "bool",     "default": True,           "category": "behavior", "needs_restart": True,  "hidden": True, "description": "觅食总开关（桌宠自主生成食物并吃掉），修改后需重启生效"},
     "FOOD_TTL_SECONDS":          {"type": "int",      "default": 300,            "category": "behavior", "needs_restart": False, "hidden": True, "description": "觅食食物存活秒数，超时未吃自动消失"},
     "ATTENTION_THRESHOLDS":      {"type": "str_list", "default": ["10", "20", "30"], "category": "behavior", "needs_restart": False, "hidden": True, "description": "连续未互动轮次阈值，达到后向桌宠注入求关注提示（如10/20/30轮）"},

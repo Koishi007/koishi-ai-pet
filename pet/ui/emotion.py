@@ -1,6 +1,7 @@
 """桌宠情绪气泡显示 emoji 表情"""
 
 import re
+from functools import lru_cache
 
 from PySide6.QtWidgets import QLabel, QWidget
 from PySide6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve
@@ -28,10 +29,23 @@ EMOTION_MAP = {
 }
 
 
+@lru_cache(maxsize=1)
+def _emoji_to_name() -> dict:
+    """EMOTION_MAP 的反查表；首次使用时构建，避免导入期副作用。"""
+    return {emoji: name for name, emoji in EMOTION_MAP.items()}
+
+
 def known_emotions(text: str) -> list[str]:
-    """拆分情绪文本，只保留映射表里的名字，未知名字直接丢弃。"""
+    """拆分情绪文本：保留映射表里的名字，emoji 转成对应名字，其余丢弃。"""
     names = [e.strip() for e in re.split(r"[,，、\s]+", text or "") if e.strip()]
-    return [name for name in names if name.lower() in EMOTION_MAP]
+    emoji_names = _emoji_to_name()
+    resolved = []
+    for name in names:
+        if name.lower() in EMOTION_MAP:
+            resolved.append(name.lower())
+        elif name in emoji_names:
+            resolved.append(emoji_names[name])
+    return resolved
 
 
 def emotion_to_emoji(name: str) -> str:

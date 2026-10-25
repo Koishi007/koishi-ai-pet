@@ -41,16 +41,19 @@ def credential_path() -> Path:
 
 
 def _harden_perms(path: Path):
-    """把凭证限制成只有本人可读；不支持的文件系统忽略失败。"""
-    try:
-        if sys.platform == "win32":
-            user = os.environ.get("USERNAME") or ""
-            subprocess.run(["icacls", str(path), "/inheritance:r", "/grant:r", f"{user}:F"],
-                           check=False, capture_output=True, timeout=10)
-        else:
-            path.chmod(0o600)
-    except (OSError, subprocess.SubprocessError):
-        pass
+    """把凭证限制成只有本人可读；收紧失败抛 OSError，不静默忽略。"""
+    if sys.platform == "win32":
+        user = os.environ.get("USERNAME") or ""
+        if not user:
+            raise OSError("无法确定当前用户名，不能收紧凭证权限")
+        result = subprocess.run(
+            ["icacls", str(path), "/inheritance:r", "/grant:r", f"{user}:F"],
+            capture_output=True, timeout=10)
+        if result.returncode != 0:
+            detail = result.stderr.decode(errors="ignore").strip()
+            raise OSError(f"icacls 收紧凭证权限失败：{detail or result.returncode}")
+    else:
+        path.chmod(0o600)
 
 
 _HEADERS = {
@@ -154,6 +157,7 @@ class Credential:
         return cls(**values)
 
     def save(self, path: Path):
+        """写入凭证；权限收紧失败时删掉临时文件并抛出，旧凭证不受影响。"""
         path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "sessdata": self.sessdata,
@@ -164,8 +168,23 @@ class Credential:
             "ac_time_value": self.ac_time_value,
             "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         }
-        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        _harden_perms(path)
+        data = json.dumps(payload, ensure_ascii=False, indent=2)
+        # 先建 0600 的临时文件，收紧权限后再替换，避免旧凭证在可读状态下被覆盖
+        tmp = path.with_name(f".{path.name}.tmp")
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            if hasattr(os, "fchmod"):
+                os.fchmod(fd, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(data)
+            _harden_perms(tmp)
+            os.replace(tmp, path)
+        except BaseException:
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise
 
     def cookie_header(self, buvid3: str = "", buvid4: str = "") -> str:
         pairs = {
@@ -479,15 +498,15 @@ class BiliClient:
         except ValueError:
             payload = None
         if resp.status_code >= 400:
-            code = payload.get("code") if isinstance(payload, dict) else 0
+            code = _as_int(payload.get("code")) if isinstance(payload, dict) else 0
             if code:
-                raise _error_from_code(int(code), payload.get("message") or "")
+                raise _error_from_code(code, payload.get("message") or "")
             raise BiliError("network", f"HTTP {resp.status_code}")
         if payload is None:
             raise BiliError("parse", "响应不是 JSON")
         if not isinstance(payload, dict):
             raise BiliError("parse", "响应结构不符")
-        code = int(payload.get("code") or 0)
+        code = _as_int(payload.get("code"))
         if code != 0:
             if allow_error_codes:
                 return payload.get("data") or {}

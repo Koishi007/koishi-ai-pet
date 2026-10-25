@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import io
 import json
+import sys
 from datetime import date, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -227,6 +228,17 @@ def test_request_maps_timeout_to_timeout_kind():
     assert err.value.kind == "timeout"
 
 
+def test_http_error_with_non_numeric_code_falls_back_to_network():
+    def handler(request):
+        return httpx.Response(500, json={"code": "abc", "message": "boom"})
+
+    client = _json_client(handler)
+    with pytest.raises(core.BiliError) as err:
+        client._request("GET", "/x/web-interface/nav")
+    client.close()
+    assert err.value.kind == "network"
+
+
 def test_within_days_window():
     now = 1_700_000_000
     assert within_days(now - 86400, 7, now)
@@ -277,12 +289,35 @@ def test_filter_allows_url_only_for_dm():
 
 # ---------- 凭证 ----------
 
-def test_credential_roundtrip(tmp_path):
+def test_credential_roundtrip(tmp_path, monkeypatch):
+    monkeypatch.setattr(core, "_harden_perms", lambda path: None)
     path = tmp_path / "credential.json"
     cred = Credential(sessdata="s", bili_jct="j", dedeuserid="9", buvid3="b",
                       buvid4="b4", ac_time_value="a")
     cred.save(path)
     assert Credential.from_file(path) == cred
+
+
+def test_save_harden_failure_keeps_old_file(tmp_path, monkeypatch):
+    path = tmp_path / "credential.json"
+    monkeypatch.setattr(core, "_harden_perms", lambda target: None)
+    Credential(sessdata="s", bili_jct="j", dedeuserid="9").save(path)
+
+    def boom(_target):
+        raise OSError("icacls 失败")
+
+    monkeypatch.setattr(core, "_harden_perms", boom)
+    with pytest.raises(OSError):
+        Credential(sessdata="s2", bili_jct="j2", dedeuserid="8").save(path)
+    assert Credential.from_file(path).dedeuserid == "9"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX 权限位")
+def test_save_sets_owner_only_mode(tmp_path, monkeypatch):
+    monkeypatch.setattr(core, "_harden_perms", lambda target: None)
+    path = tmp_path / "credential.json"
+    Credential(sessdata="s", bili_jct="j", dedeuserid="9").save(path)
+    assert path.stat().st_mode & 0o777 == 0o600
 
 
 def test_credential_cookie_header_matches_bilibili_api_order():
@@ -897,6 +932,12 @@ def test_next_out_of_pause_takes_latest_end_of_overlaps():
         == datetime(2026, 10, 21, 14, 0)
 
 
+def test_next_out_of_pause_chains_into_following_window():
+    windows = schedule.parse_pause_windows("23:00-01:00,00:30-02:00")
+    assert schedule.next_out_of_pause(datetime(2026, 10, 21, 23, 10), windows) \
+        == datetime(2026, 10, 22, 2, 0)
+
+
 def _boom(*_args, **_kwargs):
     raise ValueError("boom")
 
@@ -931,6 +972,20 @@ def test_interact_skips_mentions_when_disabled(monkeypatch):
                         lambda hint, **kwargs: None)
     schedule._interact({"mention_enabled": False})
     assert called == []
+
+
+def test_interact_still_fires_when_mentions_fail(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(schedule, "schedule_text", lambda: "到点了")
+
+    def boom(cfg):
+        raise RuntimeError("接口挂了")
+
+    monkeypatch.setattr(schedule, "_fetch_mentions", boom)
+    monkeypatch.setattr(schedule.TOOL_CTX, "request_interact",
+                        lambda hint, **kwargs: seen.setdefault("hint", hint))
+    schedule._interact({"mention_enabled": True})
+    assert seen["hint"] == "到点了"
 
 
 class _InlineThread:

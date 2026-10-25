@@ -453,6 +453,10 @@ class TestEmotionWhitelist:
         out = parser.parse_behavior(raw, action_fallback=False)
         assert out.emotion == "happy"
 
+    def test_duplicate_emotions_collapsed(self):
+        out = parse_behavior("Emotion: happy\nEmotion: happy, shy\n", action_fallback=False)
+        assert out.emotion == "happy, shy"
+
 
 class TestUntaggedContentDiag:
     """未带标签的内容按格式契约整行丢弃，日志记字符数与正文原文。"""
@@ -508,6 +512,12 @@ class TestRawCapture:
 
     def test_prose_only_has_no_raw(self):
         out = parse_behavior("恋恋没有开始游戏哦", action_fallback=False)
+        assert out.raw is None
+
+    def test_fallback_action_is_not_a_protocol_field(self):
+        out = parse_behavior("恋恋没有开始游戏哦")
+        assert out.action_fallback is True
+        assert out.has_fields() is False
         assert out.raw is None
 
     def test_stream_returns_exact_content(self):

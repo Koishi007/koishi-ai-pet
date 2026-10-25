@@ -56,6 +56,7 @@ class ToolResult:
     error_message: str = ""
     hint: str = ""                         # 工具自带的下一步提示，只进当轮视图
     meta: dict = field(default_factory=dict)
+    output_schema: Any = None             # 执行时取得的输出契约，不再回查注册表
 
     @property
     def ok(self) -> bool:
@@ -117,7 +118,7 @@ class ToolExecutor:
                                   error_code=str(data.get("code") or "tool_error"),
                                   error_message=str(data["error"]),
                                   hint=str(data.get("hint") or ""))
-            return ToolResult(name=call.name, output=data)
+            return ToolResult(name=call.name, output=data, output_schema=method.output)
         except TypeError as e:
             logger.error(f"[ToolExecutor] {call.name} TypeError: {e}")
             return ToolResult(name=call.name, error_code="handler_error",

@@ -185,6 +185,15 @@ class TestToolSearch:
         assert "demo" in result["body"]
         assert "demo" in result["hint"]
 
+    def test_closed_tools_body_matches_headline_count(self, registry):
+        for name in ("alpha", "beta", "gamma", "delta"):
+            registry.register(name, f"{name} 冷门功能", group="info")
+            registry.set_enabled(name, False)
+        result = registry._tool_search_search("冷门")
+        lines = [line for line in result["body"].splitlines() if line.strip()]
+        assert len(lines) == 3
+        assert len(result["headline"].split("：")[-1].split("、")) == 3
+
 
 class TestRecallOutput:
     @staticmethod
@@ -258,6 +267,7 @@ class TestExecutorRouting:
     def test_successful_call(self, executor):
         result = executor.execute([ToolCall("demo__echo", {"text": "hi"})])[0]
         assert result.ok is True
+        assert result.output_schema is _OUTPUT
         assert result.output["text"] == "hi"
 
     def test_argument_validation_failure(self, executor):

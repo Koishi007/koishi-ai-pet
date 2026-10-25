@@ -604,7 +604,8 @@ def verify(storage: BiliStorage, limit: int = 10) -> dict:
                 logger.info(f"[bilibili] 复核 {action['target']} 失败：{exc}")
                 continue
             rpid = int(action.get("remote_id") or 0)
-            root = int(action.get("root") or 0) or storage.mention_root(action["target"])
+            root = action.get("root")
+            root = int(root) if root is not None else storage.mention_root(action["target"])
             try:
                 replies = (client.comment_replies(aid, root) if root
                            else client.my_replies(aid))

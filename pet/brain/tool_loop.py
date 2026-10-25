@@ -331,7 +331,7 @@ def _exec_tool(tool_calls_map: dict, idx: int, executor: ToolExecutor, session: 
                                 _failure_hint(result))
         return idx, tc, result, "", render_text(blocks), tool_aside
 
-    definition = _output_of(tc["name"])
+    definition = result.output_schema
     problems = validate(definition, result.output)
     if problems:
         logger.warning(f"[Behavior] {tc['name']} 输出不符合 schema: {problems[:3]}")
@@ -349,8 +349,3 @@ def _exec_tool(tool_calls_map: dict, idx: int, executor: ToolExecutor, session: 
         ]
     result.meta["record"] = render_record(definition, result.output)
     return idx, tc, result, "", text or "操作已完成", tool_aside
-
-
-def _output_of(name: str):
-    """取方法声明的输出契约；注册时已强制声明。"""
-    return TOOL_REGISTRY.get_method(name).output

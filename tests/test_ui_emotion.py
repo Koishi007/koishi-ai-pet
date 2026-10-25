@@ -14,3 +14,7 @@ def test_known_emotions_filters_unknown_names():
 
 def test_known_emotions_returns_empty_for_unknown():
     assert known_emotions("hungy") == []
+
+
+def test_known_emotions_maps_emoji_to_name():
+    assert known_emotions("😊, shy") == ["happy", "shy"]

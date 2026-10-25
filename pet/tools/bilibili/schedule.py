@@ -146,13 +146,19 @@ def is_paused(moment: datetime, windows: list[tuple[int, int]],
 
 def next_out_of_pause(moment: datetime, windows: list[tuple[int, int]],
                       weekdays_only: bool = True) -> datetime:
-    """若在禁用时段内，返回命中时段中最晚的结束时间；否则原样返回。"""
-    if not is_paused(moment, windows, weekdays_only):
-        return moment
-    minutes = _minutes(moment)
-    ends = [_range_end(moment, start, end) for start, end in windows
-            if _in_range(minutes, start, end)]
-    return max(ends) if ends else moment
+    """若在禁用时段内，顺延到连续禁用并集的结束时刻；否则原样返回。"""
+    cursor = moment
+    while is_paused(cursor, windows, weekdays_only):
+        minutes = _minutes(cursor)
+        ends = [_range_end(cursor, start, end) for start, end in windows
+                if _in_range(minutes, start, end)]
+        if not ends:
+            return cursor
+        following = max(ends)
+        if following <= cursor:
+            return cursor
+        cursor = following
+    return cursor
 
 
 def _range_end(moment: datetime, start: int, end: int) -> datetime:
@@ -269,7 +275,12 @@ def _advance():
 def _interact(cfg: dict):
     """取主人 @ 后请求一次交互；网络请求不占主线程。"""
     hint = schedule_text()
-    fresh = _fetch_mentions(cfg) if cfg["mention_enabled"] else []
+    fresh = []
+    if cfg["mention_enabled"]:
+        try:
+            fresh = _fetch_mentions(cfg)
+        except Exception as exc:
+            logger.warning(f"[bilibili] 拉取 @ 失败，本轮只发提醒：{exc}")
     if fresh:
         lines = [f"- {m['name']} @ 了你：{m['bvid']}《{m['title']}》" for m in fresh]
         hint = hint + "\n\n主人 @ 了你：\n" + "\n".join(lines)

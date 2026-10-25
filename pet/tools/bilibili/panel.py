@@ -220,7 +220,11 @@ class _LoginWorker(QThread):
                 self.failed.emit(f"轮询失败：{exc}")
                 return
             if state == "success" and credential is not None:
-                credential.save(credential_path())
+                try:
+                    credential.save(credential_path())
+                except OSError as exc:
+                    self.failed.emit(f"凭证保存失败：{exc}")
+                    return
                 self.logged_in.emit(credential)
                 return
             self.state_changed.emit(state)

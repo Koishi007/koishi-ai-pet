@@ -26,20 +26,6 @@ from pet.config import config
 from pet.tools.output import ToolOutputDefinition
 
 
-@pytest.fixture(autouse=True)
-def _fake_tool_output(monkeypatch):
-    """测试替身使用未注册的工具名；给缺失方法一个宽松契约。"""
-    original = tool_loop_mod._output_of
-
-    def resolve(name):
-        try:
-            return original(name)
-        except AttributeError:
-            return ToolOutputDefinition(schema={"type": "object"})
-
-    monkeypatch.setattr(tool_loop_mod, "_output_of", resolve)
-
-
 def _empty() -> BehaviorOutput:
     return BehaviorOutput()
 
@@ -232,6 +218,7 @@ class _FakeResult:
         self.error_code = "" if success else "handler_error"
         self.error_message = "" if success else "boom"
         self.output = data if data is not None else {"summary": brief}
+        self.output_schema = ToolOutputDefinition(schema={"type": "object"})
         self.meta = {}
         if image_b64:
             self.meta["images"] = [{"base64": image_b64, "mime": "image/png",

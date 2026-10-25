@@ -309,6 +309,7 @@ class BehaviorParser:
 
         if action_fallback and not acc["actions"]:
             acc["actions"].append(ActionStep("sit", kwargs={"duration": 5}))
+            acc["fallback"] = True
         return _attach_raw(_build_output(acc, speech_streamed=False), content)
 
     @staticmethod
@@ -338,7 +339,9 @@ class BehaviorParser:
             if value.lower() not in _SILENCE_MARKERS:
                 acc["speech_parts"].append(value)
         elif tag == "emotion":
-            acc["emotion"].extend(normalize_emotion(value))
+            for name in normalize_emotion(value):
+                if name not in acc["emotion"]:
+                    acc["emotion"].append(name)
         elif tag == "summary":
             acc[tag].append(_SUMMARY_TIME_LABEL.sub("", value))
         else:
@@ -534,6 +537,7 @@ def _build_output(acc: dict, speech_streamed: bool) -> BehaviorOutput:
     # 保留分段换行：台词按段播出；没有原文的路径投影逐行还原成 Speech 行
     return BehaviorOutput(
         actions=acc["actions"],
+        action_fallback=acc.get("fallback", False),
         speech="\n".join(acc["speech_parts"]) if acc["speech_parts"] else None,
         speech_parts=list(acc["speech_parts"]),
         speech_streamed=speech_streamed,
