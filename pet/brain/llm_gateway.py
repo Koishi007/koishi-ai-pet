@@ -9,7 +9,7 @@ from openai import BadRequestError, UnprocessableEntityError
 from pet.config import config
 from pet.brain.budget import thinking_active
 from pet.brain.llm_retry import llm_stream_with_retry, retryer_for
-from pet.brain.projection import degrade_messages
+from pet.brain.projection import degrade_messages, uses_native_tools
 from pet.brain.tool_channel import is_tool_rejection, mark_downgraded, resolve_channel
 
 logger = logging.getLogger(__name__)
@@ -75,13 +75,21 @@ class LlmGateway:
             raise
 
     def _retry_without_tool_channel(self, kwargs: dict, exc: BaseException):
-        """工具协议被端点明确拒绝：降一档通道，改写消息体后重试一次。"""
+        """工具协议被端点明确拒绝：降一档通道，改写消息体后重试一次。
+
+        缓存通道已低于 native、而消息仍是 native 结构时，只按当前通道改写消息，
+        不再记降档，避免一次工具循环连降到底。
+        """
         current = resolve_channel()
-        downgraded = mark_downgraded(current)
-        messages = degrade_messages(kwargs.get("messages") or [], downgraded)
-        if downgraded == current or not messages:
+        messages = kwargs.get("messages") or []
+        stale_native = current != "native" and uses_native_tools(messages)
+        downgraded = current if stale_native else mark_downgraded(current)
+        if downgraded == current and not stale_native:
             raise exc
-        kwargs["messages"] = messages
+        rewritten = degrade_messages(messages, downgraded)
+        if not rewritten:
+            raise exc
+        kwargs["messages"] = rewritten
         logger.warning(f"[Behavior] 端点拒绝工具协议，本次请求降级为 {downgraded} 重试")
         return self._llm.client.chat.completions.create(**kwargs)
 

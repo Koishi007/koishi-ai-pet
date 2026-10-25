@@ -26,20 +26,6 @@ from pet.config import config
 from pet.tools.output import ToolOutputDefinition
 
 
-@pytest.fixture(autouse=True)
-def _fake_tool_output(monkeypatch):
-    """测试替身使用未注册的工具名；给缺失方法一个宽松契约。"""
-    original = tool_loop_mod._output_of
-
-    def resolve(name):
-        try:
-            return original(name)
-        except AttributeError:
-            return ToolOutputDefinition(schema={"type": "object"})
-
-    monkeypatch.setattr(tool_loop_mod, "_output_of", resolve)
-
-
 def _empty() -> BehaviorOutput:
     return BehaviorOutput()
 
@@ -232,6 +218,7 @@ class _FakeResult:
         self.error_code = "" if success else "handler_error"
         self.error_message = "" if success else "boom"
         self.output = data if data is not None else {"summary": brief}
+        self.output_schema = ToolOutputDefinition(schema={"type": "object"})
         self.meta = {}
         if image_b64:
             self.meta["images"] = [{"base64": image_b64, "mime": "image/png",
@@ -623,16 +610,19 @@ class TestToolLoopCancellation:
 
 
 class _Recorder:
-    def __init__(self, items, summary=None, raises=None):
+    def __init__(self, items, summary=None, raises=None, covers=None):
         self.items = list(items)
         self.summary = summary
         self.raises = raises
+        self.covers = covers
         self.added = []
+        self.added_covers = []
         self.summarize_calls = 0
 
     def drain(self):
         items, self.items = self.items, []
-        return items
+        covers, self.covers = self.covers, None
+        return items, covers
 
     def summarize_fn(self, items):
         self.summarize_calls += 1
@@ -640,8 +630,9 @@ class _Recorder:
             raise self.raises
         return self.summary
 
-    def add_context(self, role, content, is_summary=False):
+    def add_context(self, role, content, is_summary=False, covers=None):
         self.added.append((role, content, is_summary))
+        self.added_covers.append(covers)
 
 
 class TestFlushSummaries:
@@ -694,6 +685,11 @@ class TestFlushSummaries:
         role, content, is_summary = rec.added[0]
         assert (role, is_summary) == ("system", True)
         assert content.endswith("拼接摘要") and content != "拼接摘要"
+
+    def test_covers_travels_with_summary(self):
+        rec = _Recorder(["[user] 甲"], summary="LLM 摘要", covers=(3, 9))
+        flush_summaries(self._hooks(rec))
+        assert rec.added_covers == [(3, 9)]
 
 
 class _Usage:

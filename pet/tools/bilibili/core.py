@@ -41,16 +41,19 @@ def credential_path() -> Path:
 
 
 def _harden_perms(path: Path):
-    """把凭证限制成只有本人可读；不支持的文件系统忽略失败。"""
-    try:
-        if sys.platform == "win32":
-            user = os.environ.get("USERNAME") or ""
-            subprocess.run(["icacls", str(path), "/inheritance:r", "/grant:r", f"{user}:F"],
-                           check=False, capture_output=True, timeout=10)
-        else:
-            path.chmod(0o600)
-    except (OSError, subprocess.SubprocessError):
-        pass
+    """把凭证限制成只有本人可读；收紧失败抛 OSError，不静默忽略。"""
+    if sys.platform == "win32":
+        user = os.environ.get("USERNAME") or ""
+        if not user:
+            raise OSError("无法确定当前用户名，不能收紧凭证权限")
+        result = subprocess.run(
+            ["icacls", str(path), "/inheritance:r", "/grant:r", f"{user}:F"],
+            capture_output=True, timeout=10)
+        if result.returncode != 0:
+            detail = result.stderr.decode(errors="ignore").strip()
+            raise OSError(f"icacls 收紧凭证权限失败：{detail or result.returncode}")
+    else:
+        path.chmod(0o600)
 
 
 _HEADERS = {
@@ -96,12 +99,25 @@ def is_bvid(text: str) -> bool:
 
 
 class BiliError(RuntimeError):
-    """接口失败。kind 取值 network / auth / risk / api / parse。"""
+    """接口失败。kind 取值 timeout / network / auth / risk / api / parse。"""
 
     def __init__(self, kind: str, message: str, code: int = 0):
         super().__init__(message)
         self.kind = kind
         self.code = code
+
+
+def _as_int(value, default: int = 0) -> int:
+    """接口字段转 int；非数字与 None 一律取默认值。"""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _as_dict(value) -> dict:
+    """接口字段取 dict；其余类型当空。"""
+    return value if isinstance(value, dict) else {}
 
 
 def _error_from_code(code: int, message: str) -> BiliError:
@@ -141,6 +157,7 @@ class Credential:
         return cls(**values)
 
     def save(self, path: Path):
+        """写入凭证；权限收紧失败时删掉临时文件并抛出，旧凭证不受影响。"""
         path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "sessdata": self.sessdata,
@@ -151,8 +168,23 @@ class Credential:
             "ac_time_value": self.ac_time_value,
             "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         }
-        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        _harden_perms(path)
+        data = json.dumps(payload, ensure_ascii=False, indent=2)
+        # 先建 0600 的临时文件，收紧权限后再替换，避免旧凭证在可读状态下被覆盖
+        tmp = path.with_name(f".{path.name}.tmp")
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            if hasattr(os, "fchmod"):
+                os.fchmod(fd, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(data)
+            _harden_perms(tmp)
+            os.replace(tmp, path)
+        except BaseException:
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise
 
     def cookie_header(self, buvid3: str = "", buvid4: str = "") -> str:
         pairs = {
@@ -212,7 +244,7 @@ def _device_buvid(http: httpx.Client) -> tuple[str, str]:
         return _buvid_pair
     try:
         resp = http.get(f"{_API}/x/frontend/finger/spi", headers=dict(_HEADERS))
-        data = resp.json().get("data") or {}
+        data = _as_dict(_as_dict(resp.json()).get("data"))
     except (httpx.HTTPError, ValueError) as exc:
         logger.info(f"[bili] 取 buvid 失败：{exc}")
         return "", ""
@@ -245,7 +277,7 @@ def strip_em(text: str) -> str:
 
 
 def parse_search_items(data: dict) -> list[dict]:
-    items = data.get("result") or []
+    items = _as_dict(data).get("result") or []
     if not isinstance(items, list):
         return []
     videos = []
@@ -257,32 +289,37 @@ def parse_search_items(data: dict) -> list[dict]:
             continue
         videos.append({
             "bvid": bvid,
-            "aid": int(item.get("aid") or 0),
-            "title": strip_em(item.get("title") or ""),
+            "aid": _as_int(item.get("aid")),
+            "title": strip_em(str(item.get("title") or "")),
             "author": item.get("author") or "",
-            "play": int(item.get("play") or 0),
-            "pubdate": int(item.get("pubdate") or 0),
+            "play": _as_int(item.get("play")),
+            "pubdate": _as_int(item.get("pubdate")),
             "duration": item.get("duration") or "",
-            "description": strip_em(item.get("description") or "")[:200],
+            "description": strip_em(str(item.get("description") or ""))[:200],
         })
     return videos
 
 
 def parse_mentions(data: dict, limit: int = 10) -> list[dict]:
     """解析 @ 通知，只保留视频；正文与跳转链接在 ``item.item`` 里。"""
+    items = _as_dict(data).get("items") or []
+    if not isinstance(items, list):
+        return []
     result = []
-    for item in data.get("items") or []:
-        detail = item.get("item") or {}
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        detail = _as_dict(item.get("item"))
         match = _VIDEO_BV_RE.search(str(detail.get("uri") or ""))
         if not match:
             continue
-        user = item.get("user") or {}
+        user = _as_dict(item.get("user"))
         result.append({
-            "id": int(item.get("id") or 0),
-            "uid": int(user.get("mid") or 0),
+            "id": _as_int(item.get("id")),
+            "uid": _as_int(user.get("mid")),
             "name": str(user.get("nickname") or ""),
             "bvid": match.group(1),
-            "rpid": int(detail.get("root_id") or detail.get("source_id") or 0),
+            "rpid": _as_int(detail.get("root_id") or detail.get("source_id")),
             "content": str(detail.get("source_content") or "")[:120],
         })
         if len(result) >= limit:
@@ -291,17 +328,20 @@ def parse_mentions(data: dict, limit: int = 10) -> list[dict]:
 
 
 def parse_view(data: dict) -> dict:
+    data = _as_dict(data)
+    owner = _as_dict(data.get("owner"))
+    stat = _as_dict(data.get("stat"))
     return {
         "bvid": data.get("bvid") or "",
-        "aid": int(data.get("aid") or 0),
-        "cid": int(data.get("cid") or 0),
-        "title": data.get("title") or "",
-        "up": (data.get("owner") or {}).get("name") or "",
-        "pubdate": int(data.get("pubdate") or 0),
-        "duration": int(data.get("duration") or 0),
-        "play": int((data.get("stat") or {}).get("view") or 0),
-        "desc": (data.get("desc") or "")[:200],
-        "pic": absolute_url(data.get("pic") or ""),
+        "aid": _as_int(data.get("aid")),
+        "cid": _as_int(data.get("cid")),
+        "title": str(data.get("title") or ""),
+        "up": owner.get("name") or "",
+        "pubdate": _as_int(data.get("pubdate")),
+        "duration": _as_int(data.get("duration")),
+        "play": _as_int(stat.get("view")),
+        "desc": str(data.get("desc") or "")[:200],
+        "pic": absolute_url(str(data.get("pic") or "")),
     }
 
 
@@ -448,6 +488,8 @@ class BiliClient:
         try:
             resp = self._http.request(method, base + path, params=params, data=body or None,
                                       headers=headers)
+        except httpx.TimeoutException as exc:
+            raise BiliError("timeout", f"请求超时：{exc}") from exc
         except httpx.HTTPError as exc:
             raise BiliError("network", f"请求失败：{exc}") from exc
         self.requests += 1
@@ -456,15 +498,15 @@ class BiliClient:
         except ValueError:
             payload = None
         if resp.status_code >= 400:
-            code = payload.get("code") if isinstance(payload, dict) else 0
+            code = _as_int(payload.get("code")) if isinstance(payload, dict) else 0
             if code:
-                raise _error_from_code(int(code), payload.get("message") or "")
+                raise _error_from_code(code, payload.get("message") or "")
             raise BiliError("network", f"HTTP {resp.status_code}")
         if payload is None:
             raise BiliError("parse", "响应不是 JSON")
         if not isinstance(payload, dict):
             raise BiliError("parse", "响应结构不符")
-        code = int(payload.get("code") or 0)
+        code = _as_int(payload.get("code"))
         if code != 0:
             if allow_error_codes:
                 return payload.get("data") or {}
@@ -476,13 +518,18 @@ class BiliClient:
         self._ensure_fingerprint()
         try:
             resp = self._http.get(url, headers=dict(_HEADERS))
+        except httpx.TimeoutException as exc:
+            raise BiliError("timeout", f"请求超时：{exc}") from exc
         except httpx.HTTPError as exc:
             raise BiliError("network", f"请求失败：{exc}") from exc
         self.requests += 1
         try:
-            return resp.json()
+            payload = resp.json()
         except ValueError as exc:
             raise BiliError("parse", "字幕响应不是 JSON") from exc
+        if not isinstance(payload, dict):
+            raise BiliError("parse", "字幕响应结构不符")
+        return payload
 
     def _cached_view(self, bvid: str) -> dict:
         hit = self._view_cache.get(bvid)

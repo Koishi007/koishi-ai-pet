@@ -58,8 +58,9 @@ class BehaviorOutput:
     raw: Optional[str] = field(default=None, repr=False)  # 本次响应原文；入库只做审计，不进 repr
 
     def has_fields(self) -> bool:
-        """是否解析出至少一个协议字段。未解析出字段的正文不进历史。"""
-        return bool(self.summary or self.speech or self.speech_parts or self.actions
+        """是否解析出至少一个协议字段。兜底动作不算，未解析出字段的正文不进历史。"""
+        actions = [] if self.action_fallback else self.actions
+        return bool(self.summary or self.speech or self.speech_parts or actions
                     or self.memory_line or self.emotion or self.mood_deltas
                     or self.vitals_deltas)
 

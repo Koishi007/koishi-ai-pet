@@ -63,10 +63,9 @@ class BrainMixin:
         self._db_path = db_path
         self._events: Optional[EventStore] = None
         self._pending_summary_queue: List[tuple] = []  # (start_seq, end_seq, 文本)
-        self._drained_covers: List[tuple] = []
         self._reported_groups: set = set()
 
-        if db_path and config.CONTEXT_PERSIST_ENABLED:
+        if db_path:
             self._init_db()
             self._load_context()
 
@@ -193,17 +192,19 @@ class BrainMixin:
         return f"{days} 天 {remaining_hours} 小时" if remaining_hours else f"{days} 天"
 
 
-    def add_context(self, role: str, content: str, is_summary: bool = False):
+    def add_context(self, role: str, content: str, is_summary: bool = False,
+                    covers: Optional[tuple] = None):
         """写一条非 assistant 事件，并维护供调试面板查看的内存快照。
 
         assistant 内容只来自模型响应，用 `add_assistant_turn` 写入。
+        covers 是摘要覆盖的事件区间，由排空待摘要队列的一方传入。
         """
         if role == "assistant":
             raise ValueError("assistant 内容用 add_assistant_turn 写入")
         with self._ctx_lock:
             index = self._find_similar_summary(content) if is_summary else -1
             supersedes = self._context[index].seq if index >= 0 else 0
-            event = self._write_event(role, content, is_summary, supersedes)
+            event = self._write_event(role, content, is_summary, supersedes, covers)
             entry = ContextEntry(role=role, content=content, is_summary=is_summary,
                                  seq=event.seq if event else 0)
             if index >= 0:
@@ -227,10 +228,9 @@ class BrainMixin:
         return -1
 
     def _write_event(self, role: str, content: str, is_summary: bool,
-                     supersedes: int = 0):
+                     supersedes: int = 0, covers: Optional[tuple] = None):
         """把一次上下文写入映射为事件。"""
         if is_summary:
-            covers = self._consume_covers()
             refs: dict = {}
             if supersedes:
                 refs["supersedes"] = int(supersedes)
@@ -290,17 +290,6 @@ class BrainMixin:
                 role="assistant", content=body.get("text", ""),
                 seq=event.seq if event else 0))
             self._evict_context()
-
-    def _consume_covers(self) -> Optional[tuple]:
-        """摘要覆盖区间：取本轮淘汰事件的最小/最大 seq。"""
-        with self._ctx_lock:
-            ranges = list(self._drained_covers)
-            self._drained_covers.clear()
-        starts = [a for a, _ in ranges if a]
-        ends = [b for _, b in ranges if b]
-        if not starts or not ends:
-            return None
-        return (min(starts), max(ends))
 
     def record_failed_turn(self, text: str, finish_reason: str = "", tag: str = ""):
         """解析失败的响应只留档，不进入任何视图。"""
@@ -364,7 +353,6 @@ class BrainMixin:
         with self._ctx_lock:
             self._context.clear()
             self._pending_summary_queue.clear()
-            self._drained_covers.clear()
 
         if self._events is not None and self._events.available:
             # 先切到新会话再删：在途请求的 append 落到新会话，不会复活已删的旧会话
@@ -483,13 +471,15 @@ class BrainMixin:
 
         self._context = sorted(summaries + chats, key=lambda e: e.timestamp)
 
-    def drain_pending_summaries(self) -> List[str]:
-        """取出待摘要文本，并记住对应 seq 区间供摘要事件标记 covers。"""
+    def drain_pending_summaries(self) -> tuple[list[str], Optional[tuple]]:
+        """取出待摘要文本与覆盖区间；区间由调用方随摘要一起写回。"""
         with self._ctx_lock:
             items = self._pending_summary_queue[:]
             self._pending_summary_queue.clear()
-            self._drained_covers = [(a, b) for a, b, _ in items if a or b]
-        return [text for _, _, text in items]
+        starts = [a for a, _, _ in items if a]
+        ends = [b for _, b, _ in items if b]
+        covers = (min(starts), max(ends)) if starts and ends else None
+        return [text for _, _, text in items], covers
 
     @staticmethod
     def _build_fallback_summary(items: List[str]) -> str:

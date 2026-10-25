@@ -49,6 +49,28 @@ class TestLegacyTables:
         assert brain.get_multi_turn_messages() == []
 
 
+class TestSummaryCovers:
+    def test_drained_covers_attach_to_summary_event(self, tmp_path):
+        brain = _brain(tmp_path)
+        brain._pending_summary_queue.extend(
+            [(1, 1, "[user] 甲"), (2, 2, "[assistant] 乙")])
+        texts, covers = brain.drain_pending_summaries()
+        assert texts == ["[user] 甲", "[assistant] 乙"]
+        assert covers == (1, 2)
+
+        brain.add_context("system", "[历史摘要] 甲乙", is_summary=True, covers=covers)
+        summary = [e for e in brain.dump_events() if e["type"] == "summary"][0]
+        assert summary["refs"]["covers"] == [1, 2]
+
+    def test_each_drain_returns_its_own_covers(self, tmp_path):
+        brain = _brain(tmp_path)
+        brain._pending_summary_queue.append((1, 3, "[user] 甲"))
+        _, first = brain.drain_pending_summaries()
+        brain._pending_summary_queue.append((5, 6, "[user] 乙"))
+        _, second = brain.drain_pending_summaries()
+        assert (first, second) == ((1, 3), (5, 6))
+
+
 class TestProjectionEntry:
     def test_tool_group_renders_native_when_channel_allows(self, tmp_path):
         brain = _brain(tmp_path)
@@ -171,11 +193,9 @@ def test_duplicate_summary_supersedes_and_merges_covers(tmp_path):
     brain = _brain(tmp_path)
     brain.add_context("user", "第一句")
     brain.add_context("user", "第二句")
-    brain._drained_covers = [(1, 2)]
-    brain.add_context("system", "[历史摘要] 之前聊过天气", is_summary=True)
+    brain.add_context("system", "[历史摘要] 之前聊过天气", is_summary=True, covers=(1, 2))
     brain.add_context("user", "第三句")
-    brain._drained_covers = [(4, 4)]
-    brain.add_context("system", "[历史摘要] 之前聊过天气的事", is_summary=True)
+    brain.add_context("system", "[历史摘要] 之前聊过天气的事", is_summary=True, covers=(4, 4))
 
     summaries = [e for e in brain.dump_events() if e["type"] == "summary"]
     assert len(summaries) == 2

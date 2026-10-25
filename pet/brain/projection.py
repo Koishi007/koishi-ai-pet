@@ -145,6 +145,16 @@ def _speech_lines(text: str) -> list[str]:
     return [f"Speech: {line}" for line in text.splitlines() if line.strip()]
 
 
+def uses_native_tools(messages: list) -> bool:
+    """消息里是否还有 native 工具结构：assistant 的 tool_calls 或 role=tool。"""
+    for message in messages or []:
+        if not isinstance(message, dict):
+            continue
+        if message.get("role") == "tool" or message.get("tool_calls"):
+            return True
+    return False
+
+
 # 摘要文本里值可能带引号与逗号，只在后接 `键=` 的逗号处切分
 _ARGS_SPLIT = re.compile(r", (?=[A-Za-z_][\w]*=)")
 

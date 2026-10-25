@@ -107,7 +107,6 @@
 | `ATTENTION_THRESHOLDS` | str_list | ["10", "20", "30"] | 是 |  | 连续未互动轮次阈值，达到后向桌宠注入求关注提示（如10/20/30轮） |
 | `BRAIN_STUCK_TIMEOUT` | int | 300 | 是 |  | 脑线程无进展超时(秒)：autonomous/interacting 状态下持续无输出、无工具进展超过该时长才判定挂死（进行中的游戏对局不计时） |
 | `CONTEXT_HALF_LIFE_S` | int | 1800 | 是 |  | 上下文评分半衰期(秒) |
-| `CONTEXT_PERSIST_ENABLED` | bool | true | 是 |  | 启用上下文持久化 |
 | `CONTEXT_TOKEN_BUDGET` | int | 8192 | 是 |  | 上下文token预算上限 |
 | `EDGE_DOCK_SNAP_PX` | int | 24 | 是 |  | 拖拽松手判定贴边的距离阈值(px) |
 | `FALL_DOWN_SECONDS` | float | 1.5 | 是 |  | 下落超过该秒数，落地先播放 fall_down 动作再恢复队列 |
@@ -174,4 +173,4 @@
 - `hidden`：`true` 表示不在界面显示，只能直接编辑 `settings.json`
 - `enum` / `minimum` / `maximum`：取值约束，会写进 `settings-schema.json`
 
-共 111 项（其中 56 项未在界面列出）。
+共 110 项（其中 55 项未在界面列出）。
