@@ -26,6 +26,7 @@ BRIEF_OUTPUT = {
         "headline": {"type": "string", "x-role": "headline",
                      "description": "操作结果的一句话"},
         "data": {"type": "object", "x-role": "data", "description": "结构化明细"},
+        "hint": {"type": "string", "x-role": "hint", "description": "下一步提示"},
     },
 }
 
@@ -166,7 +167,7 @@ def register(registry):
         TOOL_NAME, "comment",
         "在最近一轮刷到的某个视频下留一条评论。该视频有未回复的 @ 时，"
         "评论会挂在那条 @ 评论下并自动带上 @昵称。内容会经过长度、链接、隐私与重复检查，"
-        "被拦下时不发送。",
+        "被拦下时不发送。发出约一分钟后自动核对是否公开可见。",
         handler=_comment,
         args={
             "bvid": {"type": "str", "required": True, "desc": "视频 BV 号"},

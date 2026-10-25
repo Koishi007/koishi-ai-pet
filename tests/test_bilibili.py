@@ -1131,3 +1131,106 @@ def test_reply_hidden_detects_avalon_state():
     assert duty._reply_hidden({"state": 17})
     assert duty._reply_hidden({"invisible": True})
     assert not duty._reply_hidden({"state": 0, "invisible": False})
+
+
+# ---------- 发送后复核 ----------
+
+class _ReplyClient:
+    """只提供列表接口的桩；发送与限速不参与复核测试。"""
+
+    def __init__(self, replies):
+        self.replies = replies
+
+    def my_replies(self, _aid):
+        return self.replies
+
+    def comment_replies(self, _aid, _root):
+        return self.replies
+
+
+def _my_reply(rpid: int, state: int, message: str) -> dict:
+    return {"rpid": rpid, "state": state, "member": {"mid": 9},
+            "content": {"message": message}}
+
+
+def test_reply_visibility_maps_state():
+    assert duty._reply_visibility(_my_reply(1, 0, "x")) == "visible"
+    assert duty._reply_visibility(_my_reply(1, 17, "x")) == "hidden"
+    assert duty._reply_visibility({"state": 5}) == "done"
+
+
+def test_match_reply_falls_back_to_content_head():
+    replies = [_my_reply(1, 0, "@古明地洞 这条回复")]
+    assert duty._match_reply(replies, 9, 0, "@古明地洞 这条回复")["rpid"] == 1
+    assert duty._match_reply(replies, 8, 1, "") is None
+
+
+def test_confirm_comment_marks_folded_reply():
+    client = _ReplyClient([_my_reply(7, 17, "这条回复")])
+    assert duty._confirm_comment(client, 9, 1, 0, 7, "这条回复") == "hidden"
+
+
+def test_confirm_comment_without_hit_stays_done():
+    assert duty._confirm_comment(_ReplyClient([]), 9, 1, 0, 7, "这条回复") == "done"
+
+
+def test_guarded_write_defers_confirm_with_action_id(store):
+    seen = []
+    duty._guarded_write(store, 1, "comment", "BV1", "x", lambda: 7,
+                        defer=lambda action_id, rpid: seen.append((action_id, rpid)))
+    row = store.find_live_action(1, "comment", "BV1")
+    assert seen == [(row["id"], 7)]
+    assert row["status"] == "done"
+    assert row["remote_id"] == "7"
+
+
+def test_guarded_write_survives_defer_failure(store):
+    def boom(_action_id, _rpid):
+        raise RuntimeError("线程创建失败")
+
+    result = duty._guarded_write(store, 1, "comment", "BV1", "x", lambda: 7,
+                                 defer=boom)
+    assert result["ok"] is True
+    assert store.find_live_action(1, "comment", "BV1")["status"] == "done"
+
+
+def test_apply_confirm_writes_folded_state(store):
+    action = store.claim_action(1, "comment", "BV1", "x")
+    duty._apply_confirm(store, action, 0, 7,
+                        _ReplyClient([_my_reply(7, 17, "x")]), 9, 42, "x")
+    row = store.find_live_action(1, "comment", "BV1")
+    assert row["status"] == "hidden"
+    assert row["remote_id"] == "7"
+
+
+def test_apply_confirm_keeps_status_when_missing(store):
+    action = store.claim_action(1, "comment", "BV1", "x")
+    store.finish_action(action, "done", remote_id="7")
+    duty._apply_confirm(store, action, 0, 7, _ReplyClient([]), 9, 42, "x")
+    assert store.find_live_action(1, "comment", "BV1")["status"] == "done"
+
+
+def test_confirm_later_schedules_after_one_minute(monkeypatch, store):
+    calls = {}
+
+    class _Timer:
+        def __init__(self, delay, fn):
+            calls["delay"] = delay
+            calls["fn"] = fn
+            self.daemon = False
+
+        def start(self):
+            calls["started"] = True
+
+    monkeypatch.setattr(duty.threading, "Timer", _Timer)
+    credential = Credential(sessdata="s", bili_jct="j", dedeuserid="9")
+    duty._confirm_later(store, credential, {}, 1, "BV1", 42, 0, 7, "x")
+    assert calls["delay"] == duty._CONFIRM_DELAY_S
+    assert calls["started"] is True
+    assert calls["fn"].__name__ == "run"
+
+
+def test_as_tool_result_marks_comment_visibility_pending():
+    result = duty._as_tool_result({"kind": "comment", "target": "BV1", "ok": True})
+    assert "visible" not in result["data"]
+    assert result["hint"]

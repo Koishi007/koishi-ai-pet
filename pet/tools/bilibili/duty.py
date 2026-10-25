@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import logging
 import random
+import threading
 import time
 from contextlib import contextmanager
 from datetime import date
@@ -38,6 +39,8 @@ _MAX_SEARCH_PAGES = 3
 _MAX_SEARCH_KEYWORDS = 3
 # 同一视频最多留几条有效评论
 _COMMENT_PER_TARGET = 3
+# 评论列表刷新有延迟，发出后隔这段时间再核可见性
+_CONFIRM_DELAY_S = 60.0
 
 # 本工具的错误码 → 下一步提示；引擎只负责渲染，不维护这些码
 _ERROR_HINTS = {
@@ -317,8 +320,73 @@ def _collect(client: BiliClient, cfg: dict, storage: BiliStorage,
     return candidates, {"skipped": skipped, "errors": errors, "keywords": tried}, client.requests
 
 
+def _reply_hidden(reply: dict) -> bool:
+    """评论是否被隐藏：invisible 字段或阿瓦隆状态 17。"""
+    return bool(reply.get("invisible")) or int(reply.get("state") or 0) == 17
+
+
+def _reply_visibility(reply: dict) -> str:
+    """可见性：hidden 为平台隐藏，visible 为公开；其余非 0 状态按审核中处理。"""
+    if _reply_hidden(reply):
+        return "hidden"
+    return "visible" if int(reply.get("state") or 0) == 0 else "done"
+
+
+def _match_reply(replies: list[dict], uid: int, rpid: int,
+                 content: str = "") -> dict | None:
+    """找本人的那条评论：按 rpid 精确匹配，未命中时退回正文前 20 字。"""
+    def mine(reply: dict) -> bool:
+        return int((reply.get("member") or {}).get("mid") or 0) == uid
+
+    hit = next((r for r in replies if int(r.get("rpid") or 0) == rpid and mine(r)), None)
+    if hit is not None:
+        return hit
+    head = (content or "")[:20]
+    if not head:
+        return None
+    return next((r for r in replies if mine(r)
+                 and head in str((r.get("content") or {}).get("message") or "")), None)
+
+
+def _confirm_comment(client: BiliClient, uid: int, aid: int, root: int,
+                     rpid: int, content: str) -> str:
+    """拉一次列表判可见性；列表里还没有这条时返回 done。"""
+    replies = (client.comment_replies(aid, root) if root
+               else client.my_replies(aid))
+    hit = _match_reply(replies, uid, rpid, content)
+    return _reply_visibility(hit) if hit is not None else "done"
+
+
+def _apply_confirm(storage: BiliStorage, action_id: int, root: int, rpid: int,
+                   client: BiliClient, uid: int, aid: int, content: str):
+    """核验单条评论并写回台账；查不到时保留原状态。"""
+    state = _confirm_comment(client, uid, aid, root, rpid, content)
+    if state != "done":
+        storage.finish_action(action_id, state, remote_id=str(rpid), root=root)
+
+
+def _confirm_later(storage: BiliStorage, credential: Credential, cfg: dict,
+                   action_id: int, bvid: str, aid: int, root: int,
+                   rpid: int, content: str):
+    """评论发出后延时复核；进程提前退出时停在 done，由后续复核兜底。"""
+
+    def run():
+        try:
+            with _open(cfg, credential) as client:
+                _apply_confirm(storage, action_id, root, rpid, client,
+                               int(credential.dedeuserid), aid, content)
+        except Exception as exc:
+            logger.info(f"[bilibili] 延时复核 {bvid} 失败：{exc}")
+
+    timer = threading.Timer(_CONFIRM_DELAY_S, run)
+    timer.daemon = True
+    timer.start()
+
+
 def _guarded_write(storage: BiliStorage, uid: int, kind: str, target: str,
-                   content: str, send, limit: int = 1, root: int = 0) -> dict:
+                   content: str, send, limit: int = 1, root: int = 0,
+                   defer=None) -> dict:
+    """占台账后发送；defer 在台账记好后拿到 (action_id, 远端 id) 安排复核。"""
     action_id = storage.claim_action(uid, kind, target, content, limit=limit)
     if action_id is None:
         return {"kind": kind, "target": target, "ok": False,
@@ -337,11 +405,18 @@ def _guarded_write(storage: BiliStorage, uid: int, kind: str, target: str,
         return {"kind": kind, "target": target, "ok": False,
                 "reason": reason, "detail": str(exc)}
     storage.finish_action(action_id, "done", remote_id=str(remote or ""), root=root)
+    if defer is not None:
+        try:
+            defer(action_id, int(remote or 0))
+        except Exception as exc:
+            # 评论已经发出，安排复核出错不能把这次写判为失败
+            logger.info(f"[bilibili] 安排复核失败：{exc}")
     return {"kind": kind, "target": target, "ok": True}
 
 
 def _post_comment(client: BiliClient, storage: BiliStorage, cfg: dict,
-                  uid: int, bvid: str, aid: int, text: str) -> dict:
+                  credential: Credential, uid: int, bvid: str, aid: int,
+                  text: str) -> dict:
     """发评论；该视频有未回复的 @ 时挂在 @ 评论下并前缀 @昵称。"""
     ok, code = check_text(text, max_chars=int(cfg["comment_max_chars"]),
                           blocklist=tuple(cfg["comment_blocklist"]),
@@ -355,14 +430,18 @@ def _post_comment(client: BiliClient, storage: BiliStorage, cfg: dict,
     prefix = f"@{mention['name']} " if root and mention.get("name") else ""
     body = (prefix + text).strip()
 
+    def defer(action_id: int, rpid: int):
+        _confirm_later(storage, credential, cfg, action_id, bvid, aid, root,
+                       rpid, body)
+
     if root:
         result = _guarded_write(storage, uid, "comment", bvid, body,
                                 lambda: client.comment(aid, body, root=root),
-                                limit=_COMMENT_PER_TARGET, root=root)
+                                limit=_COMMENT_PER_TARGET, root=root, defer=defer)
     else:
         result = _guarded_write(storage, uid, "comment", bvid, body,
                                 lambda: client.comment(aid, body),
-                                limit=_COMMENT_PER_TARGET)
+                                limit=_COMMENT_PER_TARGET, defer=defer)
     if result.get("ok") and root:
         storage.mark_mention_replied(mention["msg_id"])
     return result
@@ -505,14 +584,15 @@ def with_hint(payload: dict) -> dict:
 
 def _as_tool_result(result: dict) -> dict:
     """把一次写操作的内部结果映射成输出契约。"""
-    if result.get("ok"):
-        return {
-            "headline": f"{_KIND_TEXT.get(result.get('kind', ''), '操作')}完成",
-            "data": {"kind": result.get("kind", ""),
-                     "target": result.get("target", "")},
-        }
-    return {"error": result.get("detail") or "操作失败",
-            "code": result.get("reason") or "write_failed"}
+    if not result.get("ok"):
+        return {"error": result.get("detail") or "操作失败",
+                "code": result.get("reason") or "write_failed"}
+    kind = result.get("kind", "")
+    data = {"kind": kind, "target": result.get("target", "")}
+    if kind != "comment":
+        return {"headline": f"{_KIND_TEXT.get(kind, '操作')}完成", "data": data}
+    return {"headline": "评论已发出，可见性还没确认", "data": data,
+            "hint": "约一分钟后自动核对是否公开；需要立即确认时调用 verify。"}
 
 
 def write_action(storage: BiliStorage, kind: str, *, bvid: str = "", text: str = "") -> dict:
@@ -568,14 +648,9 @@ def write_action(storage: BiliStorage, kind: str, *, bvid: str = "", text: str =
     if storage.count_today(uid, "comment", today) >= int(cfg["comment_per_day"]):
         return {"error": "今天的评论额度用完了", "code": "quota"}
     with _open(cfg, credential) as client:
-        result = _post_comment(client, storage, cfg, uid, bvid,
+        result = _post_comment(client, storage, cfg, credential, uid, bvid,
                                int(target["aid"]), text)
     return _as_tool_result(result)
-
-
-def _reply_hidden(reply: dict) -> bool:
-    """评论是否被隐藏：invisible 字段或阿瓦隆状态 17。"""
-    return bool(reply.get("invisible")) or int(reply.get("state") or 0) == 17
 
 
 def verify(storage: BiliStorage, limit: int = 10) -> dict:
@@ -589,11 +664,9 @@ def verify(storage: BiliStorage, limit: int = 10) -> dict:
     if not pending:
         return {"headline": "没有待确认的评论"}
 
-    def mine(reply: dict) -> bool:
-        return int((reply.get("member") or {}).get("mid") or 0) == uid
-
     checked = 0
     found = 0
+    folded = 0
     missing = 0
     with _open(cfg, credential) as client:
         for action in pending:
@@ -613,28 +686,27 @@ def verify(storage: BiliStorage, limit: int = 10) -> dict:
                 logger.info(f"[bilibili] 复核 {action['target']} 失败：{exc}")
                 continue
 
-            hit = next((r for r in replies if int(r.get("rpid") or 0) == rpid and mine(r)), None)
-            if hit is None:
-                head = (action.get("content") or "")[:20]
-                hit = next((r for r in replies if mine(r) and head
-                            and head in str((r.get("content") or {}).get("message") or "")), None)
+            hit = _match_reply(replies, uid, rpid, action.get("content") or "")
             if hit is None:
                 # 看不到不等于没发出：留在 unverified，下轮再核
                 storage.finish_action(action["id"], "unverified",
                                       remote_id=str(rpid), root=root)
                 missing += 1
                 continue
-            if _reply_hidden(hit):
-                storage.finish_action(action["id"], "hidden", remote_id=str(rpid))
-                continue
-            if int(hit.get("state") or 0) != 0:
+            state = _reply_visibility(hit)
+            if state == "done":
                 # 审核或折叠中：保持 done，下一轮再核
                 continue
-            storage.finish_action(action["id"], "visible", remote_id=str(rpid))
-            found += 1
+            storage.finish_action(action["id"], state, remote_id=str(rpid))
+            if state == "visible":
+                found += 1
+            else:
+                folded += 1
     return {"headline": (f"检查 {checked} 条评论，确认 {found} 条已公开"
+                         + (f"，{folded} 条被平台隐藏" if folded else "")
                          + (f"，{missing} 条没查到" if missing else "")),
-            "data": {"checked": checked, "found": found, "missing": missing}}
+            "data": {"checked": checked, "found": found, "folded": folded,
+                     "missing": missing}}
 
 
 def status(storage: BiliStorage) -> dict:
