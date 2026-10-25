@@ -192,17 +192,19 @@ class BrainMixin:
         return f"{days} 天 {remaining_hours} 小时" if remaining_hours else f"{days} 天"
 
 
-    def add_context(self, role: str, content: str, is_summary: bool = False):
+    def add_context(self, role: str, content: str, is_summary: bool = False,
+                    covers: Optional[tuple] = None):
         """写一条非 assistant 事件，并维护供调试面板查看的内存快照。
 
         assistant 内容只来自模型响应，用 `add_assistant_turn` 写入。
+        covers 是摘要覆盖的事件区间，由排空待摘要队列的一方传入。
         """
         if role == "assistant":
             raise ValueError("assistant 内容用 add_assistant_turn 写入")
         with self._ctx_lock:
             index = self._find_similar_summary(content) if is_summary else -1
             supersedes = self._context[index].seq if index >= 0 else 0
-            event = self._write_event(role, content, is_summary, supersedes)
+            event = self._write_event(role, content, is_summary, supersedes, covers)
             entry = ContextEntry(role=role, content=content, is_summary=is_summary,
                                  seq=event.seq if event else 0)
             if index >= 0:
@@ -226,10 +228,9 @@ class BrainMixin:
         return -1
 
     def _write_event(self, role: str, content: str, is_summary: bool,
-                     supersedes: int = 0):
+                     supersedes: int = 0, covers: Optional[tuple] = None):
         """把一次上下文写入映射为事件。"""
         if is_summary:
-            covers = self._consume_covers()
             refs: dict = {}
             if supersedes:
                 refs["supersedes"] = int(supersedes)
@@ -290,17 +291,6 @@ class BrainMixin:
                 seq=event.seq if event else 0))
             self._evict_context()
 
-    def _consume_covers(self) -> Optional[tuple]:
-        """摘要覆盖区间：取本轮淘汰事件的最小/最大 seq。"""
-        with self._ctx_lock:
-            ranges = list(self._drained_covers)
-            self._drained_covers.clear()
-        starts = [a for a, _ in ranges if a]
-        ends = [b for _, b in ranges if b]
-        if not starts or not ends:
-            return None
-        return (min(starts), max(ends))
-
     def record_failed_turn(self, text: str, finish_reason: str = "", tag: str = ""):
         """解析失败的响应只留档，不进入任何视图。"""
         if self._events is None or not self._events.available or not text:
@@ -312,14 +302,10 @@ class BrainMixin:
             logger.warning(f"[BrainMixin] append failed_turn failed: {e}")
 
     def record_tool_events(self, group_id: str, calls: list, results: list,
-                           asides: Optional[list] = None) -> bool:
-        """把一轮工具调用写成同组事件，供投影聚合成原子组。
-
-        事件库不可用或任一写入失败时返回 False，调用方据此退回文本记录。
-        """
+                           asides: Optional[list] = None):
+        """把一轮工具调用写成同组事件，供投影聚合成原子组。"""
         if self._events is None or not self._events.available:
-            return False
-        ok = True
+            return
         for call_id, text in (asides or []):
             try:
                 self._events.append("assistant_speech", {"text": text},
@@ -327,7 +313,6 @@ class BrainMixin:
                                     refs={"tool_call_id": call_id})
             except Exception as e:
                 logger.warning(f"[BrainMixin] append assistant_speech failed: {e}")
-                ok = False
         for call in calls:
             call_id = call.get("id", "")
             try:
@@ -339,7 +324,6 @@ class BrainMixin:
                     group_id=group_id, refs={"tool_call_id": call_id})
             except Exception as e:
                 logger.warning(f"[BrainMixin] append tool_call failed: {e}")
-                ok = False
         for result in results:
             call_id = result.get("tool_call_id", "")
             artifact_id = None
@@ -355,8 +339,6 @@ class BrainMixin:
                     group_id=group_id, refs={"tool_call_id": call_id})
             except Exception as e:
                 logger.warning(f"[BrainMixin] append tool_result failed: {e}")
-                ok = False
-        return ok
 
     def _store_artifact(self, raw: str) -> Optional[str]:
         """原文超过内联阈值时落 artifacts，返回 id；否则不建。"""

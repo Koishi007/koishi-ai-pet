@@ -49,6 +49,7 @@ _ERROR_HINTS = {
     "quota": "今天的额度用完了，今天不要再调用这个操作。",
     "duplicate": "这个目标已有记录，不要重复调用。",
     "no_receipt": "回执缺失，可能已经发出去了，不要再调用。",
+    "result_unknown": "请求超时，可能已经发出去了，不要再调用。",
     "insufficient_coins": "硬币不够，不要再投币。",
     "filtered": "内容被过滤，调整措辞后再试。",
     "invalid_keyword": "换一个关键词或 BV 号。",
@@ -325,9 +326,13 @@ def _guarded_write(storage: BiliStorage, uid: int, kind: str, target: str,
     try:
         remote = send()
     except BiliError as exc:
-        # 没拿到回执时不知到底发没发出去，标记后不再重试
-        status = "unknown" if exc.kind == "receipt" else "failed"
-        reason = "no_receipt" if exc.kind == "receipt" else "send_failed"
+        # 回执缺失与请求超时都不知到底发没发出去，标记后不再重试
+        if exc.kind == "receipt":
+            status, reason = "unknown", "no_receipt"
+        elif exc.kind == "timeout":
+            status, reason = "unknown", "result_unknown"
+        else:
+            status, reason = "failed", "send_failed"
         storage.finish_action(action_id, status, reason=exc.kind)
         return {"kind": kind, "target": target, "ok": False,
                 "reason": reason, "detail": str(exc)}

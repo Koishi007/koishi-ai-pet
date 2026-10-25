@@ -679,7 +679,7 @@ class _BehaviorToolSession:
         TOOL_CTX.pop_model_aside_pending()
 
     def record_tool_events(self, group_id: str, calls: list, results: list, asides=None):
-        return self._behavior.record_tool_events(group_id, calls, results, asides)
+        self._behavior.record_tool_events(group_id, calls, results, asides)
 
     def executor(self):
         return ToolExecutor()

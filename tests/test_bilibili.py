@@ -150,7 +150,11 @@ def test_parse_search_items_tolerates_wrong_types():
 
 
 def test_parse_mentions_skips_non_dict_and_bad_numbers():
-    data = {"items": ["bad", {"uri": "bilibili://video/1", "user": "u", "source_id": "x"}]}
+    data = {"items": ["bad", {
+        "item": {"uri": "https://www.bilibili.com/video/BV1xx411c7mD",
+                 "root_id": "x"},
+        "user": "u",
+    }]}
     items = parse_mentions(data)
     assert len(items) == 1
     assert (items[0]["uid"], items[0]["rpid"]) == (0, 0)
@@ -586,6 +590,17 @@ def test_guarded_write_clear_failure_allows_retry(store):
     result = duty._guarded_write(store, 1, "comment", "BV1", "x", boom)
     assert result["reason"] == "send_failed"
     assert store.claim_action(1, "comment", "BV1", "x") is not None
+
+
+def test_guarded_write_timeout_marks_unknown(store):
+    def boom():
+        raise core.BiliError("timeout", "请求超时")
+
+    result = duty._guarded_write(store, 1, "dm", "9", "晚安", boom)
+    assert result["ok"] is False
+    assert result["reason"] == "result_unknown"
+    assert store.find_live_action(1, "dm", "9")["status"] == "unknown"
+    assert store.claim_action(1, "dm", "9", "晚安") is None
 
 
 def test_with_hint_attaches_tool_hint():

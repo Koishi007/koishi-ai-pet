@@ -49,20 +49,6 @@ class TestLegacyTables:
         assert brain.get_multi_turn_messages() == []
 
 
-class TestToolEventRecording:
-    def test_written_events_report_success(self, tmp_path):
-        brain = _brain(tmp_path)
-        ok = brain.record_tool_events(
-            "g1",
-            [{"id": "c1", "name": "timer__set"}],
-            [{"tool_call_id": "c1", "ok": True, "brief": "已设置"}],
-        )
-        assert ok is True
-
-    def test_missing_event_store_reports_failure(self):
-        assert BrainMixin().record_tool_events("g1", [], []) is False
-
-
 class TestSummaryCovers:
     def test_drained_covers_attach_to_summary_event(self, tmp_path):
         brain = _brain(tmp_path)
@@ -207,11 +193,9 @@ def test_duplicate_summary_supersedes_and_merges_covers(tmp_path):
     brain = _brain(tmp_path)
     brain.add_context("user", "第一句")
     brain.add_context("user", "第二句")
-    brain._drained_covers = [(1, 2)]
-    brain.add_context("system", "[历史摘要] 之前聊过天气", is_summary=True)
+    brain.add_context("system", "[历史摘要] 之前聊过天气", is_summary=True, covers=(1, 2))
     brain.add_context("user", "第三句")
-    brain._drained_covers = [(4, 4)]
-    brain.add_context("system", "[历史摘要] 之前聊过天气的事", is_summary=True)
+    brain.add_context("system", "[历史摘要] 之前聊过天气的事", is_summary=True, covers=(4, 4))
 
     summaries = [e for e in brain.dump_events() if e["type"] == "summary"]
     assert len(summaries) == 2

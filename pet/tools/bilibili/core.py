@@ -283,19 +283,24 @@ def parse_search_items(data: dict) -> list[dict]:
 
 def parse_mentions(data: dict, limit: int = 10) -> list[dict]:
     """解析 @ 通知，只保留视频；正文与跳转链接在 ``item.item`` 里。"""
+    items = _as_dict(data).get("items") or []
+    if not isinstance(items, list):
+        return []
     result = []
-    for item in data.get("items") or []:
-        detail = item.get("item") or {}
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        detail = _as_dict(item.get("item"))
         match = _VIDEO_BV_RE.search(str(detail.get("uri") or ""))
         if not match:
             continue
-        user = item.get("user") or {}
+        user = _as_dict(item.get("user"))
         result.append({
-            "id": int(item.get("id") or 0),
-            "uid": int(user.get("mid") or 0),
+            "id": _as_int(item.get("id")),
+            "uid": _as_int(user.get("mid")),
             "name": str(user.get("nickname") or ""),
             "bvid": match.group(1),
-            "rpid": int(detail.get("root_id") or detail.get("source_id") or 0),
+            "rpid": _as_int(detail.get("root_id") or detail.get("source_id")),
             "content": str(detail.get("source_content") or "")[:120],
         })
         if len(result) >= limit:
