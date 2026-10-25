@@ -15,7 +15,8 @@ from pet.tools.output import IMAGES_SCHEMA, ToolOutputDefinition
 logger = logging.getLogger(__name__)
 
 TOOL_NAME = "bilibili"
-TOOL_DESCRIPTION = "B 站：按关键词、BV号刷视频、读字幕，点赞、投币、评论、私信"
+TOOL_DESCRIPTION = ("B 站：按关键词、BV号刷视频、读字幕，点赞、投币、评论、私信；"
+                   "拿到 BV 号时用 browse 只传该 BV，不要附带关键词")
 TOOL_GROUP = "info"
 
 BRIEF_OUTPUT = {
