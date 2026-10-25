@@ -217,7 +217,7 @@ chmod +x update.sh && ./update.sh
 
 ### bilibili
 
-独立 B 站账号的刷视频与互动。首次使用在托盘右键菜单打开「B 站账号」扫码登录；凭证存 `%APPDATA%/KoishiAI/bili_credential.json`（macOS/Linux 见 `pet/settings.py` 的 `app_dir()`），不进入版本库。
+独立 B 站账号的刷视频与互动。首次使用在托盘右键菜单打开「设置」扫码登录；凭证存 `%APPDATA%/KoishiAI/bilibili_credential.json`（macOS/Linux 见 `pet/settings.py` 的 `app_dir()`），不进入版本库。
 
 首次加载会自动安装工具私有依赖 `qrcode`（生成登录二维码用）；它缺失时 `bilibili` 不加载，可手动 `python -m pip install qrcode` 后重启。
 

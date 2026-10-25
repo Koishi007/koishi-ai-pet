@@ -41,7 +41,7 @@
 
 ### §3.1 登录
 
-登录入口是右键菜单「B 站账号」，打开 `pet/tools/bilibili/panel.py` 的面板。对话中提及登录时，模型只返回指引，不触发 UI。
+登录入口是右键菜单「设置」，打开 `pet/tools/bilibili/panel.py` 的面板。对话中提及登录时，模型只返回指引，不触发 UI。
 
 二维码流程：
 
@@ -417,7 +417,7 @@ CREATE TABLE IF NOT EXISTS bili_mentions (
 
 手工核对：
 
-1. 右键菜单打开「B 站账号」，扫码登录，`bilibili__status` 返回昵称与 UID。
+1. 右键菜单打开「设置」，扫码登录，`bilibili__status` 返回昵称与 UID。
 2. 对话中说「看看 B 站最近有什么」，观察日志中的请求条数与耗时，确认未触发 `-412`。
 3. 查询 `SELECT bvid, verdict, note FROM bili_seen ORDER BY seen_at DESC LIMIT 10;`。
 4. 查询 `SELECT kind, target, status, reason FROM bili_actions ORDER BY id DESC LIMIT 10;`。

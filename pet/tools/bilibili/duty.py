@@ -476,7 +476,7 @@ def run_round(storage: BiliStorage, keyword: str = "") -> dict:
     words = bv_targets + text_words
     credential = load_credential()
     if credential is None:
-        return {"error": "还没登录 B 站账号，右键菜单打开「B 站账号」扫码",
+        return {"error": "还没登录 B 站账号，右键菜单打开「设置」扫码",
                 "code": "not_logged_in"}
 
     try:
@@ -484,7 +484,7 @@ def run_round(storage: BiliStorage, keyword: str = "") -> dict:
                         interval=float(cfg["min_interval_s"])) as client:
             me = client.whoami()
             if not me.get("login"):
-                return {"error": "B 站登录已失效，右键菜单重新扫码",
+                return {"error": "B 站登录已失效，右键菜单打开「设置」重新扫码",
                         "code": "not_logged_in"}
 
             candidates, meta, requests = _collect(client, cfg, storage, words)
