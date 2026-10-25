@@ -83,7 +83,7 @@ class TwentyQuestionsGame(Game):
         if guess and question:
             return {
                 "headline": "tq_question 和 tq_guess 不能同时传",
-                "agent_hint": "请只传其中一个参数重新调用 game__play。",
+                "hint": "请只传其中一个参数重新调用 game__play。",
                 "ended": False,
             }
         if guess:
@@ -91,14 +91,14 @@ class TwentyQuestionsGame(Game):
         if not question:
             return {
                 "headline": "tq_question 与 tq_guess 都没有传",
-                "agent_hint": "请传 tq_question（一个'是/否'问题）继续提问，"
+                "hint": "请传 tq_question（一个'是/否'问题）继续提问，"
                               "或传 tq_guess 给出最终猜测。",
                 "ended": False,
             }
         if state["round"] >= state["max"]:
             return {
                 "headline": f"问题已用完（{state['max']} 个），本局尚未结束",
-                "agent_hint": "请传 tq_guess 给出最终猜测。",
+                "hint": "请传 tq_guess 给出最终猜测。",
                 "ended": False,
             }
 
@@ -138,7 +138,7 @@ class TwentyQuestionsGame(Game):
             state["round"] -= 1
             return {
                 "headline": "作答无效",
-                "agent_hint": "请重新作答（是/否/不确定）。",
+                "hint": "请重新作答（是/否/不确定）。",
                 "ended": False,
                 "round": state["round"],
             }
@@ -150,7 +150,7 @@ class TwentyQuestionsGame(Game):
         return {
             "headline": f"第 {round_no} 问：{question} → 你的回答是「{ANSWER_TEXT[answer]}」。"
                        f"（已问 {round_no}/{state['max']}，还可问 {questions_left} 个）",
-            "agent_hint": "请继续调用 game__play 提出下一个问题，"
+            "hint": "请继续调用 game__play 提出下一个问题，"
                           "或传 tq_guess 给出最终猜测。",
             "ended": False,
             "answer": answer,
@@ -197,7 +197,7 @@ class TwentyQuestionsGame(Game):
             state["round"] -= 1
             return {
                 "headline": "判定无效",
-                "agent_hint": "请重新确认'猜对了/猜错了'。",
+                "hint": "请重新确认'猜对了/猜错了'。",
                 "ended": False,
                 "round": state["round"],
             }
@@ -233,7 +233,7 @@ class TwentyQuestionsGame(Game):
                          message="没猜中，继续猜")
         return {
             "headline": f"我猜的「{guess}」不对，还剩 {questions_left} 个问题可用",
-            "agent_hint": "请继续调用 game__play 提问，或再次传 tq_guess。",
+            "hint": "请继续调用 game__play 提问，或再次传 tq_guess。",
             "ended": False,
             "correct": False,
             "guess": guess,

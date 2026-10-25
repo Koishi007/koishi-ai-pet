@@ -25,7 +25,7 @@ READ_FILE_OUTPUT = {
                      "description": "一句话结论，进历史记录"},
         "body": {"type": "string", "x-role": "body", "description": "文本内容"},
         "images": IMAGES_SCHEMA,
-        "agent_hint": {"type": "string", "x-role": "hint",
+        "hint": {"type": "string", "x-role": "hint",
                        "description": "如何继续读取，如用 offset 翻页"},
     },
 }

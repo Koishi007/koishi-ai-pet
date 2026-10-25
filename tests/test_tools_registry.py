@@ -49,6 +49,10 @@ def _business_fail_plain() -> dict:
     return {"error": "失败了"}
 
 
+def _business_fail_with_hint() -> dict:
+    return {"error": "关着", "code": "disabled", "hint": "这一轮不要再调用"}
+
+
 @pytest.fixture
 def registry() -> ToolRegistry:
     reg = ToolRegistry()
@@ -70,6 +74,8 @@ def registry() -> ToolRegistry:
     reg.add_method("demo", "shot", "带图", handler=_with_image, output=_OUTPUT)
     reg.add_method("demo", "fail", "业务失败", handler=_business_fail, output=_OUTPUT)
     reg.add_method("demo", "fail_plain", "业务失败无码", handler=_business_fail_plain,
+                   output=_OUTPUT)
+    reg.add_method("demo", "fail_hint", "业务失败带提示", handler=_business_fail_with_hint,
                    output=_OUTPUT)
     return reg
 
@@ -123,7 +129,7 @@ class TestToolSearch:
         result = registry._tool_search_search("演示")
         assert "demo__echo" in result["body"]
         assert result["groups"] == ["test"]
-        assert result["agent_hint"]
+        assert result["hint"]
 
     def test_full_method_name_is_searchable(self, registry):
         # 模型常直接拿 demo__echo 去搜，整串必须命中
@@ -167,14 +173,17 @@ class TestToolSearch:
             registry.register(f"t{i}", "天气 查询", group="info")
         result = registry._tool_search_search("天气")
         assert len(self._body_lines(result)) == 5
-        assert result["agent_hint"]
+        assert result["hint"]
 
     def test_default_group_never_returned(self, registry):
         assert "tool_search" not in registry._tool_search_search("工具")["body"]
 
-    def test_disabled_tool_excluded(self, registry):
+    def test_disabled_tool_reported_as_closed(self, registry):
         registry.set_enabled("demo", False)
-        assert "demo" not in registry._tool_search_search("演示")["body"]
+        result = registry._tool_search_search("演示")
+        assert result["groups"] == []
+        assert "demo" in result["body"]
+        assert "demo" in result["hint"]
 
 
 class TestRecallOutput:
@@ -280,6 +289,11 @@ class TestExecutorRouting:
         result = executor.execute([ToolCall("demo__fail_plain", {})])[0]
         assert result.ok is False
         assert result.error_code == "tool_error"
+
+    def test_business_error_carries_tool_hint(self, executor):
+        result = executor.execute([ToolCall("demo__fail_hint", {})])[0]
+        assert result.error_code == "disabled"
+        assert result.hint == "这一轮不要再调用"
 
     def test_timeout_reported(self, executor):
         try:

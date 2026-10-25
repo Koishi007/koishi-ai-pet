@@ -20,7 +20,8 @@ from pet.tools.registry import TOOL_REGISTRY
 
 logger = logging.getLogger(__name__)
 
-# 失败视图的下一步提示：只进当轮视图，不进历史
+# 失败视图的下一步提示：只进当轮视图，不进历史。
+# 这里只放引擎自己产生的错误码；工具私有的码由工具在返回里带 hint。
 _FAILURE_HINTS = {
     "bad_arguments": "检查参数名与类型后重试。",
     "timeout": "稍后重试，或换用其他工具；有副作用的操作不要重复调用。",
@@ -302,8 +303,9 @@ def _execute_round(tool_calls_map: dict, sorted_indices: list, executor: ToolExe
 
 
 def _failure_hint(result) -> str:
-    """失败视图的下一步提示；只进当轮视图，不进历史。"""
-    return _FAILURE_HINTS.get(result.error_code, _DEFAULT_FAILURE_HINT)
+    """失败视图的下一步提示；优先用工具自带的那条。"""
+    return (getattr(result, "hint", "")
+            or _FAILURE_HINTS.get(result.error_code, _DEFAULT_FAILURE_HINT))
 
 
 def _exec_tool(tool_calls_map: dict, idx: int, executor: ToolExecutor, session: ToolSession):

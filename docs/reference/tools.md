@@ -30,7 +30,7 @@
 | `status` | 无参数 | 查看 B 站账号状态：昵称、UID、等级、硬币、关注关键词，以及今日各项操作次数与开关。 |
 | `like` | `bvid`（str, 必需） 视频 BV 号 | 给最近一轮刷到的某个视频点赞。目标必须在最近一轮的候选里。 |
 | `coin` | `bvid`（str, 必需） 视频 BV 号 | 给最近一轮刷到的某个视频投一枚硬币。受每日额度与硬币余额下限约束。 |
-| `comment` | `bvid`（str, 必需） 视频 BV 号<br>`text`（str, 必需） 评论正文 | 在最近一轮刷到的某个视频下留一条评论。内容会经过长度、链接、隐私与重复检查，被拦下时不发送。 |
+| `comment` | `bvid`（str, 必需） 视频 BV 号<br>`text`（str, 必需） 评论正文 | 在最近一轮刷到的某个视频下留一条评论。该视频有未回复的 @ 时，评论会挂在那条 @ 评论下并自动带上 @昵称。内容会经过长度、链接、隐私与重复检查，被拦下时不发送。 |
 | `dm` | `text`（str, 必需） 私信正文 | 给主人在 B 站发一条私信。收件人取配置里的 dm_uid，未配置时不发送。 |
 | `verify` | `limit`（int, 默认 10） 最多检查几条 | 复核待确认的评论是否已经公开可见。未核到的保持待确认，不会重发。 |
 
@@ -154,7 +154,7 @@
 | `headline` | string | 是 | headline | 一句话结论，进历史记录 |
 | `body` | string | 否 | body | 文本内容 |
 | `images` | array | 否 | images | 图片列表 |
-| `agent_hint` | string | 否 | hint | 如何继续读取，如用 offset 翻页 |
+| `hint` | string | 否 | hint | 如何继续读取，如用 offset 翻页 |
 
 **`write_note` 返回字段**
 
@@ -402,7 +402,7 @@
 |---|---|---|---|---|
 | `headline` | string | 是 | headline | 一句话结论，进历史记录 |
 | `body` | string | 否 | body | 命中的工具与方法清单 |
-| `agent_hint` | string | 否 | hint | 下一步该直接调用哪个函数 |
+| `hint` | string | 否 | hint | 下一步该直接调用哪个函数 |
 | `groups` | array | 否 | suppress | 命中的工具分组，供行为层激活 |
 
 ### `food`
@@ -446,7 +446,7 @@
 | 字段 | 类型 | 必填 | 角色 | 说明 |
 |---|---|---|---|---|
 | `headline` | string | 是 | headline | 一句话结论，进历史记录 |
-| `agent_hint` | string | 否 | hint | 下一步该传什么参数 |
+| `hint` | string | 否 | hint | 下一步该传什么参数 |
 | `ended` | boolean | 否 | data | 本局是否结束 |
 | `won` | - | 否 | data | 胜负：true 获胜，false 失败，null 平局或未分胜负 |
 | `data` | object | 否 | data | 对局状态与游戏专属字段 |
@@ -456,7 +456,7 @@
 | 字段 | 类型 | 必填 | 角色 | 说明 |
 |---|---|---|---|---|
 | `headline` | string | 是 | headline | 一句话结论，进历史记录 |
-| `agent_hint` | string | 否 | hint | 下一步该传什么参数 |
+| `hint` | string | 否 | hint | 下一步该传什么参数 |
 | `ended` | boolean | 否 | data | 本局是否结束 |
 | `won` | - | 否 | data | 胜负：true 获胜，false 失败，null 平局或未分胜负 |
 | `data` | object | 否 | data | 对局状态与游戏专属字段 |
@@ -466,7 +466,7 @@
 | 字段 | 类型 | 必填 | 角色 | 说明 |
 |---|---|---|---|---|
 | `headline` | string | 是 | headline | 一句话结论，进历史记录 |
-| `agent_hint` | string | 否 | hint | 下一步该传什么参数 |
+| `hint` | string | 否 | hint | 下一步该传什么参数 |
 | `ended` | boolean | 否 | data | 本局是否结束 |
 | `won` | - | 否 | data | 胜负：true 获胜，false 失败，null 平局或未分胜负 |
 | `data` | object | 否 | data | 对局状态与游戏专属字段 |
@@ -476,7 +476,7 @@
 | 字段 | 类型 | 必填 | 角色 | 说明 |
 |---|---|---|---|---|
 | `headline` | string | 是 | headline | 一句话结论，进历史记录 |
-| `agent_hint` | string | 否 | hint | 下一步该传什么参数 |
+| `hint` | string | 否 | hint | 下一步该传什么参数 |
 | `ended` | boolean | 否 | data | 本局是否结束 |
 | `won` | - | 否 | data | 胜负：true 获胜，false 失败，null 平局或未分胜负 |
 | `data` | object | 否 | data | 对局状态与游戏专属字段 |

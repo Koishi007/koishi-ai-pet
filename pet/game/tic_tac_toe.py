@@ -125,7 +125,7 @@ class TicTacToeGame(Game):
             if not params.get("ttt_move"):
                 return {
                     "headline": _s("轮到我落子"),
-                    "agent_hint": "请传 ttt_move 参数（A1~C3）重新调用 game__play。",
+                    "hint": "请传 ttt_move 参数（A1~C3）重新调用 game__play。",
                     "ended": False,
                     "pet_mark": pet_mark,
                     "user_mark": user_mark,
@@ -136,7 +136,7 @@ class TicTacToeGame(Game):
             if pos is None:
                 return {
                     "headline": _s(f"无效位置 {params['ttt_move']}"),
-                    "agent_hint": "请用 A1~C3 格式传 ttt_move。",
+                    "hint": "请用 A1~C3 格式传 ttt_move。",
                     "ended": False,
                     "pet_mark": pet_mark,
                     "user_mark": user_mark,
@@ -147,7 +147,7 @@ class TicTacToeGame(Game):
             if board[r][c]:
                 return {
                     "headline": _s(f"位置 {params['ttt_move']} 已经有子了"),
-                    "agent_hint": "请换一个位置传 ttt_move。",
+                    "hint": "请换一个位置传 ttt_move。",
                     "ended": False,
                     "pet_mark": pet_mark,
                     "user_mark": user_mark,
