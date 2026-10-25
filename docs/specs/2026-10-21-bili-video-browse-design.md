@@ -64,7 +64,7 @@
 
 | 项 | 约定 |
 |---|---|
-| 位置 | `pet/tools/bilibili/credential.json`，与 `config.json` 同目录，不提交 |
+| 位置 | 用户配置目录下的 `bilibili_credential.json`（Windows 为 `%APPDATA%/KoishiAI/`），与 `settings.json` 同目录，不随源码目录覆盖而丢失；不提交 |
 | 字段 | `sessdata`、`bili_jct`、`dedeuserid`、`buvid3`、`ac_time_value`、`updated_at`；字段名与 `bilibili_api` 的 Credential 对齐 |
 | 写入 | 登录成功、轮询成功各写一次；文件权限尽力设为仅本人可读 |
 | 读取 | 每次调用 `BiliClient` 时读取，不在内存缓存凭证 |
@@ -113,7 +113,7 @@ wbi 签名约定：
 读取 config.json 与凭证
   → 按关键词逐个搜索，间隔 min_interval_s
   → 每词合并、按 bvid 去重、按 scan_days 过滤发布时间、剔除 bili_seen
-  → 逐条取字幕加入候选，够 max_videos 或到采集预算就停止，不足则试下一个词
+  → 逐条取字幕加入候选，够 per_run 或到采集预算就停止，不足则试下一个词
   → 有字幕的候选拼成一次 LLM 请求，得到 picks 与互动建议
   → 写 bili_seen（全部读过的）、bili_rounds
   → 按限额执行点赞、投币、评论、私信
@@ -127,10 +127,10 @@ wbi 签名约定：
 | 排序 | 默认 `totalrank`，可配 `pubdate` / `click` |
 | 去重 | 同一 `bvid` 只保留首次出现 |
 | 时间过滤 | `pubdate` 早于 `now - scan_days` 的丢弃 |
-| 判重 | 未看过的排在前面，候选不足时补已看过的，不丢弃 |
+| 判重 | 在单个关键词内，未看过的排在前面，候选不足时补已看过的，不丢弃 |
 | 分页 | 单关键词时按需翻页，最多 3 页；多关键词时每个只搜 1 页 |
 | 换词 | 当前关键词凑不出新候选时，按随机顺序试下一个，最多 3 个 |
-| 候选上限 | 有字幕的候选超过 `max_videos` 时按当前排序截断 |
+| 停止条件 | 集齐本轮返回的 `per_run` 条即停止采集；90 秒采集预算兜底 |
 | 无字幕 | 记录到 `skipped`，仍进候选，`subtitle` 为空串 |
 | 失败重试 | 不重试；同一关键词失败两次即放弃 |
 | 空结果 | 全部失败或无候选时返回原因，不调用 LLM |
@@ -143,9 +143,9 @@ wbi 签名约定：
 | 项 | 约定 |
 |---|---|
 | 关键词 | 本轮一个：参数传入优先，否则从 `keywords` 随机选一个 |
-| 候选 | 搜索、时间范围、判重、无字幕过滤后，最多 `max_videos` 条 |
+| 候选 | 搜索、时间范围、判重、无字幕过滤后，集齐 `per_run` 条即返回 |
 | 抽取 | 从候选里随机取 `per_run` 条，默认 2 条 |
-| 返回 | `videos` 数组，每项含 `bvid`、`title`、`up`、`duration`、`play`、`desc`、`url`、`keyword`、`subtitle`；`keyword` 是这条命中的搜索词，BV 号直读时为空 |
+| 返回 | `videos` 数组，每项含 `bvid`、`title`、`up`、`duration`、`play`、`desc`、`url`、`keyword`、`subtitle`；`keyword` 是这条命中的搜索词或请求里的 BV 号 |
 | 字幕 | 每条截到 `subtitle_chars` 字，默认 2500；无字幕时为空串 |
 | 封面 | `TOOL_CTX.has_vision()` 为真时，取随机结果第一条的封面，缩放后作为 `__image__` 附在工具结果之后；一次只能带一张 |
 | 记忆 | 工具不写记忆，由演绎模型在对话里决定是否记录 |
@@ -164,7 +164,7 @@ wbi 签名约定：
 | 点赞 | `POST /x/web-interface/archive/like` | 不限 | 最近一轮候选 | 是，在 B 站端取消 |
 | 投币 | `POST /x/web-interface/coin/add` | 2 | 最近一轮候选 | 否 |
 | 评论 | `POST /x/v2/reply/add` | 7 | 最近一轮候选 | 可删除，但有通知痕迹 |
-| 私信 | `POST api.vc.bilibili.com/web_im/v1/web_im/send_msg` | 10 | 仅 `dm_uid` | 否 |
+| 私信 | `POST api.vc.bilibili.com/web_im/v1/web_im/send_msg` | 不限 | 仅 `dm_uid` | 否 |
 
 补充约定：
 
@@ -172,7 +172,7 @@ wbi 签名约定：
 - 投币前检查硬币余额，低于 `coin_floor + 1` 时跳过；`multiply` 固定 1，`select_like` 固定 0，由点赞操作单独控制。
 - 私信只发给配置里的 `dm_uid`；未配置时返回错误，不静默跳过。
 - 该视频存在未回复的 @ 时，评论挂在 @ 那条评论下（`root` 与 `parent` 填它的 `rpid`），正文前缀 `@昵称 `，前缀不计入 filter 长度；发送成功后把该 @ 标为已回复。
-- 点赞、投币每个目标 1 条有效记录；评论每个目标最多 3 条，由台账计数保证。私信目标恒定，只按每日配额限流，不做目标去重。
+- 点赞、投币每个目标 1 条有效记录；评论每个目标最多 3 条，由台账计数保证。私信目标恒定，不做目标去重，也不设每日上限。
 - 每个写开关独立，默认全部关闭；刷视频自身由 `allow_browse` 控制，默认开启。
 - 五个开关都在账号面板里，改动即时写回 `config.json`；关闭 `allow_browse` 时 `bilibili__browse` 直接返回原因，不发起请求。
 
@@ -207,10 +207,11 @@ wbi 签名约定：
 写请求前先落台账，状态机：
 
 ```
-pending → done（拿到远端 id 或业务码 0）
-pending → failed（业务码非 0）
-pending → unknown（请求超时，发没发出去不可知）
-done → visible / hidden（复核结果）
+pending → done（拿到远端 id 或业务码 0），同时记录发评论用的 root
+pending → failed（业务码非 0，确定没发出去，可重试）
+pending → unknown（业务码 0 但回执缺 rpid / msg_key，可能已发出，不再重试）
+done → visible / hidden / unverified（复核结果）
+unverified → visible / hidden（下一轮复核）
 ```
 
 | 场景 | 处理 |
@@ -219,6 +220,7 @@ done → visible / hidden（复核结果）
 | 上一次记录为 `failed` | 允许重新占位 |
 | 请求超时 | 记 `unknown`，占住目标不再重试，等复核或人工收敛 |
 | 业务码非 0 | 记 `failed`，返回原因，不重试 |
+| 回执缺 `rpid` / `msg_key` | 可能已发出，记 `unknown`，占住目标不再重试 |
 | 工具线程被超时中断 | 线程继续执行，成功后仍会更新台账 |
 
 超时语义来自 `pet/tools/executor.py`：handler 超时后守护线程继续运行，模型收到的是「工具执行超时」。台账是唯一能判断「到底发没发出去」的依据，因此写操作必须先写台账再发请求。
@@ -227,13 +229,13 @@ done → visible / hidden（复核结果）
 
 | 项 | 约定 |
 |---|---|
-| 目的 | 确认评论是否公开可见，收敛 `pending` 与 `done` |
-| 查询 | 顶层用 `reply/main`（`mode=2` 按时间）；有 `@` 记录时用 `reply/reply` 按 `root` 拉楼中楼 |
+| 目的 | 确认评论是否公开可见，收敛 `pending`、`done` 与 `unverified` |
+| 查询 | 顶层用 `reply/main`（`mode=2` 按时间）；有 `@` 回复时用 `reply/reply` 按台账记录的 `root` 拉楼中楼 |
 | 触发 | `bilibili__verify` 手动触发 |
 | 命中判定 | 按 `rpid` 精确匹配，且 `member.mid` 必须是本人；未命中时退回正文前 20 字匹配 |
 | `invisible` | 命中但接口标了 `invisible`，记 `hidden`，不重发 |
 | `state` | 非 0 视为审核或折叠，保持 `done`，下一轮再核 |
-| 未命中 | 保持 `done`，留到下一轮再核，不重发 |
+| 未命中 | 记 `unverified`，下一轮再核；看不到不等于没发出，不重发 |
 | 私信 | 不参与复核，接口无公开可查状态 |
 
 ## §8 数据落点
@@ -268,14 +270,26 @@ CREATE TABLE IF NOT EXISTS bili_actions (
     content TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL,
     remote_id TEXT NOT NULL DEFAULT '',
+    root INTEGER NOT NULL DEFAULT 0,
     reason TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_bili_actions_live
-    ON bili_actions(uid, kind, target)
-    WHERE status IN ('pending', 'done', 'visible', 'hidden');
+CREATE INDEX IF NOT EXISTS idx_bili_actions_target
+    ON bili_actions(uid, kind, target);
+
+CREATE TABLE IF NOT EXISTS bili_mentions (
+    msg_id INTEGER PRIMARY KEY,
+    uid INTEGER NOT NULL DEFAULT 0,
+    bvid TEXT NOT NULL DEFAULT '',
+    title TEXT NOT NULL DEFAULT '',
+    rpid INTEGER NOT NULL DEFAULT 0,
+    name TEXT NOT NULL DEFAULT '',
+    content TEXT NOT NULL DEFAULT '',
+    handled INTEGER NOT NULL DEFAULT 0,
+    seen_at TEXT NOT NULL
+);
 ```
 
 | 表 | 用途 | 写入时机 |
@@ -283,8 +297,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_bili_actions_live
 | `bili_seen` | 判重，避免重复读同一条字幕 | 每轮结束，写入本轮读过的全部候选 |
 | `bili_rounds` | 每日挑中数与请求数，按 `(day, uid)` 累加 | 每轮结束 |
 | `bili_actions` | 写操作台账与幂等依据 | 每次写操作前 |
+| `bili_mentions` | @ 台账：未回复的每轮重新带出，回复后置 `handled` 不再出现 | 每次拉取 @ 时 |
 
-保留策略：`bili_seen` 与 `bili_actions` 保留 90 天，`bilibili__status` 调用时顺带清理更早的行。
+保留策略：`bili_seen` 与 `bili_actions` 保留 90 天，工具注册时清理更早的行；`bili_mentions` 长期保留，作为不重复回复的依据。
 
 记忆写入：
 
@@ -303,7 +318,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_bili_actions_live
 
 | 方法 | 参数 | 超时 | 返回 |
 |---|---|---|---|
-| `bilibili__browse` | `keyword`，可选：关键词或 BV 号 | 300s | `summary`、`picked`、`skipped`、`note`、`requests` |
+| `bilibili__browse` | `keyword` / `bvid`，可选：关键词或 BV 号 | 300s | `summary`、`picked`、`skipped`、`note`、`requests` |
 | `bilibili__like` | `bvid` | 30s | 操作结果 |
 | `bilibili__coin` | `bvid` | 30s | 操作结果与余额 |
 | `bilibili__comment` | `bvid`、`text` | 30s | 操作结果、`rpid`、拒绝原因 |
@@ -325,8 +340,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_bili_actions_live
 | 键 | 类型 | 默认 | 说明 |
 |---|---|---|---|
 | `keywords` | list[str] | 见下 | 关注关键词；BV 号形式直接读取该视频，不经过搜索 |
-| `max_videos` | int | 6 | 单轮最多读几条字幕 |
-| `per_run` | int | 2 | 单轮随机取几条返回 |
+| `per_run` | int | 2 | 单轮取几条返回 |
 | `scan_days` | int | 30 | 只看最近几天的视频 |
 | `order` | str | `totalrank` | `totalrank` / `pubdate` / `click` |
 | `subtitle_chars` | int | 2500 | 每条字幕截断字数 |
@@ -343,15 +357,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_bili_actions_live
 | `comment_max_chars` | int | 100 | 评论长度上限 |
 | `comment_blocklist` | list[str] | 空 | 追加的禁用词 |
 | `dm_uid` | int | 0 | 私信收件人 UID，0 表示不发 |
-| `dm_per_day` | int | 10 | 每日私信上限 |
 | `schedule_enabled` | bool | false | 定时提醒总开关 |
 | `schedule_interval_minutes` | int | 180 | 两次提醒的最小间隔，最小 10 |
 | `schedule_active_hours` | str | `09:00-23:00` | 允许触发的作息窗口 |
 | `schedule_backoff_base_minutes` | int | 5 | 状态不可用时的退避起点 |
 | `schedule_pause_hours` | str | 空 | 禁用时段，逗号分隔多个区间；非空且格式正确时生效 |
 | `schedule_pause_weekdays_only` | bool | true | 禁用时段只作用于工作日 |
-| `mention_enabled` | bool | true | 每次提醒前检查主人的 @ |
-| `mention_per_day` | int | 3 | 每日处理的 @ 上限 |
+| `mention_enabled` | bool | false | 每次提醒前同步主人的 @；评论可能被 B 站折叠，默认关闭 |
+| `mention_per_day` | int | 3 | 每轮带出的未回复 @ 上限 |
 | `dm_max_chars` | int | 400 | 私信长度上限 |
 
 默认关键词：`东方Project`、`古明地觉`、`古明地恋`、`猫`、`狗`、`动物`。
@@ -360,7 +373,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_bili_actions_live
 
 `dm_uid` 也在账号面板填写，非数字或 0 拒绝保存；配置为 0 时私信调用与一轮内的私信步骤都返回明确错误。
 
-关键词清洗：去不可打印字符、去空、去重，单条上限 50 字，最多 20 个。`browse` 的 `keyword` 参数走同一套清洗，但不受配置列表限制；BV 号固定 12 位，不受长度限制，直接读取该视频。
+关键词清洗：去不可打印字符、去空、去重，单条上限 50 字，最多 20 个。`browse` 的 `keyword` 参数走同一套清洗，但不受配置列表限制；BV 号固定 12 位，不受长度限制。`bvid` 与 `keyword` 只传一个：传 `bvid`（或 `keyword` 只给 BV）时只取这些视频、不再搜索关键词，且抽选时这些 BV 必定返回。
 
 配置读取失败时用内置默认值并在 `summary` 里注明，不中断本轮。
 
@@ -446,11 +459,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_bili_actions_live
 | 状态守卫 | `TOOL_CTX.is_idle()` 为假时指数退避，`5 × 2^n` 分钟，上限 60，触发成功后清零 |
 | 重启 | 从当前时间加一个间隔重新排，不补跑 |
 | 记录 | 不落表，不判断今天是否跑过，只用频率控制 |
-| 触发 | `request_interact(schedule.md, cooldown_ms=0, thinking=True, enable_tools=True)`，模型按提示词决定调用哪个工具 |
-| @ 检查 | `mention_enabled` 为真时，提醒前查 `/x/msgfeed/at`，只认 `dm_uid`，按 `msg_id` 去重，命中的视频写进提示词 |
-| 禁用时段 | `schedule_pause_hours` 非空且解析成功时，落在区间内的触发点顺延到该段结束；默认只作用于工作日，周末不受限 |
+| 触发 | `request_interact(schedule.md, cooldown_ms=0, thinking=True, enable_tools=True)`；提示词要求这一轮先用 `browse` 挑出推荐视频，再用 `dm` 把 BV 号发给主人；被 @ 时改用 `comment` 在视频下回复，不走私信；点赞、投币可选 |
+| 手动触发 | 账号面板的「立即触发一次」直接发起一次提醒，不检查 `schedule_enabled`、作息窗口与禁用时段，也不改动下一次闹钟 |
+| @ 检查 | `mention_enabled` 为真时，提醒前在 daemon 线程拉 `GET api.bilibili.com/x/msgfeed/at`（只看 `dm_uid`），新条目落 `bili_mentions`；未回复的每轮都带进提示词，回复成功后置 `handled`，`mention_per_day` 是每轮带出的条数上限 |
+| 禁用时段 | `schedule_pause_hours` 非空且解析成功时，落在任一段内的触发点顺延到这些段的并集结束时刻；段可跨零点（`22:00-08:00`）；默认只作用于工作日，周末不受限 |
 
-@ 的处理不做事件驱动：只在每次提醒前顺带查一次，查到就把 BV 号写进提示词，由模型决定是否用 `bilibili__browse` 分析。`dm_uid` 为 0 时不处理任何 @。
+@ 的处理不做事件驱动：只在每次提醒前顺带拉一次，新 @ 落表后与历史未回复的一起带出，提示词把 @ 处理排在必做任务之前；模型用 `bilibili__browse` 看过那个视频后，用 `bilibili__comment` 在视频下回复，成功后该条 @ 不再出现在后续提示词里。每轮带出的候选 @ 记一行日志。`dm_uid` 为 0 时不处理任何 @。
 
 只回复 `dm_uid` 的 @。回复时用通知里的 `rpid` 挂到该评论下，正文前缀 `@昵称 `；`rpid` 为 0 时退化为视频下的顶级评论。
 

@@ -1260,7 +1260,7 @@ class VectorRetriever(_MemoryRetriever):
 
 class MemoryStore:
 
-    _HEAVY_INTERVAL = 6  # 每 6 次 slow_tick 执行一次重量维护（≈30min）
+    _HEAVY_INTERVAL = 6  # 每 6 次 slow_tick 执行一次重量维护（≈1h）
 
     @property
     def db_path(self) -> str:

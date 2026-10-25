@@ -1,6 +1,5 @@
 {
     "keywords": ["东方Project", "古明地觉", "古明地恋", "猫", "狗", "动物"],
-    "max_videos": 6,
     "per_run": 2,
     "scan_days": 30,
     "order": "totalrank",
@@ -18,7 +17,6 @@
     "comment_max_chars": 100,
     "comment_blocklist": [],
     "dm_uid": 0,
-    "dm_per_day": 10,
     "dm_max_chars": 400,
     "schedule_enabled": false,
     "schedule_interval_minutes": 180,
@@ -26,6 +24,6 @@
     "schedule_backoff_base_minutes": 5,
     "schedule_pause_hours": "",
     "schedule_pause_weekdays_only": true,
-    "mention_enabled": true,
+    "mention_enabled": false,
     "mention_per_day": 3
 }

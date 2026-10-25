@@ -1,6 +1,7 @@
 """桌宠情绪气泡显示 emoji 表情"""
 
 import re
+from functools import lru_cache
 
 from PySide6.QtWidgets import QLabel, QWidget
 from PySide6.QtCore import Qt, QTimer, QPropertyAnimation, QEasingCurve
@@ -26,6 +27,25 @@ EMOTION_MAP = {
     "bored":      "\U0001f634",   # 😴
     "crazy":      "\U0001f92a",   # 🤪
 }
+
+
+@lru_cache(maxsize=1)
+def _emoji_to_name() -> dict:
+    """EMOTION_MAP 的反查表；首次使用时构建，避免导入期副作用。"""
+    return {emoji: name for name, emoji in EMOTION_MAP.items()}
+
+
+def known_emotions(text: str) -> list[str]:
+    """拆分情绪文本：保留映射表里的名字，emoji 转成对应名字，其余丢弃。"""
+    names = [e.strip() for e in re.split(r"[,，、\s]+", text or "") if e.strip()]
+    emoji_names = _emoji_to_name()
+    resolved = []
+    for name in names:
+        if name.lower() in EMOTION_MAP:
+            resolved.append(name.lower())
+        elif name in emoji_names:
+            resolved.append(emoji_names[name])
+    return resolved
 
 
 def emotion_to_emoji(name: str) -> str:
@@ -64,12 +84,10 @@ class EmotionBubble(QLabel):
         self.hide()
 
     def show_emotion(self, emotion: str, duration: int = 3000, parent_pos=None):
-        """显示情绪 emoji。emotion 可为情绪名、emoji 文本，或逗号分隔的多个情绪（按序播放）。"""
-        names = [e.strip() for e in re.split(r"[,，、\s]+", emotion) if e.strip()]
-        valid = [e for e in names if e.lower() in EMOTION_MAP]
+        """显示情绪 emoji。emotion 可为情绪名或逗号分隔的多个情绪；未知名字丢弃。"""
+        valid = known_emotions(emotion)
         if not valid:
-            # 无合法情绪（如直接传入 emoji 文本）：原样显示一次
-            valid = [emotion]
+            return
 
         self._emotion_queue = valid
         self._emotion_index = 0

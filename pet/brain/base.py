@@ -9,7 +9,9 @@ from typing import List, Optional
 
 from pet.config import config
 from pet.db import get_conn
-from pet.brain.events import EventStore
+from pet.brain.events import (ASSISTANT_TEXT_LIMIT, ASSISTANT_TURN_VERSION,
+                              EventStore, truncate_bytes)
+from pet.brain.output import sanitize_assistant_fields
 from pet.brain.projection import Budget, project
 from pet.brain.tool_channel import current_profile
 
@@ -41,10 +43,6 @@ class BrainMixin:
 
         池子在 `_MAX_ENTRIES` 与 `_MAX_ENTRIES + _EVICT_BATCH_SIZE` 之间震荡，注入上限取
         池子的常态上界，池内条目才不会被一个更小的数字每轮排除。
-
-        注意这不是池子的硬上界：工具调用没有条数配额，最近 `CONTEXT_HALF_LIFE_S` 内的工具调用
-        超过 `_MAX_ENTRIES` 减去摘要数时池子会突破它，此时 `get_multi_turn_messages` 的条数裁剪
-        仍会兜底（丢掉最旧的若干条）。
         """
         return self._MAX_ENTRIES + self._EVICT_BATCH_SIZE
 
@@ -64,11 +62,10 @@ class BrainMixin:
         self._ctx_lock = threading.RLock()  # 使用可重入锁
         self._db_path = db_path
         self._events: Optional[EventStore] = None
-        self._save_debounce_timer: Optional[threading.Timer] = None
         self._pending_summary_queue: List[tuple] = []  # (start_seq, end_seq, 文本)
         self._reported_groups: set = set()
 
-        if db_path and config.CONTEXT_PERSIST_ENABLED:
+        if db_path:
             self._init_db()
             self._load_context()
 
@@ -181,10 +178,6 @@ class BrainMixin:
         except Exception as e:
             logger.warning(f"[BrainMixin] save context failed: {e}")
 
-    def _do_save(self, record_shutdown: bool = False):
-        """兼容旧调用名。"""
-        self._save_context(record_shutdown=record_shutdown)
-
     @staticmethod
     def format_duration(seconds: float) -> str:
         """将秒数格式化为人类可读的时长。"""
@@ -200,26 +193,28 @@ class BrainMixin:
 
 
     def add_context(self, role: str, content: str, is_summary: bool = False,
-                    kind: str = "", turn_id: str = "",
                     covers: Optional[tuple] = None):
-        """写一条事件，并维护供调试面板查看的内存快照。
+        """写一条非 assistant 事件，并维护供调试面板查看的内存快照。
 
-        `kind` 标记 assistant 内容的用途：speech（台词）/ summary（本轮摘要），
-        供投影决定渲染成哪一行；`turn_id` 把同一回合的两次写入合并成一条历史消息。
+        assistant 内容只来自模型响应，用 `add_assistant_turn` 写入。
         covers 是摘要覆盖的事件区间，由排空待摘要队列的一方传入。
         """
+        if role == "assistant":
+            raise ValueError("assistant 内容用 add_assistant_turn 写入")
         with self._ctx_lock:
-            if is_summary and self._replace_similar_summary(role, content):
-                return
-            event = self._write_event(role, content, is_summary, kind, turn_id,
-                                      covers)
-            self._context.append(ContextEntry(
-                role=role, content=content, is_summary=is_summary,
-                seq=event.seq if event else 0))
+            index = self._find_similar_summary(content) if is_summary else -1
+            supersedes = self._context[index].seq if index >= 0 else 0
+            event = self._write_event(role, content, is_summary, supersedes, covers)
+            entry = ContextEntry(role=role, content=content, is_summary=is_summary,
+                                 seq=event.seq if event else 0)
+            if index >= 0:
+                self._context[index] = entry
+            else:
+                self._context.append(entry)
             self._evict_context()
 
-    def _replace_similar_summary(self, role: str, content: str) -> bool:
-        """与最近 _MAX_DEDUP_COMPARE 条摘要去重；命中则只替换快照。"""
+    def _find_similar_summary(self, content: str) -> int:
+        """与最近 _MAX_DEDUP_COMPARE 条摘要去重；命中返回其下标，未命中返回 -1。"""
         compared = 0
         for i in range(len(self._context) - 1, -1, -1):
             entry = self._context[i]
@@ -227,37 +222,74 @@ class BrainMixin:
                 continue
             compared += 1
             if self._text_similarity(content, entry.content) >= self._DEDUP_THRESHOLD:
-                self._context[i] = ContextEntry(role=role, content=content,
-                                                is_summary=True, seq=entry.seq)
-                logger.debug(f"[BrainMixin] summary replaced: {content[:30]}...")
-                return True
+                return i
             if compared >= self._MAX_DEDUP_COMPARE:
                 break
-        return False
+        return -1
 
     def _write_event(self, role: str, content: str, is_summary: bool,
-                     kind: str = "", turn_id: str = "",
-                     covers: Optional[tuple] = None):
-        """把一次上下文写入映射为事件；失败不影响主流程。"""
+                     supersedes: int = 0, covers: Optional[tuple] = None):
+        """把一次上下文写入映射为事件。"""
+        if is_summary:
+            refs: dict = {}
+            if supersedes:
+                refs["supersedes"] = int(supersedes)
+                covers = self._merge_covers(covers, self._summary_covers(supersedes))
+            if covers:
+                refs["covers"] = list(covers)
+            return self._append_event("summary", {"text": content}, refs or None)
+        payload = {"text": content}
+        if role == "user":
+            return self._append_event("user_msg", payload)
+        return self._append_event("system_note", payload)
+
+    def _summary_covers(self, seq: int) -> Optional[tuple]:
+        """指定摘要事件记录的覆盖区间。"""
         if self._events is None or not self._events.available:
             return None
         try:
-            if is_summary:
-                refs = {"covers": list(covers)} if covers else None
-                return self._events.append("summary", {"text": content}, refs=refs)
-            payload = {"text": content}
-            if kind:
-                payload["kind"] = kind
-            if turn_id:
-                payload["turn_id"] = turn_id
-            if role == "user":
-                return self._events.append("user_msg", payload)
-            if role == "assistant":
-                return self._events.append("assistant_turn", payload)
-            return self._events.append("system_note", payload)
+            for event in self._events.load():
+                if event.seq == seq and event.type == "summary":
+                    covers = event.refs.get("covers")
+                    if isinstance(covers, (list, tuple)) and len(covers) == 2:
+                        return (int(covers[0]), int(covers[1]))
+        except Exception as e:
+            logger.warning(f"[BrainMixin] read summary covers failed: {e}")
+        return None
+
+    @staticmethod
+    def _merge_covers(first: Optional[tuple], second: Optional[tuple]) -> Optional[tuple]:
+        if first and second:
+            return (min(first[0], second[0]), max(first[1], second[1]))
+        return first or second
+
+    def _append_event(self, type: str, payload: dict, refs: dict | None = None):
+        """写一条事件；失败只告警，不影响主流程。"""
+        if self._events is None or not self._events.available:
+            return None
+        try:
+            return self._events.append(type, payload, refs=refs)
         except Exception as e:
             logger.warning(f"[BrainMixin] append event failed: {e}")
             return None
+
+    def add_assistant_turn(self, fields: dict, text: str):
+        """写一条结构化模型响应：fields 为解析出的字段，text 只作审计。
+
+        text 超过 ASSISTANT_TEXT_LIMIT 时按字节截断，并标记 text_truncated。
+        """
+        body = {"v": ASSISTANT_TURN_VERSION}
+        if text:
+            body["text"] = truncate_bytes(text, ASSISTANT_TEXT_LIMIT)
+            if body["text"] != text:
+                body["text_truncated"] = True
+        body.update(sanitize_assistant_fields(fields))
+        with self._ctx_lock:
+            event = self._append_event("assistant_turn", body)
+            self._context.append(ContextEntry(
+                role="assistant", content=body.get("text", ""),
+                seq=event.seq if event else 0))
+            self._evict_context()
 
     def record_failed_turn(self, text: str, finish_reason: str = "", tag: str = ""):
         """解析失败的响应只留档，不进入任何视图。"""
@@ -270,14 +302,10 @@ class BrainMixin:
             logger.warning(f"[BrainMixin] append failed_turn failed: {e}")
 
     def record_tool_events(self, group_id: str, calls: list, results: list,
-                           asides: Optional[list] = None) -> bool:
-        """把一轮工具调用写成同组事件，供投影聚合成原子组。
-
-        事件库不可用或任一写入失败时返回 False，调用方据此退回文本记录。
-        """
+                           asides: Optional[list] = None):
+        """把一轮工具调用写成同组事件，供投影聚合成原子组。"""
         if self._events is None or not self._events.available:
-            return False
-        ok = True
+            return
         for call_id, text in (asides or []):
             try:
                 self._events.append("assistant_speech", {"text": text},
@@ -285,7 +313,6 @@ class BrainMixin:
                                     refs={"tool_call_id": call_id})
             except Exception as e:
                 logger.warning(f"[BrainMixin] append assistant_speech failed: {e}")
-                ok = False
         for call in calls:
             call_id = call.get("id", "")
             try:
@@ -297,7 +324,6 @@ class BrainMixin:
                     group_id=group_id, refs={"tool_call_id": call_id})
             except Exception as e:
                 logger.warning(f"[BrainMixin] append tool_call failed: {e}")
-                ok = False
         for result in results:
             call_id = result.get("tool_call_id", "")
             artifact_id = None
@@ -313,8 +339,6 @@ class BrainMixin:
                     group_id=group_id, refs={"tool_call_id": call_id})
             except Exception as e:
                 logger.warning(f"[BrainMixin] append tool_result failed: {e}")
-                ok = False
-        return ok
 
     def _store_artifact(self, raw: str) -> Optional[str]:
         """原文超过内联阈值时落 artifacts，返回 id；否则不建。"""
@@ -329,10 +353,6 @@ class BrainMixin:
         with self._ctx_lock:
             self._context.clear()
             self._pending_summary_queue.clear()
-
-        if self._save_debounce_timer:
-            self._save_debounce_timer.cancel()
-            self._save_debounce_timer = None
 
         if self._events is not None and self._events.available:
             # 先切到新会话再删：在途请求的 append 落到新会话，不会复活已删的旧会话
@@ -358,9 +378,9 @@ class BrainMixin:
 
     def get_multi_turn_messages(self, max_entries: int = 10, skip_last: int = 0,
                                 token_budget: int = 0) -> List[dict]:
-        """从事件日志投影出多轮消息；无持久化时退回内存快照。"""
+        """从事件日志投影出多轮消息；没有事件日志时返回空列表。"""
         if self._events is None or not self._events.available:
-            return self._legacy_multi_turn_messages(max_entries, skip_last, token_budget)
+            return []
 
         now = time.time()
         stats: dict = {}
@@ -383,87 +403,8 @@ class BrainMixin:
             f"[BrainMixin] project session={self._events.current_session_id()[:8]} "
             f"profile={profile.name} messages={len(messages)} "
             f"dropped={stats.get('dropped_groups', 0)} orphan={stats.get('orphan_groups', 0)} "
-            f"sanitized={stats.get('sanitized_lines', 0)} "
             f"elapsed={int((time.perf_counter() - started) * 1000)}ms")
         return messages
-
-    def _legacy_multi_turn_messages(self, max_entries: int = 10, skip_last: int = 0,
-                                    token_budget: int = 0) -> List[dict]:
-        """内存快照路径，仅用于未启用持久化的调试与测试。"""
-        with self._ctx_lock:
-            if not self._context:
-                return []
-
-            end = -skip_last if skip_last > 0 else len(self._context)
-            available = self._context[:end]
-            if not available:
-                return []
-
-            # 1. 保持时间正序
-            selected = sorted(available, key=lambda e: e.timestamp)
-
-            # 2. 条数淘汰：优先淘汰最旧的普通对话
-            if len(selected) > max_entries:
-                need_drop = len(selected) - max_entries
-                dropped = set()
-
-                # 优先按时间从旧到新淘汰普通对话
-                normal = [(i, e) for i, e in enumerate(selected) if not e.is_summary and e.role != "system"]
-                normal.sort(key=lambda x: x[1].timestamp)
-                for i, _ in normal[:need_drop]:
-                    dropped.add(i)
-                    need_drop -= 1
-
-                # 如果普通对话都淘汰完了还是超限，再按分数淘汰摘要和系统消息（低分优先）
-                if need_drop > 0:
-                    score_candidates = [(i, e) for i, e in enumerate(selected) if i not in dropped and (e.is_summary or e.role == "system")]
-                    score_candidates.sort(key=lambda x: self._score_entry(x[1]))
-                    for i, _ in score_candidates[:need_drop]:
-                        dropped.add(i)
-
-                selected = [e for i, e in enumerate(selected) if i not in dropped]
-                logger.debug(f"[BrainMixin] count eviction: dropped {len(available) - len(selected)}, kept {len(selected)}")
-
-            # 3. Token 预算淘汰：优先丢弃最旧的普通对话，不够再丢摘要/system
-            before_count = len(selected)
-            if token_budget > 0 and selected:
-                total_tokens = sum(self._estimate_tokens(e.content) for e in selected)
-                
-                # 先遍历弹出最旧的普通对话
-                idx = 0
-                while total_tokens > token_budget and len(selected) > 1 and idx < len(selected):
-                    e = selected[idx]
-                    if not e.is_summary and e.role != "system":
-                        total_tokens -= self._estimate_tokens(e.content)
-                        selected.pop(idx)
-                    else:
-                        idx += 1
-                
-                # 如果还是超，再按时间从旧到新强制弹出（包含摘要和 system）
-                while total_tokens > token_budget and len(selected) > 1:
-                    removed = selected.pop(0)
-                    total_tokens -= self._estimate_tokens(removed.content)
-
-                if len(selected) < before_count:
-                    logger.debug(f"[BrainMixin] token budget ({token_budget}) truncated {before_count}→{len(selected)} entries")
-
-            # 4. 构建消息：保持时间顺序，system/摘要/对话各归其位
-            messages = []
-            for e in selected:
-                time_str = self.format_context_time(e.timestamp)
-                prefix = f"[{time_str}] " if time_str else ""
-                content_with_time = prefix + e.content
-
-                if e.is_summary:
-                    messages.append({"role": "system", "content": content_with_time})
-                elif e.role == "system":
-                    messages.append({"role": "system", "content": content_with_time})
-                else:
-                    messages.append({"role": e.role, "content": content_with_time})
-
-            return messages
-
-
 
     @staticmethod
     def format_context_time(timestamp: float) -> str:
@@ -480,20 +421,9 @@ class BrainMixin:
         else:
             return ref.strftime("%m-%d %H:%M")
 
-    @staticmethod
-    def _estimate_tokens(text: str) -> int:
-        """token 估算"""
-        chinese_chars = len(re.findall(r'[\u4e00-\u9fff]', text))
-        other_chars = len(text) - chinese_chars
-        # 中文约1.5 token/字，英文约0.25 token/字符
-        return max(1, int(chinese_chars * 1.5 + other_chars * 0.25))
-
     def _score_entry(self, entry: ContextEntry) -> float:
         """对单条上下文打分"""
         role_score = float(self._ROLE_WEIGHTS.get(entry.role, 1))
-        # 工具调用时效性短，大幅降权，避免挤占 token 预算
-        if entry.content.startswith("[工具调用]"):
-            role_score *= 0.1
         age = time.time() - entry.timestamp
         half_life = config.CONTEXT_HALF_LIFE_S
         time_score = 2.0 * (0.5 ** (age / half_life))
@@ -516,30 +446,20 @@ class BrainMixin:
         return len(sa & sb) / len(sa | sb)
 
     def _evict_context(self):
-        """超过上限时淘汰。工具调用独立配额，避免挤占正常对话空间。"""
+        """超过上限时按分数保留摘要、按时间保留对话，被淘汰的进摘要队列。"""
         summaries = [e for e in self._context if e.is_summary]
-        ordinary = [e for e in self._context if not e.is_summary]
+        chats = [e for e in self._context if not e.is_summary]
 
         summaries.sort(key=self._score_entry, reverse=True)
         summaries = summaries[:self._MAX_HISTORY_SUMMARIES]
 
-        # 工具调用按时间抛弃：超过半衰期（默认 30min）直接丢弃
-        _now = time.time()
-        _max_age = config.CONTEXT_HALF_LIFE_S
-        tool_calls = [
-            e for e in ordinary
-            if e.content.startswith("[工具调用]") and _now - e.timestamp < _max_age
-        ]
-        normal_chats = [e for e in ordinary if not e.content.startswith("[工具调用]")]
-
-        # 正常聊天的空间 = 总空间 - 摘要空间 - 工具调用空间
         # clamp 到 0：预留席位超限时普通对话要全部进摘要队列，
         # 否则负数切片会按"从倒数第 N 个开始"的语义误保留一批
-        base_limit = max(0, self._MAX_ENTRIES - len(summaries) - len(tool_calls))
+        base_limit = max(0, self._MAX_ENTRIES - len(summaries))
         soft_limit = base_limit + self._EVICT_BATCH_SIZE
-        if len(normal_chats) > soft_limit:
-            normal_chats.sort(key=lambda e: e.timestamp, reverse=True)
-            evicted = normal_chats[base_limit:]
+        if len(chats) > soft_limit:
+            chats.sort(key=lambda e: e.timestamp, reverse=True)
+            evicted = chats[base_limit:]
             if evicted:
                 self._pending_summary_queue.extend(
                     (e.seq, e.seq, f"[{e.role}] {e.content}") for e in evicted)
@@ -547,9 +467,9 @@ class BrainMixin:
                     self._pending_summary_queue = self._pending_summary_queue[-self._MAX_PENDING_QUEUE:]
                 logger.info(f"[BrainMixin] evicted {len(evicted)}, queued for summarization")
 
-            normal_chats = normal_chats[:base_limit]
+            chats = chats[:base_limit]
 
-        self._context = sorted(summaries + tool_calls + normal_chats, key=lambda e: e.timestamp)
+        self._context = sorted(summaries + chats, key=lambda e: e.timestamp)
 
     def drain_pending_summaries(self) -> tuple[list[str], Optional[tuple]]:
         """取出待摘要文本与覆盖区间；区间由调用方随摘要一起写回。"""

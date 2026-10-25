@@ -17,10 +17,10 @@ logger = logging.getLogger(__name__)
 class ToolMethod:
     name: str
     description: str
+    output: "ToolOutputDefinition"  # 输出契约，注册时必须声明
     args: dict = field(default_factory=dict)
     handler: Callable = None
     timeout: float = 30.0
-    output: Optional["ToolOutputDefinition"] = None  # 输出契约，None 表示走旧渲染
 
 
 @dataclass
@@ -58,7 +58,7 @@ GAME_OUTPUT = {
     "required": ["headline"],
     "properties": {
         "headline": _HEADLINE,
-        "agent_hint": {"type": "string", "x-role": "hint",
+        "hint": {"type": "string", "x-role": "hint",
                        "description": "下一步该传什么参数"},
         "ended": {"type": "boolean", "x-role": "data",
                   "description": "本局是否结束"},
@@ -75,7 +75,7 @@ SEARCH_OUTPUT = {
     "properties": {
         "headline": _HEADLINE,
         "body": {"type": "string", "x-role": "body", "description": "命中的工具与方法清单"},
-        "agent_hint": {"type": "string", "x-role": "hint",
+        "hint": {"type": "string", "x-role": "hint",
                        "description": "下一步该直接调用哪个函数"},
         "groups": {"type": "array", "x-role": "suppress",
                    "description": "命中的工具分组，供行为层激活"},
@@ -146,13 +146,16 @@ class ToolRegistry:
 
     def add_method(self, tool_name: str, method_name: str,
                    description: str, handler: Callable, args: dict = None,
-                   timeout: float = None, output: "ToolOutputDefinition | None" = None):
+                   timeout: float = None, *,
+                   output: "ToolOutputDefinition"):
+        """注册方法；output 必填，缺失直接报错。"""
+        if output is None:
+            raise ValueError(f"{tool_name}__{method_name} 必须声明 output")
         tool = self._tools[tool_name]
         tool.methods[method_name] = ToolMethod(
-            name=method_name, description=description,
+            name=method_name, description=description, output=output,
             args=args or {}, handler=handler,
             timeout=timeout if timeout is not None else 30.0,
-            output=output,
         )
 
     def add_menu_action(self, tool_name: str, label: str,
@@ -643,24 +646,41 @@ class ToolRegistry:
         kw = (keyword or "").strip()
         phrase = _search_normalize(kw)
         terms = _search_terms(kw)
-        tools = [tool for tool in self.enabled_tools if tool.group != "default"]
-        texts = {tool.name: _tool_search_text(tool) for tool in tools}
+        candidates = [tool for tool in self._tools.values() if tool.group != "default"]
+        tools = [tool for tool in candidates if self.is_enabled(tool.name)]
+        texts = {tool.name: _tool_search_text(tool) for tool in candidates}
+
+        def _hits(tool) -> bool:
+            return bool(phrase and phrase in texts[tool.name])
+
+        def _partial(tool) -> bool:
+            return any(term in texts[tool.name] for term in terms)
 
         matched = [
             tool for tool in tools
-            if not kw
-            or (phrase and phrase in texts[tool.name])
-            or (terms and all(term in texts[tool.name] for term in terms))
+            if not kw or _hits(tool) or (terms and all(term in texts[tool.name] for term in terms))
         ]
         if kw and not matched:
             # 未命中全部关键词时退回命中任一关键词
-            matched = [tool for tool in tools
-                       if any(term in texts[tool.name] for term in terms)]
+            matched = [tool for tool in tools if _partial(tool)]
 
         hint = None
         brief = None
         catalog = None
         if kw and not matched:
+            closed = [tool for tool in candidates
+                      if not self.is_enabled(tool.name) and (_hits(tool) or _partial(tool))]
+            if closed:
+                shown = closed[:3]
+                names = "、".join(tool.name for tool in shown)
+                return {
+                    "headline": f"「{keyword}」匹配到已关闭的工具：{names}",
+                    "body": self._format_entries(
+                        [self._tool_search_entry(tool) for tool in shown]),
+                    "hint": (f"「{keyword}」对应的工具 {names} 当前被关闭，"
+                                   f"需要提示用户开启。"),
+                    "groups": [],
+                }
             # 未命中：回全量分组清单（只有名称与描述），让模型换个词再搜
             catalog = self._group_catalog(tools)
             hint = (f"没有工具匹配「{keyword}」。下面按分组列出全部工具，"
@@ -683,7 +703,7 @@ class ToolRegistry:
             "body": (self._format_catalog(catalog) if catalog
                      else self._format_entries(
                          [self._tool_search_entry(tool) for tool in matched])),
-            "agent_hint": hint or "",
+            "hint": hint or "",
             "groups": sorted({tool.group for tool in matched if tool.group != "default"}),
         }
 

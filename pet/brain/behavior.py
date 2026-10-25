@@ -571,6 +571,7 @@ class Behavior(BrainMixin):
         output = retry_if_incomplete(pipeline, tag, on_missing=_on_missing)
         if not output.actions:
             output.actions = [ActionStep("sit", kwargs={"duration": 5})]
+            output.action_fallback = True
         return output
 
     def _discard_stream_before_repair(self):
@@ -677,11 +678,8 @@ class _BehaviorToolSession:
     def end_aside(self):
         TOOL_CTX.pop_model_aside_pending()
 
-    def add_context(self, role: str, content: str, is_summary: bool = False):
-        self._behavior.add_context(role=role, content=content, is_summary=is_summary)
-
     def record_tool_events(self, group_id: str, calls: list, results: list, asides=None):
-        return self._behavior.record_tool_events(group_id, calls, results, asides)
+        self._behavior.record_tool_events(group_id, calls, results, asides)
 
     def executor(self):
         return ToolExecutor()

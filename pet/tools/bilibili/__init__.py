@@ -15,7 +15,8 @@ from pet.tools.output import IMAGES_SCHEMA, ToolOutputDefinition
 logger = logging.getLogger(__name__)
 
 TOOL_NAME = "bilibili"
-TOOL_DESCRIPTION = "B 站：按关键词、BV号刷视频、读字幕，点赞、投币、评论、私信"
+TOOL_DESCRIPTION = ("B 站：按关键词、BV号刷视频、读字幕，点赞、投币、评论、私信；"
+                   "拿到 BV 号时用 browse 的 bvid 参数，不要附带关键词")
 TOOL_GROUP = "info"
 
 BRIEF_OUTPUT = {
@@ -38,6 +39,7 @@ BROWSE_OUTPUT = {
                  "description": "每部：标题、网址、字幕全文"},
         "images": IMAGES_SCHEMA,
         "data": {"type": "object", "x-role": "data", "description": "略过与统计"},
+        "hint": {"type": "string", "x-role": "hint", "description": "下一步提示"},
     },
 }
 
@@ -51,36 +53,44 @@ def _show_panel():
     show_panel()
 
 
-def _browse(keyword: str = "", **_):
+def _browse(keyword: str = "", bvid: str = "", **_):
     if _storage is None:
-        return {"error": "B 站工具未初始化", "code": "not_ready"}
-    return duty.run_round(_storage, keyword=(keyword or "").strip())
+        return duty.with_hint({"error": "B 站工具未初始化", "code": "not_ready"})
+    bv = (bvid or "").strip()
+    kw = (keyword or "").strip()
+    if bv and not duty.is_bvid(bv):
+        return duty.with_hint({"error": f"bvid 不是合法的 BV 号：{bv}",
+                               "code": "invalid_bvid"})
+    result = duty.run_round(_storage, keyword=bv or kw)
+    if bv and kw and result.get("headline"):
+        result["hint"] = "本轮按 bvid 取视频，keyword 未使用。"
+    return duty.with_hint(result)
 
 
 def _status(**_):
     if _storage is None:
-        return {"error": "B 站工具未初始化", "code": "not_ready"}
-    return duty.status(_storage)
+        return duty.with_hint({"error": "B 站工具未初始化", "code": "not_ready"})
+    return duty.with_hint(duty.status(_storage))
 
 
 def _like(bvid: str, **_):
-    return duty.write_action(_storage, "like", bvid=bvid)
+    return duty.with_hint(duty.write_action(_storage, "like", bvid=bvid))
 
 
 def _coin(bvid: str, **_):
-    return duty.write_action(_storage, "coin", bvid=bvid)
+    return duty.with_hint(duty.write_action(_storage, "coin", bvid=bvid))
 
 
 def _comment(bvid: str, text: str, **_):
-    return duty.write_action(_storage, "comment", bvid=bvid, text=text)
+    return duty.with_hint(duty.write_action(_storage, "comment", bvid=bvid, text=text))
 
 
 def _dm(text: str, **_):
-    return duty.write_action(_storage, "dm", text=text)
+    return duty.with_hint(duty.write_action(_storage, "dm", text=text))
 
 
 def _verify(limit: int = 10, **_):
-    return duty.verify(_storage, limit=limit)
+    return duty.with_hint(duty.verify(_storage, limit=limit))
 
 
 def register(registry):
@@ -90,19 +100,27 @@ def register(registry):
     except Exception as exc:
         logger.error(f"[bili] 初始化失败：{exc}")
         return
+    try:
+        _storage.prune()
+    except Exception as exc:
+        logger.warning(f"[bili] 清理过期记录失败：{exc}")
 
     registry.register(TOOL_NAME, TOOL_DESCRIPTION, group=TOOL_GROUP, side_effect=True)
 
     registry.add_method(
         TOOL_NAME, "browse",
         "刷一轮 B 站：按关键词搜最近几天的视频，随机取几部连同字幕交给你。"
-        "没有字幕的视频照常返回，靠标题、简介与封面判断。"
+        "拿到 BV 号时传 bvid，直接取该视频，不用附带关键词。"
+        "靠字幕（若有）、标题、简介与封面判断。"
         "只读，不自动点赞、投币或评论；要不要互动由随后调用 like / coin / comment 决定。"
         "传关键词前可先用 status 查看关注列表。",
         handler=_browse,
         args={
+            "bvid": {"type": "str", "required": False, "default": "",
+                     "desc": "视频 BV 号；给了就只取该视频，与 keyword 二选一"},
             "keyword": {"type": "str", "required": False, "default": "",
-                        "desc": "一个或多个关键词，逗号分隔，最多 3 个；留空时从关注列表随机选一个"},
+                        "desc": "关键词或 BV 号；多个关键词用逗号分隔，最多 3 个。"
+                                "只传 BV 时直接取该视频，不要附带关键词；留空时从关注列表随机选一个"},
         },
         timeout=300.0,
         output=ToolOutputDefinition(schema=BROWSE_OUTPUT),
@@ -136,7 +154,8 @@ def register(registry):
 
     registry.add_method(
         TOOL_NAME, "comment",
-        "在最近一轮刷到的某个视频下留一条评论。内容会经过长度、链接、隐私与重复检查，"
+        "在最近一轮刷到的某个视频下留一条评论。该视频有未回复的 @ 时，"
+        "评论会挂在那条 @ 评论下并自动带上 @昵称。内容会经过长度、链接、隐私与重复检查，"
         "被拦下时不发送。",
         handler=_comment,
         args={

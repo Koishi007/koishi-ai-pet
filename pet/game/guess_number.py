@@ -45,7 +45,7 @@ class GuessNumberGame(Game):
         if not isinstance(number, int) or not (self.RANGE_MIN <= number <= self.RANGE_MAX):
             return {
                 "headline": f"没有收到 {self.RANGE_MIN}-{self.RANGE_MAX} 之间的整数 guess",
-                "agent_hint": f"请传 {self.RANGE_MIN}-{self.RANGE_MAX} 之间的整数 guess 重新调用 game__play。",
+                "hint": f"请传 {self.RANGE_MIN}-{self.RANGE_MAX} 之间的整数 guess 重新调用 game__play。",
                 "ended": False,
             }
         state["guesses"] += 1

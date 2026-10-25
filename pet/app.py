@@ -181,22 +181,7 @@ def main():
     for _lib in ("httpx", "httpcore", "openai", "urllib3"):
         logging.getLogger(_lib).setLevel(logging.WARNING)
 
-    # 单实例限制：架构不支持多开，已被占用时提示并退出
-    _guard = SingleInstanceGuard()
-    if not _guard.try_acquire():
-        if _guard.is_locked_by_other():
-            _warn_already_running()
-            sys.exit(1)
-        # 锁机制不可用（权限/未知错误）：放行并告警，避免误伤
-        logger.warning("[Main] 无法建立单实例锁(%s)，本次启动不受单实例限制", _guard.error())
-    else:
-        # 正常退出由 aboutToQuit 释放；此处兜底覆盖初始化中途异常等场景
-        atexit.register(_guard.release)
-
-    # 应用上次更新遗留的 update.bat.new / update.sh.new
-    apply_pending_update_scripts()
-
-    # 文件日志：按天切分，保留 3 天
+    # 文件日志：按天切分，保留 3 天；先于单实例检查，锁告警才能落盘
     _log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
     os.makedirs(_log_dir, exist_ok=True)
     _file_handler = TimedRotatingFileHandler(
@@ -212,6 +197,21 @@ def main():
     ))
     _file_handler.setLevel(getattr(logging, config.LOG_LEVEL, logging.INFO))
     logging.getLogger().addHandler(_file_handler)
+
+    # 单实例限制：架构不支持多开，已被占用时提示并退出
+    _guard = SingleInstanceGuard()
+    if not _guard.try_acquire():
+        if _guard.is_locked_by_other():
+            _warn_already_running()
+            sys.exit(1)
+        # 锁机制不可用（权限/未知错误）：放行并告警，避免误伤
+        logger.warning("[Main] 无法建立单实例锁(%s)，本次启动不受单实例限制", _guard.error())
+    else:
+        # 正常退出由 aboutToQuit 释放；此处兜底覆盖初始化中途异常等场景
+        atexit.register(_guard.release)
+
+    # 应用上次更新遗留的 update.bat.new / update.sh.new
+    apply_pending_update_scripts()
 
     # GUI 日志桥接 (INFO 级)
     _log_relay = LogRelay()

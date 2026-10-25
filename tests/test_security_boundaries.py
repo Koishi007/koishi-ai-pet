@@ -123,13 +123,13 @@ class TestReadFile:
         result = FileOpsTool().read_file(str(target), max_chars=20, offset=0)
         assert result["body"] == "甲" * 20
         assert result["headline"]
-        assert "offset=20" in result["agent_hint"]
+        assert "offset=20" in result["hint"]
 
     def test_last_page_has_no_next(self, sandbox):
         target = sandbox / "短文.txt"
         target.write_text("乙" * 10, encoding="utf-8")
         result = FileOpsTool().read_file(str(target), max_chars=100, offset=0)
-        assert result["agent_hint"] == ""
+        assert result["hint"] == ""
 
     def test_illegal_path_raises_permission_error(self, sandbox):
         # read_file 不做兜底，由执行器统一转为错误结果

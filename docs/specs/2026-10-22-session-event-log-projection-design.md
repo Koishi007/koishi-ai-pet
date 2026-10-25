@@ -106,8 +106,8 @@ CREATE TABLE IF NOT EXISTS session_artifacts (
 | type | payload | 参与投影 | 说明 |
 |---|---|---|---|
 | `user_msg` | `{text}` | 是 | 用户消息 |
-| `assistant_turn` | `{text, kind?, turn_id?}` | 是 | 一次**有效**的模型响应；`text` 即该次响应的内容；`kind` 取 `speech`（台词）/ `summary`（本轮摘要），缺省按纯文本渲染；`turn_id` 标识同一回合 |
-| `assistant_speech` | `{text}` | 条件 | 工具 `arguments.aside` 产生的台词；与 `assistant_turn.text` 不同时才单独记 |
+| `assistant_turn` | `{v, text?, summary?, emotion?, speech_parts?, actions?, memory?, mood?, vitals?}` | 是 | 一次**有效**模型响应的结构化记录；`v=1` 时 `text` 为原文（≤4KB，仅审计），投影只用其余字段 |
+| `assistant_speech` | `{text}` | 条件 | 工具 `arguments.aside` 产生的台词；投影时并入组内 assistant `content` |
 | `tool_call` | `{name, args_digest, side_effect}` | 是 | 一次工具调用；不含原始参数；`side_effect` 由工具注册表声明 |
 | `tool_result` | `{ok, brief, artifact_id?}` | 是 | 结果摘要；大结果落 artifacts |
 | `failed_turn` | `{text, finish_reason, tag, reason}` | 否 | 解析失败的一次响应；只审计，不进入任何视图 |
@@ -119,12 +119,13 @@ CREATE TABLE IF NOT EXISTS session_artifacts (
 
 1. 只 `INSERT`；不提供 UPDATE / DELETE 接口。
 2. 修正用补偿事件：结果被复核推翻时追加新的 `tool_result`，`refs.supersedes` 指向旧 seq。
-3. **时序**：模型响应到达时，先写 `assistant_turn` 与该轮全部 `tool_call`（同一 `group_id`）；工具执行完成后，再逐条写 `tool_result`（`refs.parent_seq` 指向对应 `tool_call`）。`assistant_turn` 与 `tool_call` 同属一次响应，投影时合并为一条 assistant 消息。
-4. `assistant_speech` 只在 `arguments.aside` 与响应 `content` 不同时写入，避免同轮重复。
+3. **时序**：最终响应由产出方写一条结构化 `assistant_turn`（`v=1`）；工具轮只写 `tool_call` 与执行后的 `tool_result`（同一 `group_id`），中间响应的 Summary / Speech 与最终输出重复，不入日志。
+4. `assistant_speech` 记录工具 `arguments.aside` 产生的台词，投影时并入组内 assistant `content`。
 5. `args_digest` 只保留参数要点，单条上限 120 字符；禁止写入完整 JSON。
 6. `tool_result.brief` 必须是人类可读短句；原文超过 `ARTIFACT_INLINE_LIMIT`（默认 2048 字符）才落 `session_artifacts`，否则只存 brief，不建 artifact。
 7. `summary.covers` 允许相邻，不允许重叠；重叠视为对旧 summary 的 supersede。
 8. 解析失败的响应写 `failed_turn`，**不写** `assistant_turn`，因此不会进入下一轮视图。
+9. `assistant_turn` 的结构化字段在落库前按白名单校验：`emotion` 只保留协议列出的名字，`actions` 名字必须在动作表里，`mood` / `vitals` 只保留白名单键与数值；非法值丢弃，原文保留在 `text` 审计副本。
 
 ### §3.4 不变量
 
@@ -155,7 +156,7 @@ def project(events: list[Event], profile: Profile, budget: Budget) -> list[dict]
 时间相关规则：
 
 - **相对时间由事件 `ts` 与 `Budget.now` 共同决定**：`刚刚` / `N 分钟前` / `N 小时前` / `昨天 22:10`。重放要固定 `now`，同一份事件在不同 `now` 下渲染不同。
-- 时间只出现在 `user_msg` / `system_note` / `summary` 与 `Summary:` 行上；`Speech:` 行不带时间，模型照抄历史行也不会把时间念出来。模型自造的绝对时间标签（如 `〔11:18〕`）按时间样式剥掉，不进入历史。
+- 时间只出现在 `user_msg` / `system_note` / `summary` 上；`assistant_turn` 渲染出的字段行与 `Speech:` 行不带时间，模型照抄历史行也不会把时间念出来。模型自造的绝对时间标签（如 `〔11:18〕`）按时间样式剥掉，不进入历史。
 - `evict_before_ts` 只用于**读取前过滤**，不进入投影器内部的判断。
 - 缓存键：`(session_id, last_seq, profile.name, max_entries, max_tokens, evict_before_ts, now)`；两处时间都按分钟取整，跨过分钟或半衰期边界才失效。
 
@@ -194,8 +195,7 @@ def project(events: list[Event], profile: Profile, budget: Budget) -> list[dict]
 4. 跳过落在有效 `summary.covers` 区间内的事件；`snapshot` 优先于 `summary`。
 5. 事件 → 逻辑消息：
    - `user_msg` / `system_note` / `summary` 渲染成 `[相对时间] 正文`；
-   - `assistant_turn` 按 `payload.kind` 渲染：`speech` → `Speech: 正文`，`summary` → `Summary: 〔相对时间〕正文`，缺省 → `[相对时间] 正文`；
-   - 同一 `payload.turn_id` 的多条 `assistant_turn` 合并成一条 assistant 消息（Summary 在前、Speech 在后），让历史呈现完整回合而不是两行孤立消息；
+   - `assistant_turn` 按字段渲染：Summary → Emotion → Speech → Action → Memory → Mood → Vitals，顺序固定、不加时间标签；
    - `assistant_speech` 渲染成 `Speech: 正文`；
    - `tool_call` + `tool_result` 按 `group_id` 聚合为 `ToolExchange`；
    - `failed_turn` 直接丢弃。
@@ -203,11 +203,9 @@ def project(events: list[Event], profile: Profile, budget: Budget) -> list[dict]
 7. 预算裁剪（§4.4），以组为原子单位。
 8. 输出逻辑消息列表，**不做 system 合并**。合并由 `context_builder` 在组装阶段完成（§4.6）。
 
-`assistant_turn.text` 在步骤 5 做条件清洗（§4.7），原文保留在事件里。
-
 ### §4.4 裁剪规则
 
-- 原子组：`assistant_turn` + 同组 `tool_call` / `tool_result` 视为一组，不可拆。
+- 原子组：同组 `tool_call` / `tool_result` 视为一组，不可拆。
 - 超 `max_entries` 或 `max_tokens` 时，从最旧的组开始整组丢弃。
 - 工具组另受半衰期约束：早于 `evict_before_ts` 的组在读取阶段就被过滤，不进入投影。
 - `summary` 不参与 token 裁剪，只受 `max_summaries` 约束；`max_summaries` 默认取 `max(2, int(max_entries * 0.2))`，且摘要**不占用** `max_entries` 配额。
@@ -295,16 +293,10 @@ for group in groups(按首个 seq 升序):
 - system 合并仍在 `_merge_system_history`（组装阶段），投影器只负责产出独立的 system 消息。
 - 组装顺序固定：主 prompt → `[上下文备注]`（含 system_note / summary / `system-note` 档的工具记录）→ 对话消息 → 本轮 user 消息。
 
-### §4.7 assistant 文本的伪调用清洗
+### §4.7 assistant 文本不做改写
 
-投影阶段对 `assistant_turn.text` 做条件清洗，事件原文不动：
-
-- 触发行：行首匹配 `[工具调用]` 或 `[已执行]`，**且**该行同时包含 `→`、`{`、或 `\w+__\w+` 形态的工具名。
-- 命中后整行替换为 `[已省略]`，其余行保留。
-- 命中次数写入投影日志（`sanitized_lines`），用于观测复发率。
-- 清洗规则可配置关闭；关闭时只计数不改写。
-
-这样既避免失败格式自我强化，又不会误伤"用户正在讨论工具调用"这类正常文本。
+assistant 行只来自结构化字段，按协议顺序逐字渲染；投影不对正文做清洗或加前缀。
+未带标签的散文与伪调用行不进字段，只留在事件的 `text` 审计副本里。
 
 ### §4.8 传输编码层
 
@@ -343,12 +335,11 @@ class MessageEncoder(Protocol):
 
 | 时机 | 事件 | 内容 |
 |---|---|---|
-| 模型响应到达 | `assistant_turn` | `content`（可为空）；`group_id=G` |
-| 模型响应到达 | `tool_call` × N | `name`、`args_digest`、`refs.tool_call_id`；`group_id=G` |
-| 模型响应到达 | `assistant_speech` | 仅当 `arguments.aside` 与 `content` 不同 |
+| 工具轮响应 | `tool_call` × N | `name`、`args_digest`、`refs.tool_call_id`；`group_id=G` |
+| 工具轮响应 | `assistant_speech` | 工具 `arguments.aside` 产生的台词；`group_id=G` |
 | 工具执行完成 | `tool_result` × N | `ok`、`brief`、`artifact_id`；`group_id=G`、`refs.parent_seq` 指向对应 call |
 | 解析失败 | `failed_turn` | 原文、`finish_reason`、tag；不参与投影 |
-| 下一轮响应 | 新的 `assistant_turn` | 新的 `group_id` |
+| 最终响应 | `assistant_turn` | 结构化字段（`v=1`）与原文；不带 `group_id` |
 
 `aside` 不拼进工具记录，也不带 `（自言自语：` 标签。
 
@@ -356,8 +347,8 @@ class MessageEncoder(Protocol):
 
 `args_digest` 生成规则：
 
-- 只看顶层标量字段，最多 3 个，形如 `bvid=BV1aPJR6oExx, keyword=小狗`。
-- 字符串截断 40 字符，嵌套对象只写 `{…}`。
+- 只看顶层标量字段，最多 3 个，形如 `bvid="BV1aPJR6oExx", keyword="小狗"`。
+- 字符串与布尔值写成 JSON 字面量，`replay_args` 才能无歧义还原；字符串截断 40 字符，嵌套对象只写 `{…}`。
 - 空参数写 `-`。
 - 禁止写入完整 JSON。
 
@@ -449,7 +440,6 @@ tool 返回的 __context__
 | `messages` / `est_tokens` | 投影结果规模 |
 | `dropped_groups` | 因预算丢弃的组数 |
 | `orphan_groups` | 不完整组数量 |
-| `sanitized_lines` | 伪调用清洗命中行数 |
 | `elapsed_ms` | 投影耗时 |
 
 业务指标：
@@ -469,7 +459,6 @@ tool 返回的 __context__
 | 修复轮重跑工具循环 | 已执行工具被重复执行 | 依赖工具侧幂等（`claim_action`）；修复提示带上"上一轮已执行的操作" |
 | 事件增长 | 磁盘与查询变慢 | snapshot compaction；索引 `(session_id, seq)`、`(session_id, group_id)` |
 | artifact 增长 | 磁盘被长文本占满 | 2048 字符阈值、TTL、总体积上限、清理前引用扫描 |
-| 清洗误伤 | 正常文本被改写 | 条件清洗（行首+形态双条件）、可关闭、原文保留 |
 | 崩溃窗口 | `tool_call` 已写、`tool_result` 未写，副作用已发生 | `tool_call.side_effect` 标记；重启后只标记不重放（§5.3） |
 | 严格端点 | `native` 档 400 | 错误反馈降档（§10.1）、孤儿检测、id 稳定 |
 | 原生协议端点 | Anthropic / Gemini 无 `role="tool"` | 走 `user-note` 降档可保语义；真正的 wire 转换留给 §4.8 编码器，届时不改投影器 |
@@ -558,14 +547,13 @@ snapshot 一旦写入不可变，格式变更只能靠 `v` 迁移，因此：`su
 
 ## §11 落地记录
 
-模块：`pet/brain/events.py`（EventStore）、`pet/brain/projection.py`（project / Budget / Profile）、`pet/brain/tool_channel.py`（通道选择与降档）。接入点：`BrainMixin.add_context` 写事件、`get_multi_turn_messages` 走投影、`record_tool_events` 写工具组、`llm_gateway` 在拒绝时降档。
+模块：`pet/brain/events.py`（EventStore）、`pet/brain/projection.py`（project / Budget / Profile）、`pet/brain/tool_channel.py`（通道选择与降档）。接入点：`BrainMixin.add_assistant_turn` 写结构化响应、`add_context` 写其余事件、`get_multi_turn_messages` 走投影、`record_tool_events` 写工具组、`llm_gateway` 在拒绝时降档。
 
 与上文不同的实现取舍：
 
 | 项 | 实现 | 原因 |
 |---|---|---|
-| `assistant_turn` 时机 | 结果产出方写一次；工具轮不写中间正文 | 中间轮 `content` 是格式原文，进历史会自我强化，且与最终 `speech` 重复 |
-| 无事件能力时 | 退回 `[工具调用]` 文本与内存裁剪 | 测试替身与未启用持久化的调试场景；生产恒走事件路径 |
+| `assistant_turn` 时机 | 结果产出方写一条结构化事件（`v=1`），`text` 只作审计 | 投影按字段还原，历史与模型输出在字段层面一致；工具轮中间正文与最终输出重复，不入日志 |
 | 降档方式 | `degrade_messages` 改写本次请求体 | 重投影需要回传原始事件与 Profile，代价高于就地改写；缓存保证下一次投影直接是低档 |
 | `assistant_speech` | 与 `tool_call` 同组，投影时并入 assistant `content` | 满足"紧随 tool 消息"的顺序约束 |
 | `side_effect` | 由 `ToolDef` 声明，未注册工具按有副作用处理 | 崩溃窗口只关心"是否动过外部世界"；未知即保守 |

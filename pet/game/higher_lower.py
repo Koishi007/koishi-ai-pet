@@ -116,7 +116,7 @@ class HigherLowerGame(Game):
         if choice not in CHOICES:
             return {
                 "headline": f"无效押注 {choice!r}",
-                "agent_hint": "请用 higher/lower 重新押注。",
+                "hint": "请用 higher/lower 重新押注。",
                 "ended": False,
                 "hl_choice": choice,
                 "base": base,
@@ -128,7 +128,7 @@ class HigherLowerGame(Game):
             other = "lower" if choice == "higher" else "higher"
             return {
                 "headline": f"基准 {base} 没有比它{_CN[choice]}的牌",
-                "agent_hint": f"请改押{_CN[other]}。",
+                "hint": f"请改押{_CN[other]}。",
                 "ended": False,
                 "hl_choice": choice,
                 "base": base,
@@ -165,7 +165,7 @@ class HigherLowerGame(Game):
             # 防御：面板只提交可选边，异常值不消耗回合
             return {
                 "headline": f"用户押注 {user_choice!r} 无效",
-                "agent_hint": "请重新调用 game__play 等待用户下注。",
+                "hint": "请重新调用 game__play 等待用户下注。",
                 "ended": False,
                 "hl_choice": choice,
                 "base": base,

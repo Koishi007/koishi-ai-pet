@@ -83,12 +83,12 @@ def _started_base():
 
 
 def test_running_round_hint(ctx):
-    """未结束的回合在 agent_hint 里给参数提示，headline 保持一行事实。"""
+    """未结束的回合在 hint 里给参数提示，headline 保持一行事实。"""
     base, _ = _started_base()
 
     result = base.play("tic_tac_toe")
 
-    assert "ttt_move" in result["agent_hint"]
+    assert "ttt_move" in result["hint"]
     assert len(result["headline"].splitlines()) == 1
 
 
@@ -102,7 +102,7 @@ def test_ended_round_hint(ctx):
     result = base.play("tic_tac_toe", ttt_move="A3")
 
     assert result["ended"] and result["won"] is True
-    assert result["agent_hint"] is gamebase._MODEL_HINT_ENDED
+    assert result["hint"] is gamebase._MODEL_HINT_ENDED
 
 
 def test_tic_tac_toe_headline_excludes_board(ctx):
@@ -122,13 +122,13 @@ def test_tic_tac_toe_headline_excludes_board(ctx):
 
 
 def test_invalid_move_puts_instruction_in_hint(ctx):
-    """无效落子的纠正指令进 agent_hint，headline 只留事实。"""
+    """无效落子的纠正指令进 hint，headline 只留事实。"""
     base, _ = _started_base()
 
     result = base.play("tic_tac_toe", ttt_move="Z9")
 
     assert "A1~C3" not in result["headline"]
-    assert "A1~C3" in result["agent_hint"]
+    assert "A1~C3" in result["hint"]
 
 
 @pytest.mark.parametrize(

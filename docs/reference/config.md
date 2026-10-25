@@ -20,10 +20,6 @@
 | `OLLAMA_BASE_URL` | str | `"http://localhost:11434/v1"` |  | Ollama 服务地址 |
 | `LLM_KEY` | str | `""` |  | 首选 API Key |
 | `LLM_MODEL` | str | `""` |  | 首选 LLM 模型名称 |
-| `LLM_TIMEOUT` | float | 20 |  | LLM 请求超时(秒) |
-| `LLM_MAX_RETRIES` | int | 2 |  | LLM 最大重试次数 |
-| `LLM_RETRY_DELAY` | float | 1 |  | 重试延迟(秒) |
-| `LLM_RETRY_MAX_DELAY` | float | 4 |  | 最大重试延迟(秒) |
 | `LLM_TEMPERATURE` | float | 0.7 |  | LLM 采样温度 |
 | `LLM_TOOLS_ENABLED` | bool | true |  | 是否可使用工具 |
 | `LLM_TOOL_MAX_ROUNDS` | int | 30 |  | 工具调用最大轮次（二十问等长流程游戏需要 ≥22 轮）（≥10, ≤99） |
@@ -108,10 +104,9 @@
 | 键 | 类型 | 默认 | 高级 | 需重启 | 说明 |
 |---|---|---|---|---|---|
 | `ACTION_TIMEOUT_MS` | int | 90000 | 是 |  | 单个动作超时(毫秒) |
-| `ATTENTION_THRESHOLDS` | str_list | ["10", "20", "30"] |  |  | 连续未互动轮次阈值，达到后向桌宠注入求关注提示（如10/20/30轮） |
+| `ATTENTION_THRESHOLDS` | str_list | ["10", "20", "30"] | 是 |  | 连续未互动轮次阈值，达到后向桌宠注入求关注提示（如10/20/30轮） |
 | `BRAIN_STUCK_TIMEOUT` | int | 300 | 是 |  | 脑线程无进展超时(秒)：autonomous/interacting 状态下持续无输出、无工具进展超过该时长才判定挂死（进行中的游戏对局不计时） |
 | `CONTEXT_HALF_LIFE_S` | int | 1800 | 是 |  | 上下文评分半衰期(秒) |
-| `CONTEXT_PERSIST_ENABLED` | bool | true | 是 |  | 启用上下文持久化 |
 | `CONTEXT_TOKEN_BUDGET` | int | 8192 | 是 |  | 上下文token预算上限 |
 | `EDGE_DOCK_SNAP_PX` | int | 24 | 是 |  | 拖拽松手判定贴边的距离阈值(px) |
 | `FALL_DOWN_SECONDS` | float | 1.5 | 是 |  | 下落超过该秒数，落地先播放 fall_down 动作再恢复队列 |
@@ -124,23 +119,23 @@
 | `FILE_DROP_MAX_PIXELS` | int | 40000000 | 是 |  | draft 之后的像素上限，判据为大于等于 |
 | `FILE_DROP_READ_CONTENT` | bool | true | 是 |  | 读取文件内容开关，关闭后所有文件只传元信息 |
 | `FILE_DROP_TASTE_CHARS` | int | 300 | 是 |  | 尝一口路径的字符上限 |
-| `FOOD_ENABLED` | bool | true |  | 是 | 觅食总开关（桌宠自主生成食物并吃掉），修改后需重启生效 |
-| `FOOD_TTL_SECONDS` | int | 300 |  |  | 觅食食物存活秒数，超时未吃自动消失 |
+| `FOOD_ENABLED` | bool | true | 是 | 是 | 觅食总开关（桌宠自主生成食物并吃掉），修改后需重启生效 |
+| `FOOD_TTL_SECONDS` | int | 300 | 是 |  | 觅食食物存活秒数，超时未吃自动消失 |
 | `INTERACT_FED_PROMPT` | str | `""` | 是 |  | 喂食交互的自定义 prompt 模板 |
 | `INTERACT_FILE_REJECT_PROMPT` | str | `""` | 是 |  | 拒收台词的自定义 prompt 模板 |
 | `INTERACT_TAKE_A_BITE_PROMPT` | str | `""` | 是 |  | 尝一口交互的自定义 prompt 模板 |
-| `MOOD_AFFECTION_BASELINE` | float | 50.0 |  |  | 好感度回归基线，长期疏远会缓慢回落到此值 |
-| `MOOD_AFFECTION_DECAY_PER_TICK` | float | 0.2 |  |  | 好感度每 tick 回归速率(点/300秒) |
-| `MOOD_DECAY_ENABLED` | bool | true |  |  | 心理数值自然衰减总开关（愉悦/好感随时间回落） |
+| `MOOD_AFFECTION_BASELINE` | float | 50.0 | 是 |  | 好感度回归基线，长期疏远会缓慢回落到此值 |
+| `MOOD_AFFECTION_DECAY_PER_TICK` | float | 0.2 | 是 |  | 好感度每 tick 回归速率(点/600秒) |
+| `MOOD_DECAY_ENABLED` | bool | true | 是 |  | 心理数值自然衰减总开关（愉悦/好感随时间回落） |
 | `MOOD_GRACE_SECONDS` | int | 60 | 是 |  | 互动后免衰减秒数（防抖，避免刚被哄好又回落） |
-| `MOOD_JOY_BASELINE` | float | 50.0 |  |  | 愉悦度回归基线，长期不互动会缓慢回落到此值 |
-| `MOOD_JOY_DECAY_PER_TICK` | float | 2.0 |  |  | 愉悦度每 tick 回归速率(点/300秒) |
+| `MOOD_JOY_BASELINE` | float | 50.0 | 是 |  | 愉悦度回归基线，长期不互动会缓慢回落到此值 |
+| `MOOD_JOY_DECAY_PER_TICK` | float | 2.0 | 是 |  | 愉悦度每 tick 回归速率(点/600秒) |
 | `RECENT_EVENT_WINDOW_S` | int | 900 | 是 |  | 「最近发生了什么」事件保鲜窗口(秒)，超过后不再注入 |
 | `SCHEDULER_AUTO_START_FAST` | bool | true | 是 |  | 自动启动 fast_tick |
 | `SCHEDULER_AUTO_START_SLOW` | bool | true | 是 |  | 自动启动 slow_tick |
 | `SCHEDULER_FAST_MS` | int | 1000 | 是 |  | fast_tick 间隔(毫秒) |
 | `SCHEDULER_IDLE_TIMEOUT_MS` | int | 900000 | 是 |  | 空闲超时(毫秒)，超过后进入休眠 |
-| `SCHEDULER_SLOW_MS` | int | 300000 | 是 |  | slow_tick 间隔(毫秒) |
+| `SCHEDULER_SLOW_MS` | int | 600000 | 是 |  | slow_tick 间隔(毫秒) |
 | `UNCONSCIOUS_IDLE_SECONDS` | int | 60 | 是 |  | 连续待机秒数，超过后自动播放无意识化动作 |
 
 ### category = `connection`
@@ -148,8 +143,12 @@
 | 键 | 类型 | 默认 | 高级 | 需重启 | 说明 |
 |---|---|---|---|---|---|
 | `LLM_ACTION_MIN_DIVISOR` | int | 25 | 是 |  | 动作权重最小除数 |
-| `LLM_CREATE_TIMEOUT` | float | 30 |  |  | 建流超时(秒)：等待响应头超过该时长即放弃，避免服务端无响应时卡死 |
-| `LLM_STREAM_TIMEOUT` | float | 120 |  |  | 流式调用总超时(秒)，超过后降级到本地决策 |
+| `LLM_CREATE_TIMEOUT` | float | 30 | 是 |  | 建流超时(秒)：等待响应头超过该时长即放弃，避免服务端无响应时卡死 |
+| `LLM_MAX_RETRIES` | int | 2 | 是 |  | LLM 最大重试次数 |
+| `LLM_RETRY_DELAY` | float | 1 | 是 |  | 重试延迟(秒) |
+| `LLM_RETRY_MAX_DELAY` | float | 4 | 是 |  | 最大重试延迟(秒) |
+| `LLM_STREAM_TIMEOUT` | float | 120 | 是 |  | 流式调用总超时(秒)，超过后降级到本地决策 |
+| `LLM_TIMEOUT` | float | 20 | 是 |  | LLM 请求超时(秒) |
 | `LLM_TOOL_PARALLEL` | bool | true | 是 |  | LLM 工具并行调用 |
 | `LLM_TOOL_ROLE_MODE` | str | `"auto"` | 是 |  | 历史工具记录通道：auto 默认 native，端点明确拒绝时逐档降级（可选：auto / native / user-note / system-note / minimal） |
 | `LLM_TOOL_ROLE_OVERRIDE` | str | `""` | 是 |  | 按模型前缀强制指定工具通道，形如 qwen2.5=system-note,glm=user-note |
@@ -174,4 +173,4 @@
 - `hidden`：`true` 表示不在界面显示，只能直接编辑 `settings.json`
 - `enum` / `minimum` / `maximum`：取值约束，会写进 `settings-schema.json`
 
-共 111 项（其中 52 项未在界面列出）。
+共 110 项（其中 55 项未在界面列出）。

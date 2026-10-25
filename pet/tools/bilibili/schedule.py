@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -21,29 +22,20 @@ _ALARM_KEY = "bilibili_schedule"
 _MIN_INTERVAL = 10
 _BACKOFF_MAX = 60
 _DEFAULT_WINDOW = (9 * 60, 23 * 60)
+_MENTION_SCAN = 20  # 每次拉取的 @ 通知条数
 
+# 完整文案以 schedule.md 为准；文件读不出来时只保留工具发现与必做任务
 _FALLBACK_SCHEDULE = """# 到点了
 
 现在是你自己安排的一段时间，没有人在等你回话。
 
 B 站工具在 info 组里，默认不在你的工具列表里。要用之前先调用
-tool_search__search，关键词填 bilibili，等工具出现在列表里再调用。
+`tool_search__search`，关键词填 `bilibili`，等工具出现在列表里再调用。
 
-可用工具：
-- bilibili__browse：刷一轮，挑出想看的视频，返回里带 bvid
-- bilibili__like / bilibili__coin：给刚刷到的视频点赞或投币
-- bilibili__comment：在刚刷到的视频下留一条评论
-- bilibili__dm：给主人发私信
-- bilibili__status：查看今日额度与开关状态
+主人 @ 了你某个视频时，先处理 @：用 `bilibili__browse` 传那个 BV 号去看，再用 `bilibili__comment` 在视频下回一条评论，不必再发私信。
 
-写操作都受开关与每日额度约束，未开启时工具会直接返回原因，如实说明即可，不要重试。
-
-可以做的事：
-- 用 bilibili__browse 看看有没有想看的视频
-- 看到值得分享的，用 bilibili__dm 给主人发一条
-- 什么都不想做，就待着
-
-用不用工具由你决定，不要为了用工具而用工具。
+这一轮要做完两件事：用 `bilibili__browse` 刷一轮挑出想推荐的视频，再用
+`bilibili__dm` 把 BV 号和推荐理由发给主人。点赞、投币、评论可选。
 """
 
 _backoff_level = 0
@@ -58,40 +50,37 @@ def _store() -> BiliStorage:
 
 
 def _fetch_mentions(cfg: dict) -> list[dict]:
-    """取主人新 @ 的视频并落表去重；未配置主人或接口失败返回空。"""
+    """拉 @ 落库，返回未回复的 @：未回复的一直带进提示词，回复后不再出现。"""
     owner = int(cfg["dm_uid"])
-    credential = load_credential()
-    if owner <= 0 or credential is None:
-        return []
-
     storage = _store()
-    today = datetime.now().date().isoformat()
-    if storage.count_mentions_today(today) >= int(cfg["mention_per_day"]):
+    if owner <= 0:
         return []
 
-    fresh: list[dict] = []
-    try:
-        with BiliClient(credential, timeout=float(cfg["timeout_s"]), interval=0.0) as client:
-            for item in client.mentions(limit=10):
-                if item["uid"] != owner:
-                    continue
-                try:
-                    info = client.view_by_aid(item["aid"])
-                except BiliError:
-                    continue
-                if not storage.claim_mention(item["id"], item["uid"], info["bvid"],
-                                             item["rpid"], item["name"], item["content"]):
-                    continue
-                fresh.append({"bvid": info["bvid"], "title": info["title"],
-                              "name": item["name"]})
-                if len(fresh) >= int(cfg["mention_per_day"]):
-                    break
-    except BiliError as exc:
-        logger.info(f"[bilibili] 取 @ 失败：{exc}")
-    return fresh
+    credential = load_credential()
+    if credential is not None:
+        try:
+            with BiliClient(credential, timeout=float(cfg["timeout_s"]),
+                            interval=float(cfg["min_interval_s"])) as client:
+                for item in client.mentions(limit=_MENTION_SCAN):
+                    if item["uid"] != owner or storage.has_mention(item["id"]):
+                        continue
+                    try:
+                        info = client.view(item["bvid"])
+                    except BiliError:
+                        continue
+                    storage.add_mention(item["id"], owner, info["bvid"], info["title"],
+                                        item["rpid"], item["name"], item["content"])
+        except BiliError as exc:
+            logger.info(f"[bilibili] 取 @ 失败：{exc}")
+    mentions = storage.unreplied_mentions(owner, max(1, int(cfg["mention_per_day"])))
+    if mentions:
+        listed = "；".join(f"{m['name']} {m['bvid']}《{m['title']}》" for m in mentions)
+        logger.info(f"[bilibili] 待回复 @ {len(mentions)} 条：{listed}")
+    return mentions
 
 
-def _parse_range(text: str) -> tuple[int, int] | None:
+def _parse_range(text: str, allow_wrap: bool = False) -> tuple[int, int] | None:
+    """解析 ``HH:MM-HH:MM`` 为当日分钟区间；allow_wrap 时 end < start 表示跨零点。"""
     try:
         start, end = str(text).split("-", 1)
         start_hour, start_minute = (int(part) for part in start.strip().split(":"))
@@ -100,7 +89,11 @@ def _parse_range(text: str) -> tuple[int, int] | None:
         return None
     start_at = start_hour * 60 + start_minute
     end_at = end_hour * 60 + end_minute
-    if not (0 <= start_at < end_at <= 24 * 60):
+    if not (0 <= start_at < 24 * 60 and 0 <= end_at <= 24 * 60):
+        return None
+    if start_at == end_at:
+        return None
+    if start_at > end_at and not allow_wrap:
         return None
     return start_at, end_at
 
@@ -111,37 +104,71 @@ def parse_window(text: str) -> tuple[int, int]:
 
 
 def parse_pause_windows(text: str) -> list[tuple[int, int]]:
-    """解析逗号分隔的多个禁用区间；非法项跳过，空串返回空列表。"""
+    """解析逗号分隔的多个禁用区间，允许跨零点；非法项跳过，空串返回空列表。"""
     parts = str(text).replace("，", ",").split(",")
-    return [window for window in (_parse_range(part) for part in parts) if window]
+    return [window for window in (_parse_range(part, allow_wrap=True) for part in parts) if window]
+
+
+def invalid_pause_parts(text: str) -> list[str]:
+    """解析不出的时段片段；面板据此拒绝保存。"""
+    parts = (part.strip() for part in str(text).replace("，", ",").split(","))
+    return [part for part in parts if part and _parse_range(part, allow_wrap=True) is None]
 
 
 def _minutes(moment: datetime) -> int:
     return moment.hour * 60 + moment.minute
 
 
+def _day_start(moment: datetime) -> datetime:
+    """当日零点；区间终点允许 24:00，按零点加分钟数换算成次日 00:00。"""
+    return moment.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
 def in_window(moment: datetime, window: tuple[int, int]) -> bool:
     return window[0] <= _minutes(moment) < window[1]
 
 
+def _in_range(minutes: int, start: int, end: int) -> bool:
+    """分钟是否落在区间内；end 小于 start 表示跨零点。"""
+    if end > start:
+        return start <= minutes < end
+    return minutes >= start or minutes < end
+
+
 def is_paused(moment: datetime, windows: list[tuple[int, int]],
               weekdays_only: bool = True) -> bool:
-    """是否落在禁用时段；weekdays_only 为真时周末不判定。"""
+    """是否落在任一个禁用时段；weekdays_only 为真时周末不判定。"""
     if weekdays_only and moment.weekday() >= 5:
         return False
-    return any(start <= _minutes(moment) < end for start, end in windows)
+    minutes = _minutes(moment)
+    return any(_in_range(minutes, start, end) for start, end in windows)
 
 
 def next_out_of_pause(moment: datetime, windows: list[tuple[int, int]],
                       weekdays_only: bool = True) -> datetime:
-    """若在禁用时段内，返回该时段的结束时间；否则原样返回。"""
-    if not is_paused(moment, windows, weekdays_only):
-        return moment
-    for start, end in windows:
-        if start <= _minutes(moment) < end:
-            return moment.replace(hour=end // 60, minute=end % 60,
-                                  second=0, microsecond=0)
-    return moment
+    """若在禁用时段内，顺延到连续禁用并集的结束时刻；否则原样返回。"""
+    cursor = moment
+    while is_paused(cursor, windows, weekdays_only):
+        minutes = _minutes(cursor)
+        ends = [_range_end(cursor, start, end) for start, end in windows
+                if _in_range(minutes, start, end)]
+        if not ends:
+            return cursor
+        following = max(ends)
+        if following <= cursor:
+            return cursor
+        cursor = following
+    return cursor
+
+
+def _range_end(moment: datetime, start: int, end: int) -> datetime:
+    """命中区间的结束时刻；跨零点且已过 end 时落在次日。"""
+    base = _day_start(moment)
+    if end > start:
+        return base + timedelta(minutes=end)
+    if _minutes(moment) >= start:
+        return base + timedelta(minutes=end) + timedelta(days=1)
+    return base + timedelta(minutes=end)
 
 
 def next_window_start(moment: datetime, window: tuple[int, int]) -> datetime:
@@ -201,6 +228,21 @@ def _arm(moment: datetime):
 def _tick():
     """闹钟回调：窗口外顺延，状态不允许则退避，否则发起一次交互。"""
     global _backoff_level
+    try:
+        _advance()
+    except Exception:
+        # 闹钟是一次性的，回调抛异常后不会再排下一次
+        logger.exception("[bilibili] 定时提醒出错，退避后重排")
+        _backoff_level = min(_backoff_level + 1, 6)
+        try:
+            _arm(backoff_at(datetime.now(), _backoff_level,
+                            load_config()["schedule_backoff_base_minutes"]))
+        except Exception:
+            logger.exception("[bilibili] 重排闹钟失败")
+
+
+def _advance():
+    global _backoff_level
     cfg = load_config()
     if not cfg["schedule_enabled"]:
         return
@@ -227,9 +269,18 @@ def _tick():
     _backoff_level = 0
     interval = max(_MIN_INTERVAL, int(cfg["schedule_interval_minutes"]))
     _arm(next_allowed(now, interval, window, cfg))
+    threading.Thread(target=_interact, args=(cfg,), daemon=True).start()
 
+
+def _interact(cfg: dict):
+    """取主人 @ 后请求一次交互；网络请求不占主线程。"""
     hint = schedule_text()
-    fresh = _fetch_mentions(cfg) if cfg["mention_enabled"] else []
+    fresh = []
+    if cfg["mention_enabled"]:
+        try:
+            fresh = _fetch_mentions(cfg)
+        except Exception as exc:
+            logger.warning(f"[bilibili] 拉取 @ 失败，本轮只发提醒：{exc}")
     if fresh:
         lines = [f"- {m['name']} @ 了你：{m['bvid']}《{m['title']}》" for m in fresh]
         hint = hint + "\n\n主人 @ 了你：\n" + "\n".join(lines)
@@ -251,3 +302,9 @@ def start(cfg: dict | None = None):
 
 def stop():
     TOOL_CTX.unregister_alarm(_ALARM_KEY)
+
+
+def trigger_now():
+    """立即发起一次提醒：不看开关、作息窗口与禁用时段，也不改闹钟链。"""
+    cfg = load_config()
+    threading.Thread(target=_interact, args=(cfg,), daemon=True).start()

@@ -24,6 +24,12 @@ ARTIFACT_MAX_BYTES = 64 * 1024
 ARTIFACT_TTL_DAYS = 3
 ARTIFACT_TOTAL_BYTES = 100 * 1024 * 1024
 
+# 模型响应原文的入库上限：只作审计与回放，投影不使用
+ASSISTANT_TEXT_LIMIT = 4096
+
+# assistant_turn 结构化 payload 的版本号
+ASSISTANT_TURN_VERSION = 1
+
 _MAX_DIGEST_KEYS = 3
 _MAX_DIGEST_CHARS = 40
 
@@ -40,7 +46,7 @@ class Event:
     refs: dict
 
 
-def _truncate_bytes(text: str, limit: int) -> str:
+def truncate_bytes(text: str, limit: int) -> str:
     """按 UTF-8 字节截断，不切坏多字节字符。"""
     raw = text.encode("utf-8")
     if len(raw) <= limit:
@@ -54,20 +60,27 @@ def new_group_id() -> str:
 
 
 def args_digest(args: dict | None) -> str:
-    """参数要点：最多 3 个顶层标量，字符串截 40 字符，嵌套只写 {…}。"""
+    """参数要点：最多 3 个顶层标量，字符串截 40 字符，嵌套只写 {…}。
+
+    字符串与布尔值写成 JSON 字面量，`replay_args` 才能无歧义还原。
+    """
     if not args:
         return "-"
     parts = []
     for key, value in args.items():
         if len(parts) >= _MAX_DIGEST_KEYS:
             break
-        if isinstance(value, dict) or isinstance(value, list):
+        if isinstance(value, (dict, list)):
             parts.append(f"{key}={{…}}")
         elif isinstance(value, str):
             text = value[:_MAX_DIGEST_CHARS]
-            parts.append(f"{key}={text}{'…' if len(value) > _MAX_DIGEST_CHARS else ''}")
-        elif value is None or isinstance(value, (int, float, bool)):
-            parts.append(f"{key}={value}")
+            if len(value) > _MAX_DIGEST_CHARS:
+                text += "…"
+            parts.append(f"{key}={json.dumps(text, ensure_ascii=False)}")
+        elif value is None:
+            parts.append(f"{key}=null")
+        elif isinstance(value, (bool, int, float)):
+            parts.append(f"{key}={json.dumps(value)}")
     return ", ".join(parts) or "-"
 
 
@@ -303,7 +316,7 @@ class EventStore:
         """超过内联阈值才落 artifact，返回 id；内联够用返回 None。"""
         if self._conn is None or len(body) <= ARTIFACT_INLINE_LIMIT:
             return None
-        text = _truncate_bytes(body, ARTIFACT_MAX_BYTES)
+        text = truncate_bytes(body, ARTIFACT_MAX_BYTES)
         if text is not body:
             logger.warning(f"[EventStore] artifact truncated to {ARTIFACT_MAX_BYTES} bytes")
         artifact_id = uuid.uuid4().hex
