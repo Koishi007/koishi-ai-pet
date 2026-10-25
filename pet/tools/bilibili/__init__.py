@@ -21,7 +21,7 @@ _storage: BiliStorage | None = None
 
 
 def _show_panel():
-    """右键菜单「设置」回调；面板依赖 Qt，延迟导入。"""
+    """右键菜单「B 站账号」回调；面板依赖 Qt，延迟导入。"""
     from pet.tools.bilibili.panel import show_panel
 
     show_panel()
@@ -135,6 +135,6 @@ def register(registry):
         timeout=60.0,
     )
 
-    registry.add_menu_action(TOOL_NAME, "设置", _show_panel)
+    registry.add_menu_action(TOOL_NAME, "B 站账号", _show_panel)
     TOOL_CTX.on_bind(schedule.start)
     logger.info("[bili] tool registered")

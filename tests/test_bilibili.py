@@ -100,6 +100,27 @@ def test_parse_mentions_keeps_video_only():
     assert items[0]["content"] == "@恋恋 看看这个"
 
 
+def test_parse_view_tolerates_wrong_field_types():
+    info = parse_view({"aid": "n/a", "owner": "up", "stat": [1], "desc": 5, "title": 7})
+    assert (info["aid"], info["up"], info["play"]) == (0, "", 0)
+    assert (info["title"], info["desc"]) == ("7", "5")
+
+
+def test_parse_search_items_tolerates_wrong_types():
+    data = {"result": [{"bvid": "BV1", "aid": "x", "play": None,
+                        "pubdate": "y", "title": 5, "description": 6}]}
+    item = parse_search_items(data)[0]
+    assert (item["aid"], item["play"], item["pubdate"]) == (0, 0, 0)
+    assert (item["title"], item["description"]) == ("5", "6")
+
+
+def test_parse_mentions_skips_non_dict_and_bad_numbers():
+    data = {"items": ["bad", {"uri": "bilibili://video/1", "user": "u", "source_id": "x"}]}
+    items = parse_mentions(data)
+    assert len(items) == 1
+    assert (items[0]["uid"], items[0]["rpid"]) == (0, 0)
+
+
 def _cover_client(size, **kwargs):
     buf = io.BytesIO()
     Image.new("RGB", size, "red").save(buf, format="PNG")
@@ -136,6 +157,35 @@ def test_pick_subtitle_prefers_ai_zh():
 
 def test_join_subtitle_skips_blank():
     assert join_subtitle([{"content": "a"}, {"content": "  "}, {"content": "b"}]) == "a\nb"
+
+
+def _json_client(handler):
+    return BiliClient(Credential(sessdata="s", bili_jct="j", dedeuserid="9"),
+                      interval=0.0, transport=httpx.MockTransport(handler))
+
+
+def test_get_json_rejects_non_object_payload():
+    def handler(request):
+        if "finger/spi" in str(request.url):
+            return httpx.Response(200, json={"data": {"b_3": "b3", "b_4": "b4"}})
+        return httpx.Response(200, json=[1, 2, 3])
+
+    client = _json_client(handler)
+    with pytest.raises(core.BiliError) as err:
+        client._get_json("https://i0.hdslb.com/a.json")
+    client.close()
+    assert err.value.kind == "parse"
+
+
+def test_request_maps_timeout_to_timeout_kind():
+    def handler(request):
+        raise httpx.ReadTimeout("timed out", request=request)
+
+    client = _json_client(handler)
+    with pytest.raises(core.BiliError) as err:
+        client._request("GET", "/x/web-interface/nav")
+    client.close()
+    assert err.value.kind == "timeout"
 
 
 def test_within_days_window():
@@ -338,6 +388,24 @@ def test_reviewable_actions_requires_remote_id(store):
     second = store.claim_action(1, "comment", "BV2", "第二条")
     store.finish_action(second, "done")
     assert [a["target"] for a in store.reviewable_actions(1, "comment")] == ["BV1"]
+
+
+def test_guarded_write_timeout_blocks_retry(store):
+    def boom():
+        raise core.BiliError("timeout", "请求超时")
+
+    result = duty._guarded_write(store, 1, "dm", "9:abc", "晚安", boom)
+    assert result["reason"] == "result_unknown"
+    assert store.claim_action(1, "dm", "9:abc", "晚安") is None
+
+
+def test_guarded_write_definite_failure_allows_retry(store):
+    def boom():
+        raise core.BiliError("api", "接口返回错误")
+
+    result = duty._guarded_write(store, 1, "like", "BV1", "", boom)
+    assert result["reason"] == "send_failed"
+    assert store.claim_action(1, "like", "BV1", "") is not None
 
 
 # ---------- 配置与未登录路径 ----------

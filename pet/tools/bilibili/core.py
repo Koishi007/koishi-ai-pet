@@ -75,12 +75,25 @@ def is_bvid(text: str) -> bool:
 
 
 class BiliError(RuntimeError):
-    """接口失败。kind 取值 network / auth / risk / api / parse。"""
+    """接口失败。kind 取值 timeout / network / auth / risk / api / parse。"""
 
     def __init__(self, kind: str, message: str, code: int = 0):
         super().__init__(message)
         self.kind = kind
         self.code = code
+
+
+def _as_int(value, default: int = 0) -> int:
+    """接口字段转 int；非数字与 None 一律取默认值。"""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _as_dict(value) -> dict:
+    """接口字段取 dict；其余类型当空。"""
+    return value if isinstance(value, dict) else {}
 
 
 def _error_from_code(code: int, message: str) -> BiliError:
@@ -194,7 +207,7 @@ def _device_buvid(http: httpx.Client) -> tuple[str, str]:
         return _buvid_pair
     try:
         resp = http.get(f"{_API}/x/frontend/finger/spi", headers=dict(_HEADERS))
-        data = resp.json().get("data") or {}
+        data = _as_dict(_as_dict(resp.json()).get("data"))
     except (httpx.HTTPError, ValueError) as exc:
         logger.info(f"[bili] 取 buvid 失败：{exc}")
         return "", ""
@@ -223,7 +236,7 @@ def strip_em(text: str) -> str:
 
 
 def parse_search_items(data: dict) -> list[dict]:
-    items = data.get("result") or []
+    items = _as_dict(data).get("result") or []
     if not isinstance(items, list):
         return []
     videos = []
@@ -235,33 +248,37 @@ def parse_search_items(data: dict) -> list[dict]:
             continue
         videos.append({
             "bvid": bvid,
-            "aid": int(item.get("aid") or 0),
-            "title": strip_em(item.get("title") or ""),
+            "aid": _as_int(item.get("aid")),
+            "title": strip_em(str(item.get("title") or "")),
             "author": item.get("author") or "",
-            "play": int(item.get("play") or 0),
-            "pubdate": int(item.get("pubdate") or 0),
+            "play": _as_int(item.get("play")),
+            "pubdate": _as_int(item.get("pubdate")),
             "duration": item.get("duration") or "",
-            "description": strip_em(item.get("description") or "")[:200],
+            "description": strip_em(str(item.get("description") or ""))[:200],
         })
     return videos
 
 
 def parse_mentions(data: dict, limit: int = 10) -> list[dict]:
     """解析 @ 通知，只保留视频类型；忽略动态、专栏与直播。"""
-    items = data.get("items") or []
+    items = _as_dict(data).get("items") or []
+    if not isinstance(items, list):
+        return []
     result = []
     for item in items:
+        if not isinstance(item, dict):
+            continue
         match = _VIDEO_URI_RE.search(str(item.get("uri") or ""))
         if not match:
             continue
-        user = item.get("user") or {}
-        detail = item.get("item") or {}
+        user = _as_dict(item.get("user"))
+        detail = _as_dict(item.get("item"))
         result.append({
-            "id": int(item.get("id") or 0),
-            "uid": int(user.get("uid") or 0),
+            "id": _as_int(item.get("id")),
+            "uid": _as_int(user.get("uid")),
             "name": str(user.get("nickname") or ""),
             "aid": int(match.group(1)),
-            "rpid": int(item.get("source_id") or detail.get("source_id") or 0),
+            "rpid": _as_int(item.get("source_id") or detail.get("source_id")),
             "content": str(item.get("source_content") or "")[:120],
         })
         if len(result) >= limit:
@@ -270,17 +287,20 @@ def parse_mentions(data: dict, limit: int = 10) -> list[dict]:
 
 
 def parse_view(data: dict) -> dict:
+    data = _as_dict(data)
+    owner = _as_dict(data.get("owner"))
+    stat = _as_dict(data.get("stat"))
     return {
         "bvid": data.get("bvid") or "",
-        "aid": int(data.get("aid") or 0),
-        "cid": int(data.get("cid") or 0),
-        "title": data.get("title") or "",
-        "up": (data.get("owner") or {}).get("name") or "",
-        "pubdate": int(data.get("pubdate") or 0),
-        "duration": int(data.get("duration") or 0),
-        "play": int((data.get("stat") or {}).get("view") or 0),
-        "desc": (data.get("desc") or "")[:200],
-        "pic": absolute_url(data.get("pic") or ""),
+        "aid": _as_int(data.get("aid")),
+        "cid": _as_int(data.get("cid")),
+        "title": str(data.get("title") or ""),
+        "up": owner.get("name") or "",
+        "pubdate": _as_int(data.get("pubdate")),
+        "duration": _as_int(data.get("duration")),
+        "play": _as_int(stat.get("view")),
+        "desc": str(data.get("desc") or "")[:200],
+        "pic": absolute_url(str(data.get("pic") or "")),
     }
 
 
@@ -427,6 +447,8 @@ class BiliClient:
         try:
             resp = self._http.request(method, base + path, params=params, data=body or None,
                                       headers=headers)
+        except httpx.TimeoutException as exc:
+            raise BiliError("timeout", f"请求超时：{exc}") from exc
         except httpx.HTTPError as exc:
             raise BiliError("network", f"请求失败：{exc}") from exc
         self.requests += 1
@@ -450,13 +472,18 @@ class BiliClient:
         self._ensure_fingerprint()
         try:
             resp = self._http.get(url, headers=dict(_HEADERS))
+        except httpx.TimeoutException as exc:
+            raise BiliError("timeout", f"请求超时：{exc}") from exc
         except httpx.HTTPError as exc:
             raise BiliError("network", f"请求失败：{exc}") from exc
         self.requests += 1
         try:
-            return resp.json()
+            payload = resp.json()
         except ValueError as exc:
             raise BiliError("parse", "字幕响应不是 JSON") from exc
+        if not isinstance(payload, dict):
+            raise BiliError("parse", "字幕响应结构不符")
+        return payload
 
     def _cached_view(self, bvid: str) -> dict:
         hit = self._view_cache.get(bvid)

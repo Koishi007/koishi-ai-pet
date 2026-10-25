@@ -209,6 +209,7 @@ wbi 签名约定：
 ```
 pending → done（拿到远端 id 或业务码 0）
 pending → failed（业务码非 0）
+pending → unknown（请求超时，发没发出去不可知）
 done → visible / hidden（复核结果）
 ```
 
@@ -216,7 +217,7 @@ done → visible / hidden（复核结果）
 |---|---|
 | 有效记录达到上限 | 评论 3 条、其余 1 条，超过时返回「有效记录已达上限」 |
 | 上一次记录为 `failed` | 允许重新占位 |
-| 请求超时 | 保持 `pending`，由 §7.4 复核收敛 |
+| 请求超时 | 记 `unknown`，占住目标不再重试，等复核或人工收敛 |
 | 业务码非 0 | 记 `failed`，返回原因，不重试 |
 | 工具线程被超时中断 | 线程继续执行，成功后仍会更新台账 |
 
@@ -315,7 +316,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_bili_actions_live
 - 只在有 `picks` 时调用 `TOOL_CTX.note_event("bili", ...)`。
 - 不在工具内调用 `speech`：对话场景中模型本来就要说话，再从工具侧播报会重复。
 - 写操作方法始终注册，执行时检查开关；关闭时返回明确原因，便于模型告知主人。
-- 失败返回统一为 `ok: false` 加 `reason` code，文案放 `summary`。code 取值：`not_logged_in`、`disabled`、`target_unknown`、`dm_uid_missing`、`quota`、`insufficient_coins`、`filtered`、`duplicate`、`send_failed`。
+- 失败返回统一为 `ok: false` 加 `reason` code，文案放 `summary`。code 取值：`not_logged_in`、`disabled`、`target_unknown`、`dm_uid_missing`、`quota`、`insufficient_coins`、`filtered`、`duplicate`、`send_failed`、`result_unknown`。
 
 ## §10 配置项
 
@@ -393,6 +394,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_bili_actions_live
 | 重复检测 | 与最近评论相似度超过阈值时拒绝 |
 | 台账唯一 | 同一 `uid`、`kind`、`target` 的有效记录只能有一条 |
 | 台账状态机 | 有效记录存在时拒绝重发；上一条为 `failed` 时允许重新占位 |
+| 请求超时 | 记 `unknown`，同一目标不再重试 |
 | 限额 | 单轮与每日上限各自生效，跨日重置 |
 | 目标校验 | 不在候选集内的 `bvid` 被拒绝 |
 | 开关关闭 | 写操作返回明确原因，不产生台账记录 |

@@ -279,6 +279,11 @@ def _collect(client: BiliClient, cfg: dict, storage: BiliStorage,
 
 def _guarded_write(storage: BiliStorage, uid: int, kind: str, target: str,
                    content: str, send, limit: int = 1) -> dict:
+    """占台账后发请求。
+
+    超时意味着请求可能已到达服务端，记 unknown 占住目标不再重试；其余错误
+    确定未生效，记 failed 可重试。
+    """
     action_id = storage.claim_action(uid, kind, target, content, limit=limit)
     if action_id is None:
         return {"kind": kind, "target": target, "ok": False,
@@ -286,9 +291,12 @@ def _guarded_write(storage: BiliStorage, uid: int, kind: str, target: str,
     try:
         remote = send()
     except BiliError as exc:
-        storage.finish_action(action_id, "failed", reason=exc.kind)
+        unknown = exc.kind == "timeout"
+        storage.finish_action(action_id, "unknown" if unknown else "failed",
+                              reason=exc.kind)
         return {"kind": kind, "target": target, "ok": False,
-                "reason": "send_failed", "detail": str(exc)}
+                "reason": "result_unknown" if unknown else "send_failed",
+                "detail": str(exc)}
     storage.finish_action(action_id, "done", remote_id=str(remote or ""))
     return {"kind": kind, "target": target, "ok": True}
 

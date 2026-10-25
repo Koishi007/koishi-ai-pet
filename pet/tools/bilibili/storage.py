@@ -16,8 +16,9 @@ from pet.tools.context import TOOL_CTX
 
 logger = logging.getLogger(__name__)
 
-# 有效状态：占住唯一索引，阻止重复写入
-_LIVE_STATUS = ("pending", "done", "visible", "hidden")
+# 有效状态：占住唯一索引，阻止重复写入。unknown 表示请求可能已达服务端，
+# 在复核或人工收敛前不重试。
+_LIVE_STATUS = ("pending", "done", "visible", "hidden", "unknown")
 _RETENTION_DAYS = 90
 
 
