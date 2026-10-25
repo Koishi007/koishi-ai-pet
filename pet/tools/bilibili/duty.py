@@ -45,19 +45,19 @@ _ERROR_HINTS = {
     "not_ready": "工具还没启动完成，这次先不要调用。",
     "not_logged_in": "登录失效或未登录，让用户在账号面板重新扫码后再试。",
     "dm_uid_missing": "让用户在面板填好私信收件人 UID 后再试。",
-    "target_unknown": "若已有具体 BV，用 browse 只传这个 BV（不要附带关键词）后再操作；否则先刷一轮。",
+    "target_unknown": "若已有具体 BV，用 browse 的 bvid 参数（不要附带关键词）拿候选后再操作；否则先刷一轮。",
     "quota": "今天的额度用完了，今天不要再调用这个操作。",
     "duplicate": "这个目标已有记录，不要重复调用。",
     "no_receipt": "回执缺失，可能已经发出去了，不要再调用。",
     "insufficient_coins": "硬币不够，不要再投币。",
     "filtered": "内容被过滤，调整措辞后再试。",
     "invalid_keyword": "换一个关键词或 BV 号。",
+    "invalid_bvid": "检查 BV 号格式（BV + 10 位字母数字），或改用 keyword 搜索。",
     "request_failed": "接口请求失败，稍后再试。",
 }
 
 _DEFAULTS: dict = {
     "keywords": ["东方Project", "古明地觉", "古明地恋", "猫", "狗", "动物"],
-    "max_videos": 6,
     "per_run": 2,
     "scan_days": 30,
     "order": "totalrank",
@@ -263,7 +263,6 @@ def _collect(client: BiliClient, cfg: dict, storage: BiliStorage,
     order = str(cfg["order"])
     if order not in ("pubdate", "totalrank", "click"):
         order = "totalrank"
-    max_videos = max(1, int(cfg["max_videos"]))
     bv_targets, search_keywords = split_keywords(keywords)
     if bv_targets:
         # 指定了 BV 就只取这些视频，不再搜索关键词
@@ -275,6 +274,10 @@ def _collect(client: BiliClient, cfg: dict, storage: BiliStorage,
 
     # 多关键词时每个只搜一页，靠词的数量扩大候选，不叠加翻页
     pages = _MAX_SEARCH_PAGES if len(search_keywords) == 1 else 1
+    # 集齐本轮要返回的条数就停，剩下候选不再前台等待
+    need = max(1, int(cfg["per_run"]))
+    if bv_targets:
+        need = max(need, len(bv_targets))
     skipped = {"seen": 0, "no_subtitle": 0, "failed": 0, "over_limit": 0}
     errors: list[str] = []
     tried: list[str] = []
@@ -283,7 +286,7 @@ def _collect(client: BiliClient, cfg: dict, storage: BiliStorage,
     has_cover = TOOL_CTX.has_vision()
 
     def reached() -> bool:
-        return len(candidates) >= max_videos or time.time() >= deadline
+        return len(candidates) >= need or time.time() >= deadline
 
     for bvid in bv_targets:
         if reached():
@@ -295,7 +298,7 @@ def _collect(client: BiliClient, cfg: dict, storage: BiliStorage,
             break
         tried.append(kw)
         try:
-            listed, seen = _search_keyword(client, cfg, storage, kw, order, pages, max_videos)
+            listed, seen = _search_keyword(client, cfg, storage, kw, order, pages, need)
         except BiliError as exc:
             errors.append(f"{kw}: {exc}")
             if len(errors) >= 3:
