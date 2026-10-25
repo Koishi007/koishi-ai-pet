@@ -521,8 +521,10 @@ def _render_group(group: _Group, profile: Profile) -> list[dict]:
     channel = profile.tool_channel
 
     if channel == "native" and group.complete and group.calls:
-        # aside 由 arguments 承载，content 留空避免同轮出现两份台词
-        message = {"role": "assistant", "content": None}
+        # aside 由 arguments 承载。arguments 为空时退回 content。
+        content = (None if profile.replay_args_mode != "empty"
+                   else (group.aside_text or None))
+        message = {"role": "assistant", "content": content}
         message["tool_calls"] = [
             {"id": c.refs.get("tool_call_id", f"call_{c.seq}"),
              "type": "function",

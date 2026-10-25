@@ -113,6 +113,12 @@ class TestToolGroup:
         messages = project(tool_group(1), Profile(tool_channel="system-note"), Budget(now=T0 + 1000))
         assert messages[-1]["role"] == "system"
 
+    def test_native_empty_replay_keeps_aside_in_content(self):
+        messages = project(tool_group(1, digest='aside="我出石头"'),
+                           Profile(replay_args_mode="empty"), Budget(now=T0 + 1000))
+        assert messages[0]["content"] == "Speech: 我出石头"
+        assert messages[0]["tool_calls"][0]["function"]["arguments"] == "{}"
+
     def test_none_channel_keeps_aside_drops_tool_records(self):
         messages = project(tool_group(1, digest='aside="我在看视频"'),
                            Profile(tool_channel="none"), Budget(now=T0 + 1000))

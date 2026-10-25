@@ -121,6 +121,26 @@ class TestCompact:
         assert all(e.type != "summary" for e in events)
 
 
+    def test_keeps_previous_snapshot_summaries(self, tmp_path):
+        s = store(tmp_path)
+        for i in range(5):
+            s.append("user_msg", {"text": f"a{i}"})
+        s.append("summary", {"text": "早期摘要"}, refs={"covers": [1, 9]})
+        for i in range(5):
+            s.append("user_msg", {"text": f"b{i}"})
+
+        assert s.compact(min_events=8, keep_tail=2, max_summaries=3) > 0
+        first = s.load()[-1]
+        assert "早期摘要" in [item["text"] for item in first.payload["summaries"]]
+
+        for i in range(10):
+            s.append("user_msg", {"text": f"c{i}"})
+
+        assert s.compact(min_events=8, keep_tail=2, max_summaries=3) > 0
+        second = s.load()[-1]
+        assert "早期摘要" in [item["text"] for item in second.payload["summaries"]]
+
+
 class TestPurgeSessions:
     def test_removes_events_of_closed_sessions(self, tmp_path):
         s = store(tmp_path)

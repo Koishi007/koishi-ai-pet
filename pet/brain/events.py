@@ -306,6 +306,13 @@ class EventStore:
         summaries = []
         covered = set()
         for event in prefix:
+            if event.type == "snapshot":
+                for old in event.payload.get("summaries") or []:
+                    old_text = (str(old.get("text") or "").strip()
+                                if isinstance(old, dict) else "")
+                    if old_text:
+                        summaries.append({"text": old_text})
+                continue
             if event.type != "summary" or event.seq in superseded:
                 continue
             text = str(event.payload.get("text") or "").strip()

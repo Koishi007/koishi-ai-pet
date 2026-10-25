@@ -76,8 +76,8 @@ def _new_session_manager() -> SystemTrayManager:
 
 def test_new_session_cancelled(monkeypatch):
     mgr = _new_session_manager()
-    monkeypatch.setattr(QMessageBox, "question",
-                        lambda *args, **kwargs: QMessageBox.StandardButton.No)
+    monkeypatch.setattr(mgr, "_ask_new_session",
+                        lambda: QMessageBox.StandardButton.No)
 
     mgr._confirm_new_session()
 
@@ -86,8 +86,8 @@ def test_new_session_cancelled(monkeypatch):
 
 def test_new_session_confirmed(monkeypatch):
     mgr = _new_session_manager()
-    monkeypatch.setattr(QMessageBox, "question",
-                        lambda *args, **kwargs: QMessageBox.StandardButton.Yes)
+    monkeypatch.setattr(mgr, "_ask_new_session",
+                        lambda: QMessageBox.StandardButton.Yes)
 
     mgr._confirm_new_session()
 
