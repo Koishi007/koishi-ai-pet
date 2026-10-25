@@ -71,6 +71,10 @@ _DEFAULTS: dict = {
     "mention_per_day": 3,
 }
 
+# 定时任务间隔的上下限（分钟）
+_INTERVAL_MIN = 10
+_INTERVAL_MAX = 1440
+
 def _coerce(value, default):
     if isinstance(default, bool):
         return value if isinstance(value, bool) else default
@@ -153,6 +157,20 @@ def set_dm_uid(text: str) -> dict:
     if uid <= 0 or uid > 9_999_999_999:
         raise ValueError("超出 UID 范围")
     return update_config({"dm_uid": uid})
+
+
+def set_interval_minutes(text: str) -> dict:
+    """保存定时任务间隔，非法值抛 ValueError。"""
+    raw = (text or "").strip()
+    if not raw:
+        return update_config(
+            {"schedule_interval_minutes": _DEFAULTS["schedule_interval_minutes"]})
+    if not raw.isdigit():
+        raise ValueError("只能填数字")
+    minutes = int(raw)
+    if not _INTERVAL_MIN <= minutes <= _INTERVAL_MAX:
+        raise ValueError(f"超出 {_INTERVAL_MIN}-{_INTERVAL_MAX} 分钟")
+    return update_config({"schedule_interval_minutes": minutes})
 
 
 def load_credential() -> Credential | None:
@@ -479,7 +497,7 @@ def write_action(storage: BiliStorage, kind: str, *, bvid: str = "", text: str =
             return {"error": f"私信没发出去：{describe(code)}", "code": "filtered"}
         with _open(cfg, credential) as client:
             result = _guarded_write(storage, uid, "dm", str(target_uid), text,
-                                    lambda: client.dm(target_uid, text))
+                                    lambda: client.dm(target_uid, text), limit=0)
         return _as_tool_result(result)
 
     target = recent_target(bvid)

@@ -247,6 +247,40 @@ def test_buffered_sentence_survives_queued_playback(bubble, monkeypatch):
     assert len(played) == 3
 
 
+def test_discard_stream_clears_partial_sentence(bubble):
+    """修复轮整段重写：已流出的半句与未发送的 chunk 一并丢掉。"""
+    bubble.start_stream(_PARENT_POS)
+    bubble.append_stream("半句台词")
+
+    bubble.discard_stream()
+
+    assert not bubble.isVisible()
+    assert bubble.text() == ""
+    assert bubble._char_queue == []
+    assert bubble._stream_open is False
+
+    # 修复轮重新输出时另起一句，不接在半句后面
+    bubble.start_stream(_PARENT_POS)
+    bubble.append_stream("补写后的话")
+    _finish_typing(bubble)
+    assert bubble.text() == "补写后的话"
+
+
+def test_discard_stream_keeps_earlier_sentence(bubble):
+    """气泡在播更早的句子时只丢缓冲，不打断正在播的那句。"""
+    bubble.show_text("更早的句子", 1000, _PARENT_POS)
+    _finish_typing(bubble)
+    bubble.start_stream(_PARENT_POS)  # 忙 → 缓冲模式
+    bubble.append_stream("半句台词")
+
+    bubble.discard_stream()
+
+    assert bubble.isVisible()
+    assert bubble.text() == "更早的句子"
+    assert bubble._incoming_chunks == []
+    assert bubble._buffering is False
+
+
 def test_parallel_tool_asides_play_in_order(bubble, monkeypatch):
     """工具 aside 与流式台词混排时保持先后顺序，不被后来者顶替。"""
     played: list = []

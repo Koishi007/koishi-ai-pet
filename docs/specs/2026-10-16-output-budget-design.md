@@ -75,7 +75,7 @@ max_tokens = min(_CEILING, 基线 + (思考开启 ? 思考预留 : 0) + (带工�
 
 `pet/brain/parsing.py` 的 `BehaviorSink` 增加 `note_finish_reason(reason)`：流式在 `collect_stream` 消费结束后上报，非流式在 `_call_llm_and_parse` 直接读 `resp.choices[0].finish_reason`。`Behavior` 用与 `_last_unparsed` 相同的线程本地属性存放，管线入口（非修复轮）重置为 `""`。
 
-非流式解析同时关掉动作兜底（`action_fallback=False`）：`retry_if_empty` 以「无动作且无台词」判定空响应，兜底补出的 `sit` 会让空响应看不出来。`sit 5s` 改由 `Behavior._decide_with_repair` 在修复轮之后仍为空时补上，与原行为等价。
+非流式解析同时关掉动作兜底（`action_fallback=False`）：`retry_if_incomplete` 以「缺少必填字段（Summary/Action）」判定是否需要修复，兜底补出的 `sit` 会让缺 Action 看不出来。`sit 5s` 改由 `Behavior._decide_with_repair` 在修复轮之后仍缺 Action 时补上。
 
 诊断日志随之带上结束原因：`响应未解析出字段：content X 字符、reasoning Y 字符、finish_reason length`。
 
@@ -125,5 +125,5 @@ max_tokens = min(_CEILING, 基线 + (思考开启 ? 思考预留 : 0) + (带工�
 ## §8 风险与复测方法
 
 - 硬上限 8192 是常量。服务商拒绝较大的 `max_tokens` 时（400 参数非法），当前链路会退回本地兜底；后续可加「400 指向 max_tokens 时上限减半重试并记住」的降级，与 `_thinking_unsupported` 同款。
-- 工具轮的最终输出仍带动作兜底（`pet/brain/tool_loop.py` 的 `parse_behavior(content)`）：带工具的请求预算最大、输出最长，是最可能截断的一条路径，但该处的空输出会被补成 `sit 5s`，外层既不修复也不告警，截断在这条路径上尚不可辨识。补齐需要把 `action_fallback=False` 传下去，并确认工具链尾部的空响应是否值得再跑一整轮请求。
+- 工具轮的最终解析已关掉动作兜底（`pet/brain/tool_loop.py` 的 `parse_behavior(content, action_fallback=False)`），空响应保持为空，由入口补修复轮，`length` 截断在这条路径上可辨识。修复轮从最初的 messages 重跑，工具结果不在其中，可能重复执行有副作用的工具：`bilibili` 有 `claim_action` 幂等兜底，其余依赖工具自身幂等。
 - 配额数值取自当前模型的运行结果。换更重的思考模型后复测：以是否出现 `length`、以及 completion 是否贴近当前额度为准，按 §3.2 的同比例调整基线与思考预留。

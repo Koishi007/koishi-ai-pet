@@ -21,6 +21,7 @@ class BehaviorOutput:
     speech: Optional[str] = None
     speech_parts: list = field(default_factory=list)
     speech_streamed: bool = False
+    used_tools: bool = False  # 执行过有副作用的工具，不再重试格式修复
     summary: Optional[str] = None
     memory_line: Optional[str] = None
     emotion: Optional[str] = None

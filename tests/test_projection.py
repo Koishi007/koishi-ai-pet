@@ -1,5 +1,6 @@
 """会话投影测试：纯函数、摘要覆盖、工具组原子裁剪、四档通道与伪调用清洗。"""
 
+import re
 import time
 
 import pytest
@@ -149,8 +150,22 @@ class TestToolGroup:
         ]
         messages = project(events, Profile(), Budget(now=T0 + 1000))
         assert len(messages) == 2
-        assert messages[0]["content"].endswith("查一下天气")
+        assert messages[0]["content"] == "Speech: 查一下天气"
         assert messages[1]["role"] == "tool"
+
+    def test_aside_after_turn_keeps_speech_prefix(self):
+        gid = "g9"
+        events = [
+            ev(9, "assistant_turn", {"text": "我查查"}, group=gid),
+            ev(10, "assistant_speech", {"text": "查一下天气"}, group=gid,
+               refs={"tool_call_id": "c11"}),
+            ev(11, "tool_call", {"name": "weather__get_current", "args_digest": "-"},
+               group=gid, refs={"tool_call_id": "c11"}),
+            ev(12, "tool_result", {"brief": "深圳晴"}, group=gid,
+               refs={"tool_call_id": "c11"}),
+        ]
+        messages = project(events, Profile(), Budget(now=T0 + 1000))
+        assert messages[0]["content"] == "我查查\nSpeech: 查一下天气"
 
     def test_dropped_group_takes_its_aside_with_it(self):
         events = []
@@ -298,3 +313,81 @@ class TestTimePrefix:
         messages = project(events, Profile(), Budget(skip_last=1, now=T0 + 1000))
         assert len(messages) == 1
         assert "保留" in messages[0]["content"]
+
+
+class TestHistoryFormat:
+    """历史形态：assistant 行首是协议标签，时间只挂在 Summary 行与用户行上。
+
+    时间进不了 Speech 行，模型照抄也不会把时间念出来；assistant 行照抄后仍是合法字段行。
+    """
+
+    @staticmethod
+    def _speech(seq, text):
+        return ev(seq, "assistant_turn", {"text": text, "kind": "speech"})
+
+    @staticmethod
+    def _summary(seq, text):
+        return ev(seq, "assistant_turn", {"text": text, "kind": "summary"})
+
+    def test_speech_line_is_protocol_only(self):
+        messages = project([self._speech(1, "你好")], Profile(), Budget(now=T0 + 600))
+        assert messages == [{"role": "assistant", "content": "Speech: 你好"}]
+
+    def test_speech_segments_each_get_a_label(self):
+        """多段台词逐行成行，模型能照着输出多个 Speech。"""
+        messages = project([self._speech(1, "第一句\n第二句")], Profile(),
+                           Budget(now=T0 + 600))
+        assert messages[0]["content"] == "Speech: 第一句\nSpeech: 第二句"
+
+    def test_turn_block_keeps_speech_segments(self):
+        events = [
+            ev(1, "assistant_turn",
+               {"text": "发呆了一轮", "kind": "summary", "turn_id": "t1"}),
+            ev(2, "assistant_turn",
+               {"text": "唔…\n好困", "kind": "speech", "turn_id": "t1"}),
+        ]
+        messages = project(events, Profile(), Budget(now=T0 + 600))
+        assert messages[0]["content"].endswith(
+            "〕发呆了一轮\nSpeech: 唔…\nSpeech: 好困")
+
+    def test_summary_line_carries_relative_label(self):
+        messages = project([self._summary(1, "发呆了一轮")], Profile(),
+                           Budget(now=T0 + 600))
+        assert re.fullmatch(r"Summary: 〔\d+ 分钟前〕发呆了一轮", messages[0]["content"])
+
+    def test_user_line_carries_relative_label(self):
+        messages = project([dialogue("在吗", 1)], Profile(), Budget(now=T0 + 600))
+        assert re.fullmatch(r"\[\d+ 分钟前\] 在吗", messages[0]["content"])
+
+    def test_just_now_label_for_recent_event(self):
+        messages = project([dialogue("在吗", 1)], Profile(), Budget(now=T0 + 5))
+        assert messages[0]["content"].startswith("[刚刚]")
+
+    def test_legacy_assistant_event_keeps_clock_shape(self):
+        messages = project([dialogue("旧台词", 1, role="assistant")], Profile(),
+                           Budget(now=T0 + 600))
+        assert messages[0]["content"].startswith("[")
+        assert "旧台词" in messages[0]["content"]
+
+    def test_turn_id_merges_summary_and_speech(self):
+        events = [
+            ev(1, "assistant_turn",
+               {"text": "发呆了一轮", "kind": "summary", "turn_id": "t1"}),
+            ev(2, "assistant_turn",
+               {"text": "唔…", "kind": "speech", "turn_id": "t1"}),
+        ]
+        messages = project(events, Profile(), Budget(now=T0 + 600))
+        assert len(messages) == 1
+        assert re.fullmatch(r"Summary: 〔\d+ 分钟前〕发呆了一轮\nSpeech: 唔…",
+                            messages[0]["content"])
+
+    def test_turn_block_counts_as_one_entry(self):
+        events = [
+            ev(1, "assistant_turn",
+               {"text": "发呆了一轮", "kind": "summary", "turn_id": "t1"}),
+            ev(2, "assistant_turn",
+               {"text": "唔…", "kind": "speech", "turn_id": "t1"}),
+        ]
+        messages = project(events, Profile(), Budget(max_entries=1, now=T0 + 600))
+        assert len(messages) == 1
+        assert "Speech: 唔…" in messages[0]["content"]

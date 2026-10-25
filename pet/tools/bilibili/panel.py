@@ -22,7 +22,7 @@ from pet.tools.bilibili.core import CREDENTIAL_PATH, Credential
 logger = logging.getLogger(__name__)
 
 _W = 360
-_H = 700
+_H = 780
 
 _ROOT = Path(__file__).resolve().parents[3]
 _CHECKMARK_FILE = str(_ROOT / "assets" / "icon" / "checkmark.svg").replace("\\", "/")
@@ -318,6 +318,22 @@ class AccountPanel(QWidget):
         window_hint.setStyleSheet("font-size: 11px; color: #999;")
         layout.addWidget(window_hint)
 
+        interval_row = QHBoxLayout()
+        interval_row.setSpacing(4)
+        interval_title = QLabel("定时任务间隔（分钟）")
+        interval_title.setStyleSheet(_SECTION_QSS)
+        interval_row.addWidget(interval_title)
+        interval_row.addWidget(_help_label("两次提醒的最小间隔，10-1440，留空恢复 180；桌宠在忙时按退避顺延"))
+        interval_row.addStretch()
+        layout.addLayout(interval_row)
+
+        self._interval = QLineEdit()
+        self._interval.setStyleSheet(_INPUT_QSS)
+        self._interval.setPlaceholderText("10-1440，默认 180")
+        self._interval.setText(str(cfg["schedule_interval_minutes"]))
+        self._interval.editingFinished.connect(self._save_interval)
+        layout.addWidget(self._interval)
+
         pause_row = QHBoxLayout()
         pause_row.setSpacing(4)
         pause_title = QLabel("定时任务禁用时段")
@@ -412,6 +428,23 @@ class AccountPanel(QWidget):
 
     def _on_failed(self, message: str):
         self._state.setText(message)
+
+    def _save_interval(self):
+        try:
+            cfg = duty.set_interval_minutes(self._interval.text())
+        except ValueError as exc:
+            self._hint.setText(f"间隔无效：{exc}")
+            return
+        except OSError as exc:
+            logger.warning(f"[bili] 保存间隔失败：{exc}")
+            self._hint.setText(f"保存失败：{exc}")
+            return
+        self._interval.setText(str(cfg["schedule_interval_minutes"]))
+        if cfg["schedule_enabled"]:
+            schedule.stop()
+            schedule.start(cfg)
+        self._hint.setText("已保存")
+        QTimer.singleShot(1500, self._hint.clear)
 
     def _save_pause_hours(self):
         text = self._pause_hours.text().strip()

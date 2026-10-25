@@ -41,6 +41,11 @@
 - user 段承载**每轮都会变、又必须原样进上下文的东西**：时间前缀（`_time_prefix`）、窗口探测结果、
   用户消息或截图。感受/需求/旧事这类逐轮内容走 system 尾部的锚点（见上），不进静态前缀；
   静态前缀稳定才能命中 prompt 缓存（`LLM_CACHE_PROMPT`）。
+- 历史行的形态由投影决定：同一回合的摘要与台词合并成一条 assistant 消息（`Summary: …` 在前、`Speech: …` 在后），
+  台词按分段逐行渲染成多个 `Speech: …`（落库保留换行，历史里能看到多段台词的实例），本轮摘要渲染成 `Summary: 〔距现在多久〕…`，
+  用户行与 system 行用 `[距现在多久]` 前缀。时间只挂在 Summary 与用户行上，台词行不带时间 -
+  模型照抄历史行时仍落在协议字段上，时间也不会被念出来（`pet/brain/projection.py` 的 `_render`）。
+  模型照抄摘要行首的时间标签时由解析器剥掉（`pet/brain/parsing.py` 的 `_SUMMARY_TIME_LABEL`）。
 - 历史多轮由 `BrainMixin.get_multi_turn_messages` 装配，先按条数上限淘汰、再按 token 预算淘汰；
   历史里的 system 片段会被 `_merge_system_history` 并成一段 `[上下文备注]` 追加到 system 末尾，
   保持「一个 system + 若干 user/assistant」的干净结构。
@@ -82,8 +87,8 @@
 | 贴边动作要求 | ≥1 个 | ≥1 个 | ≥1 个 | ≥1 个 |
 | 贴边状态（user 段） | 有（侧别 + 少打扰） | 有（侧别） | 有（侧别） | 有（侧别） |
 
-动作数量下限集中在 `prompts._ACTION_LIMITS` 与 `_DOCKED_ACTION_LIMIT`，任务段只引用
-`_action_limit()` 的结果。
+动作数量区间集中在 `prompts._ACTION_RANGE` 与 `_DOCKED_ACTION_RANGE`，任务段与 user prompt 都读
+`action_range()`，文案由 `_action_limit()` 生成。
 
 `interact` 是对单一事件的反射（被抓、放下、投喂、窗口消失），注入长上下文只会让台词偏离事件本身，
 所以它的 prompt 最薄。`analyze` 走与 `chat` 相同的装配（历史、上下文池、记忆都保留），

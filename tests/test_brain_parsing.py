@@ -118,10 +118,10 @@ class TestParseBehavior:
         assert out.mood_deltas == {"affection": 5.0, "joy": 3.0, "sanity": -2.0}
         assert out.vitals_deltas == {"satiety": -2.0, "energy": -1.0}
 
-    def test_multiple_speech_lines_joined_in_order(self):
+    def test_multiple_speech_lines_keep_segments(self):
         out = parse_behavior("Speech: 第一句\nSpeech: 第二句\n")
         assert out.speech_parts == ["第一句", "第二句"]
-        assert out.speech == "第一句 第二句"
+        assert out.speech == "第一句\n第二句"
 
     @pytest.mark.parametrize("raw", ["none", "None", "null", "", "无"])
     def test_silence_markers_produce_no_speech(self, raw):
@@ -183,6 +183,22 @@ class TestParseBehavior:
         out = parse_behavior("Summary: 只有摘要\n", action_fallback=False)
         assert out.actions == []
         assert out.summary == "只有摘要"
+
+    def test_summary_time_label_is_stripped(self):
+        out = parse_behavior("Summary: 〔3 分钟前〕连输三局\nSpeech: 唔...\n")
+        assert out.summary == "连输三局"
+
+    def test_summary_clock_label_is_stripped(self):
+        out = parse_behavior("Summary: 〔11:18〕看清单\n")
+        assert out.summary == "看清单"
+
+    def test_summary_double_label_is_stripped(self):
+        out = parse_behavior("Summary: 〔3 分钟前〕〔11:18〕看清单\n")
+        assert out.summary == "看清单"
+
+    def test_non_time_bracket_prefix_survives(self):
+        out = parse_behavior("Summary: 〔备注〕连输三局\n")
+        assert out.summary == "〔备注〕连输三局"
 
 
 class TestParseActionLine:

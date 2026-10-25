@@ -19,6 +19,7 @@ from pet.brain.prompts import (
     chat_non_vision_user_prompt,
     chat_vision_user_prompt,
     dock_note,
+    history_note,
 )
 from pet.config import config
 from pet.tools.registry import food_tool_available
@@ -293,6 +294,8 @@ class ContextBuilder:
             current_prompt = autonomous_non_vision_user_prompt(ctx_str, dock_note=dock_note)
 
         messages = self._merge_system_history(system, history_msgs)
+        current_prompt = self._with_history_note(
+            current_prompt, "autonomous", bool(dock_note), history_msgs)
 
         if vision:
             mime = self._image_mime()
@@ -330,6 +333,8 @@ class ContextBuilder:
         current_prompt = self._with_attachment(current_prompt, attachment_text)
 
         messages = self._merge_system_history(system, history_msgs)
+        current_prompt = self._with_history_note(
+            current_prompt, task, bool(dock_note), history_msgs)
 
         if vision:
             mime = self._image_mime()
@@ -340,6 +345,14 @@ class ContextBuilder:
         else:
             messages.append({"role": "user", "content": current_prompt})
         return messages
+
+    @staticmethod
+    def _with_history_note(prompt: str, task: str, docked: bool,
+                           history: list[dict]) -> str:
+        """历史里只有 Summary/Speech 行，紧贴历史补一句字段说明，避免模型照抄。"""
+        if not any(m.get("role") != "system" for m in history):
+            return prompt
+        return f"{history_note(task, docked)}\n\n{prompt}"
 
     def _merge_system_history(self, system: str, history_msgs: list[dict]) -> list[dict]:
         """把历史中的 system 类消息（历史摘要、离开提示等）并入主 system prompt。

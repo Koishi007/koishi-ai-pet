@@ -32,6 +32,11 @@ _TAG_SCAN_LIMIT = 8
 # 静音标记：Speech 行取这些值时不产出语音
 _SILENCE_MARKERS = ("none", "", "null", "无")
 
+# 投影写在 Summary 行首的时间标签；模型照抄时剥掉（可能连写多层），时间由投影按当前时刻重算
+_TIME_LABEL = (r"(?:刚刚|\d+\s*(?:分钟|小时)前|(?:昨天|前天|大前天)\s*\d{1,2}:\d{2}"
+               r"|\d{1,2}-\d{1,2}\s*\d{1,2}:\d{2}|\d{1,2}:\d{2})")
+_SUMMARY_TIME_LABEL = re.compile(rf"^(?:〔{_TIME_LABEL}〕\s*)+")
+
 # 行内标签切行
 _TAG_NAMES = ("Speech", "Action", "Summary", "Memory", "Emotion", "Mood", "Vitals")
 _TAG_TOKENS: frozenset[str] = frozenset(
@@ -335,6 +340,8 @@ class BehaviorParser:
         elif tag == "speech":
             if value.lower() not in _SILENCE_MARKERS:
                 acc["speech_parts"].append(value)
+        elif tag == "summary":
+            acc[tag].append(_SUMMARY_TIME_LABEL.sub("", value))
         else:
             acc[tag].append(value)
 
@@ -525,9 +532,10 @@ def parse_stream_chunks(stream, total_timeout: float, sink: BehaviorSink, tag: s
 
 
 def _build_output(acc: dict, speech_streamed: bool) -> BehaviorOutput:
+    # 保留分段换行：落库后投影按行还原成多个 Speech 行
     return BehaviorOutput(
         actions=acc["actions"],
-        speech=" ".join(acc["speech_parts"]) if acc["speech_parts"] else None,
+        speech="\n".join(acc["speech_parts"]) if acc["speech_parts"] else None,
         speech_parts=list(acc["speech_parts"]),
         speech_streamed=speech_streamed,
         summary=acc["summary"][0] if acc["summary"] else None,

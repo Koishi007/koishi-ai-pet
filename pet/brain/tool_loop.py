@@ -216,17 +216,20 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
             on_stream_end()
 
         if not new_tool_calls:
-            # LLM 不再请求工具，解析最终行为
-            result = parse_behavior(content)
+            # LLM 不再请求工具，解析最终行为。空解析保持为空：兜底 sit 由入口在
+            # 修复轮之后补，否则 sit 会让空响应看起来非空
+            result = parse_behavior(content, action_fallback=False)
             result.speech_streamed = speech_streamed
+            result.used_tools = real_round > 0
             return result
 
         first_content = content
         tool_calls_map = new_tool_calls
 
     logger.warning(f"[Behavior] reached MAX_ROUNDS={max_rounds} (real_rounds={real_round}, meta_rounds={meta_round}), force terminate tool loop")
-    result = parse_behavior(first_content)
+    result = parse_behavior(first_content, action_fallback=False)
     result.speech_streamed = speech_streamed
+    result.used_tools = real_round > 0
     return result
 
 

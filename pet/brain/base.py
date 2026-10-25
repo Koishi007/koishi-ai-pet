@@ -200,15 +200,19 @@ class BrainMixin:
 
 
     def add_context(self, role: str, content: str, is_summary: bool = False,
+                    kind: str = "", turn_id: str = "",
                     covers: Optional[tuple] = None):
         """写一条事件，并维护供调试面板查看的内存快照。
 
+        `kind` 标记 assistant 内容的用途：speech（台词）/ summary（本轮摘要），
+        供投影决定渲染成哪一行；`turn_id` 把同一回合的两次写入合并成一条历史消息。
         covers 是摘要覆盖的事件区间，由排空待摘要队列的一方传入。
         """
         with self._ctx_lock:
             if is_summary and self._replace_similar_summary(role, content):
                 return
-            event = self._write_event(role, content, is_summary, covers)
+            event = self._write_event(role, content, is_summary, kind, turn_id,
+                                      covers)
             self._context.append(ContextEntry(
                 role=role, content=content, is_summary=is_summary,
                 seq=event.seq if event else 0))
@@ -232,6 +236,7 @@ class BrainMixin:
         return False
 
     def _write_event(self, role: str, content: str, is_summary: bool,
+                     kind: str = "", turn_id: str = "",
                      covers: Optional[tuple] = None):
         """把一次上下文写入映射为事件；失败不影响主流程。"""
         if self._events is None or not self._events.available:
@@ -240,11 +245,16 @@ class BrainMixin:
             if is_summary:
                 refs = {"covers": list(covers)} if covers else None
                 return self._events.append("summary", {"text": content}, refs=refs)
+            payload = {"text": content}
+            if kind:
+                payload["kind"] = kind
+            if turn_id:
+                payload["turn_id"] = turn_id
             if role == "user":
-                return self._events.append("user_msg", {"text": content})
+                return self._events.append("user_msg", payload)
             if role == "assistant":
-                return self._events.append("assistant_turn", {"text": content})
-            return self._events.append("system_note", {"text": content})
+                return self._events.append("assistant_turn", payload)
+            return self._events.append("system_note", payload)
         except Exception as e:
             logger.warning(f"[BrainMixin] append event failed: {e}")
             return None
@@ -315,6 +325,7 @@ class BrainMixin:
             return None
 
     def clear_context(self):
+        """清空上下文：结束当前会话，并删除历史会话的事件与 artifact。"""
         with self._ctx_lock:
             self._context.clear()
             self._pending_summary_queue.clear()
@@ -324,7 +335,9 @@ class BrainMixin:
             self._save_debounce_timer = None
 
         if self._events is not None and self._events.available:
-            self._events.new_session()
+            # 先切到新会话再删：在途请求的 append 落到新会话，不会复活已删的旧会话
+            session_id = self._events.new_session()
+            self._events.purge_sessions(session_id)
 
     def context_count(self) -> int:
         with self._ctx_lock:

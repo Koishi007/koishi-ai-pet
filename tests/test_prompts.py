@@ -194,6 +194,30 @@ class TestDockedPrompts:
         analyze = builder.build_analyze_decide("hi", "ctx", screenshot=False)
         assert analyze[-1]["content"].startswith(prompts.dock_note("left", "analyze"))
 
+    def test_history_note_precedes_current_prompt(self):
+        """历史非空时，字段说明紧贴历史放在 user 段最前。"""
+        class _Brain:
+            _MAX_POOL_ENTRIES = 21
+
+            def get_multi_turn_messages(self, **_kw):
+                return [{"role": "assistant", "content": "Speech: 嗯"}]
+
+        messages = ContextBuilder(brain_mixin=_Brain()).build_chat_decide(
+            "在吗", "ctx", screenshot=False)
+        assert messages[-1]["content"].startswith(prompts.history_note("chat"))
+
+    def test_history_note_skipped_without_history(self):
+        """首轮没有历史样例，不必花这段 token。"""
+        class _Brain:
+            _MAX_POOL_ENTRIES = 21
+
+            def get_multi_turn_messages(self, **_kw):
+                return []
+
+        messages = ContextBuilder(brain_mixin=_Brain()).build_chat_decide(
+            "在吗", "ctx", screenshot=False)
+        assert "[历史说明]" not in messages[-1]["content"]
+
     def test_interact_note_from_context(self):
         messages = ContextBuilder(dock_side_fn=lambda: "right").build_interact("用户摸了摸你的头")
         content = messages[1]["content"]
@@ -284,25 +308,62 @@ class TestActionTable:
 
 
 class TestActionLimits:
-    """动作数量策略集中在 _ACTION_LIMITS / _DOCKED_ACTION_LIMIT。"""
+    """动作数量策略集中在 _ACTION_RANGE / _DOCKED_ACTION_RANGE。"""
 
     def test_docked_uses_shared_limit(self):
-        for task in prompts._ACTION_LIMITS:
+        for task in prompts._ACTION_RANGE:
             assert prompts._action_limit(task, True) == prompts._DOCKED_ACTION_LIMIT
 
-    def test_undocked_uses_task_limit(self):
-        for task in prompts._ACTION_LIMITS:
-            expected = prompts._ACTION_LIMITS[task]
+    def test_undocked_uses_task_range(self):
+        for task in prompts._ACTION_RANGE:
+            low, high = prompts.action_range(task)
             label, text = prompts._action_limit(task, False)
             assert (label, text) != prompts._DOCKED_ACTION_LIMIT
-            if "{n}" not in expected[0] and "{n}" not in expected[1]:
-                assert (label, text) == expected
+            assert label == (f"{low}-{high}" if high else f"≥{low}")
+            assert str(low) in text
 
     def test_autonomous_free_reads_min_action_count(self):
         n = prompts.min_action_count()
         label, text = prompts._action_limit("autonomous", False)
         assert label == f"≥{n}"
         assert str(n) in text
+
+    @staticmethod
+    def _action_lines(block: str) -> int:
+        return sum(1 for line in block.splitlines() if line.strip().startswith("Action:"))
+
+    def test_examples_match_action_limit(self):
+        cases = [
+            (prompts._autonomous_task, "autonomous", False),
+            (prompts._chat_task, "chat", False),
+            (prompts._analyze_task, "analyze", False),
+            (prompts._interact_task, "interact", False),
+            (prompts._chat_task, "chat", True),
+        ]
+        for fn, task, docked in cases:
+            low, high = prompts.action_range(task, docked)
+            count = self._action_lines(fn(docked=docked)[0])
+            assert count >= low
+            if high:
+                assert count <= high
+
+    def test_format_block_states_required_fields(self):
+        block = prompts._chat_task(False)[0]
+        assert "必填：第一行 Summary、至少 3 个 Action" in block
+
+    def test_history_note_carries_action_count(self):
+        """字段说明紧贴历史，数量随任务与贴边状态变化。"""
+        note = prompts.history_note("chat")
+        assert "其余字段未存入历史" in note
+        assert "至少 3 个 Action" in note
+        assert "至少 1 个 Action" in prompts.history_note("chat", docked=True)
+        assert "只输出 1-2 个 Action" in prompts.history_note("interact")
+
+    def test_user_prompt_leaves_field_list_to_format_block(self):
+        """字段顺序只在[输出格式]里写一次，user 段不再重复清单。"""
+        prompt = prompts.chat_vision_user_prompt("在吗", "")
+        assert "按[输出格式]写出完整输出" in prompt
+        assert "Actions(至少" not in prompt
 
     def test_examples_only_use_shared_actions(self):
         for fn in (prompts._autonomous_task, prompts._chat_task,

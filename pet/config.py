@@ -111,7 +111,7 @@ _KEY_META = {
     "MEMORY_MAX_CAPACITY":       {"type": "int",      "default": 200,            "category": "memory",   "needs_restart": False, "hidden": False, "description": "记忆最大容量"},
     "MEMORY_RECALL_COUNT":       {"type": "int",      "default": 15,             "category": "memory",   "needs_restart": False, "hidden": False, "description": "每次对话召回的记忆条数"},
     "MEMORY_EVENT_RECALL_COUNT": {"type": "int",      "default": 1,              "category": "memory",   "needs_restart": False, "hidden": False, "description": "「你惦记着的事」随机注入的 event 记忆条数(0=关闭)"},
-    "MEMORY_EVENT_MERGE_ENABLED": {"type": "bool",     "default": False,          "category": "memory",   "needs_restart": False, "hidden": False, "description": "整点汇总事件记忆(会删除被合并的旧条目)"},
+    "MEMORY_EVENT_MERGE_ENABLED": {"type": "bool",     "default": False,          "category": "memory",   "needs_restart": False, "hidden": False, "description": "整点汇总事件与对话记忆(会删除被合并的旧条目)"},
     "MEMORY_MERGE_URL":           {"type": "str",     "default": "",             "category": "memory",   "needs_restart": False, "hidden": False, "description": "事件汇总的 API 地址(三项齐全才生效)", "placeholder": "留空沿用当前模型方案"},
     "MEMORY_MERGE_KEY":           {"type": "str",     "default": "",             "category": "memory",   "needs_restart": False, "hidden": False, "description": "事件汇总的 API Key(三项齐全才生效)"},
     "MEMORY_MERGE_MODEL":         {"type": "str",     "default": "",             "category": "memory",   "needs_restart": False, "hidden": False, "description": "事件汇总的模型名(三项齐全才生效)", "placeholder": "留空沿用当前模型方案"},

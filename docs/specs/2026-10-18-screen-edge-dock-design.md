@@ -268,7 +268,7 @@ autonomous 的 user 模板把移动相关的分支合并成「有窗口且有移
 - `_SELF_LIFE_GUIDE` / `_MOOD_GUIDE` / `_VITALS_GUIDE` / `_CHAT_INTRO` 写成通用描述，贴边与未贴边共用，不再维护近似副本。`_CHAT_INTRO` 去掉方向/距离一条，避免贴边时与状态段冲突；未贴边由 `_WINDOW_GUIDE` 承载方向/距离引导。
 - 组合白名单不变；`_TASK_SECTIONS` 的构建函数增加 `docked` 参数（默认 `False`），现有无参调用保持原输出。贴边时四个任务段只要求 `Action ≥ 1`，不设总时长；`_autonomous_task` 贴边时不引用 `min_action_count()` 与 `target_sequence_duration()`。
 - 四个任务段的 few-shot 示例只用贴边与未贴边共有的动作（`thinking` / `sleep` / `shake_arms`），不随贴边切换；动作表列出各自可用动作，示例不再承担示范移动动作的职责。
-- 四个任务段的动作数量集中在 `_ACTION_LIMITS`：`autonomous` 未贴边读 `min_action_count()`，`chat` / `analyze` 为 ≥3，`interact` 为 1-2；贴边统一取 `_DOCKED_ACTION_LIMIT`（≥1）。任务段只引用 `_action_limit()` 的返回值。
+- 四个任务段的动作数量集中在 `_ACTION_RANGE`：`autonomous` 未贴边读 `min_action_count()`，`chat` / `analyze` 为 ≥3，`interact` 为 1-2；贴边统一取 `_DOCKED_ACTION_RANGE`（≥1）。任务段与 user prompt 都引用 `action_range()`。
 - 需求念头同步收窄：贴边时 `lonely` 不再说 `凑到你身边`，`drowsy` 只提 `sleep`，不再建议 `sit`；其余需求保留。
 - 未贴边时 `_FOOD_GUIDE` 的注入条件是 `config.FOOD_ENABLED and food_tool_available()`；贴边任务段不注入该段，避免模型看到“生成食物再走过去”的引导。
 - 饥饿需求的做法改为只保留乞食：`ContextBuilder._need_hint("hungry")` 在 `food_tool_available()` 为假时返回乞食文案（`只能跟你讨点吃的`），不再提自己生成食物。

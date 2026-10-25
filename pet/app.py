@@ -347,6 +347,9 @@ def main():
         lambda token, duration: speech_bubble.end_stream(duration)
         if window.isVisible() and agent.is_current_call(token) else None
     )
+    agent.speak_stream_discard.connect(
+        lambda: speech_bubble.discard_stream() if window.isVisible() else None
+    )
     agent.speech_finish_requested.connect(lambda: speech_bubble.finish_pending())
     agent.llm_loading.connect(
         lambda loading: window.particles.start_loading() if window.isVisible() and loading else window.particles.stop_loading() if not loading else None

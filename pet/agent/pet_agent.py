@@ -8,6 +8,7 @@ from datetime import datetime
 from PySide6.QtCore import QObject, QThread, QThreadPool, QTimer, Qt, Signal, Slot
 
 from pet.brain.behavior import Behavior
+from pet.brain.events import new_group_id
 from pet.brain.output import BehaviorOutput, CancelledError
 from pet.agent.scheduler import Scheduler
 from pet.agent.scheduled_tasks import ScheduledTasks
@@ -64,6 +65,7 @@ class PetAgent(QObject):
     speak_stream_start = Signal(object)
     speak_stream_chunk = Signal(object, str)
     speak_stream_end   = Signal(object, int)
+    speak_stream_discard = Signal()  # 修复轮前作废已流出的半截台词
     speech_finish_requested = Signal()  # 抢占时收尾：已收到的台词继续播完
     llm_loading        = Signal(bool)  # True=开始等待, False=结束
     notify_requested   = Signal(str, str, int)  # title, message, duration_ms
@@ -85,7 +87,7 @@ class PetAgent(QObject):
         self.mood = Mood(parent=self)
         self._dock_side = ""
         self._food_tool_was_enabled = False
-        self.behavior = Behavior(memory_store=self.memory_store, screen_reader=self.screen_reader, vitals=self.vitals, mood=self.mood, recent_events_fn=self.recent_events, once_events_fn=self.take_once_events, progress_fn=self.note_brain_progress, dock_side_fn=lambda: self._dock_side)
+        self.behavior = Behavior(memory_store=self.memory_store, screen_reader=self.screen_reader, vitals=self.vitals, mood=self.mood, recent_events_fn=self.recent_events, once_events_fn=self.take_once_events, progress_fn=self.note_brain_progress, dock_side_fn=lambda: self._dock_side, repair_fn=self._discard_stream_for_repair)
         self.scheduler = Scheduler(self)
         self.state_machine = StateMachine(parent=self)
         self.state_machine.state_changed.connect(self.state_changed)
@@ -275,6 +277,10 @@ class PetAgent(QObject):
         """用主线程取好的快照生成窗口上下文。"""
         hwnd, dpr, screen_h = snap or (0, 1.0, 1080)
         return self.behavior.ctx.build_window_context(pet_x, pet_y, hwnd, dpr, screen_h)
+
+    def _discard_stream_for_repair(self):
+        """修复轮会整段重写，已流出的半截台词先作废，免得重复播出。"""
+        self.speak_stream_discard.emit()
 
     def _autonomous_pipeline(self, token, pet_x=0, pet_y=0, snap=None):
         self.behavior.note_autonomous_round()
@@ -704,20 +710,22 @@ class PetAgent(QObject):
             logger.info(f"[{ts}] [PetAgent] ← {result}")
             if not result.actions and not result.speech:
                 logger.warning(f"[{ts}] [PetAgent] empty response from LLM (no actions, no speech)")
-            self.behavior.add_context(
-                role="assistant",
-                content=f"{result.speech or '(silent)'}")
-            if result.speech and not result.speech_streamed:
-                parts = result.speech_parts if result.speech_parts else [result.speech]
-                for part in parts:
-                    self.speak_requested.emit(part, 5000)
+            # Summary 先写：投影把时间标签挂在 Summary 行上，历史顺序与协议一致
+            turn_id = new_group_id()
+            if result.summary:
+                self.behavior.add_context(role="assistant", content=result.summary,
+                                          kind="summary", turn_id=turn_id)
             if result.speech:
+                self.behavior.add_context(role="assistant", content=result.speech,
+                                          kind="speech", turn_id=turn_id)
+                if not result.speech_streamed:
+                    parts = result.speech_parts if result.speech_parts else [result.speech]
+                    for part in parts:
+                        self.speak_requested.emit(part, 5000)
                 try:
                     self.conversation_store.add("pet", result.speech)
                 except Exception:
                     pass
-            if result.summary:
-                self.behavior.add_context(role="assistant", content=result.summary)
             if result.actions:
                 self.action_batch_started.emit()
             for step in result.actions:

@@ -49,6 +49,10 @@ STOP_WORDS = {
 # 记忆类别，与 prompts._MEMORY_GUIDE 的类别定义保持一致
 MEMORY_CATEGORIES = ("user_fact", "user_preference", "conversation", "event")
 
+# 汇总候选类别：conversation 只与 event 同组时参与，产物固定写回 event
+MEMORY_MERGE_CATEGORIES = ("event", "conversation")
+_MERGE_CATEGORY_WHERE = "category IN (" + ",".join("?" * len(MEMORY_MERGE_CATEGORIES)) + ")"
+
 
 class LightweightDeduplicator:
 
@@ -1607,31 +1611,35 @@ class MemoryStore:
                 return dict(row)
         return dict(seed)
 
-    def latest_event_marker(self) -> Optional[str]:
-        """最新一条 event 记忆的标记（时间 + id）；没有时返回 None。"""
+    def latest_merge_marker(self) -> Optional[str]:
+        """最新一条可汇总记忆（event/conversation）的标记（时间 + id）。"""
         with self._retriever._lock:
             row = self._retriever._conn.execute(
-                "SELECT created_at, id FROM memories WHERE category = 'event' "
-                "ORDER BY created_at DESC, id DESC LIMIT 1"
+                f"SELECT created_at, id FROM memories WHERE {_MERGE_CATEGORY_WHERE} "
+                "ORDER BY created_at DESC, id DESC LIMIT 1",
+                MEMORY_MERGE_CATEGORIES,
             ).fetchone()
         # id 补零后再拼，避免 "…10" 与 "…9" 的字符串比较把后写入的判成更早
         return f"{row['created_at']}#{row['id']:08d}" if row else None
 
-    def pending_events(self, marker: Optional[str]) -> tuple[int, Optional[str]]:
-        """统计 marker 之后的 event 条数，同时返回当前最新 marker。
+    def pending_merge_items(self, marker: Optional[str]) -> tuple[int, Optional[str]]:
+        """统计 marker 之后可汇总记忆的条数，同时返回当前最新 marker。
 
-        比较 (created_at, id) 二元组，与 latest_event_marker 的排序一致。
+        conversation 也计入：只新增对话时同样要触发汇总，否则跨类别事件会漏合并。
+        比较 (created_at, id) 二元组，与 latest_merge_marker 的排序一致。
         """
         with self._retriever._lock:
             conn = self._retriever._conn
             row = conn.execute(
-                "SELECT created_at, id FROM memories WHERE category = 'event' "
-                "ORDER BY created_at DESC, id DESC LIMIT 1"
+                f"SELECT created_at, id FROM memories WHERE {_MERGE_CATEGORY_WHERE} "
+                "ORDER BY created_at DESC, id DESC LIMIT 1",
+                MEMORY_MERGE_CATEGORIES,
             ).fetchone()
             latest = f"{row['created_at']}#{row['id']:08d}" if row else None
             if not marker:
                 count = conn.execute(
-                    "SELECT COUNT(*) FROM memories WHERE category = 'event'"
+                    f"SELECT COUNT(*) FROM memories WHERE {_MERGE_CATEGORY_WHERE}",
+                    MEMORY_MERGE_CATEGORIES,
                 ).fetchone()[0]
                 return int(count), latest
             created, _, raw_id = marker.rpartition("#")
@@ -1641,17 +1649,19 @@ class MemoryStore:
             else:
                 where, params = "created_at > ?", (marker,)
             count = conn.execute(
-                f"SELECT COUNT(*) FROM memories WHERE category = 'event' AND {where}",
-                params
+                f"SELECT COUNT(*) FROM memories WHERE {_MERGE_CATEGORY_WHERE} AND {where}",
+                (*MEMORY_MERGE_CATEGORIES, *params)
             ).fetchone()[0]
         return int(count), latest
 
-    def list_event_candidates(self) -> list[dict]:
-        """全部 event 记忆（按创建时间倒序），供整点汇总使用。"""
+    def list_merge_candidates(self) -> list[dict]:
+        """全部可汇总记忆（event 与 conversation，按创建时间倒序）。"""
         with self._retriever._lock:
             rows = self._retriever._conn.execute(
-                "SELECT id, content, keywords, importance, level, created_at "
-                "FROM memories WHERE category = 'event' ORDER BY created_at DESC, id DESC"
+                "SELECT id, category, content, keywords, importance, level, created_at "
+                f"FROM memories WHERE {_MERGE_CATEGORY_WHERE} "
+                "ORDER BY created_at DESC, id DESC",
+                MEMORY_MERGE_CATEGORIES,
             ).fetchall()
         return [dict(r) for r in rows]
 
@@ -1661,6 +1671,7 @@ class MemoryStore:
 
         级别保底 L2、组内含 L1 时取 L1（L3 不拉低），并补 last_accessed_at：
         created_at 回填组内最大值，若沿用 L3 会出生即被过期清理。
+        组内 conversation 成员随组删除，产物类别固定 event。
         组内成员在请求期间被删除或改写时整组跳过，避免删掉新内容。
         """
         by_id = {r["id"]: r for r in rows}

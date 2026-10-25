@@ -203,7 +203,7 @@ class TestRandomEvents:
     def test_excluded_latest_topic_is_skipped(self, store):
         store.save("event", "准备拍视频，镜头需重拍", ["视频拍摄"], 3, "L2")
         store.save("event", "视频已拍完，素材不用补拍", ["视频拍摄"], 3, "L2")
-        newest = max(store.list_event_candidates(),
+        newest = max(store.list_merge_candidates(),
                      key=lambda r: (r["created_at"], r["id"]))
         picked = store.random_events(10, exclude_ids={newest["id"]})
         # 同主题最新条目已被排除时不回退到更旧的条目
@@ -219,24 +219,32 @@ class TestRandomEvents:
             conn.commit()
             newest_id = conn.execute(
                 "SELECT MAX(id) FROM memories WHERE category = 'event'").fetchone()[0]
-        assert store.latest_event_marker() == f"2026-10-19T10:00:00#{newest_id:08d}"
+        assert store.latest_merge_marker() == f"2026-10-19T10:00:00#{newest_id:08d}"
 
-    def test_pending_events_without_marker_counts_all(self, store):
-        count, latest = store.pending_events(None)
+    def test_pending_items_without_marker_counts_all(self, store):
+        count, latest = store.pending_merge_items(None)
         assert count == 2
-        assert latest == store.latest_event_marker()
+        assert latest == store.latest_merge_marker()
 
-    def test_pending_events_counts_after_marker(self, store):
-        oldest = store.list_event_candidates()[-1]
+    def test_pending_items_counts_after_marker(self, store):
+        oldest = store.list_merge_candidates()[-1]
         marker = f"{oldest['created_at']}#{oldest['id']:08d}"
-        before = store.pending_events(marker)[0]
+        before = store.pending_merge_items(marker)[0]
         store.save("event", "甲事件", ["甲"], 3, "L2")
-        count, latest = store.pending_events(marker)
+        count, latest = store.pending_merge_items(marker)
         assert count == before + 1
-        assert latest == store.latest_event_marker()
+        assert latest == store.latest_merge_marker()
 
-    def test_pending_events_after_latest_is_zero(self, store):
-        assert store.pending_events(store.latest_event_marker())[0] == 0
+    def test_pending_items_after_latest_is_zero(self, store):
+        assert store.pending_merge_items(store.latest_merge_marker())[0] == 0
+
+    def test_conversation_counts_as_pending(self, store):
+        """只新增对话也要触发汇总，否则跨类别事件没法合并。"""
+        marker = store.latest_merge_marker()
+        store.save("conversation", "约好晚上去运动", ["运动"], 3, "L2")
+        count, latest = store.pending_merge_items(marker)
+        assert count == 1
+        assert latest != marker
 
     def test_injection_does_not_touch_access_stats(self, store):
         store.random_events(5)

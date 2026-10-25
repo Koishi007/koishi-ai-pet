@@ -12,9 +12,9 @@ from pet.brain.llm_gateway import LlmGateway
 from pet.brain.llm_stats import LlmStats
 from pet.brain.local_fallback import chat_decide_local, decide_local, interact_decide_local
 from pet.brain.output import ActionStep, BehaviorOutput, CancelledError
-from pet.brain.parsing import (BehaviorParser, parse_behavior, parse_stream_chunks,
-                               _UNPARSED_SAMPLE_LIMIT)
-from pet.brain.repair import repair_messages, retry_if_empty, RETRY_TEMPERATURE
+from pet.brain.parsing import BehaviorParser, parse_behavior, parse_stream_chunks
+from pet.brain.repair import (repair_messages, retry_if_incomplete,
+                              action_requirement, RETRY_TEMPERATURE)
 from pet.brain.summary import SummaryHooks, flush_summaries, summarize_with_llm
 from pet.brain.tool_loop import run_tool_loop
 from pet.tools.executor import ToolExecutor
@@ -24,12 +24,46 @@ from pet.tools.registry import TOOL_REGISTRY
 
 logger = logging.getLogger(__name__)
 
+_ARGS_LOG_LIMIT = 500
+
+# 修复轮回传的上轮原文上限：容得下完整字段行，模型才能只补缺失字段
+_REPAIR_SAMPLE_LIMIT = 1000
+
+
+def _one_line(text: str) -> str:
+    """换行折成字面 \\n。"""
+    return str(text).replace("\r\n", "\n").replace("\n", "\\n")
+
+
+def _msg_brief(message: dict) -> str:
+    """content 与 tool_calls 压成一行。"""
+    parts: list[str] = []
+    content = message.get("content")
+    if isinstance(content, str):
+        parts.append(_one_line(content))
+    elif isinstance(content, list):
+        for j, part in enumerate(content):
+            if part["type"] == "text":
+                parts.append(f"part[{j}]={_one_line(part['text'])}")
+            else:
+                parts.append(f"part[{j}]={part['type']} len={len(str(part))} (binary omitted)")
+    else:
+        # 工具调用的 assistant 消息 content 为 null，属协议允许
+        parts.append(f"content={content!r}")
+    for k, call in enumerate(message.get("tool_calls") or []):
+        fn = call.get("function") or {}
+        args = str(fn.get("arguments") or "")
+        if len(args) > _ARGS_LOG_LIMIT:
+            args = f"{args[:_ARGS_LOG_LIMIT]}…(+{len(args) - _ARGS_LOG_LIMIT})"
+        parts.append(f"call[{k}]={fn.get('name', '')} id={call.get('id', '')} args={args}")
+    return " | ".join(parts)
+
 
 class Behavior(BrainMixin):
 
     def __init__(self, memory_store=None, screen_reader=None, vitals=None, mood=None,
                  recent_events_fn=None, once_events_fn=None, progress_fn=None,
-                 dock_side_fn=None):
+                 dock_side_fn=None, repair_fn=None):
         db_path = memory_store.db_path if memory_store else None
         super().__init__(db_path=db_path)
         self._llm = LLMClient()
@@ -37,6 +71,8 @@ class Behavior(BrainMixin):
         # 进展心跳回调：每产生一次实质进展（chunk / 工具轮次 / LLM 返回）通知一次，
         # 供看门狗区分「跑得慢」与「挂死」，避免长流程被误判
         self._progress_fn = progress_fn
+        # 修复轮开始前的回调：作废已流出的半截台词，避免补写时重复播出
+        self._repair_fn = repair_fn
         self._lock = threading.RLock()
         self._counter_lock = threading.Lock()  # 仅保护 _rounds_without_user，避免主线程等待 LLM 长锁
         self._rounds_without_user = 0
@@ -120,6 +156,15 @@ class Behavior(BrainMixin):
     @_last_unparsed.setter
     def _last_unparsed(self, value: str):
         self._unparsed_local.text = value
+
+    @property
+    def _repair_missing(self) -> str:
+        """修复轮指出的缺失字段，按线程隔离。"""
+        return getattr(self._unparsed_local, "missing", "")
+
+    @_repair_missing.setter
+    def _repair_missing(self, value: str):
+        self._unparsed_local.missing = value
 
     @property
     def _last_finish_reason(self) -> str:
@@ -210,12 +255,12 @@ class Behavior(BrainMixin):
             messages = self.ctx.build_autonomous_decide(context, screenshot=screenshot)
             is_vision = isinstance(messages[-1]["content"], list)
             tag = "autonomous_decide_vision_stream" if is_vision else "autonomous_decide_stream"
-            return retry_if_empty(
+            return self._decide_with_repair(
                 lambda repair=False: self._stream_and_build_output(
                     messages, tag=tag, mode="autonomous", on_chunk=on_chunk,
                     on_stream_end=on_stream_end,
                     cancel_check=cancel_check, repair=repair),
-                tag,
+                tag, stream=True,
             )
         except CancelledError:
             raise
@@ -252,13 +297,13 @@ class Behavior(BrainMixin):
         try:
             messages = self.ctx.build_interact(event_hint, attachment_text=attachment_text,
                                                attachment_image=attachment_image)
-            return retry_if_empty(
+            return self._decide_with_repair(
                 lambda repair=False: self._stream_and_build_output(
                     messages, tag="interact", mode="interact", on_chunk=on_chunk,
                     on_stream_end=on_stream_end,
                     thinking=thinking, enable_tools=enable_tools,
                     cancel_check=cancel_check, repair=repair),
-                "interact",
+                "interact", stream=True,
             )
         finally:
             self._lock.release()
@@ -307,13 +352,13 @@ class Behavior(BrainMixin):
                                                   attachment_image=attachment_image)
             is_vision = isinstance(messages[-1]["content"], list)
             tag = "chat_decide_vision_stream" if is_vision else "chat_decide_stream"
-            return retry_if_empty(
+            return self._decide_with_repair(
                 lambda repair=False: self._stream_and_build_output(
                     messages, tag=tag, mode="chat", on_chunk=on_chunk,
                     on_stream_end=on_stream_end,
                     thinking=thinking, enable_tools=enable_tools,
                     cancel_check=cancel_check, repair=repair),
-                tag,
+                tag, stream=True,
             )
         except CancelledError:
             raise
@@ -344,13 +389,13 @@ class Behavior(BrainMixin):
                                                      attachment_image=attachment_image)
             is_vision = isinstance(messages[-1]["content"], list)
             tag = "analyze_decide_vision_stream" if is_vision else "analyze_decide_stream"
-            return retry_if_empty(
+            return self._decide_with_repair(
                 lambda repair=False: self._stream_and_build_output(
                     messages, tag=tag, mode="analyze", on_chunk=on_chunk,
                     on_stream_end=on_stream_end,
                     thinking=thinking, enable_tools=enable_tools,
                     cancel_check=cancel_check, repair=repair),
-                tag,
+                tag, stream=True,
             )
         finally:
             self._lock.release()
@@ -362,10 +407,13 @@ class Behavior(BrainMixin):
         t = datetime.now().strftime("%H:%M:%S")
         if repair:
             thinking = self._thinking_for_repair(thinking)
-            messages = repair_messages(messages, self._last_unparsed)
+            messages = repair_messages(
+                messages, self._last_unparsed, self._repair_missing,
+                action_requirement(mode, self._docked()))
         else:
             self._last_unparsed = ""
             self._last_finish_reason = ""
+            self._repair_missing = ""
         self._llm.reset_effective()  # 新请求链从首选方案开始
         self._apply_cache_control(messages)
         self._dump_context(tag, messages)
@@ -378,7 +426,7 @@ class Behavior(BrainMixin):
                                            temperature=RETRY_TEMPERATURE if repair else None)
             msg = resp.choices[0].message
             content = msg.content or ""
-            self._last_unparsed = content[:_UNPARSED_SAMPLE_LIMIT]
+            self._last_unparsed = content[:_REPAIR_SAMPLE_LIMIT]
             self._last_finish_reason = resp.choices[0].finish_reason or ""
             logger.info(f"[{t}] [Behavior] === LLM RESPONSE ({tag}) ===")
             logger.info(f"[{t}] [Behavior]   finish_reason: {self._last_finish_reason}")
@@ -415,13 +463,16 @@ class Behavior(BrainMixin):
                                  enable_tools: bool | None = None,
                                  cancel_check: callable = None,
                                  repair: bool = False) -> BehaviorOutput:
-        """跑一次流式管线；空响应的重试由调用方包 retry_if_empty 负责。"""
+        """跑一次流式管线；修复与兜底由入口负责。"""
         if repair:
             thinking = self._thinking_for_repair(thinking)
-            messages = repair_messages(messages, self._last_unparsed)
+            messages = repair_messages(
+                messages, self._last_unparsed, self._repair_missing,
+                action_requirement(mode, self._docked()))
         else:
             self._last_unparsed = ""
             self._last_finish_reason = ""
+            self._repair_missing = ""
         self._llm.reset_effective()  # 新请求链从首选方案开始
         self._apply_cache_control(messages)
         self._dump_context(tag, messages)
@@ -447,6 +498,9 @@ class Behavior(BrainMixin):
                 action_fallback=False,
             )
             speech_streamed = chunk_sent[0]
+            if raw:
+                # 解析成功也留一份：修复轮只需补齐缺失字段，不必重新推理
+                self._last_unparsed = raw[:_REPAIR_SAMPLE_LIMIT]
 
             if tool_calls_map:
                 # 之后每轮由 tool_loop 在 stream 返回后调用 on_stream_end 断句，
@@ -507,12 +561,26 @@ class Behavior(BrainMixin):
                            f"内容被思考占满 max_tokens")
         self.record_failed_turn(self._last_unparsed, self._last_finish_reason, tag)
 
-    def _decide_with_repair(self, pipeline, tag: str) -> BehaviorOutput:
-        """非流式入口的空响应修复：补 sit 兜底，已解析的摘要、记忆与增量都保留。"""
-        output = retry_if_empty(pipeline, tag)
-        if not output.actions and not output.speech:
+    def _decide_with_repair(self, pipeline, tag: str, stream: bool = False) -> BehaviorOutput:
+        """缺 Summary/Action 时重跑一次，仍缺时补 sit 兜底。"""
+        def _on_missing(missing: str):
+            self._repair_missing = missing
+            if stream:
+                self._discard_stream_before_repair()
+
+        output = retry_if_incomplete(pipeline, tag, on_missing=_on_missing)
+        if not output.actions:
             output.actions = [ActionStep("sit", kwargs={"duration": 5})]
         return output
+
+    def _discard_stream_before_repair(self):
+        """重试会整段重写：已经流出的半截台词先作废，免得补写后重复。"""
+        if self._repair_fn is None:
+            return
+        try:
+            self._repair_fn()
+        except Exception:
+            logger.warning("[Behavior] repair hook failed", exc_info=True)
 
     def flush_summaries(self):
         """把上下文淘汰产生的待摘要条目统一处理（实现见 pet/brain/summary.py）。"""
@@ -554,18 +622,10 @@ class Behavior(BrainMixin):
         t = datetime.now().strftime("%H:%M:%S")
         logger.debug(f"[{t}] [Behavior] ====== FULL CONTEXT ({tag}) ======")
         for i, m in enumerate(messages):
-            content = m.get("content")
-            if isinstance(content, str):
-                logger.debug(f"[{t}] [Behavior] --- msg[{i}] role={m['role']} ---\n{content}")
-            elif isinstance(content, list):
-                for j, part in enumerate(content):
-                    if part["type"] == "text":
-                        logger.debug(f"[{t}] [Behavior] --- msg[{i}] role={m['role']} part[{j}] text ---\n{part['text']}")
-                    else:
-                        logger.debug(f"[{t}] [Behavior] --- msg[{i}] role={m['role']} part[{j}] {part['type']} len={len(str(part))} --- (binary omitted)")
-            else:
-                # 工具调用的 assistant 消息 content 为 null，属协议允许
-                logger.debug(f"[{t}] [Behavior] --- msg[{i}] role={m['role']} content={content!r}")
+            role = m.get("role")
+            # tool 消息补调用 id
+            meta = f" tool_call_id={m.get('tool_call_id', '')}" if role == "tool" else ""
+            logger.debug(f"[{t}] [Behavior] --- msg[{i}] role={role}{meta} --- {_msg_brief(m)}")
         logger.debug(f"[{t}] [Behavior] ====== END CONTEXT ({tag}) ======")
 
 class _BehaviorToolSession:

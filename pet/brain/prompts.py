@@ -1,4 +1,4 @@
-﻿"""系统提示词分层组装"""
+"""系统提示词分层组装"""
 
 import logging
 from typing import Sequence
@@ -27,19 +27,22 @@ level: L1=核心事实(永不衰减) L2=情景记忆(缓慢衰减) L3=临时信�
 
 
 MEMORY_MERGE_PROMPT = """[任务]
-下面的事件记录中，哪些是同一件事的连续进展？只把这类记录汇总成组，其余记录不必处理。
+下面的记忆记录分 event（事件）与 conversation（对话）两类，哪些是同一件事的连续进展？只把这类记录汇总成组，其余记录不必处理。
 
 [判断标准]
 - 同一件事：围绕同一目标或对象的连续进展（准备、进行、完成、后续影响）
+- conversation 可与 event 归为一组：对话是经过，event 是结果时属于同一件事，合并后按 event 记录
+- 只有 conversation 的组不要输出：对话记录本身不参与汇总
 - 不同事：主题词相近但对象不同，不算同一件事
 - 没有把握时不合并
 
 [输出]
-只输出需要汇总的组，每组一行：
+只输出需要汇总的组，每组一行，且每组至少包含一条 event：
 Group: #编号,#编号 | 汇总内容
 - 每组至少两条，没有可汇总的记录时留空
 - 每条记录最多出现在一组
 - 汇总内容写清最终状态，并保留过程中的关键细节：时间、对象、做过什么、结果如何
+- 冲突的说法以最新记录为准，不要并列保留
 - 长度不超过 400 字，可读成一段连贯记录，不是关键词罗列，如果事件有时序，带上时序描述
 - 只输出 Group 行，不解释、不加代码块、不输出未分组的记录"""
 
@@ -90,7 +93,7 @@ _CHAT_INTRO = """[感知] 对话模式
 - 用户闲聊 → 语言回应 + 配合表情动作
 - 用户要求使用工具 → 调用对应的工具
 - 用户让你评论屏幕 → 分析屏幕内容给出回应
-- 无具体动作指令时，可自由选择 1-2 个配合语境的动作"""
+- 无具体动作指令时，可自由选择配合语境的动作"""
 
 _MOOD_GUIDE = """[状态] 心理变化 (仅变化时输出)
 Mood: affection±值 joy±值 sanity±值
@@ -221,6 +224,7 @@ def _food_guide_available() -> bool:
 
 def _task_format(*, header: str, summary: str, emotion: str,
                  speech: list[str], actions: list[str], mood: str,
+                 action_text: str = "",
                  memory: str | None = None, vitals: str | None = None) -> str:
     """任务段的输出格式块：示例行按传入顺序展开，Memory/Vitals 按需出现。"""
     lines = [
@@ -238,33 +242,55 @@ def _task_format(*, header: str, summary: str, emotion: str,
         lines.append(f"  Vitals: {vitals}")
     lines.append("")
     lines.append(f"可用 Emotion: {_EMOTION_LIST}")
+    if action_text:
+        lines.append(f"必填：第一行 Summary、{action_text} 个 Action；其余可省略")
     return "\n".join(lines) + "\n"
 
 
-# 任务 -> (格式标签, 约束文案)；贴边统一取 _DOCKED_ACTION_LIMIT，{n} 由 min_action_count() 填充
-_ACTION_LIMITS = {
-    "autonomous": ("≥{n}", "最少 {n}"),
-    "chat": ("≥3", "至少 3"),
-    "interact": ("1-2", "只输出 1-2"),
-    "analyze": ("≥3", "至少 3"),
+# 任务 -> (最少, 最多) 动作数；最多 0 表示不限，autonomous 的下限按调度间隔动态计算
+_ACTION_RANGE = {
+    "autonomous": (min_action_count, 0),
+    "chat": (3, 0),
+    "interact": (1, 2),
+    "analyze": (3, 0),
 }
+_DOCKED_ACTION_RANGE = (1, 0)
 _DOCKED_ACTION_LIMIT = ("≥1", "至少 1")
+
+
+def action_range(task: str, docked: bool = False) -> tuple[int, int]:
+    """任务的动作数量 (最少, 最多)；最多 0 表示不限。"""
+    if docked:
+        return _DOCKED_ACTION_RANGE
+    low, high = _ACTION_RANGE.get(task, (1, 0))
+    return (low() if callable(low) else low), high
 
 
 def _action_limit(task: str, docked: bool) -> tuple[str, str]:
     """返回任务的动作数量 (格式标签, 约束文案)。"""
     if docked:
         return _DOCKED_ACTION_LIMIT
-    label, text = _ACTION_LIMITS[task]
-    if "{n}" in label or "{n}" in text:
-        n = min_action_count()
-        label, text = label.format(n=n), text.format(n=n)
-    return label, text
+    low, high = action_range(task)
+    if high:
+        return f"{low}-{high}", f"只输出 {low}-{high}"
+    text = "最少" if task == "autonomous" else "至少"
+    return f"≥{low}", f"{text} {low}"
+
+
+def history_note(task: str, docked: bool = False) -> str:
+    """历史字段说明：紧贴历史注入，抵消「历史只出现 Summary/Speech」的模仿。"""
+    _, action_text = _action_limit(task, docked)
+    return (
+        "[历史说明]\n"
+        "上方历史只保留 Summary 与 Speech 行，其余字段未存入历史，不代表可省略；"
+        f"本轮仍按[输出格式]输出完整字段，且{action_text} 个 Action。"
+    )
 
 
 def _autonomous_task(docked: bool = False) -> list[str]:
     action_label, action_text = _action_limit("autonomous", docked)
-    actions = ["thinking 5", "sleep 30", "shake_arms"]
+    pool = ["thinking 5", "sleep 20", "shake_arms", "rotate", "confuse"]
+    actions = [pool[i % len(pool)] for i in range(1 if docked else min_action_count())]
     target_s = target_sequence_duration() if not docked else 0
 
     format_guide = _task_format(
@@ -276,6 +302,7 @@ def _autonomous_task(docked: bool = False) -> list[str]:
         emotion="happy",
         speech=["先安静待一会儿..."] if docked else ["又在写代码呀...", "嘿嘿"],
         actions=actions,
+        action_text=action_text,
         memory=(
             "user_fact 用户习惯在晚上工作 | keywords:[工作习惯] | importance:3 | level:L2"
             if docked else
@@ -324,7 +351,8 @@ def _chat_task(docked: bool = False) -> list[str]:
         summary="<对话内容和行为决策，≤50字>",
         emotion="happy",
         speech=["嗯..."] if docked else ["跳过去嘛...好的", "会有奖励嘛..."],
-        actions=["thinking 5", "shake_arms"],
+        actions=["thinking 5"] if docked else ["thinking 5", "shake_arms", "rotate"],
+        action_text=action_text,
         memory=(
             "user_fact 用户习惯在晚上工作 | keywords:[工作习惯] | importance:3 | level:L2"
             if docked else
@@ -365,7 +393,8 @@ def _interact_task(docked: bool = False) -> list[str]:
         summary="<互动内容和反应，≤30字>",
         emotion="happy",
         speech=["嗯..."] if docked else ["你怎么抓我呀", "哇——放开"],
-        actions=["thinking 5", "shake_arms"],
+        actions=["thinking 5"] if docked else ["thinking 5", "shake_arms"],
+        action_text=action_text,
         mood="affection+1 joy+1" if docked else "affection+1 joy-1 sanity-5",
         vitals="satiety-2 energy+3",
     )
@@ -391,7 +420,8 @@ def _analyze_task(docked: bool = False) -> list[str]:
         summary="<对象是什么 + 你的结论，≤50字>",
         emotion="curious",
         speech=["这份笔记写了三件事…", "最有意思的是第二件"],
-        actions=["thinking 5", "shake_arms"],
+        actions=["thinking 5"] if docked else ["thinking 5", "shake_arms", "rotate"],
+        action_text=action_text,
         memory="event 用户给你看过一张旅行照片 | keywords:[照片] | importance:2 | level:L3",
         mood="joy+1",
     )
@@ -526,7 +556,7 @@ def autonomous_vision_user_prompt(context: str, dock_note: str = "") -> str:
     return _with_dock_note(
         f"{context}\n\n"
         f"【自主决策触发】当前是定时器自动唤醒，用户没有在和你说话、互动，也没有给你喂食！\n"
-        f"优先观察当前屏幕截图、环境变化和自身状态。历史对话前缀标有 [时间]，请参考时间判断话题新鲜度：\n"
+        f"优先观察当前屏幕截图、环境变化和自身状态。历史里用户消息行首标着距现在多久，你的 Summary 行前也标着同一时刻，据此判断话题新鲜度：\n"
         f"  • 5分钟内的话题 → 可以自然承接。若之后用户主动延续话题，可以继续该话题，否则禁止再次输出相关内容\n"
         f"  • 30分钟以上的话题 → 视为已结束，除非有明确理由，不要主动重提\n"
         f"  • 无论多久前的台词 → 绝对禁止复读\n\n"
@@ -544,7 +574,7 @@ def autonomous_vision_user_prompt(context: str, dock_note: str = "") -> str:
         f"5. 理智不正常时话语可以混乱，但行为必须无害——不做破坏性操作，不主动写/覆盖文件、打开未知网页或改动用户环境；多个独立工具可一次并行调用\n"
         f"6. 画面没什么变化时不要硬找新话题、不要给画面加戏或堆砌修辞；可以说当下的感受，也可以用很短的句子\n"
         f"7. 记忆：本轮是否出现了值得记住的新信息（环境里暴露的稳定事实、明确的偏好或安排）？有就写一行 Memory，没有就省略\n"
-        f"8. 按顺序写出完整输出（Summary → Emotion → Speech(可选，可多个) → Actions → Memory(可选) → Mood）",
+        "8. 按[输出格式]写出完整输出",
         dock_note,
     )
 
@@ -553,7 +583,7 @@ def autonomous_non_vision_user_prompt(context: str, dock_note: str = "") -> str:
     return _with_dock_note(
         f"{context}\n\n"
         f"【自主决策触发】当前是定时器自动唤醒，用户没有在和你说话、互动，也没有给你喂食！\n"
-        f"优先感知窗口探测数据、环境变化和自身状态。历史对话前缀标有 [时间]，请参考时间判断话题新鲜度：\n"
+        f"优先感知窗口探测数据、环境变化和自身状态。历史里用户消息行首标着距现在多久，你的 Summary 行前也标着同一时刻，据此判断话题新鲜度：\n"
         f"  • 5分钟内的话题 → 可以自然承接。若之后用户主动延续话题，可以继续该话题，否则禁止再次输出相关内容\n"
         f"  • 30分钟以上的话题 → 视为已结束，除非有明确理由，不要主动重提\n"
         f"  • 无论多久前的台词 → 绝对禁止复读\n\n"
@@ -567,7 +597,7 @@ def autonomous_non_vision_user_prompt(context: str, dock_note: str = "") -> str:
         f"4. 理智不正常时话语可以混乱，但行为必须无害——不做破坏性操作，不主动写/覆盖文件、打开未知网页或改动用户环境；多个独立工具可一次并行调用\n"
         f"5. 避免与近期台词重复；没什么想说就简短表达当下的感觉\n"
         f"6. 记忆：本轮是否出现了值得记住的新信息（窗口标题、记忆段里没有的稳定事实或偏好）？有就写一行 Memory，没有就省略\n"
-        f"7. 按顺序写出完整输出（Summary → Emotion → Speech(可选，可多个) → Actions → Memory(可选) → Mood）",
+        "7. 按[输出格式]写出完整输出",
         dock_note,
     )
 
@@ -583,7 +613,7 @@ def chat_vision_user_prompt(user_message: str, context: str, dock_note: str = ""
         "3. 结合「你现在的状态」和截图内容，用符合人格和当下心境的话回应，可以输出多个 Speech 分句；「你惦记着的事」里有未满足的需求，可以顺口带一句，禁止和工具调用时说的话重复，需要保持连续性\n"
         "4. 规划配合对话的动作序列\n"
         "5. 记忆：用户本轮是否说出了值得记住的新信息（姓名、住址、偏好、确定的安排、刚发生的事）？有就写一行 Memory，没有就省略\n"
-        "6. 按顺序写出完整输出（Summary → Emotion → Speech(可多个) → Actions → Memory(可选) → Mood）",
+        "6. 按[输出格式]写出完整输出",
         dock_note,
     )
 
@@ -597,7 +627,7 @@ def chat_non_vision_user_prompt(user_message: str, context: str, dock_note: str 
         "2. 结合「你现在的状态」和用户消息内容，用符合人格和当下心境的话回应，可以输出多个 Speech 分句；「你惦记着的事」里有未满足的需求，可以顺口带一句，禁止和工具调用时说的话重复，需要保持连续性\n"
         "3. 规划配合对话的动作序列\n"
         "4. 记忆：用户本轮是否说出了值得记住的新信息（姓名、住址、偏好、确定的安排、刚发生的事）？有就写一行 Memory，没有就省略\n"
-        "5. 按顺序写出完整输出（Summary → Emotion → Speech(可多个) → Actions → Memory(可选) → Mood）",
+        "5. 按[输出格式]写出完整输出",
         dock_note,
     )
 
@@ -610,7 +640,7 @@ def analyze_vision_user_prompt(user_message: str, context: str, dock_note: str =
         "1. 先看完对象（文字读完、图看清楚），弄清它是什么、讲了什么，不熟悉时可以使用工具获取信息（搜索、回忆、知识库等）\n"
         "2. 提炼要点和你自己的判断\n"
         "3. 用符合人格的话说出来（可输出多个 Speech 分句），不要复述原文\n"
-        "4. 按输出格式写完整输出（Summary → Emotion → Speech(可多个) → Action → Memory(可选) → Mood）",
+        "4. 按[输出格式]写出完整输出",
         dock_note,
     )
 
@@ -623,7 +653,7 @@ def analyze_non_vision_user_prompt(user_message: str, context: str, dock_note: s
         "1. 先读完对象，弄清它是什么、讲了什么，不熟悉时可以使用工具获取信息（搜索、回忆、知识库等）\n"
         "2. 提炼要点和你自己的判断\n"
         "3. 用符合人格的话说出来（可输出多个 Speech 分句），不要复述原文\n"
-        "4. 按输出格式写完整输出（Summary → Emotion → Speech(可多个) → Action → Memory(可选) → Mood）",
+        "4. 按[输出格式]写出完整输出",
         dock_note,
     )
 

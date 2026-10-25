@@ -3,6 +3,7 @@
 import json
 import re
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Optional
 
 from pet.brain.events import Event
@@ -59,6 +60,14 @@ class _Group:
         parts.extend(e.payload.get("text", "") for e in self.speeches)
         return join_non_empty(*parts)
 
+    @property
+    def rendered_text(self) -> str:
+        """给模型的文本：aside 带 Speech 标签，各自分段。"""
+        parts = [self.turn.payload.get("text", "") if self.turn else ""]
+        for e in self.speeches:
+            parts.extend(_speech_lines(e.payload.get("text") or ""))
+        return join_non_empty(*parts)
+
     def result_for(self, call: Event) -> Optional[Event]:
         return self.results.get(call.refs.get("tool_call_id", ""))
 
@@ -69,15 +78,18 @@ class _Group:
 
 @dataclass
 class _Item:
-    kind: str          # user | assistant | speech | system | summary | group
+    kind: str          # user | assistant | speech | assistant_summary | system | summary | group | turn_block
     seq: int
     ts: float
     event: Optional[Event] = None
     group: Optional[_Group] = None
+    events: list = field(default_factory=list)
 
     def text(self) -> str:
         if self.kind == "group":
             return self.group.text
+        if self.kind == "turn_block":
+            return "\n".join(e.payload.get("text") or "" for e in self.events)
         return (self.event.payload.get("text") or "") if self.event else ""
 
 
@@ -159,6 +171,11 @@ def sanitize_assistant_text(text: str) -> tuple[str, int]:
     return ("\n".join(lines), hits) if hits else (text, 0)
 
 
+def _speech_lines(text: str) -> list[str]:
+    """一段或多段台词：逐行加 Speech 标签，分段不合并不丢行。"""
+    return [f"Speech: {line}" for line in text.splitlines() if line.strip()]
+
+
 def replay_args(call: Event, mode: str = "minimal") -> str:
     """从 args_digest 重建参数 JSON；无法还原的部分省略。"""
     if mode == "empty":
@@ -187,7 +204,6 @@ def replay_args(call: Event, mode: str = "minimal") -> str:
 
 def format_event_time(ts: float, now: float = 0.0) -> str:
     """事件时间前缀；now 为 0 时只输出时钟。"""
-    from datetime import datetime
     ref = datetime.fromtimestamp(ts)
     if not now:
         return ref.strftime("%H:%M")
@@ -195,6 +211,30 @@ def format_event_time(ts: float, now: float = 0.0) -> str:
     days = (today - ref.date()).days
     if days <= 0:
         return ref.strftime("%H:%M")
+    if days == 1:
+        return "昨天 " + ref.strftime("%H:%M")
+    if days == 2:
+        return "前天 " + ref.strftime("%H:%M")
+    return ref.strftime("%m-%d %H:%M")
+
+
+def format_relative_time(ts: float, now: float = 0.0) -> str:
+    """距今多久：刚刚 / N 分钟前 / N 小时前 / 昨天 22:10 / 前天 09:12 / 10-20 22:10。
+
+    分钟与小时只取整，提示词里的 5 分钟、30 分钟阈值可直接比较。
+    now 为 0 时退化为时钟，供未设时间的调试路径使用。
+    """
+    if not now:
+        return format_event_time(ts, 0)
+    ref = datetime.fromtimestamp(ts)
+    delta = max(0.0, now - ts)
+    if delta < 60:
+        return "刚刚"
+    if delta < 3600:
+        return f"{int(delta // 60)} 分钟前"
+    days = (datetime.fromtimestamp(now).date() - ref.date()).days
+    if days <= 0:
+        return f"{int(delta // 3600)} 小时前"
     if days == 1:
         return "昨天 " + ref.strftime("%H:%M")
     if days == 2:
@@ -283,6 +323,13 @@ def _build_items(events: list, snapshot: Optional[Event],
             call_id = event.refs.get("tool_call_id") or event.payload.get("tool_call_id") or ""
             group.results[call_id] = event
 
+    # 同一回合的 Summary 与 Speech 按 turn_id 归并，投影成一条 assistant 消息
+    turns: dict[str, list[Event]] = {}
+    for event in events:
+        turn_id = event.payload.get("turn_id") if event.type == "assistant_turn" else ""
+        if turn_id and not _hidden(event.seq, ranges):
+            turns.setdefault(turn_id, []).append(event)
+
     items: list[_Item] = []
     if snapshot is not None:
         for summary in snapshot.payload.get("summaries") or []:
@@ -293,6 +340,7 @@ def _build_items(events: list, snapshot: Optional[Event],
                                                "summary", None, {"text": text}, {})))
 
     emitted: set[str] = set()
+    emitted_turns: set[str] = set()
 
     def emit_group(gid: str, seq: int, ts: float):
         """组 item 首次出现时插入，保持 seq 顺序。"""
@@ -317,9 +365,16 @@ def _build_items(events: list, snapshot: Optional[Event],
             emit_group(gid, event.seq, event.ts)
             continue
 
+        turn_id = event.payload.get("turn_id") if event.type == "assistant_turn" else ""
+        if turn_id and turn_id in turns:
+            if turn_id not in emitted_turns:
+                emitted_turns.add(turn_id)
+                items.append(_Item("turn_block", event.seq, event.ts,
+                                   events=turns[turn_id]))
+            continue
+
         if event.type in ("assistant_turn", "assistant_speech"):
-            kind = "assistant" if event.type == "assistant_turn" else "speech"
-            items.append(_Item(kind, event.seq, event.ts, event=event))
+            items.append(_Item(_assistant_kind(event), event.seq, event.ts, event=event))
             continue
 
         if event.type == "user_msg":
@@ -334,6 +389,18 @@ def _build_items(events: list, snapshot: Optional[Event],
         if missing:
             stats["orphan_groups"] = stats.get("orphan_groups", 0) + 1
     return items
+
+
+def _assistant_kind(event: Event) -> str:
+    """assistant_turn 的 payload.kind 决定渲染成 Summary 还是 Speech；无 kind 的旧事件按原样渲染。"""
+    if event.type == "assistant_speech":
+        return "speech"
+    kind = event.payload.get("kind")
+    if kind == "speech":
+        return "speech"
+    if kind == "summary":
+        return "assistant_summary"
+    return "assistant"
 
 
 def _expire_tool_groups(items: list[_Item], budget: Budget, stats: dict) -> list[_Item]:
@@ -351,7 +418,9 @@ def _expire_tool_groups(items: list[_Item], budget: Budget, stats: dict) -> list
 def _apply_skip_last(items: list[_Item], budget: Budget) -> list[_Item]:
     if budget.skip_last <= 0:
         return items
-    droppable = [i for i, item in enumerate(items) if item.kind in ("user", "assistant", "speech")]
+    droppable = [i for i, item in enumerate(items)
+                 if item.kind in ("user", "assistant", "speech",
+                                  "assistant_summary", "turn_block")]
     drop = set(droppable[-budget.skip_last:])
     return [item for i, item in enumerate(items) if i not in drop]
 
@@ -398,6 +467,9 @@ def _render(items: list[_Item], profile: Profile, budget: Budget, stats: dict) -
         if item.kind == "group":
             out.extend(_render_group(item.group, profile, stats))
             continue
+        if item.kind == "turn_block":
+            out.extend(_render_turn_block(item.events, budget))
+            continue
         text = item.text()
         if not text:
             continue
@@ -405,19 +477,42 @@ def _render(items: list[_Item], profile: Profile, budget: Budget, stats: dict) -
             text, hits = sanitize_assistant_text(text)
             if hits:
                 stats["sanitized_lines"] = stats.get("sanitized_lines", 0) + hits
-        prefix = format_event_time(item.ts, budget.now)
+        if item.kind == "speech":
+            out.append({"role": "assistant", "content": "\n".join(_speech_lines(text))})
+            continue
+        if item.kind == "assistant_summary":
+            label = format_relative_time(item.ts, budget.now)
+            out.append({"role": "assistant", "content": f"Summary: 〔{label}〕{text}"})
+            continue
+        prefix = format_relative_time(item.ts, budget.now)
         content = f"[{prefix}] {text}" if prefix else text
         if item.kind == "user":
             out.append({"role": "user", "content": content})
-        elif item.kind in ("assistant", "speech"):
+        elif item.kind == "assistant":
             out.append({"role": "assistant", "content": content})
         elif item.kind in ("system", "summary"):
             out.append({"role": "system", "content": content})
     return out
 
 
+def _render_turn_block(events: list, budget: Budget) -> list[dict]:
+    """同一回合的 Summary 与 Speech 合成一条 assistant 消息。"""
+    lines = []
+    for event in events:
+        text = event.payload.get("text") or ""
+        if not text:
+            continue
+        if event.payload.get("kind") == "summary":
+            label = format_relative_time(event.ts, budget.now)
+            lines.append(f"Summary: 〔{label}〕{text}")
+        else:
+            text, _ = sanitize_assistant_text(text)
+            lines.extend(_speech_lines(text))
+    return [{"role": "assistant", "content": "\n".join(lines)}] if lines else []
+
+
 def _render_group(group: _Group, profile: Profile, stats: dict) -> list[dict]:
-    text, hits = sanitize_assistant_text(group.text)
+    text, hits = sanitize_assistant_text(group.rendered_text)
     if hits:
         stats["sanitized_lines"] = stats.get("sanitized_lines", 0) + hits
     channel = profile.tool_channel
