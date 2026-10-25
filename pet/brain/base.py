@@ -141,7 +141,7 @@ class BrainMixin:
             self._events.close()
 
     def maintenance(self):
-        """slow_tick：清理过期 artifact、回收被覆盖事件并复查未闭合组。"""
+        """slow_tick：清理过期 artifact、折叠事件日志并复查未闭合组。"""
         if self._events is None or not self._events.available:
             return
         try:
@@ -149,9 +149,9 @@ class BrainMixin:
         except Exception as e:
             logger.warning(f"[BrainMixin] artifact cleanup failed: {e}")
         try:
-            self._events.purge_covered()
+            self._events.compact(max_summaries=self._MAX_HISTORY_SUMMARIES)
         except Exception as e:
-            logger.warning(f"[BrainMixin] covered event purge failed: {e}")
+            logger.warning(f"[BrainMixin] snapshot compaction failed: {e}")
         self._scan_unclosed_groups()
 
     def dump_events(self, limit: int = 50) -> List[dict]:
@@ -301,18 +301,10 @@ class BrainMixin:
         except Exception as e:
             logger.warning(f"[BrainMixin] append failed_turn failed: {e}")
 
-    def record_tool_events(self, group_id: str, calls: list, results: list,
-                           asides: Optional[list] = None):
+    def record_tool_events(self, group_id: str, calls: list, results: list):
         """把一轮工具调用写成同组事件，供投影聚合成原子组。"""
         if self._events is None or not self._events.available:
             return
-        for call_id, text in (asides or []):
-            try:
-                self._events.append("assistant_speech", {"text": text},
-                                    group_id=group_id,
-                                    refs={"tool_call_id": call_id})
-            except Exception as e:
-                logger.warning(f"[BrainMixin] append assistant_speech failed: {e}")
         for call in calls:
             call_id = call.get("id", "")
             try:
@@ -349,7 +341,7 @@ class BrainMixin:
             return None
 
     def clear_context(self):
-        """清空上下文：结束当前会话，并删除历史会话的事件与 artifact。"""
+        """切到新会话：结束当前会话，并删除历史会话的事件与 artifact。"""
         with self._ctx_lock:
             self._context.clear()
             self._pending_summary_queue.clear()

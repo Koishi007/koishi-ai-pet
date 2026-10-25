@@ -15,7 +15,7 @@ import pet.brain.behavior as behavior_module
 import pet.brain.repair as repair_module
 from pet.action.registry import min_action_count
 import pet.brain.tool_loop as tool_loop_mod
-from pet.brain.behavior import Behavior
+from pet.brain.behavior import Behavior, _BehaviorToolSession
 from pet.brain.repair import retry_if_incomplete
 from pet.brain.output import (ActionStep, BehaviorOutput, CancelledError,
                               sanitize_assistant_fields)
@@ -301,6 +301,36 @@ class _FailingEventSession(_FakeSession):
 
     def record_tool_events(self, group_id, calls, results, asides=None):
         raise RuntimeError("event store unavailable")
+
+
+class TestToolEventAside:
+    def test_aside_kept_in_args_digest(self):
+        recorded = {}
+
+        class _Recorder:
+            def record_tool_events(self, group_id, calls, results):
+                recorded["calls"] = calls
+
+        tc = {"id": "c1", "name": "game__play",
+              "arguments": '{"move": "rock", "aside": "我出石头"}'}
+        result = SimpleNamespace(ok=True, meta={})
+        tool_loop_mod._record_tool_events(
+            _Recorder(), {0: tc}, [0],
+            {0: (0, tc, result, "", "平局", "我出石头")})
+        assert 'aside="我出石头"' in recorded["calls"][0]["args_digest"]
+
+    def test_behavior_session_forwards_without_asides(self):
+        class _Recorder:
+            def __init__(self):
+                self.called = None
+
+            def record_tool_events(self, group_id, calls, results):
+                self.called = (group_id, calls, results)
+
+        session = _BehaviorToolSession.__new__(_BehaviorToolSession)
+        session._behavior = _Recorder()
+        session.record_tool_events("g1", [], [])
+        assert session._behavior.called == ("g1", [], [])
 
 
 class TestFailureHints:

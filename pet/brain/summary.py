@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Callable, List, Optional
 
 from pet.brain.budget import output_budget
+from pet.brain.events import HISTORY_SUMMARY_PREFIX
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +45,7 @@ def flush_summaries(hooks: SummaryHooks) -> None:
         summary = hooks.fallback(items)
 
     if summary:
-        hooks.add_context(role="system", content=f"[历史摘要] {summary}",
+        hooks.add_context(role="system", content=HISTORY_SUMMARY_PREFIX + summary,
                           is_summary=True, covers=covers)
         logger.info(f"[Behavior] flushed pending summaries: {len(items)} items → {summary[:50]}...")
 

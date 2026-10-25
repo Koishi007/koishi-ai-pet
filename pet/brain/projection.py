@@ -48,19 +48,16 @@ class _Group:
     ts: float
     calls: list = field(default_factory=list)
     results: dict = field(default_factory=dict)
-    speeches: list = field(default_factory=list)
 
     @property
-    def text(self) -> str:
-        return join_non_empty(*(e.payload.get("text", "") for e in self.speeches))
-
-    @property
-    def rendered_text(self) -> str:
-        """给模型的文本：aside 带 Speech 标签，各自分段。"""
+    def aside_text(self) -> str:
+        """组内 aside 按 Speech 行渲染，作为工具轮的 assistant 正文。"""
         parts = []
-        for e in self.speeches:
-            parts.extend(_speech_lines(e.payload.get("text") or ""))
-        return join_non_empty(*parts)
+        for call in self.calls:
+            aside = _call_aside(call)
+            if aside:
+                parts.extend(_speech_lines(aside))
+        return "\n".join(parts)
 
     def result_for(self, call: Event) -> Optional[Event]:
         return self.results.get(call.refs.get("tool_call_id", ""))
@@ -83,7 +80,7 @@ class _Item:
         if self.rendered:
             return self.rendered
         if self.kind == "group":
-            return self.group.text
+            return self.group.aside_text
         return (self.event.payload.get("text") or "") if self.event else ""
 
 
@@ -124,11 +121,20 @@ def degrade_messages(messages: list, channel: str = "user-note") -> list:
                 cursor += 1
             if message.get("content"):
                 out.append({"role": "assistant", "content": message["content"]})
+            aside_text = "\n".join(
+                line for call in calls for line in _speech_lines(_message_aside(call)))
+            if channel == "none":
+                if aside_text:
+                    out.append({"role": "assistant", "content": aside_text})
+                index = cursor
+                continue
+            if aside_text:
+                out.append({"role": "assistant", "content": aside_text})
             lines = [f"- {briefs.get(call.get('id'), '操作已完成')}" for call in calls]
             note = f"{_NOTE_PREFIX}\n" + "\n".join(lines)
             if channel == "system-note":
                 out.append({"role": "system", "content": note})
-            elif channel != "none":
+            else:
                 out.append({"role": "user", "content": note})
             index = cursor
             continue
@@ -143,6 +149,25 @@ def degrade_messages(messages: list, channel: str = "user-note") -> list:
 def _speech_lines(text: str) -> list[str]:
     """一段或多段台词：逐行加 Speech 标签，分段不合并不丢行。"""
     return [f"Speech: {line}" for line in text.splitlines() if line.strip()]
+
+
+def _call_aside(call: Event) -> str:
+    """从参数摘要取 aside；摘要缺失或损坏时返回空。"""
+    try:
+        value = json.loads(replay_args(call)).get("aside")
+    except (json.JSONDecodeError, TypeError):
+        return ""
+    return value if isinstance(value, str) else ""
+
+
+def _message_aside(call: dict) -> str:
+    """从已投影的 tool_call 参数取 aside；缺失或损坏时返回空。"""
+    try:
+        args = json.loads((call.get("function") or {}).get("arguments") or "{}")
+    except (json.JSONDecodeError, TypeError):
+        return ""
+    value = args.get("aside")
+    return value if isinstance(value, str) else ""
 
 
 def uses_native_tools(messages: list) -> bool:
@@ -231,10 +256,6 @@ def format_relative_time(ts: float, now: float = 0.0) -> str:
     return ref.strftime("%m-%d %H:%M")
 
 
-def join_non_empty(*parts: str) -> str:
-    return "\n".join(p for p in parts if p)
-
-
 def join_briefs(calls: list, group: _Group) -> str:
     """一组工具的短句列表。"""
     lines = []
@@ -292,7 +313,7 @@ def _hidden(seq: int, ranges: list[tuple[int, int]]) -> bool:
 
 def _build_items(events: list, snapshot: Optional[Event],
                  ranges: list[tuple[int, int]], stats: dict) -> list[_Item]:
-    # 第一遍先建组并填充内容：aside 可能排在 tool_call 之前，第二遍必须能查到
+    # 第一遍先建组，第二遍按事件顺序插入组 item
     groups: dict[str, _Group] = {}
     for event in events:
         if event.type not in ("tool_call", "tool_result"):
@@ -347,8 +368,6 @@ def _build_items(events: list, snapshot: Optional[Event],
 
         gid = event.group_id or f"orphan-{event.seq}"
         if gid in groups:
-            if event.type == "assistant_speech":
-                groups[gid].speeches.append(event)
             emit_group(gid, event.seq, event.ts)
             continue
 
@@ -499,11 +518,13 @@ def _delta_line(label: str, values) -> str:
 
 
 def _render_group(group: _Group, profile: Profile) -> list[dict]:
-    text = group.rendered_text
     channel = profile.tool_channel
 
     if channel == "native" and group.complete and group.calls:
-        message = {"role": "assistant", "content": text or None}
+        # aside 由 arguments 承载。arguments 为空时退回 content。
+        content = (None if profile.replay_args_mode != "empty"
+                   else (group.aside_text or None))
+        message = {"role": "assistant", "content": content}
         message["tool_calls"] = [
             {"id": c.refs.get("tool_call_id", f"call_{c.seq}"),
              "type": "function",
@@ -521,18 +542,19 @@ def _render_group(group: _Group, profile: Profile) -> list[dict]:
             })
         return out
 
+    aside_text = group.aside_text
     if channel == "none":
-        return [{"role": "assistant", "content": text}] if text else []
+        return [{"role": "assistant", "content": aside_text}] if aside_text else []
 
-    note = f"{_NOTE_PREFIX}\n{join_briefs(group.calls, group)}"
+    note = f"{_NOTE_PREFIX}\n" + join_briefs(group.calls, group)
     if channel == "system-note":
         out = []
-        if text:
-            out.append({"role": "assistant", "content": text})
+        if aside_text:
+            out.append({"role": "assistant", "content": aside_text})
         out.append({"role": "system", "content": note})
         return out
     out = []
-    if text:
-        out.append({"role": "assistant", "content": text})
+    if aside_text:
+        out.append({"role": "assistant", "content": aside_text})
     out.append({"role": "user", "content": note})
     return out

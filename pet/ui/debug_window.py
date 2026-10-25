@@ -424,9 +424,6 @@ class DebugWindow(QWidget):
         self.btn_ctx_refresh = QPushButton("刷新")
         self.btn_ctx_refresh.clicked.connect(self._refresh_context)
         ctx_btn_row.addWidget(self.btn_ctx_refresh)
-        self.btn_ctx_clear = QPushButton("清空")
-        self.btn_ctx_clear.clicked.connect(self._clear_context)
-        ctx_btn_row.addWidget(self.btn_ctx_clear)
         self.label_ctx_count = QLabel("共 0 条")
         ctx_btn_row.addWidget(self.label_ctx_count)
         ctx_btn_row.addStretch()
@@ -636,11 +633,6 @@ class DebugWindow(QWidget):
         # 内容追加后恢复滚动位置，新内容追加到底部时不跳转
         if prev_max == scroll_bar.maximum():
             scroll_bar.setValue(prev_scroll)
-
-    def _clear_context(self):
-        if self.agent and hasattr(self.agent.behavior, 'clear_context'):
-            self.agent.behavior.clear_context()
-            self._refresh_context()
 
     def _on_sm_state_changed(self, _state: str):
         self._refresh_state_view()

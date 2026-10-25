@@ -93,8 +93,18 @@ def _verify(limit: int = 10, **_):
     return duty.with_hint(duty.verify(_storage, limit=limit))
 
 
+def _check_deps() -> None:
+    """qrcode 只用于扫码登录；扫码是拿到凭证的唯一入口，缺它时工具不可用。"""
+    try:
+        import qrcode  # noqa: F401
+    except ImportError:
+        raise RuntimeError(
+            "qrcode 未安装，无法生成登录二维码：python -m pip install qrcode")
+
+
 def register(registry):
     global _storage
+    _check_deps()
     try:
         _storage = BiliStorage()
     except Exception as exc:

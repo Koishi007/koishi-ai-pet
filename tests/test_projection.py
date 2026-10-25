@@ -6,7 +6,7 @@ import time
 import pytest
 
 from pet.brain.events import Event, args_digest
-from pet.brain.projection import Budget, Profile, project, replay_args
+from pet.brain.projection import Budget, Profile, degrade_messages, project, replay_args
 
 T0 = time.time() - 600
 
@@ -113,12 +113,41 @@ class TestToolGroup:
         messages = project(tool_group(1), Profile(tool_channel="system-note"), Budget(now=T0 + 1000))
         assert messages[-1]["role"] == "system"
 
-    def test_none_channel_drops_tool_records(self):
-        events = [ev(0, "assistant_speech", {"text": "我在看视频"}, group="g1")] + tool_group(1)
-        messages = project(events, Profile(tool_channel="none"), Budget(now=T0 + 1000))
+    def test_native_empty_replay_keeps_aside_in_content(self):
+        messages = project(tool_group(1, digest='aside="我出石头"'),
+                           Profile(replay_args_mode="empty"), Budget(now=T0 + 1000))
+        assert messages[0]["content"] == "Speech: 我出石头"
+        assert messages[0]["tool_calls"][0]["function"]["arguments"] == "{}"
+
+    def test_none_channel_keeps_aside_drops_tool_records(self):
+        messages = project(tool_group(1, digest='aside="我在看视频"'),
+                           Profile(tool_channel="none"), Budget(now=T0 + 1000))
         assert len(messages) == 1
         assert messages[0]["content"] == "Speech: 我在看视频"
         assert "点赞成功" not in messages[0]["content"]
+
+    def test_degrade_keeps_aside_in_assistant(self):
+        messages = [
+            {"role": "assistant", "content": None,
+             "tool_calls": [{"id": "c1", "type": "function",
+                             "function": {"name": "x",
+                                          "arguments": '{"aside": "看好了"}'}}]},
+            {"role": "tool", "tool_call_id": "c1", "content": "完成"},
+        ]
+        out = degrade_messages(messages, "user-note")
+        assert out == [{"role": "assistant", "content": "Speech: 看好了"},
+                       {"role": "user", "content": "（环境记录）\n- 完成"}]
+
+    def test_degrade_none_keeps_aside_only(self):
+        messages = [
+            {"role": "assistant", "content": None,
+             "tool_calls": [{"id": "c1", "type": "function",
+                             "function": {"name": "x",
+                                          "arguments": '{"aside": "看好了"}'}}]},
+            {"role": "tool", "tool_call_id": "c1", "content": "完成"},
+        ]
+        out = degrade_messages(messages, "none")
+        assert out == [{"role": "assistant", "content": "Speech: 看好了"}]
 
     def test_multiple_tools_keep_order_and_ids(self):
         gid = "g9"
@@ -137,20 +166,18 @@ class TestToolGroup:
         messages = project(tool_group(1), Profile(), Budget(now=T0 + 1000))
         assert messages[0]["content"] is None
 
-    def test_aside_before_call_stays_in_group(self):
-        # 事件顺序是 speech → tool_call → tool_result，单遍扫描会把台词落成孤立消息
-        gid = "g5"
+    def test_native_keeps_aside_in_arguments(self):
         events = [
-            ev(5, "assistant_speech", {"text": "查一下天气"}, group=gid,
-               refs={"tool_call_id": "c6"}),
-            ev(6, "tool_call", {"name": "weather__get_current", "args_digest": "city=深圳"},
-               group=gid, refs={"tool_call_id": "c6"}),
-            ev(7, "tool_result", {"ok": True, "brief": "深圳晴"}, group=gid,
-               refs={"tool_call_id": "c6"}),
+            ev(6, "tool_call", {"name": "weather__get_current",
+                                "args_digest": 'aside="查一下天气", city=深圳'},
+               group="g5", refs={"tool_call_id": "c6"}),
+            ev(7, "tool_result", {"ok": True, "brief": "深圳晴"},
+               group="g5", refs={"tool_call_id": "c6"}),
         ]
         messages = project(events, Profile(), Budget(now=T0 + 1000))
-        assert len(messages) == 2
-        assert messages[0]["content"] == "Speech: 查一下天气"
+        assert messages[0]["content"] is None
+        args = json.loads(messages[0]["tool_calls"][0]["function"]["arguments"])
+        assert args["aside"] == "查一下天气"
         assert messages[1]["role"] == "tool"
 
     def test_dropped_group_takes_its_aside_with_it(self):
@@ -159,14 +186,14 @@ class TestToolGroup:
         for i in range(3):
             gid = f"g{seq}"
             events += [
-                ev(seq, "assistant_speech", {"text": f"第{i}句"}, group=gid),
-                ev(seq + 1, "tool_call", {"name": "a__x", "args_digest": "-"},
+                ev(seq, "tool_call", {"name": "a__x", "args_digest": f'aside="第{i}句"'},
                    group=gid, refs={"tool_call_id": f"c{seq}"}),
-                ev(seq + 2, "tool_result", {"brief": "好"}, group=gid,
+                ev(seq + 1, "tool_result", {"brief": "好"}, group=gid,
                    refs={"tool_call_id": f"c{seq}"}),
             ]
-            seq += 3
-        messages = project(events, Profile(), Budget(max_groups=1, now=T0 + 1000))
+            seq += 2
+        messages = project(events, Profile(tool_channel="user-note"),
+                           Budget(max_groups=1, now=T0 + 1000))
         assert len(messages) == 2
         assert "第2句" in messages[0]["content"]
         assert "第0句" not in messages[0]["content"]
