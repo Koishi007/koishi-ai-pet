@@ -26,3 +26,5 @@
 | [0008](0008-generated-reference-docs.md) | 参考文档由代码生成 + CI 校验 | 文档失效的主因是手抄与漂移 |
 | [0009](0009-layering-by-singletons-and-deferred-imports.md) | 分层靠单例与延迟导入维系 | 不引入依赖注入，也不追求零环 |
 | [0010](0010-output-budget-in-code.md) | 输出上限收归代码并按请求形态配额 | 用户无法判断 token 额度，且思考占满额度会让整段输出作废 |
+| [0011](0011-comment-visibility-confirmed-on-send.md) | 评论发出后延时复核可见性 | `rpid` 只证明受理，折叠评论同样返回回执 |
+| [0012](0012-login-invalid-marker.md) | 登录失效由最近一次请求标记 | 凭证文件存在不代表会话有效 |
