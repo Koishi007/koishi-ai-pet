@@ -124,7 +124,7 @@ class FileOpsTool:
                 "headline": (f"读取文件 {abs_path}（offset={actual_offset}，"
                              f"{len(content)} 字符{'，还有更多' if has_next else ''}）"),
                 "body": content,
-                "agent_hint": hint,
+                "hint": hint,
             }
         except Exception as e:
             return {"error": str(e)}

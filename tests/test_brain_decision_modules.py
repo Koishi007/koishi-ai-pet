@@ -331,6 +331,11 @@ class TestFailureHints:
     def test_unknown_code_uses_default_hint(self):
         assert tool_loop_mod._failure_hint(self._result("business_error"))
 
+    def test_tool_hint_wins_over_engine_table(self):
+        result = SimpleNamespace(error_code="disabled", error_message="",
+                                 hint="工具自带：不要再调用")
+        assert tool_loop_mod._failure_hint(result) == "工具自带：不要再调用"
+
 
 class TestToolBrief:
     """无输出契约时的历史短句：结果首行 → 兜底。"""

@@ -133,7 +133,7 @@ READ_FILE_OUTPUT = {
 - 时间统一 `*_at` 后缀
 - 错误统一 `error: {code, message}`，`code` 为稳定的蛇形标识
 - 禁止 `summary`、`data1`、`__xxx__` 这类一名多用或魔法命名
-- `hint` 类字段推荐 `agent_hint`，与 `x-role: hint` 对应
+- `hint` 字段统一叫 `hint`，与 `x-role: hint` 对应
 
 ### §3.4 硬约束
 
@@ -167,7 +167,7 @@ WEATHER_OUTPUT = {
 }
 ```
 
-推荐字段名（不强制）：`headline` / `body` / `data` / `images` / `pagination` / `items` / `agent_hint` / `ok` / `error`。
+推荐字段名（不强制）：`headline` / `body` / `data` / `images` / `pagination` / `items` / `hint` / `ok` / `error`。
 
 ## §5 渲染机制
 
@@ -260,6 +260,7 @@ class ToolResult:
     output: Any = None                    # 规范值，符合 output.schema
     error_code: str = ""                  # 空即成功
     error_message: str = ""
+    hint: str = ""                         # 工具自带的下一步提示，只进当轮视图
     meta: dict = field(default_factory=dict)
 
     @property
@@ -287,7 +288,7 @@ class ToolResult:
 | 旧键 | 去向 |
 |---|---|
 | `summary` | 拆成 `headline`（一句话结论）与 `body`（正文），由工具自行分配 |
-| `model_hint` / `hint` | `agent_hint`，`x-role: hint`，渲染在最后，不进历史 |
+| `model_hint` / `agent_hint` | `hint`，`x-role: hint`，渲染在最后，不进历史 |
 | `__context__` | 删除，历史统一取 `headline` |
 | `__image__` / `__image_mime__` | `images[].base64` / `mime`，`x-role: images` |
 | 其余数据字段 | 放 `data` 或 `body` 由工具作者决定；需要机器读的数值放 `data` |
@@ -313,7 +314,7 @@ class ToolResult:
 
 模型看到的是 `[FAIL name] timeout: 工具执行超时（30s）`，历史记录取 `error_message`。`code` 稳定；输出不符合 schema 时本次调用失败，返回值不渲染。
 
-失败视图与当轮视图走同一条投影：`render_failure` 产出主错误行 `TextBlock(role="primary")`，再按错误码追加一条 `TextBlock(role="hint")`（与成功输出的 `agent_hint` 同语义），由 `render_text` 压平；提示只进当轮视图，历史仍取 `error_message`。
+失败视图与当轮视图走同一条投影：`render_failure` 产出主错误行 `TextBlock(role="primary")`，再追加一条 `TextBlock(role="hint")`（与成功输出的 `hint` 同语义），由 `render_text` 压平；提示只进当轮视图，历史仍取 `error_message`。提示优先取工具返回里的 `hint`（工具自己的错误码由工具维护），未提供时按 `error_code` 查引擎内置表，再退到通用文案。
 
 ### §6.5 文件动作
 
@@ -361,7 +362,7 @@ class ToolResult:
 - `weather__get_current`：当轮能看到温度与预报正文，历史记录是「深圳 晴 29.6 度」
 - `browser__read_url`：第二页请求时 `pagination` 提示正确，历史记录是「读取网页 X（第 2/3 页，3000 字符）」
 - `tool_search__list_groups`：历史记录是分组数量结论
-- `game__play`：`agent_hint` 渲染在文本最后，历史记录只有 `headline`
+- `game__play`：`hint` 渲染在文本最后，历史记录只有 `headline`
 - 构造一个缺 `headline` 的返回，确认判为 `output_violation`
 - 构造一个多余字段的返回，确认它渲染进 `data` 且不判违约
 - `bilibili` 未登录时 `error_code` 为 `not_logged_in`，模型看到的是 `[FAIL bilibili__like] not_logged_in: ...`

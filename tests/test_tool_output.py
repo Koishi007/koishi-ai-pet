@@ -15,7 +15,7 @@ WEATHER_SCHEMA = {
         "data":     {"type": "object", "x-role": "data"},
         "pagination": {**PAGINATION_SCHEMA},
         "images":   IMAGES_SCHEMA,
-        "agent_hint": {"type": "string", "x-role": "hint"},
+        "hint": {"type": "string", "x-role": "hint"},
     },
 }
 
@@ -54,7 +54,7 @@ class TestValidate:
 
     def test_wrong_type(self):
         problems = validate(definition(), {"headline": 123})
-        assert any("期望 string" in p for p in problems)
+        assert any(p.startswith("headline:") for p in problems)
 
     def test_nested_items(self):
         schema = {
@@ -82,12 +82,12 @@ class TestValidate:
                   "properties": {"headline": {"type": "string", "x-role": "headline"}}}
         problems = validate(ToolOutputDefinition(schema=schema),
                             {"headline": "x", "extra": 1})
-        assert any("未在 schema 中声明" in p for p in problems)
+        assert any(p.startswith("extra:") for p in problems)
 
 
 class TestRenderTurn:
     def test_role_order_fixed(self):
-        value = {"agent_hint": "下一步", "data": {"a": 1},
+        value = {"hint": "下一步", "data": {"a": 1},
                  "body": "正文", "headline": "结论"}
         blocks = render_turn(definition(), value)
         assert [b.text for b in blocks] == ["结论", "正文", "a: 1", "下一步"]
@@ -140,7 +140,9 @@ class TestRenderRecord:
 
     def test_appends_more_hint(self):
         value = {"headline": "读取网页", "pagination": {"has_next": True}}
-        assert render_record(definition(), value).endswith("还有更多")
+        record = render_record(definition(), value)
+        assert record.startswith(value["headline"])
+        assert record != value["headline"]
 
     def test_truncates(self):
         value = {"headline": "长" * 200}
@@ -158,7 +160,7 @@ class TestDeclaredTools:
 
         definition = ToolOutputDefinition(schema=READ_FILE_OUTPUT)
         value = {"headline": "读取文件 a.md（offset=0，100 字符，还有更多）",
-                 "body": "第一行", "agent_hint": "用 offset=100 继续读取"}
+                 "body": "第一行", "hint": "用 offset=100 继续读取"}
         assert validate(definition, value) == []
         blocks = render_turn(definition, value)
         assert blocks[0].text == value["headline"]
@@ -202,7 +204,7 @@ class TestDeclaredTools:
         definition = ToolOutputDefinition(schema=SEARCH_OUTPUT)
         value = {"headline": "搜到 1 个：weather",
                  "body": "weather（info）：天气查询\n  - weather__get_current：查询当前天气",
-                 "agent_hint": "已命中：weather__get_current。下一轮直接调用。"}
+                 "hint": "已命中：weather__get_current。下一轮直接调用。"}
         assert validate(definition, value) == []
         blocks = render_turn(definition, value)
         assert blocks[0].text == value["headline"]
@@ -221,4 +223,37 @@ class TestDeclaredTools:
         blocks = render_turn(definition, value)
         assert blocks[-1].role == "hint"
         assert "page=2" in blocks[-1].text
-        assert render_record(definition, value).endswith("还有更多")
+        record = render_record(definition, value)
+        assert record.startswith(value["headline"])
+        assert record != value["headline"]
+
+    def test_bilibili_browse(self):
+        from pet.tools.bilibili import BROWSE_OUTPUT
+
+        definition = ToolOutputDefinition(schema=BROWSE_OUTPUT)
+        value = {"headline": "从「东方Project」刷到 2 部",
+                 "body": "《小狗》https://www.bilibili.com/video/BV1\n字幕",
+                 "images": [{"base64": "AAA", "mime": "image/jpeg",
+                             "caption": "封面《小狗》"}],
+                 "data": {"keyword": "东方Project", "skipped": 0, "errors": 0,
+                          "requests": 5, "account": {"name": "恋恋", "uid": 1,
+                                                  "level": 6, "coins": 10}}}
+        assert validate(definition, value) == []
+        blocks = render_turn(definition, value)
+        assert blocks[0].text == value["headline"]
+        assert any(isinstance(b, ImageBlock) for b in blocks)
+        assert render_record(definition, value) == value["headline"]
+
+    def test_bilibili_brief(self):
+        from pet.tools.bilibili import BRIEF_OUTPUT
+
+        definition = ToolOutputDefinition(schema=BRIEF_OUTPUT)
+        value = {"headline": "点赞成功，今日 1/2", "data": {"remaining": 1}}
+        assert validate(definition, value) == []
+        assert render_turn(definition, value)[-1].role == "data"
+
+    def test_bilibili_brief_requires_headline(self):
+        from pet.tools.bilibili import BRIEF_OUTPUT
+
+        problems = validate(ToolOutputDefinition(schema=BRIEF_OUTPUT), {"data": {}})
+        assert any(p.startswith("headline") for p in problems)

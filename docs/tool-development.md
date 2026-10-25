@@ -130,7 +130,7 @@ registry.add_method(TOOL_NAME, "read_file", "读取文件", handler=read_file,
 
 ### 失败
 
-业务失败返回 `{"error": "...", "code": "..."}`，执行器转成 `ToolResult.error_code`，模型看到 `[FAIL 工具名] code: 文案`，随后框架按错误码追加一条下一步提示（与成功输出的 `agent_hint` 同语义）；历史记录仍只取错误文案。不要自己造 `ok=False` 之类的成功标记。
+业务失败返回 `{"error": "...", "code": "..."}`，执行器转成 `ToolResult.error_code`，模型看到 `[FAIL 工具名] code: 文案`。下一步提示优先取返回里的 `hint`（工具自己维护，与成功输出的 `hint` 是同一个字段名）；未提供时用引擎内置的核心错误码表，再退到通用文案。历史记录仍只取错误文案。不要自己造 `ok=False` 之类的成功标记。
 
 返回值不符合 `output.schema` 时同样失败，`code` 为 `output_violation`，模型看到首个违约路径和框架提示，返回值不渲染。
 
