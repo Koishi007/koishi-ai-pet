@@ -201,16 +201,19 @@ class BrainMixin:
         if role == "assistant":
             raise ValueError("assistant 内容用 add_assistant_turn 写入")
         with self._ctx_lock:
-            if is_summary and self._replace_similar_summary(role, content):
-                return
-            event = self._write_event(role, content, is_summary)
-            self._context.append(ContextEntry(
-                role=role, content=content, is_summary=is_summary,
-                seq=event.seq if event else 0))
+            index = self._find_similar_summary(content) if is_summary else -1
+            supersedes = self._context[index].seq if index >= 0 else 0
+            event = self._write_event(role, content, is_summary, supersedes)
+            entry = ContextEntry(role=role, content=content, is_summary=is_summary,
+                                 seq=event.seq if event else 0)
+            if index >= 0:
+                self._context[index] = entry
+            else:
+                self._context.append(entry)
             self._evict_context()
 
-    def _replace_similar_summary(self, role: str, content: str) -> bool:
-        """与最近 _MAX_DEDUP_COMPARE 条摘要去重；命中则只替换快照。"""
+    def _find_similar_summary(self, content: str) -> int:
+        """与最近 _MAX_DEDUP_COMPARE 条摘要去重；命中返回其下标，未命中返回 -1。"""
         compared = 0
         for i in range(len(self._context) - 1, -1, -1):
             entry = self._context[i]
@@ -218,24 +221,47 @@ class BrainMixin:
                 continue
             compared += 1
             if self._text_similarity(content, entry.content) >= self._DEDUP_THRESHOLD:
-                self._context[i] = ContextEntry(role=role, content=content,
-                                                is_summary=True, seq=entry.seq)
-                logger.debug(f"[BrainMixin] summary replaced: {content[:30]}...")
-                return True
+                return i
             if compared >= self._MAX_DEDUP_COMPARE:
                 break
-        return False
+        return -1
 
-    def _write_event(self, role: str, content: str, is_summary: bool):
+    def _write_event(self, role: str, content: str, is_summary: bool,
+                     supersedes: int = 0):
         """把一次上下文写入映射为事件。"""
         if is_summary:
             covers = self._consume_covers()
-            refs = {"covers": list(covers)} if covers else None
-            return self._append_event("summary", {"text": content}, refs)
+            refs: dict = {}
+            if supersedes:
+                refs["supersedes"] = int(supersedes)
+                covers = self._merge_covers(covers, self._summary_covers(supersedes))
+            if covers:
+                refs["covers"] = list(covers)
+            return self._append_event("summary", {"text": content}, refs or None)
         payload = {"text": content}
         if role == "user":
             return self._append_event("user_msg", payload)
         return self._append_event("system_note", payload)
+
+    def _summary_covers(self, seq: int) -> Optional[tuple]:
+        """指定摘要事件记录的覆盖区间。"""
+        if self._events is None or not self._events.available:
+            return None
+        try:
+            for event in self._events.load():
+                if event.seq == seq and event.type == "summary":
+                    covers = event.refs.get("covers")
+                    if isinstance(covers, (list, tuple)) and len(covers) == 2:
+                        return (int(covers[0]), int(covers[1]))
+        except Exception as e:
+            logger.warning(f"[BrainMixin] read summary covers failed: {e}")
+        return None
+
+    @staticmethod
+    def _merge_covers(first: Optional[tuple], second: Optional[tuple]) -> Optional[tuple]:
+        if first and second:
+            return (min(first[0], second[0]), max(first[1], second[1]))
+        return first or second
 
     def _append_event(self, type: str, payload: dict, refs: dict | None = None):
         """写一条事件；失败只告警，不影响主流程。"""

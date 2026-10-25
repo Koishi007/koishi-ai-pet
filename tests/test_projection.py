@@ -1,5 +1,6 @@
 """会话投影测试：纯函数、摘要覆盖、工具组原子裁剪、四档通道与结构化响应渲染。"""
 
+import json
 import time
 
 import pytest
@@ -237,12 +238,32 @@ class TestReplayArgs:
     def test_empty_digest(self):
         assert replay_args(ev(1, "tool_call", {"name": "x", "args_digest": "-"})) == "{}"
 
+    def test_quoted_string_keeps_inner_comma(self):
+        call = ev(1, "tool_call",
+                  {"name": "x", "args_digest": 'keyword="猫, 狗", count=3'})
+        assert replay_args(call) == '{"keyword": "猫, 狗", "count": 3}'
+
+    def test_numeric_string_stays_string(self):
+        call = ev(1, "tool_call", {"name": "x", "args_digest": 'bvid="123"'})
+        assert replay_args(call) == '{"bvid": "123"}'
+
+    def test_roundtrip_from_digest(self):
+        args = {"keyword": "猫, 狗", "bvid": "123", "aside": "好"}
+        call = ev(1, "tool_call", {"name": "x", "args_digest": args_digest(args)})
+        assert json.loads(replay_args(call)) == args
+
 
 class TestArgsDigest:
     def test_limits_keys_and_truncates(self):
         digest = args_digest({"a": "x" * 60, "b": 1, "c": 2, "d": 3})
         assert "a=" in digest and "x" * 60 not in digest
         assert "d=" not in digest
+
+    def test_string_is_json_literal(self):
+        assert args_digest({"keyword": "小狗"}) == 'keyword="小狗"'
+
+    def test_bool_is_json_literal(self):
+        assert args_digest({"flag": True}) == "flag=true"
 
     def test_nested_written_as_ellipsis(self):
         assert args_digest({"meta": {"k": "v"}}) == "meta={…}"
