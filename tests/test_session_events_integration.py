@@ -3,7 +3,7 @@
 import sqlite3
 
 from pet.brain.base import BrainMixin
-from pet.brain.events import ASSISTANT_TEXT_LIMIT
+from pet.brain.events import ASSISTANT_TEXT_LIMIT, HISTORY_SUMMARY_PREFIX
 from pet.brain.tool_channel import reset_cache
 
 
@@ -71,6 +71,20 @@ class TestSummaryCovers:
         assert (first, second) == ((1, 3), (5, 6))
 
 
+class TestCompaction:
+    def test_compacted_prefix_projects_as_summary(self, tmp_path):
+        brain = _brain(tmp_path)
+        for i in range(12):
+            brain._events.append("user_msg", {"text": f"m{i}"})
+
+        assert brain._events.compact(min_events=10, keep_tail=3) == 9
+
+        messages = brain.get_multi_turn_messages(max_entries=50, token_budget=0)
+        contents = [m.get("content") or "" for m in messages]
+        assert any("m9" in text for text in contents)
+        assert any(HISTORY_SUMMARY_PREFIX in text and "m0" in text for text in contents)
+
+
 class TestProjectionEntry:
     def test_tool_group_renders_native_when_channel_allows(self, tmp_path):
         brain = _brain(tmp_path)
@@ -82,6 +96,17 @@ class TestProjectionEntry:
         messages = brain.get_multi_turn_messages()
         assert messages[0]["tool_calls"][0]["function"]["name"] == "bilibili__like"
         assert messages[1]["role"] == "tool"
+
+    def test_tool_group_records_only_call_and_result(self, tmp_path):
+        brain = _brain(tmp_path)
+        brain.record_tool_events(
+            "g1",
+            [{"id": "c1", "name": "x__y", "args_digest": 'aside="好"'}],
+            [{"tool_call_id": "c1", "ok": True, "brief": "完成"}],
+        )
+        types = [e["type"] for e in brain.dump_events()
+                 if e["type"] in ("tool_call", "tool_result", "assistant_speech")]
+        assert types == ["tool_call", "tool_result"]
 
     def test_user_roundtrip(self, tmp_path):
         brain = _brain(tmp_path)
@@ -127,7 +152,7 @@ class TestProjectionEntry:
         assert brain.get_multi_turn_messages() == [
             {"role": "assistant", "content": "Summary: 想"}]
 
-    def test_clear_context_deletes_history(self, tmp_path):
+    def test_new_session_deletes_history(self, tmp_path):
         brain = _brain(tmp_path)
         brain.add_context("user", "旧会话")
         old_session = brain._events.current_session_id()
@@ -167,7 +192,7 @@ class TestSnapshotRestore:
     def test_summary_restored_flag(self, tmp_path):
         db = str(tmp_path / "pet.db")
         first = _brain(tmp_path)
-        first.add_context("system", "[历史摘要] 之前聊过天气", is_summary=True)
+        first.add_context("system", HISTORY_SUMMARY_PREFIX + "之前聊过天气", is_summary=True)
         first.close_events()
 
         reset_cache()
@@ -193,9 +218,9 @@ def test_duplicate_summary_supersedes_and_merges_covers(tmp_path):
     brain = _brain(tmp_path)
     brain.add_context("user", "第一句")
     brain.add_context("user", "第二句")
-    brain.add_context("system", "[历史摘要] 之前聊过天气", is_summary=True, covers=(1, 2))
+    brain.add_context("system", HISTORY_SUMMARY_PREFIX + "之前聊过天气", is_summary=True, covers=(1, 2))
     brain.add_context("user", "第三句")
-    brain.add_context("system", "[历史摘要] 之前聊过天气的事", is_summary=True, covers=(4, 4))
+    brain.add_context("system", HISTORY_SUMMARY_PREFIX + "之前聊过天气的事", is_summary=True, covers=(4, 4))
 
     summaries = [e for e in brain.dump_events() if e["type"] == "summary"]
     assert len(summaries) == 2
@@ -203,7 +228,7 @@ def test_duplicate_summary_supersedes_and_merges_covers(tmp_path):
     assert summaries[1]["refs"]["covers"] == [1, 4]
 
     projected = [m for m in brain.get_multi_turn_messages()
-                 if "历史摘要" in (m.get("content") or "")]
+                 if HISTORY_SUMMARY_PREFIX in (m.get("content") or "")]
     assert len(projected) == 1
 
 
