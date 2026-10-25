@@ -145,6 +145,10 @@ def _speech_lines(text: str) -> list[str]:
     return [f"Speech: {line}" for line in text.splitlines() if line.strip()]
 
 
+# 摘要文本里值可能带引号与逗号，只在后接 `键=` 的逗号处切分
+_ARGS_SPLIT = re.compile(r", (?=[A-Za-z_][\w]*=)")
+
+
 def replay_args(call: Event, mode: str = "minimal") -> str:
     """从 args_digest 重建参数 JSON；无法还原的部分省略。"""
     if mode == "empty":
@@ -153,13 +157,19 @@ def replay_args(call: Event, mode: str = "minimal") -> str:
     if not digest or digest == "-":
         return "{}"
     args = {}
-    for chunk in digest.split(", "):
+    for chunk in _ARGS_SPLIT.split(digest):
         if "=" not in chunk:
             continue
         key, _, raw = chunk.partition("=")
         if not key:
             continue
         if raw == "{…}":
+            continue
+        if raw.startswith('"'):
+            try:
+                args[key] = json.loads(raw)
+            except (json.JSONDecodeError, ValueError):
+                args[key] = raw
             continue
         if raw.endswith("…"):
             args[key] = raw[:-1]

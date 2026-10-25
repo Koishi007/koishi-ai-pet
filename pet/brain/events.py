@@ -60,20 +60,27 @@ def new_group_id() -> str:
 
 
 def args_digest(args: dict | None) -> str:
-    """参数要点：最多 3 个顶层标量，字符串截 40 字符，嵌套只写 {…}。"""
+    """参数要点：最多 3 个顶层标量，字符串截 40 字符，嵌套只写 {…}。
+
+    字符串与布尔值写成 JSON 字面量，`replay_args` 才能无歧义还原。
+    """
     if not args:
         return "-"
     parts = []
     for key, value in args.items():
         if len(parts) >= _MAX_DIGEST_KEYS:
             break
-        if isinstance(value, dict) or isinstance(value, list):
+        if isinstance(value, (dict, list)):
             parts.append(f"{key}={{…}}")
         elif isinstance(value, str):
             text = value[:_MAX_DIGEST_CHARS]
-            parts.append(f"{key}={text}{'…' if len(value) > _MAX_DIGEST_CHARS else ''}")
-        elif value is None or isinstance(value, (int, float, bool)):
-            parts.append(f"{key}={value}")
+            if len(value) > _MAX_DIGEST_CHARS:
+                text += "…"
+            parts.append(f"{key}={json.dumps(text, ensure_ascii=False)}")
+        elif value is None:
+            parts.append(f"{key}=null")
+        elif isinstance(value, (bool, int, float)):
+            parts.append(f"{key}={json.dumps(value)}")
     return ", ".join(parts) or "-"
 
 

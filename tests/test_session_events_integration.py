@@ -202,6 +202,27 @@ class TestSnapshotRestore:
         assert second._events.count() == count
 
 
+def test_duplicate_summary_supersedes_and_merges_covers(tmp_path):
+    """相似摘要命中时写事件而不是只改快照：旧事件被替换，覆盖区间合并。"""
+    brain = _brain(tmp_path)
+    brain.add_context("user", "第一句")
+    brain.add_context("user", "第二句")
+    brain._drained_covers = [(1, 2)]
+    brain.add_context("system", "[历史摘要] 之前聊过天气", is_summary=True)
+    brain.add_context("user", "第三句")
+    brain._drained_covers = [(4, 4)]
+    brain.add_context("system", "[历史摘要] 之前聊过天气的事", is_summary=True)
+
+    summaries = [e for e in brain.dump_events() if e["type"] == "summary"]
+    assert len(summaries) == 2
+    assert summaries[1]["refs"]["supersedes"] == summaries[0]["seq"]
+    assert summaries[1]["refs"]["covers"] == [1, 4]
+
+    projected = [m for m in brain.get_multi_turn_messages()
+                 if "历史摘要" in (m.get("content") or "")]
+    assert len(projected) == 1
+
+
 class TestArtifactProducer:
     def test_long_raw_result_stored_as_artifact(self, tmp_path):
         brain = _brain(tmp_path)

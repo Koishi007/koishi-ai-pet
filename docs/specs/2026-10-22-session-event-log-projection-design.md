@@ -347,8 +347,8 @@ class MessageEncoder(Protocol):
 
 `args_digest` 生成规则：
 
-- 只看顶层标量字段，最多 3 个，形如 `bvid=BV1aPJR6oExx, keyword=小狗`。
-- 字符串截断 40 字符，嵌套对象只写 `{…}`。
+- 只看顶层标量字段，最多 3 个，形如 `bvid="BV1aPJR6oExx", keyword="小狗"`。
+- 字符串与布尔值写成 JSON 字面量，`replay_args` 才能无歧义还原；字符串截断 40 字符，嵌套对象只写 `{…}`。
 - 空参数写 `-`。
 - 禁止写入完整 JSON。
 
