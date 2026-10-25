@@ -53,34 +53,34 @@ def _show_panel():
 
 def _browse(keyword: str = "", **_):
     if _storage is None:
-        return {"error": "B 站工具未初始化", "code": "not_ready"}
-    return duty.run_round(_storage, keyword=(keyword or "").strip())
+        return duty.with_hint({"error": "B 站工具未初始化", "code": "not_ready"})
+    return duty.with_hint(duty.run_round(_storage, keyword=(keyword or "").strip()))
 
 
 def _status(**_):
     if _storage is None:
-        return {"error": "B 站工具未初始化", "code": "not_ready"}
-    return duty.status(_storage)
+        return duty.with_hint({"error": "B 站工具未初始化", "code": "not_ready"})
+    return duty.with_hint(duty.status(_storage))
 
 
 def _like(bvid: str, **_):
-    return duty.write_action(_storage, "like", bvid=bvid)
+    return duty.with_hint(duty.write_action(_storage, "like", bvid=bvid))
 
 
 def _coin(bvid: str, **_):
-    return duty.write_action(_storage, "coin", bvid=bvid)
+    return duty.with_hint(duty.write_action(_storage, "coin", bvid=bvid))
 
 
 def _comment(bvid: str, text: str, **_):
-    return duty.write_action(_storage, "comment", bvid=bvid, text=text)
+    return duty.with_hint(duty.write_action(_storage, "comment", bvid=bvid, text=text))
 
 
 def _dm(text: str, **_):
-    return duty.write_action(_storage, "dm", text=text)
+    return duty.with_hint(duty.write_action(_storage, "dm", text=text))
 
 
 def _verify(limit: int = 10, **_):
-    return duty.verify(_storage, limit=limit)
+    return duty.with_hint(duty.verify(_storage, limit=limit))
 
 
 def register(registry):
@@ -90,6 +90,10 @@ def register(registry):
     except Exception as exc:
         logger.error(f"[bili] 初始化失败：{exc}")
         return
+    try:
+        _storage.prune()
+    except Exception as exc:
+        logger.warning(f"[bili] 清理过期记录失败：{exc}")
 
     registry.register(TOOL_NAME, TOOL_DESCRIPTION, group=TOOL_GROUP, side_effect=True)
 
@@ -136,7 +140,8 @@ def register(registry):
 
     registry.add_method(
         TOOL_NAME, "comment",
-        "在最近一轮刷到的某个视频下留一条评论。内容会经过长度、链接、隐私与重复检查，"
+        "在最近一轮刷到的某个视频下留一条评论。该视频有未回复的 @ 时，"
+        "评论会挂在那条 @ 评论下并自动带上 @昵称。内容会经过长度、链接、隐私与重复检查，"
         "被拦下时不发送。",
         handler=_comment,
         args={

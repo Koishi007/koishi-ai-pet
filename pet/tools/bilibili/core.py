@@ -11,11 +11,14 @@ import hashlib
 import io
 import json
 import logging
+import os
 import random
 import re
+import subprocess
+import sys
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 from typing import Any, Callable
@@ -23,14 +26,32 @@ from urllib.parse import quote
 
 import httpx
 
+from pet.settings import app_dir
+
 logger = logging.getLogger(__name__)
 
 _API = "https://api.bilibili.com"
 _VC = "https://api.vc.bilibili.com"
 _WEB = "https://www.bilibili.com"
 
-_TOOL_DIR = Path(__file__).parent
-CREDENTIAL_PATH = _TOOL_DIR / "credential.json"
+
+def credential_path() -> Path:
+    """登录态存到应用数据目录，重装或覆盖源码不会丢失。"""
+    return Path(app_dir()) / "bilibili_credential.json"
+
+
+def _harden_perms(path: Path):
+    """把凭证限制成只有本人可读；不支持的文件系统忽略失败。"""
+    try:
+        if sys.platform == "win32":
+            user = os.environ.get("USERNAME") or ""
+            subprocess.run(["icacls", str(path), "/inheritance:r", "/grant:r", f"{user}:F"],
+                           check=False, capture_output=True, timeout=10)
+        else:
+            path.chmod(0o600)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
 
 _HEADERS = {
     "User-Agent": (
@@ -66,7 +87,7 @@ _CRED_FIELDS = ("sessdata", "bili_jct", "dedeuserid", "buvid3", "buvid4",
 _AUTH_CODES = (-101, -111)
 
 _BVID_RE = re.compile(r"^BV[0-9A-Za-z]{10}$")
-_VIDEO_URI_RE = re.compile(r"bilibili://video/(\d+)")
+_VIDEO_BV_RE = re.compile(r"/video/(BV[0-9A-Za-z]{10})")
 
 
 def is_bvid(text: str) -> bool:
@@ -108,12 +129,12 @@ def _error_from_code(code: int, message: str) -> BiliError:
 class Credential:
     """登录态。字段与 bilibili_api 的 Credential 对齐；bili_jct 同时是写接口的 csrf。"""
 
-    sessdata: str
-    bili_jct: str
+    sessdata: str = field(repr=False)
+    bili_jct: str = field(repr=False)
     dedeuserid: str
     buvid3: str = ""
     buvid4: str = ""
-    ac_time_value: str = ""
+    ac_time_value: str = field(default="", repr=False)
 
     @classmethod
     def from_file(cls, path: Path) -> "Credential | None":
@@ -144,10 +165,7 @@ class Credential:
             "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         }
         path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        try:
-            path.chmod(0o600)
-        except OSError:
-            pass
+        _harden_perms(path)
 
     def cookie_header(self, buvid3: str = "", buvid4: str = "") -> str:
         pairs = {
@@ -223,10 +241,14 @@ def _file_stem(url: str) -> str:
 
 
 def absolute_url(url: str) -> str:
-    """补全协议相对地址；空值原样返回。"""
+    """补全协议相对地址并强制 https；空值原样返回。"""
     if not url:
         return ""
-    return "https:" + url if url.startswith("//") else url
+    if url.startswith("//"):
+        return "https:" + url
+    if url.startswith("http://"):
+        return "https://" + url[len("http://"):]
+    return url
 
 
 def strip_em(text: str) -> str:
@@ -260,26 +282,21 @@ def parse_search_items(data: dict) -> list[dict]:
 
 
 def parse_mentions(data: dict, limit: int = 10) -> list[dict]:
-    """解析 @ 通知，只保留视频类型；忽略动态、专栏与直播。"""
-    items = _as_dict(data).get("items") or []
-    if not isinstance(items, list):
-        return []
+    """解析 @ 通知，只保留视频；正文与跳转链接在 ``item.item`` 里。"""
     result = []
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        match = _VIDEO_URI_RE.search(str(item.get("uri") or ""))
+    for item in data.get("items") or []:
+        detail = item.get("item") or {}
+        match = _VIDEO_BV_RE.search(str(detail.get("uri") or ""))
         if not match:
             continue
-        user = _as_dict(item.get("user"))
-        detail = _as_dict(item.get("item"))
+        user = item.get("user") or {}
         result.append({
-            "id": _as_int(item.get("id")),
-            "uid": _as_int(user.get("uid")),
+            "id": int(item.get("id") or 0),
+            "uid": int(user.get("mid") or 0),
             "name": str(user.get("nickname") or ""),
-            "aid": int(match.group(1)),
-            "rpid": _as_int(item.get("source_id") or detail.get("source_id")),
-            "content": str(item.get("source_content") or "")[:120],
+            "bvid": match.group(1),
+            "rpid": int(detail.get("root_id") or detail.get("source_id") or 0),
+            "content": str(detail.get("source_content") or "")[:120],
         })
         if len(result) >= limit:
             break
@@ -452,12 +469,17 @@ class BiliClient:
         except httpx.HTTPError as exc:
             raise BiliError("network", f"请求失败：{exc}") from exc
         self.requests += 1
-        if resp.status_code >= 400:
-            raise BiliError("network", f"HTTP {resp.status_code}")
         try:
             payload = resp.json()
-        except ValueError as exc:
-            raise BiliError("parse", "响应不是 JSON") from exc
+        except ValueError:
+            payload = None
+        if resp.status_code >= 400:
+            code = payload.get("code") if isinstance(payload, dict) else 0
+            if code:
+                raise _error_from_code(int(code), payload.get("message") or "")
+            raise BiliError("network", f"HTTP {resp.status_code}")
+        if payload is None:
+            raise BiliError("parse", "响应不是 JSON")
         if not isinstance(payload, dict):
             raise BiliError("parse", "响应结构不符")
         code = int(payload.get("code") or 0)
@@ -516,14 +538,9 @@ class BiliClient:
     def view(self, bvid: str) -> dict:
         return self._cached_view(bvid)
 
-    def view_by_aid(self, aid: int) -> dict:
-        """按 aid 取视频信息，用于把 @ 通知里的 aid 换成 bvid。"""
-        return parse_view(self._request("GET", "/x/web-interface/view",
-                                        params={"aid": int(aid)}))
-
     def mentions(self, limit: int = 10) -> list[dict]:
         """最近 @ 我的通知。"""
-        data = self._request("GET", "/x/msgfeed/at", base=_VC,
+        data = self._request("GET", "/x/msgfeed/at",
                              params={"platform": "web", "build": 0, "mobi_app": "web"})
         return parse_mentions(data, limit)
 
@@ -596,13 +613,16 @@ class BiliClient:
             payload["parent"] = int(parent or root)
         data = self._request("POST", "/x/v2/reply/add", params=_dm_params(),
                              data=payload, sign=True, auth=True)
-        return int(data.get("rpid") or 0)
+        rpid = int(data.get("rpid") or 0)
+        if not rpid:
+            raise BiliError("receipt", "评论回执缺少 rpid")
+        return rpid
 
     def dm(self, uid: int, text: str) -> dict:
         if not self._cred:
             raise BiliError("auth", "未登录 B 站")
         content = json.dumps({"content": text}, ensure_ascii=False)
-        return self._request(
+        data = self._request(
             "POST", "/web_im/v1/web_im/send_msg", base=_VC, auth=True,
             data={
                 "msg[sender_uid]": self._cred.dedeuserid,
@@ -615,6 +635,9 @@ class BiliClient:
                 "msg[dev_id]": "0",
             },
         )
+        if not data.get("msg_key"):
+            raise BiliError("receipt", "私信回执缺少 msg_key")
+        return data
 
     def my_replies(self, aid: int) -> list[dict]:
         """顶层评论，按时间排序取第一页。"""
