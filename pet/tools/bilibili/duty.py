@@ -326,21 +326,20 @@ def _reply_hidden(reply: dict) -> bool:
 
 
 def _reply_visibility(reply: dict) -> str:
-    """可见性：hidden 为平台隐藏，visible 为公开；其余非 0 状态按审核中处理。"""
+    """可见性：hidden 为平台隐藏；只有 state 明确为 0 才是 visible，其余按未确认处理。"""
     if _reply_hidden(reply):
         return "hidden"
-    return "visible" if int(reply.get("state") or 0) == 0 else "done"
+    return "visible" if reply.get("state") == 0 else "done"
 
 
 def _match_reply(replies: list[dict], uid: int, rpid: int,
                  content: str = "") -> dict | None:
-    """找本人的那条评论：按 rpid 精确匹配，未命中时退回正文前 20 字。"""
+    """找本人的那条评论：有 rpid 只按 rpid 匹配，无 rpid 时退回正文前 20 字。"""
     def mine(reply: dict) -> bool:
         return int((reply.get("member") or {}).get("mid") or 0) == uid
 
-    hit = next((r for r in replies if int(r.get("rpid") or 0) == rpid and mine(r)), None)
-    if hit is not None:
-        return hit
+    if rpid:
+        return next((r for r in replies if int(r.get("rpid") or 0) == rpid and mine(r)), None)
     head = (content or "")[:20]
     if not head:
         return None
@@ -654,7 +653,7 @@ def write_action(storage: BiliStorage, kind: str, *, bvid: str = "", text: str =
 
 
 def verify(storage: BiliStorage, limit: int = 10) -> dict:
-    """复核已发出的评论是否公开可见；按 rpid 精确匹配，正文只作兜底。"""
+    """复核已发出的评论是否公开可见；有 rpid 只按 rpid 匹配，无 rpid 时用正文。"""
     cfg = load_config()
     credential = load_credential()
     if credential is None:
