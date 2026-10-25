@@ -113,7 +113,7 @@ wbi 签名约定：
 读取 config.json 与凭证
   → 按关键词逐个搜索，间隔 min_interval_s
   → 每词合并、按 bvid 去重、按 scan_days 过滤发布时间、剔除 bili_seen
-  → 逐条取字幕加入候选，够 max_videos 或到采集预算就停止，不足则试下一个词
+  → 逐条取字幕加入候选，够 per_run 或到采集预算就停止，不足则试下一个词
   → 有字幕的候选拼成一次 LLM 请求，得到 picks 与互动建议
   → 写 bili_seen（全部读过的）、bili_rounds
   → 按限额执行点赞、投币、评论、私信
@@ -127,10 +127,10 @@ wbi 签名约定：
 | 排序 | 默认 `totalrank`，可配 `pubdate` / `click` |
 | 去重 | 同一 `bvid` 只保留首次出现 |
 | 时间过滤 | `pubdate` 早于 `now - scan_days` 的丢弃 |
-| 判重 | 未看过的排在前面，候选不足时补已看过的，不丢弃 |
+| 判重 | 在单个关键词内，未看过的排在前面，候选不足时补已看过的，不丢弃 |
 | 分页 | 单关键词时按需翻页，最多 3 页；多关键词时每个只搜 1 页 |
 | 换词 | 当前关键词凑不出新候选时，按随机顺序试下一个，最多 3 个 |
-| 候选上限 | 有字幕的候选超过 `max_videos` 时按当前排序截断 |
+| 停止条件 | 集齐本轮返回的 `per_run` 条即停止采集；90 秒采集预算兜底 |
 | 无字幕 | 记录到 `skipped`，仍进候选，`subtitle` 为空串 |
 | 失败重试 | 不重试；同一关键词失败两次即放弃 |
 | 空结果 | 全部失败或无候选时返回原因，不调用 LLM |
@@ -143,7 +143,7 @@ wbi 签名约定：
 | 项 | 约定 |
 |---|---|
 | 关键词 | 本轮一个：参数传入优先，否则从 `keywords` 随机选一个 |
-| 候选 | 搜索、时间范围、判重、无字幕过滤后，最多 `max_videos` 条 |
+| 候选 | 搜索、时间范围、判重、无字幕过滤后，集齐 `per_run` 条即返回 |
 | 抽取 | 从候选里随机取 `per_run` 条，默认 2 条 |
 | 返回 | `videos` 数组，每项含 `bvid`、`title`、`up`、`duration`、`play`、`desc`、`url`、`keyword`、`subtitle`；`keyword` 是这条命中的搜索词或请求里的 BV 号 |
 | 字幕 | 每条截到 `subtitle_chars` 字，默认 2500；无字幕时为空串 |
@@ -318,7 +318,7 @@ CREATE TABLE IF NOT EXISTS bili_mentions (
 
 | 方法 | 参数 | 超时 | 返回 |
 |---|---|---|---|
-| `bilibili__browse` | `keyword`，可选：关键词或 BV 号 | 300s | `summary`、`picked`、`skipped`、`note`、`requests` |
+| `bilibili__browse` | `keyword` / `bvid`，可选：关键词或 BV 号 | 300s | `summary`、`picked`、`skipped`、`note`、`requests` |
 | `bilibili__like` | `bvid` | 30s | 操作结果 |
 | `bilibili__coin` | `bvid` | 30s | 操作结果与余额 |
 | `bilibili__comment` | `bvid`、`text` | 30s | 操作结果、`rpid`、拒绝原因 |
@@ -340,8 +340,7 @@ CREATE TABLE IF NOT EXISTS bili_mentions (
 | 键 | 类型 | 默认 | 说明 |
 |---|---|---|---|
 | `keywords` | list[str] | 见下 | 关注关键词；BV 号形式直接读取该视频，不经过搜索 |
-| `max_videos` | int | 6 | 单轮最多读几条字幕 |
-| `per_run` | int | 2 | 单轮随机取几条返回 |
+| `per_run` | int | 2 | 单轮取几条返回 |
 | `scan_days` | int | 30 | 只看最近几天的视频 |
 | `order` | str | `totalrank` | `totalrank` / `pubdate` / `click` |
 | `subtitle_chars` | int | 2500 | 每条字幕截断字数 |
@@ -374,7 +373,7 @@ CREATE TABLE IF NOT EXISTS bili_mentions (
 
 `dm_uid` 也在账号面板填写，非数字或 0 拒绝保存；配置为 0 时私信调用与一轮内的私信步骤都返回明确错误。
 
-关键词清洗：去不可打印字符、去空、去重，单条上限 50 字，最多 20 个。`browse` 的 `keyword` 参数走同一套清洗，但不受配置列表限制；BV 号固定 12 位，不受长度限制。传了 BV 号就只取这些视频、不再搜索关键词，且抽选时这些 BV 必定返回。
+关键词清洗：去不可打印字符、去空、去重，单条上限 50 字，最多 20 个。`browse` 的 `keyword` 参数走同一套清洗，但不受配置列表限制；BV 号固定 12 位，不受长度限制。`bvid` 与 `keyword` 只传一个：传 `bvid`（或 `keyword` 只给 BV）时只取这些视频、不再搜索关键词，且抽选时这些 BV 必定返回。
 
 配置读取失败时用内置默认值并在 `summary` 里注明，不中断本轮。
 

@@ -1,6 +1,5 @@
 {
     "keywords": ["东方Project", "古明地觉", "古明地恋", "猫", "狗", "动物"],
-    "max_videos": 6,
     "per_run": 2,
     "scan_days": 30,
     "order": "totalrank",

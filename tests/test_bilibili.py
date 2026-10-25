@@ -15,6 +15,7 @@ from PIL import Image
 
 from pet.tools.bilibili import core, duty, filters, schedule
 from pet.tools.bilibili import storage as bili_storage
+from pet.tools import bilibili as bili_tool
 from pet.tools.bilibili.core import (
     BiliClient,
     Credential,
@@ -628,16 +629,16 @@ def test_prune_drops_expired_rows(store):
 def test_load_config_defaults(monkeypatch, tmp_path):
     monkeypatch.setattr(duty, "_CONFIG_FILE", tmp_path / "missing.json")
     cfg = duty.load_config()
-    assert cfg["max_videos"] == 6
+    assert cfg["per_run"] == 2
     assert cfg["allow_comment"] is False
 
 
 def test_load_config_ignores_wrong_types(monkeypatch, tmp_path):
     path = tmp_path / "config.json"
-    path.write_text('{"max_videos": "many", "allow_like": "yes"}', encoding="utf-8")
+    path.write_text('{"per_run": "many", "allow_like": "yes"}', encoding="utf-8")
     monkeypatch.setattr(duty, "_CONFIG_FILE", path)
     cfg = duty.load_config()
-    assert cfg["max_videos"] == 6
+    assert cfg["per_run"] == 2
     assert cfg["allow_like"] is False
 
 
@@ -656,7 +657,7 @@ def test_update_config_persists_switch(monkeypatch, tmp_path):
     assert cfg["keywords"] == ["x"]
     saved = json.loads(path.read_text(encoding="utf-8"))
     assert saved["allow_like"] is True
-    assert saved["max_videos"] == 6
+    assert saved["per_run"] == 2
 
 
 def test_update_config_ignores_unknown_key(monkeypatch, tmp_path):
@@ -731,6 +732,63 @@ def test_collect_skips_search_when_bv_given(monkeypatch):
         ["手抓羊肉", "BV1spHA66Exo"])
     assert [c["bvid"] for c in candidates] == ["BV1spHA66Exo"]
     assert searched == []
+
+
+def test_collect_stops_at_per_run(monkeypatch):
+    needs = []
+    monkeypatch.setattr(
+        duty, "_search_keyword",
+        lambda *a, **k: needs.append(a[6]) or ([f"BV{i}" for i in range(6)], 0))
+    monkeypatch.setattr(duty, "_add_candidate",
+                        lambda client, cands, skipped, bvid, has_cover, kw="":
+                        cands.append({"bvid": bvid}))
+    monkeypatch.setattr(duty.TOOL_CTX, "has_vision", lambda: False)
+    cfg = dict(duty._DEFAULTS, per_run=2)
+    candidates, _, _ = duty._collect(
+        SimpleNamespace(requests=0), cfg, None, ["狗"])
+    assert [c["bvid"] for c in candidates] == ["BV0", "BV1"]
+    assert needs == [2]
+
+
+def test_collect_bv_mode_collects_all_targets(monkeypatch):
+    monkeypatch.setattr(duty, "_search_keyword",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("no search")))
+    monkeypatch.setattr(duty, "_add_candidate",
+                        lambda client, cands, skipped, bvid, has_cover, kw="":
+                        cands.append({"bvid": bvid}))
+    monkeypatch.setattr(duty.TOOL_CTX, "has_vision", lambda: False)
+    cfg = dict(duty._DEFAULTS, per_run=2)
+    candidates, _, _ = duty._collect(
+        SimpleNamespace(requests=0), cfg, None,
+        ["BV1spHA66Exo", "BV1Lmbj6jEq6", "BV1tDnm6KE9L"])
+    assert [c["bvid"] for c in candidates] == [
+        "BV1spHA66Exo", "BV1Lmbj6jEq6", "BV1tDnm6KE9L"]
+
+
+def test_browse_accepts_bvid_param(monkeypatch, store):
+    seen = {}
+    monkeypatch.setattr(bili_tool, "_storage", store)
+    monkeypatch.setattr(
+        duty, "run_round",
+        lambda storage, keyword="": seen.update(kw=keyword) or {"headline": "ok"})
+    assert bili_tool._browse(bvid="BV1spHA66Exo")["headline"] == "ok"
+    assert seen["kw"] == "BV1spHA66Exo"
+    bili_tool._browse(keyword="狗")
+    assert seen["kw"] == "狗"
+    result = bili_tool._browse(keyword="手抓羊肉", bvid="BV1spHA66Exo")
+    assert seen["kw"] == "BV1spHA66Exo"
+    assert result["hint"]
+
+
+def test_browse_rejects_invalid_bvid(monkeypatch, store):
+    called = []
+    monkeypatch.setattr(bili_tool, "_storage", store)
+    monkeypatch.setattr(duty, "run_round",
+                        lambda *a, **k: called.append(1) or {"headline": "ok"})
+    result = bili_tool._browse(bvid="not-a-bv", keyword="狗")
+    assert result["code"] == "invalid_bvid"
+    assert result["hint"]
+    assert called == []
 
 
 def test_parse_window_defaults_on_invalid():
