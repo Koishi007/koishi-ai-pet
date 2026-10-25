@@ -841,6 +841,12 @@ def test_browse_rejects_invalid_bvid(monkeypatch, store):
     assert called == []
 
 
+def test_register_blocked_without_qrcode(monkeypatch):
+    monkeypatch.setitem(sys.modules, "qrcode", None)
+    with pytest.raises(RuntimeError):
+        bili_tool.register(object())
+
+
 def test_parse_window_defaults_on_invalid():
     assert schedule.parse_window("bad") == (540, 1380)
     assert schedule.parse_window("23:00-09:00") == (540, 1380)

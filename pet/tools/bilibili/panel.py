@@ -9,6 +9,7 @@ import io
 import logging
 from pathlib import Path
 
+import qrcode
 from PySide6.QtCore import Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
@@ -177,8 +178,6 @@ def _with_help(box: QCheckBox, tip: str) -> QWidget:
 
 
 def _qr_png(url: str) -> bytes:
-    import qrcode
-
     image = qrcode.make(url)
     buf = io.BytesIO()
     image.save(buf, format="PNG")
