@@ -5,7 +5,7 @@ import sys
 
 import psutil
 
-from PySide6.QtWidgets import QSystemTrayIcon, QMenu
+from PySide6.QtWidgets import QMessageBox, QSystemTrayIcon, QMenu
 from PySide6.QtGui import QIcon, QAction, QCursor, QPainter, QPainterPath, QColor, QPen
 from PySide6.QtCore import QObject, QTimer, Qt
 from pet.ui.styles import ICON_PATH, MENU_QSS
@@ -154,6 +154,12 @@ class SystemTrayManager(QObject):
         menu.addAction(pen_action)
         menu.addSeparator()
 
+        new_session_action = QAction("切到新会话", menu)
+        new_session_action.setEnabled(self._agent is not None)
+        new_session_action.triggered.connect(self._confirm_new_session)
+        menu.addAction(new_session_action)
+        menu.addSeparator()
+
         # 设置入口
         settings_action = QAction("设置", menu)
         settings_action.triggered.connect(lambda: SettingsWindow.show_instance(self._agent, self.pet))
@@ -168,6 +174,29 @@ class SystemTrayManager(QObject):
         menu.addAction(quit_action)
 
         menu.exec(QCursor.pos())
+
+    def _confirm_new_session(self):
+        """确认后切换到新会话，结束当前会话并回收旧事件。"""
+        if self._agent is None:
+            return
+        parent = self.pet if self.pet.isVisible() else None
+        reply = QMessageBox.question(
+            parent, "切到新会话",
+            "切到一个新会话，当前会话的上下文会被丢弃，不可恢复。\n\n"
+            "不影响长期记忆\n\n"
+            "确定切到新会话吗？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self._agent.behavior.clear_context()
+        except Exception as e:
+            logger.exception(f"[Tray] 切换会话失败: {e}")
+            QMessageBox.warning(parent, "切换失败", str(e))
+            return
+        logger.info("[Tray] 已切换到新会话")
 
     def _on_activated(self, reason):
         if reason == QSystemTrayIcon.ActivationReason.Context:
