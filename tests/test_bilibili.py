@@ -7,6 +7,7 @@ import io
 import json
 from datetime import date, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -649,6 +650,37 @@ def test_run_round_rejects_blank_keyword(monkeypatch, tmp_path, store):
     monkeypatch.setattr(duty, "_CONFIG_FILE", tmp_path / "config.json")
     result = duty.run_round(store, keyword="   ")
     assert result["code"] == "invalid_keyword"
+
+
+def test_parse_request_keeps_bv_beyond_keyword_cap():
+    bv, words = duty._parse_request("手抓羊肉,兰州,羊脖子,BV1spHA66Exo")
+    assert bv == ["BV1spHA66Exo"]
+    assert words == ["手抓羊肉", "兰州", "羊脖子"]
+
+
+def test_pick_chosen_keeps_requested_bv():
+    candidates = [{"bvid": "BV1"}, {"bvid": "BV2"}, {"bvid": "BV3"}]
+    assert duty._pick_chosen(candidates, ["BV3"], 1) == [{"bvid": "BV3"}]
+
+
+def test_pick_chosen_random_without_bv():
+    candidates = [{"bvid": f"BV{i}"} for i in range(5)]
+    assert len(duty._pick_chosen(candidates, [], 2)) == 2
+
+
+def test_collect_skips_search_when_bv_given(monkeypatch):
+    searched = []
+    monkeypatch.setattr(duty, "_search_keyword",
+                        lambda *a, **k: searched.append("search") or ([], 0))
+    monkeypatch.setattr(duty, "_add_candidate",
+                        lambda client, cands, skipped, bvid, has_cover, kw="":
+                        cands.append({"bvid": bvid}))
+    monkeypatch.setattr(duty.TOOL_CTX, "has_vision", lambda: False)
+    candidates, meta, _ = duty._collect(
+        SimpleNamespace(requests=0), dict(duty._DEFAULTS), None,
+        ["手抓羊肉", "BV1spHA66Exo"])
+    assert [c["bvid"] for c in candidates] == ["BV1spHA66Exo"]
+    assert searched == []
 
 
 def test_parse_window_defaults_on_invalid():

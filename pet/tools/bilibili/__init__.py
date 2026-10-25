@@ -100,13 +100,15 @@ def register(registry):
     registry.add_method(
         TOOL_NAME, "browse",
         "刷一轮 B 站：按关键词搜最近几天的视频，随机取几部连同字幕交给你。"
+        "传 BV 号时直接取该视频，不要再附带关键词。"
         "没有字幕的视频照常返回，靠标题、简介与封面判断。"
         "只读，不自动点赞、投币或评论；要不要互动由随后调用 like / coin / comment 决定。"
         "传关键词前可先用 status 查看关注列表。",
         handler=_browse,
         args={
             "keyword": {"type": "str", "required": False, "default": "",
-                        "desc": "一个或多个关键词，逗号分隔，最多 3 个；留空时从关注列表随机选一个"},
+                        "desc": "关键词或 BV 号；多个关键词用逗号分隔，最多 3 个。"
+                                "只传 BV 时直接取该视频，不要附带关键词；留空时从关注列表随机选一个"},
         },
         timeout=300.0,
         output=ToolOutputDefinition(schema=BROWSE_OUTPUT),

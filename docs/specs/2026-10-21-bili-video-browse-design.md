@@ -145,7 +145,7 @@ wbi 签名约定：
 | 关键词 | 本轮一个：参数传入优先，否则从 `keywords` 随机选一个 |
 | 候选 | 搜索、时间范围、判重、无字幕过滤后，最多 `max_videos` 条 |
 | 抽取 | 从候选里随机取 `per_run` 条，默认 2 条 |
-| 返回 | `videos` 数组，每项含 `bvid`、`title`、`up`、`duration`、`play`、`desc`、`url`、`keyword`、`subtitle`；`keyword` 是这条命中的搜索词，BV 号直读时为空 |
+| 返回 | `videos` 数组，每项含 `bvid`、`title`、`up`、`duration`、`play`、`desc`、`url`、`keyword`、`subtitle`；`keyword` 是这条命中的搜索词或请求里的 BV 号 |
 | 字幕 | 每条截到 `subtitle_chars` 字，默认 2500；无字幕时为空串 |
 | 封面 | `TOOL_CTX.has_vision()` 为真时，取随机结果第一条的封面，缩放后作为 `__image__` 附在工具结果之后；一次只能带一张 |
 | 记忆 | 工具不写记忆，由演绎模型在对话里决定是否记录 |
@@ -374,7 +374,7 @@ CREATE TABLE IF NOT EXISTS bili_mentions (
 
 `dm_uid` 也在账号面板填写，非数字或 0 拒绝保存；配置为 0 时私信调用与一轮内的私信步骤都返回明确错误。
 
-关键词清洗：去不可打印字符、去空、去重，单条上限 50 字，最多 20 个。`browse` 的 `keyword` 参数走同一套清洗，但不受配置列表限制；BV 号固定 12 位，不受长度限制，直接读取该视频。
+关键词清洗：去不可打印字符、去空、去重，单条上限 50 字，最多 20 个。`browse` 的 `keyword` 参数走同一套清洗，但不受配置列表限制；BV 号固定 12 位，不受长度限制。传了 BV 号就只取这些视频、不再搜索关键词，且抽选时这些 BV 必定返回。
 
 配置读取失败时用内置默认值并在 `summary` 里注明，不中断本轮。
 

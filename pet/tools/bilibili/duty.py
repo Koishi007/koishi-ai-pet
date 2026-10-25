@@ -45,7 +45,7 @@ _ERROR_HINTS = {
     "not_ready": "工具还没启动完成，这次先不要调用。",
     "not_logged_in": "登录失效或未登录，让用户在账号面板重新扫码后再试。",
     "dm_uid_missing": "让用户在面板填好私信收件人 UID 后再试。",
-    "target_unknown": "先用 browse 拿到候选，再对候选里的 bvid 操作。",
+    "target_unknown": "若已有具体 BV，用 browse 只传这个 BV（不要附带关键词）后再操作；否则先刷一轮。",
     "quota": "今天的额度用完了，今天不要再调用这个操作。",
     "duplicate": "这个目标已有记录，不要重复调用。",
     "no_receipt": "回执缺失，可能已经发出去了，不要再调用。",
@@ -265,6 +265,9 @@ def _collect(client: BiliClient, cfg: dict, storage: BiliStorage,
         order = "totalrank"
     max_videos = max(1, int(cfg["max_videos"]))
     bv_targets, search_keywords = split_keywords(keywords)
+    if bv_targets:
+        # 指定了 BV 就只取这些视频，不再搜索关键词
+        search_keywords = []
     if not search_keywords and not bv_targets:
         pool = list(cfg["keywords"])
         random.shuffle(pool)
@@ -357,6 +360,22 @@ def _post_comment(client: BiliClient, storage: BiliStorage, cfg: dict,
     return result
 
 
+def _parse_request(keyword: str) -> tuple[list[str], list[str]]:
+    """拆分 BV 与关键词；关键词最多保留 _MAX_SEARCH_KEYWORDS 个。"""
+    words = normalize_keywords(keyword.replace("，", ",").split(",")) if keyword else []
+    bv_targets, text_words = split_keywords(words)
+    return bv_targets, text_words[:_MAX_SEARCH_KEYWORDS]
+
+
+def _pick_chosen(candidates: list[dict], bv_targets: list[str],
+                 count: int) -> list[dict]:
+    """BV 直通时按 BV 返回，随机抽样可能漏掉指定的目标。"""
+    if bv_targets:
+        wanted = set(bv_targets)
+        return [c for c in candidates if c["bvid"] in wanted]
+    return random.sample(candidates, count)
+
+
 def run_round(storage: BiliStorage, keyword: str = "") -> dict:
     """跑一轮：搜索、读字幕，随机取几条连同字幕交给演绎模型。
 
@@ -365,10 +384,10 @@ def run_round(storage: BiliStorage, keyword: str = "") -> dict:
     cfg = load_config()
     if not cfg["allow_browse"]:
         return {"error": "刷视频已在面板里关闭", "code": "disabled"}
-    words = normalize_keywords(keyword.replace("，", ",").split(",")) if keyword else []
-    if keyword and not words:
+    bv_targets, text_words = _parse_request(keyword)
+    if keyword and not (bv_targets or text_words):
         return {"error": "关键词不合法：为空或超过 50 字", "code": "invalid_keyword"}
-    words = words[:_MAX_SEARCH_KEYWORDS]
+    words = bv_targets + text_words
     credential = load_credential()
     if credential is None:
         return {"error": "还没登录 B 站账号，右键菜单打开「B 站账号」扫码",
@@ -395,7 +414,7 @@ def run_round(storage: BiliStorage, keyword: str = "") -> dict:
                 }
 
             count = max(1, min(int(cfg["per_run"]), len(candidates)))
-            chosen = random.sample(candidates, count)
+            chosen = _pick_chosen(candidates, bv_targets, count)
             # 只标记实际返回的：没抽中的候选留到下一轮，同一关键词可以分多次取
             storage.mark_seen([
                 {"bvid": c["bvid"], "title": c["title"], "up": c["up"],
@@ -418,7 +437,7 @@ def run_round(storage: BiliStorage, keyword: str = "") -> dict:
                 "subtitle": c["subtitle"],
             } for c in chosen]
 
-            kw = "、".join(meta["keywords"])
+            kw = "、".join(bv_targets or meta["keywords"])
             result = {
                 "headline": (f"从「{kw}」刷到 {len(videos)} 部" if kw
                              else f"刷到 {len(videos)} 部"),
