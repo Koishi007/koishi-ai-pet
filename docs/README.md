@@ -50,6 +50,8 @@
 | [specs/2026-10-16-output-budget-design.md](specs/2026-10-16-output-budget-design.md) | 设计文档 | 手写 | 输出预算与截断处理：三段配额与数值依据、结束原因链路、只在 length 截断时关闭思考 | 动手前写，落地后补齐结论 |
 | [specs/2026-10-18-screen-edge-dock-design.md](specs/2026-10-18-screen-edge-dock-design.md) | 设计文档 | 手写 | 屏幕边缘吸附：贴边状态与触发、镜像与点击掩膜、动作本地路由、贴边 user 提示词与觅食工具开关 | 动手前写，落地后补齐结论 |
 | [specs/2026-10-19-memory-event-recall-design.md](specs/2026-10-19-memory-event-recall-design.md) | 设计文档 | 手写 | 事件记忆随机注入的时效处理：整点定时汇总、读取侧取同主题最新、注入文案标注时效；含合并模型连接与记忆面板类别筛选 | 动手前写，落地后补齐结论 |
+| [specs/2026-10-21-bili-video-browse-design.md](specs/2026-10-21-bili-video-browse-design.md) | 设计文档 | 手写 | 独立账号刷 B 站：扫码登录与凭证、wbi 签名、一轮流程、点赞投币评论私信的限额与内容 filter、台账幂等与复核、记忆落点 | 动手前写，落地后补齐结论 |
+| [specs/2026-10-22-session-event-log-projection-design.md](specs/2026-10-22-session-event-log-projection-design.md) | 设计文档 | 手写 | 会话事件日志与消息投影：只追加事件表、纯函数投影、工具组原子裁剪、四档工具通道、传输编码层 | 动手前写，落地后补齐结论 |
 | [../CHANGELOG.md](../CHANGELOG.md) | 事实参考 | 生成 | 按版本分组的变更记录 | `python scripts/gen_changelog.py` |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | 操作指南 | 手写 | 开发流程、测试、提交与 PR 规范 | 流程变化时人工更新 |
 

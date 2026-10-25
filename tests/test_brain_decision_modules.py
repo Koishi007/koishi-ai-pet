@@ -13,6 +13,7 @@ import pytest
 
 import pet.brain.behavior as behavior_module
 import pet.brain.repair as repair_module
+import pet.brain.tool_loop as tool_loop_mod
 from pet.brain.behavior import Behavior
 from pet.brain.repair import retry_if_empty
 from pet.brain.output import ActionStep, BehaviorOutput, CancelledError
@@ -215,7 +216,63 @@ def _tool_calls(name: str, arguments: str = "{}"):
     return {0: {"id": f"call_{name}", "name": name, "arguments": arguments}}
 
 
+class _FailingEventSession(_FakeSession):
+    """事件写入总是失败，用于验证按轮次回退文本记录。"""
+
+    def record_tool_events(self, group_id, calls, results, asides=None):
+        raise RuntimeError("event store unavailable")
+
+
+class _RefusingEventSession(_FakeSession):
+    """事件库不可用：record_tool_events 返回 False。"""
+
+    def record_tool_events(self, group_id, calls, results, asides=None):
+        return False
+
+
+class TestToolBrief:
+    """brief 回退链：context_brief → summary → 结果首行 → 兜底。"""
+
+    @staticmethod
+    def _result(context_brief="", success=True, error=""):
+        return SimpleNamespace(context_brief=context_brief, success=success, error=error)
+
+    def test_context_brief_wins(self):
+        logic = tool_loop_mod._tool_brief
+        assert logic(self._result("读了 a.md"), "summary", "原文") == "读了 a.md"
+
+    def test_falls_back_to_summary(self):
+        logic = tool_loop_mod._tool_brief
+        assert logic(self._result(), "已添加待办「买菜」", '{"id": 1}') == "已添加待办「买菜」"
+
+    def test_falls_back_to_first_line_of_text(self):
+        logic = tool_loop_mod._tool_brief
+        text = '深圳 晴 29.6度\n{"temp": 29.6}'
+        assert logic(self._result(), "", text) == "深圳 晴 29.6度"
+
+    def test_json_only_result_degrades(self):
+        logic = tool_loop_mod._tool_brief
+        assert logic(self._result(), "", '{"temp": 29.6}') == "操作已完成"
+
+    def test_failure_uses_error(self):
+        logic = tool_loop_mod._tool_brief
+        result = self._result(success=False, error="网络超时")
+        assert logic(result, "", "") == "网络超时"
+
+
 class TestToolLoopRounds:
+    def test_event_failure_falls_back_to_text_log(self):
+        session = _FailingEventSession([("Speech: 好\n", {})])
+        run_tool_loop([], _tool_calls("timer__set"), "", session, max_rounds=3)
+        contents = [content for _, content in session.contexts]
+        assert any(content.startswith("[工具调用]") for content in contents)
+
+    def test_event_refusal_falls_back_to_text_log(self):
+        session = _RefusingEventSession([("Speech: 好\n", {})])
+        run_tool_loop([], _tool_calls("timer__set"), "", session, max_rounds=3)
+        contents = [content for _, content in session.contexts]
+        assert any(content.startswith("[工具调用]") for content in contents)
+
     def test_stops_when_model_returns_no_tool_calls(self):
         session = _FakeSession([("Speech: 好\n", {})])
         out = run_tool_loop([], _tool_calls("timer__set"), "", session, max_rounds=3)
@@ -347,16 +404,19 @@ class TestToolLoopCancellation:
 
 
 class _Recorder:
-    def __init__(self, items, summary=None, raises=None):
+    def __init__(self, items, summary=None, raises=None, covers=None):
         self.items = list(items)
         self.summary = summary
         self.raises = raises
+        self.covers = covers
         self.added = []
+        self.added_covers = []
         self.summarize_calls = 0
 
     def drain(self):
         items, self.items = self.items, []
-        return items
+        covers, self.covers = self.covers, None
+        return items, covers
 
     def summarize_fn(self, items):
         self.summarize_calls += 1
@@ -364,8 +424,9 @@ class _Recorder:
             raise self.raises
         return self.summary
 
-    def add_context(self, role, content, is_summary=False):
+    def add_context(self, role, content, is_summary=False, covers=None):
         self.added.append((role, content, is_summary))
+        self.added_covers.append(covers)
 
 
 class TestFlushSummaries:
@@ -418,6 +479,11 @@ class TestFlushSummaries:
         role, content, is_summary = rec.added[0]
         assert (role, is_summary) == ("system", True)
         assert content.endswith("拼接摘要") and content != "拼接摘要"
+
+    def test_covers_travels_with_summary(self):
+        rec = _Recorder(["[user] 甲"], summary="LLM 摘要", covers=(3, 9))
+        flush_summaries(self._hooks(rec))
+        assert rec.added_covers == [(3, 9)]
 
 
 class _Usage:

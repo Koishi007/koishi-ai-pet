@@ -3,6 +3,7 @@
 import logging
 import threading
 import time
+import traceback
 from datetime import datetime
 from PySide6.QtCore import QObject, QThread, QThreadPool, QTimer, Qt, Signal, Slot
 
@@ -48,9 +49,8 @@ class BrainWorker(QObject):
         except CancelledError:
             logger.info(f"[{ts}] [BrainWorker] cancelled: {self._name}")
         except Exception as e:
-            logger.error(f"[{ts}] [BrainWorker] ERROR: {self._name}: {type(e).__name__}: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"[{ts}] [BrainWorker] ERROR: {self._name}: {type(e).__name__}: {e}\n"
+                         f"{traceback.format_exc()}")
             self.error.emit(str(e))
 
 
@@ -230,6 +230,11 @@ class PetAgent(QObject):
             self.mood.close()
         if hasattr(self, 'conversation_store'):
             self.conversation_store.close()
+        if hasattr(self, 'behavior'):
+            try:
+                self.behavior.close_events()
+            except Exception:
+                logger.warning("[PetAgent] close event store failed")
         logger.info("[PetAgent] stopped")
 
     def trigger(self, intent: str, **kwargs):

@@ -218,6 +218,12 @@ class Behavior(BrainMixin):
                     cancel_check=cancel_check, repair=repair),
                 tag,
             )
+        except CancelledError:
+            raise
+        except Exception:
+            # 上下文构建失败不应让整轮崩掉：记完整堆栈后退回本地兜底
+            logger.exception("[Behavior] autonomous_decide_stream: build failed")
+            return decide_local(docked=self._docked())
         finally:
             self._lock.release()
 
@@ -310,6 +316,11 @@ class Behavior(BrainMixin):
                     cancel_check=cancel_check, repair=repair),
                 tag,
             )
+        except CancelledError:
+            raise
+        except Exception:
+            logger.exception("[Behavior] chat_decide_stream: build failed")
+            return chat_decide_local(user_message, docked=self._docked())
         finally:
             self._lock.release()
 
@@ -418,6 +429,8 @@ class Behavior(BrainMixin):
         self.gateway.log_prompt_size(messages, tag)
         try:
             tools_param = self._build_tools_param(enable_tools)
+            logger.info(f"[Behavior] {tag} tools={len(tools_param or [])} "
+                        f"groups={sorted(self._active_tool_groups)}")
             max_tokens = output_budget(mode, thinking=thinking, has_tools=bool(tools_param))
             stream = self.gateway.stream_chat(messages, max_tokens=max_tokens, tools=tools_param,
                                               thinking=thinking,
@@ -487,10 +500,13 @@ class Behavior(BrainMixin):
         return thinking
 
     def _note_budget_truncation(self, tag: str, output: BehaviorOutput):
-        """空输出且上一轮为 length 时点名原因，与格式类失败区分开。"""
-        if self._last_finish_reason == "length" and not output.actions and not output.speech:
+        """空输出时区分预算耗尽与格式失败，并把原文记为 failed_turn。"""
+        if output.actions or output.speech:
+            return
+        if self._last_finish_reason == "length":
             logger.warning(f"[Behavior] [{tag}] 空响应来自预算耗尽（finish_reason=length）："
                            f"内容被思考占满 max_tokens")
+        self.record_failed_turn(self._last_unparsed, self._last_finish_reason, tag)
 
     def _decide_with_repair(self, pipeline, tag: str) -> BehaviorOutput:
         """非流式入口的空响应修复：补 sit 兜底，已解析的摘要、记忆与增量都保留。"""
@@ -539,14 +555,18 @@ class Behavior(BrainMixin):
         t = datetime.now().strftime("%H:%M:%S")
         logger.debug(f"[{t}] [Behavior] ====== FULL CONTEXT ({tag}) ======")
         for i, m in enumerate(messages):
-            if isinstance(m["content"], str):
-                logger.debug(f"[{t}] [Behavior] --- msg[{i}] role={m['role']} ---\n{m['content']}")
-            else:
-                for j, part in enumerate(m["content"]):
+            content = m.get("content")
+            if isinstance(content, str):
+                logger.debug(f"[{t}] [Behavior] --- msg[{i}] role={m['role']} ---\n{content}")
+            elif isinstance(content, list):
+                for j, part in enumerate(content):
                     if part["type"] == "text":
                         logger.debug(f"[{t}] [Behavior] --- msg[{i}] role={m['role']} part[{j}] text ---\n{part['text']}")
                     else:
                         logger.debug(f"[{t}] [Behavior] --- msg[{i}] role={m['role']} part[{j}] {part['type']} len={len(str(part))} --- (binary omitted)")
+            else:
+                # 工具调用的 assistant 消息 content 为 null，属协议允许
+                logger.debug(f"[{t}] [Behavior] --- msg[{i}] role={m['role']} content={content!r}")
         logger.debug(f"[{t}] [Behavior] ====== END CONTEXT ({tag}) ======")
 
 class _BehaviorToolSession:
@@ -598,6 +618,9 @@ class _BehaviorToolSession:
 
     def add_context(self, role: str, content: str, is_summary: bool = False):
         self._behavior.add_context(role=role, content=content, is_summary=is_summary)
+
+    def record_tool_events(self, group_id: str, calls: list, results: list, asides=None):
+        return self._behavior.record_tool_events(group_id, calls, results, asides)
 
     def executor(self):
         return ToolExecutor()

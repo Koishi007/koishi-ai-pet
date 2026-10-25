@@ -11,12 +11,28 @@
 |---|---|
 | `default` | `tool_search`、`food`、`game`、`recall` |
 | `file` | `file_ops` |
-| `info` | `system_monitor`、`weather` |
+| `info` | `bilibili`、`system_monitor`、`weather` |
 | `knowledge` | `knowledge` |
 | `productivity` | `timer`、`todo` |
 | `web` | `browser`、`web_search` |
 
 ## 独立工具（`pet/tools/<目录>/`）
+
+### `bilibili`
+
+- 目录：`pet/tools/bilibili/`
+- 分组：`info`
+- 说明：B 站：按关键词、BV号刷视频、读字幕，点赞、投币、评论、私信
+
+| 方法 | 参数 | 说明 |
+|---|---|---|
+| `browse` | `keyword`（str, 默认 ""） 一个或多个关键词，逗号分隔，最多 3 个；留空时从关注列表随机选一个 | 刷一轮 B 站：按关键词搜最近几天的视频，随机取几部连同字幕交给你。没有字幕的视频照常返回，靠标题、简介与封面判断。只读，不自动点赞、投币或评论；要不要互动由随后调用 like / coin / comment 决定。传关键词前可先用 status 查看关注列表。 |
+| `status` | 无参数 | 查看 B 站账号状态：昵称、UID、等级、硬币、关注关键词，以及今日各项操作次数与开关。 |
+| `like` | `bvid`（str, 必需） 视频 BV 号 | 给最近一轮刷到的某个视频点赞。目标必须在最近一轮的候选里。 |
+| `coin` | `bvid`（str, 必需） 视频 BV 号 | 给最近一轮刷到的某个视频投一枚硬币。受每日额度与硬币余额下限约束。 |
+| `comment` | `bvid`（str, 必需） 视频 BV 号<br>`text`（str, 必需） 评论正文 | 在最近一轮刷到的某个视频下留一条评论。内容会经过长度、链接、隐私与重复检查，被拦下时不发送。 |
+| `dm` | `text`（str, 必需） 私信正文 | 给主人在 B 站发一条私信。收件人取配置里的 dm_uid，未配置时不发送。 |
+| `verify` | `limit`（int, 默认 10） 最多检查几条 | 复核待确认的评论是否已经公开可见。未核到的保持待确认，不会重发。 |
 
 ### `browser`
 

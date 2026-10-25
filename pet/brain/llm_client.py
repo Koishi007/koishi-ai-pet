@@ -6,6 +6,7 @@ import threading
 import httpx
 from openai import OpenAI
 from pet.config import config
+from pet.brain.tool_channel import reset_cache
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +109,7 @@ class LLMClient:
         """运行时重建客户端（设置界面修改连接配置后调用）。"""
         with self._lock:
             self._build()
+        reset_cache()
         client_type = (
             "None (local)"
             if self.client is None

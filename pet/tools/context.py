@@ -89,6 +89,13 @@ class ToolContext:
             return False
         return bool(self._agent.behavior.has_vision)
 
+    def is_idle(self) -> bool:
+        """桌宠是否空闲；未绑定时按忙碌处理。"""
+        if not self._check_agent():
+            return False
+        state = getattr(self._agent.state_machine, "state", None)
+        return getattr(state, "name", "") == "IDLE"
+
     def note_event(self, kind: str, text: str = ""):
         """工具侧上报事件，进入桌宠的「最近发生了什么」章节。
 

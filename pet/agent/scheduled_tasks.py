@@ -191,11 +191,15 @@ class ScheduledTasks:
         self._agent.mood.check_thresholds()
 
     def _memory_maintenance(self):
-        """定期维护记忆：L3 硬清理 + 容量控制。"""
+        """定期维护记忆与事件 artifact。"""
         try:
             self._agent.memory_store.maintenance()
         except Exception as e:
             logger.warning(f"[ScheduledTasks] memory maintenance failed: {e}")
+        try:
+            self._agent.behavior.maintenance()
+        except Exception as e:
+            logger.warning(f"[ScheduledTasks] event maintenance failed: {e}")
 
     def _init_merge_marker(self):
         """重启后以库中最新的 marker 初始化游标，第一个整点不重复汇总已有条目。"""
@@ -231,11 +235,11 @@ class ScheduledTasks:
             logger.warning(f"[ScheduledTasks] merge precheck failed: {e}")
             return
         if pending < _MERGE_MIN_NEW_EVENTS:
-            logger.debug(
-                f"[MemoryMerge] 整点跳过：新增 {pending} 条，未达 {_MERGE_MIN_NEW_EVENTS} 条")
+            logger.info(
+                f"[MemoryMerge] 整点跳过：累计待汇总 {pending} 条，阈值 {_MERGE_MIN_NEW_EVENTS} 条")
             return
         logger.info(
-            f"[MemoryMerge] 整点触发：新增 {pending} 条，上次 {self._last_merge_at or '无'}")
+            f"[MemoryMerge] 整点触发：累计 {pending} 条，上次 {self._last_merge_at or '无'}")
         threading.Thread(target=self._run_merge, args=(latest or "",), daemon=True).start()
 
     def _run_merge(self, latest: str = ""):

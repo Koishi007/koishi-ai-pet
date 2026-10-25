@@ -26,12 +26,13 @@
 | `pet/app.py` | KoishiAI 桌面宠物 — 主入口 | `_FileActionDispatcher` `main()` |
 | `pet/auto_start.py` | 开机自启管理 — 跨平台支持 Windows / macOS / Linux。 | `set_auto_start()` |
 | `pet/brain/__init__.py` | Brain 层 — Behavior 自主/对话决策，LLMClient LLM封装，prompts 模板， |  |
-| `pet/brain/base.py` | 一条结构化的上下文记录。 | `ContextEntry` `BrainMixin` |
+| `pet/brain/base.py` | 一条上下文记录；`seq` 指向事件日志，仅调试快照使用。 | `ContextEntry` `BrainMixin` |
 | `pet/brain/behavior.py` | 与 AI 通信的一次决策编排：三条管线（自主/对话/交互）的入口、锁与降级。 | `Behavior` `_BehaviorToolSession` |
 | `pet/brain/budget.py` | 单次请求的输出预算：统一硬上限 + 动态配额（基线 / 思考预留 / 工具预留） | `thinking_active()` `output_budget()` |
 | `pet/brain/context_builder.py` | LLM 请求上下文的构建 | `ContextBuilder` |
 | `pet/brain/conversation_store.py` | 对话历史持久化存储 — 记录所有 speech 输出和用户 chat 输入，按天切分，至多保存 7 天。 | `ConversationStore` |
 | `pet/brain/embedding_client.py` | OpenAI 兼容的嵌入向量客户端。 | `EmbeddingError` `EmbeddingClient` |
+| `pet/brain/events.py` | 会话事件日志：只追加的事件存储，`Message[]` 由 `projection.project` 从这里投影。 | `Event` `new_group_id()` `args_digest()` `EventStore` |
 | `pet/brain/linux_detector.py` | Linux X11 窗口枚举 —— 基于 python-xlib + EWMH，与 Win32/macOS 版保持相同接口。 | `is_window_alive()` `get_window_rect()` `is_window_occluded()` `get_visible_windows()` |
 | `pet/brain/llm_client.py` | OpenAI-compatible LLM client（支持首选/备选两套模型方案） | `normalize_profile()` `active_llm_profile()` `other_profile()` `resolve_llm_profile()` `LLMClient` |
 | `pet/brain/llm_gateway.py` | LLM 调用封装：补全请求、流式建流与重试参数，供决策编排直接调用。 | `LlmGateway` |
@@ -43,9 +44,11 @@
 | `pet/brain/memory_merge.py` | 事件记忆汇总：整点把同主题的 event 记忆合并成一条。 | `parse_groups()` `run_merge()` |
 | `pet/brain/output.py` | LLM 决策的输出契约：行为输出与取消信号，供解析、工具轮次与编排共同引用。 | `CancelledError` `ActionStep` `BehaviorOutput` |
 | `pet/brain/parsing.py` | LLM 输出解析：把文本行 / 流式 chunk 收敛成 BehaviorOutput。 | `BehaviorSink` `parse_deltas()` `parse_mood_line()` `parse_vitals_line()` `parse_action_line()` `InlineTagNormalizer` |
+| `pet/brain/projection.py` | 事件日志到 `Message[]` 的投影：纯函数，只依赖事件、Profile 与 Budget。 | `Profile` `Budget` `_Group` `_Item` `project()` `degrade_messages()` |
 | `pet/brain/prompts.py` | 系统提示词分层组装 | `_Lazy` `invalidate_action_section()` `build_attention_hint()` `build_system_prompt()` `dock_note()` `autonomous_vision_user_prompt()` |
 | `pet/brain/repair.py` | 空响应修复重试：一次决策无动作无台词时，改写 messages 再跑一次。 | `retry_if_empty()` `repair_messages()` |
 | `pet/brain/summary.py` | 摘要流水线的执行端：把上下文淘汰产生的待摘要条目压成一句写回上下文。 | `SummaryHooks` `flush_summaries()` `summarize_with_llm()` |
+| `pet/brain/tool_channel.py` | 工具通道选择：默认 native，端点明确拒绝时逐档降级并缓存结果。 | `is_tool_rejection()` `next_channel()` `channel_for()` `mark_downgraded()` `reset_cache()` `current_profile()` |
 | `pet/brain/tool_loop.py` | 工具轮次：执行 LLM 请求的工具并循环，直到模型不再请求工具。 | `ToolSession` `run_tool_loop()` |
 | `pet/brain/win_detector.py` | Win32 窗口枚举 | `is_window_alive()` `get_window_rect()` `is_window_occluded()` `get_visible_windows()` |
 | `pet/brain/window_detector.py` | 窗口枚举 — 根据平台分发到 Win32 / Quartz / X11 后端 |  |
@@ -73,6 +76,14 @@
 | `pet/settings.py` | 用户设置持久化 — JSON 文件读写。 | `settings_path()` `load_user_settings()` `save_user_setting()` `delete_user_settings()` |
 | `pet/single_instance.py` | 单实例限制 — 防止桌宠被重复启动导致状态/数据库冲突。 | `SingleInstanceGuard` |
 | `pet/tools/__init__.py` | 工具加载器 — 自动发现 + 自动安装依赖 + 配置选择性加载。 | `load_tools()` |
+| `pet/tools/bilibili/__init__.py` | bili 工具 — 刷 B 站：搜索、读字幕、点赞投币评论、给主人发私信。 | `register()` |
+| `pet/tools/bilibili/core.py` | B 站接口客户端：wbi 签名、请求、解析、写操作。 | `is_bvid()` `BiliError` `Credential` `mixin_key()` `sign_params()` `absolute_url()` |
+| `pet/tools/bilibili/duty.py` | 一轮刷 B 站：搜索、判重、读字幕，随机取几条返回给模型。 | `load_config()` `update_config()` `normalize_keywords()` `parse_keywords()` `set_keywords()` `set_dm_uid()` |
+| `pet/tools/bilibili/filters.py` | 评论与私信内容过滤。 | `describe()` `normalize()` `similarity()` `check_text()` |
+| `pet/tools/bilibili/login.py` | B 站扫码登录：生成二维码、轮询状态、提取凭证。 | `generate()` `poll()` |
+| `pet/tools/bilibili/panel.py` | B 站账号面板：扫码登录、功能开关、搜索关键词、私信 UID、退出登录。 | `_QrLabel` `_LoginWorker` `AccountPanel` `show_panel()` |
+| `pet/tools/bilibili/schedule.py` | 定时提醒：到点给模型一个念头，由提示词决定用什么工具。 | `parse_window()` `parse_pause_windows()` `in_window()` `is_paused()` `next_out_of_pause()` `next_window_start()` |
+| `pet/tools/bilibili/storage.py` | B 站工具的持久化层：判重表、每日轮次、写操作台账。 | `BiliStorage` |
 | `pet/tools/browser/__init__.py` | （模块未提供 docstring） | `register()` |
 | `pet/tools/browser/core.py` | 浏览器工具：每次调用冷启动 Chromium，用完即关。 | `BrowserTool` |
 | `pet/tools/context.py` | 工具上下文 — 暴露宠物能力供工具主动调用。 | `ToolContext` |
@@ -135,4 +146,4 @@
 | `pet/voice/voice_session.py` | 语音会话编排：麦克风采集 → 讯飞识别 | `VoiceSession` |
 | `pet/voice/xunfei_stt.py` | 讯飞语音听写 (iat) WebSocket API 封装 | `XunfeiSTT` |
 
-共 127 个模块。
+共 138 个模块。

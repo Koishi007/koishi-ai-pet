@@ -10,9 +10,11 @@ import logging
 from typing import Optional, Protocol
 
 from pet.config import config
+from pet.brain.events import args_digest, new_group_id
 from pet.brain.output import BehaviorOutput
 from pet.brain.parsing import parse_behavior
 from pet.tools.executor import ToolCall, ToolExecutor
+from pet.tools.registry import TOOL_REGISTRY
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +79,6 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
     """
     executor = session.executor()
     current_messages = list(messages)
-    tool_log = []  # 记录工具调用摘要，用于写入上下文
     final_instruction_added = False  # 最终轮精简指令是否已追加
 
     # 仅当 Speech 被实际流式发送时才标记 speech_streamed=True
@@ -132,6 +133,7 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
 
         # 按 index 排序后依次 append（保持顺序一致性）
         round_images = []
+        round_log = []
         for idx in sorted_indices:
             _, tc, result, tool_brief, result_text, tool_aside = tool_results[idx]
             current_messages.append({
@@ -150,7 +152,7 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
                     f"data:{result.image_mime};base64,{result.image_b64}",
                     _image_source(result, tc["name"]),
                 ))
-            tool_log.append(log_entry)
+            round_log.append(log_entry)
 
             # 搜索工具执行后自动激活匹配的分组
             try:
@@ -161,6 +163,11 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
 
             if tc["name"] in session.recall_tool_names:
                 used_recall = True
+
+        if not _record_tool_events(session, tool_calls_map, sorted_indices, tool_results):
+            # 事件写入失败时，本轮退回文本记录，不留空档
+            session.add_context(
+                role="assistant", content=f"[工具调用] {' | '.join(round_log)}")
 
         # tool 角色只承载文本，图片另起一条 user 消息附在紧接的一次请求里
         image_msg = None
@@ -197,8 +204,10 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
 
         # 再次调用 LLM（每轮重建 tools_param，包含新激活的分组）
         _chunk_invoked[0] = False
+        round_tools = session.tools_param(enable_tools)
+        logger.info(f"[Behavior] tool_round_{display_round} tools={len(round_tools or [])}")
         content, new_tool_calls = session.stream(
-            current_messages, tools=session.tools_param(enable_tools),
+            current_messages, tools=round_tools,
             max_tokens=max_tokens, thinking=thinking,
             tag=f"{tag}_round_{display_round}", on_chunk=_wrapped_chunk,
             on_stream_end=on_stream_end,
@@ -219,8 +228,6 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
             # LLM 不再请求工具，解析最终行为
             result = parse_behavior(content)
             result.speech_streamed = speech_streamed
-            if tool_log:
-                session.add_context(role="assistant", content=f"[工具调用] {' | '.join(tool_log)}")
             return result
 
         first_content = content
@@ -229,9 +236,54 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
     logger.warning(f"[Behavior] reached MAX_ROUNDS={max_rounds} (real_rounds={real_round}, meta_rounds={meta_round}), force terminate tool loop")
     result = parse_behavior(first_content)
     result.speech_streamed = speech_streamed
-    if tool_log:
-        session.add_context(role="assistant", content=f"[工具调用] {' | '.join(tool_log)}")
     return result
+
+
+def _tool_brief(result, tool_brief: str, result_text: str = "") -> str:
+    """结果短句：context_brief → summary → 结果文本首行，去掉 JSON 后截 120 字符。"""
+    text = (result.context_brief or tool_brief or "").strip()
+    if not text and not result.success:
+        text = str(result.error or "").strip()
+    if not text and result_text:
+        # 纯文本结果才取首行；JSON 结果没有可读结论，跳过
+        head = result_text.strip().splitlines()[0].strip() if result_text.strip() else ""
+        if head and not head.startswith(("{", "[")):
+            text = head
+    if text.startswith(("{", "[")):
+        text = ""
+    if not text:
+        text = "操作已完成" if result.success else "操作失败"
+    return text[:120]
+
+
+def _record_tool_events(session, tool_calls_map: dict, sorted_indices: list,
+                        tool_results: dict) -> bool:
+    """把本轮工具调用写成同组事件；失败返回 False 由调用方退回文本记录。"""
+    recorder = getattr(session, "record_tool_events", None)
+    if recorder is None:
+        return False
+    group_id = new_group_id()
+    calls, results, asides = [], [], []
+    for idx in sorted_indices:
+        _, tc, result, tool_brief, result_text, tool_aside = tool_results[idx]
+        try:
+            args = json.loads(tc["arguments"] or "{}")
+        except json.JSONDecodeError:
+            args = {}
+        args.pop("aside", None)
+        calls.append({"id": tc["id"], "name": tc["name"],
+                      "args_digest": args_digest(args),
+                      "side_effect": TOOL_REGISTRY.is_side_effect(tc["name"])})
+        results.append({"tool_call_id": tc["id"], "ok": bool(result.success),
+                        "brief": _tool_brief(result, tool_brief, result_text),
+                        "raw": result_text})
+        if tool_aside:
+            asides.append((tc["id"], str(tool_aside)))
+    try:
+        return bool(recorder(group_id, calls, results, asides))
+    except Exception:
+        logger.exception("[Behavior] record tool events failed")
+        return False
 
 
 def _execute_round(tool_calls_map: dict, sorted_indices: list, executor: ToolExecutor,
