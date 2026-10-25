@@ -1,5 +1,7 @@
 """通知开关测试：总开关关闭后所有通知都不再发送。"""
 
+from PySide6.QtWidgets import QMessageBox
+
 from pet.config import config
 from pet.ui.system_tray import SystemTrayManager
 
@@ -45,3 +47,48 @@ def test_notify_dropped_without_tray_icon(monkeypatch):
     mgr.notify("标题", "正文")
 
     assert mgr.tray_icon is None
+
+
+class _FakeBehavior:
+    def __init__(self):
+        self.cleared = 0
+
+    def clear_context(self):
+        self.cleared += 1
+
+
+class _FakeAgent:
+    def __init__(self):
+        self.behavior = _FakeBehavior()
+
+
+class _FakePet:
+    def isVisible(self):
+        return False
+
+
+def _new_session_manager() -> SystemTrayManager:
+    mgr = SystemTrayManager.__new__(SystemTrayManager)
+    mgr._agent = _FakeAgent()
+    mgr.pet = _FakePet()
+    return mgr
+
+
+def test_new_session_cancelled(monkeypatch):
+    mgr = _new_session_manager()
+    monkeypatch.setattr(QMessageBox, "question",
+                        lambda *args, **kwargs: QMessageBox.StandardButton.No)
+
+    mgr._confirm_new_session()
+
+    assert mgr._agent.behavior.cleared == 0
+
+
+def test_new_session_confirmed(monkeypatch):
+    mgr = _new_session_manager()
+    monkeypatch.setattr(QMessageBox, "question",
+                        lambda *args, **kwargs: QMessageBox.StandardButton.Yes)
+
+    mgr._confirm_new_session()
+
+    assert mgr._agent.behavior.cleared == 1
