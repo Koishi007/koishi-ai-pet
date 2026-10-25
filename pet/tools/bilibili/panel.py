@@ -18,7 +18,12 @@ from PySide6.QtWidgets import (
 )
 
 from pet.tools.bilibili import duty, login, schedule
-from pet.tools.bilibili.core import Credential, credential_path
+from pet.tools.bilibili.core import (
+    Credential,
+    clear_credential_invalid,
+    credential_invalid,
+    credential_path,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -242,6 +247,7 @@ class AccountPanel(QWidget):
         super().__init__()
         self._worker: _LoginWorker | None = None
         self._drag_pos = None
+        self._expired = False
 
         self.setObjectName("biliPanel")
         self.setWindowTitle("B 站设置")
@@ -252,7 +258,7 @@ class AccountPanel(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
         self._build()
-        self._refresh_login_state()
+        self.refresh_login_state()
 
     def _build(self):
         root = QVBoxLayout(self)
@@ -399,19 +405,26 @@ class AccountPanel(QWidget):
         self._btn_logout.clicked.connect(self._logout)
         layout.addWidget(self._btn_logout)
 
-    def _refresh_login_state(self):
+    def refresh_login_state(self):
+        """重读凭证并刷新登录显示。"""
         credential = Credential.from_file(credential_path())
         if credential is None:
+            self._expired = False
             self._state.setText("未登录")
             self._qr.setText("点这里扫码登录")
             self._btn_logout.setEnabled(False)
             return
-        self._state.setText(f"已登录，UID {credential.dedeuserid}")
-        self._qr.setText("已登录")
+        self._expired = credential_invalid()
+        if self._expired:
+            self._state.setText(f"登录已失效，UID {credential.dedeuserid} 需要重新扫码")
+            self._qr.setText("登录已失效，点这里重新扫码")
+        else:
+            self._state.setText(f"已登录，UID {credential.dedeuserid}")
+            self._qr.setText("已登录")
         self._btn_logout.setEnabled(True)
 
     def _on_qr_clicked(self):
-        if Credential.from_file(credential_path()) is not None:
+        if Credential.from_file(credential_path()) is not None and not self._expired:
             self._hint.setText("已登录，换号请先退出登录")
             QTimer.singleShot(1500, self._hint.clear)
             return
@@ -448,6 +461,7 @@ class AccountPanel(QWidget):
         self._state.setText(_STATE_TEXT.get(state, state))
 
     def _on_logged_in(self, credential):
+        self._expired = False
         self._state.setText(f"登录成功，UID {credential.dedeuserid}")
         self._qr.setText("已登录")
         self._btn_logout.setEnabled(True)
@@ -541,9 +555,10 @@ class AccountPanel(QWidget):
             credential_path().unlink(missing_ok=True)
         except OSError as exc:
             logger.warning(f"[bili] 删除凭证失败：{exc}")
+        clear_credential_invalid()
         self._qr.clear()
         self._qr.setText("已退出")
-        self._refresh_login_state()
+        self.refresh_login_state()
 
     def closeEvent(self, event):
         if self._worker is not None:
@@ -563,10 +578,11 @@ class AccountPanel(QWidget):
 
 
 def show_panel() -> None:
-    """打开账号面板：已销毁的重建，存活的置顶。"""
+    """打开账号面板：已销毁的重建，存活的先刷新登录态再置顶。"""
     global _current
     if _current is not None:
         try:
+            _current.refresh_login_state()
             _current.show()
             _current.raise_()
             _current.activateWindow()

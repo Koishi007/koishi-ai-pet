@@ -378,6 +378,53 @@ def test_http_412_maps_to_risk():
     assert exc.value.kind == "risk"
 
 
+def _auth_client(monkeypatch, code: int):
+    def handler(request):
+        return httpx.Response(200, json={"code": code, "message": "账号未登录"})
+
+    monkeypatch.setattr(core, "_buvid_pair", ("B3", "B4"))
+    return BiliClient(Credential(sessdata="s", bili_jct="j", dedeuserid="9"),
+                      interval=0.0, transport=httpx.MockTransport(handler))
+
+
+def test_auth_error_marks_credential_invalid(tmp_path, monkeypatch):
+    monkeypatch.setattr(core, "app_dir", lambda: str(tmp_path))
+    core.credential_path().write_text(
+        json.dumps({"sessdata": "s", "bili_jct": "j", "dedeuserid": "9"}),
+        encoding="utf-8")
+    assert core.credential_invalid() is False
+
+    client = _auth_client(monkeypatch, -101)
+    with pytest.raises(core.BiliError) as exc:
+        client.mentions()
+    client.close()
+    assert exc.value.kind == "auth"
+    assert core.credential_invalid() is True
+
+
+def test_other_api_error_keeps_credential_valid(tmp_path, monkeypatch):
+    monkeypatch.setattr(core, "app_dir", lambda: str(tmp_path))
+    core.credential_path().write_text(
+        json.dumps({"sessdata": "s", "bili_jct": "j", "dedeuserid": "9"}),
+        encoding="utf-8")
+
+    client = _auth_client(monkeypatch, -412)
+    with pytest.raises(core.BiliError):
+        client.mentions()
+    client.close()
+    assert core.credential_invalid() is False
+
+
+def test_new_credential_clears_invalid_mark(tmp_path, monkeypatch):
+    monkeypatch.setattr(core, "app_dir", lambda: str(tmp_path))
+    core.mark_credential_invalid()
+    assert core.invalid_mark_path().is_file()
+
+    Credential(sessdata="s2", bili_jct="j2", dedeuserid="9").save(core.credential_path())
+    assert core.credential_invalid() is False
+    assert not core.invalid_mark_path().exists()
+
+
 def test_http_error_without_code_maps_to_network():
     def handler(request):
         return httpx.Response(500, text="oops")
@@ -1159,9 +1206,16 @@ def test_reply_visibility_maps_state():
     assert duty._reply_visibility({"state": 5}) == "done"
 
 
-def test_match_reply_falls_back_to_content_head():
+def test_reply_visibility_requires_explicit_zero_state():
+    assert duty._reply_visibility({"member": {"mid": 9}}) == "done"
+    assert duty._reply_visibility({"state": None}) == "done"
+    assert duty._reply_visibility({"state": "0"}) == "done"
+
+
+def test_match_reply_uses_content_only_without_rpid():
     replies = [_my_reply(1, 0, "@古明地洞 这条回复")]
     assert duty._match_reply(replies, 9, 0, "@古明地洞 这条回复")["rpid"] == 1
+    assert duty._match_reply(replies, 9, 7, "@古明地洞 这条回复") is None
     assert duty._match_reply(replies, 8, 1, "") is None
 
 

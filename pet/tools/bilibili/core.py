@@ -40,6 +40,36 @@ def credential_path() -> Path:
     return Path(app_dir()) / "bilibili_credential.json"
 
 
+def invalid_mark_path() -> Path:
+    """登录失效标记与凭证同目录。"""
+    return Path(app_dir()) / "bilibili_credential.invalid"
+
+
+def mark_credential_invalid():
+    """记录最近一次请求判定登录态失效。"""
+    try:
+        invalid_mark_path().write_text(time.strftime("%Y-%m-%dT%H:%M:%S"),
+                                        encoding="utf-8")
+    except OSError as exc:
+        logger.warning(f"[bili] 写失效标记失败：{exc}")
+
+
+def clear_credential_invalid():
+    try:
+        invalid_mark_path().unlink(missing_ok=True)
+    except OSError as exc:
+        logger.warning(f"[bili] 清除失效标记失败：{exc}")
+
+
+def credential_invalid() -> bool:
+    """凭证是否在最近一次请求中失效；凭证文件更新后不再算失效。"""
+    mark = invalid_mark_path()
+    try:
+        return mark.is_file() and mark.stat().st_mtime >= credential_path().stat().st_mtime
+    except OSError:
+        return False
+
+
 def _harden_perms(path: Path):
     """把凭证限制成只有本人可读；收紧失败抛 OSError，不静默忽略。"""
     if sys.platform == "win32":
@@ -179,6 +209,7 @@ class Credential:
                 handle.write(data)
             _harden_perms(tmp)
             os.replace(tmp, path)
+            clear_credential_invalid()
         except BaseException:
             try:
                 tmp.unlink(missing_ok=True)
@@ -459,6 +490,13 @@ class BiliClient:
         img_key, sub_key = self._wbi_keys()
         return sign_params(params, img_key, sub_key, int(self._clock()))
 
+    def _raise_api(self, code: int, message: str):
+        """统一抛接口错误；登录失效时留下标记，供账号面板显示。"""
+        error = _error_from_code(code, message)
+        if error.kind == "auth" and self._cred:
+            mark_credential_invalid()
+        raise error
+
     def _request(
         self,
         method: str,
@@ -500,7 +538,7 @@ class BiliClient:
         if resp.status_code >= 400:
             code = _as_int(payload.get("code")) if isinstance(payload, dict) else 0
             if code:
-                raise _error_from_code(code, payload.get("message") or "")
+                self._raise_api(code, payload.get("message") or "")
             raise BiliError("network", f"HTTP {resp.status_code}")
         if payload is None:
             raise BiliError("parse", "响应不是 JSON")
@@ -510,7 +548,7 @@ class BiliClient:
         if code != 0:
             if allow_error_codes:
                 return payload.get("data") or {}
-            raise _error_from_code(code, payload.get("message") or "")
+            self._raise_api(code, payload.get("message") or "")
         return payload.get("data") or {}
 
     def _get_json(self, url: str) -> dict:

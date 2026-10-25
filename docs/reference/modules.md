@@ -77,7 +77,7 @@
 | `pet/single_instance.py` | 单实例限制 — 防止桌宠被重复启动导致状态/数据库冲突。 | `SingleInstanceGuard` |
 | `pet/tools/__init__.py` | 工具加载器 — 自动发现 + 自动安装依赖 + 配置选择性加载。 | `load_tools()` |
 | `pet/tools/bilibili/__init__.py` | bili 工具 — 刷 B 站：搜索、读字幕、点赞投币评论、给主人发私信。 | `register()` |
-| `pet/tools/bilibili/core.py` | B 站接口客户端：wbi 签名、请求、解析、写操作。 | `credential_path()` `is_bvid()` `BiliError` `Credential` `mixin_key()` `sign_params()` |
+| `pet/tools/bilibili/core.py` | B 站接口客户端：wbi 签名、请求、解析、写操作。 | `credential_path()` `invalid_mark_path()` `mark_credential_invalid()` `clear_credential_invalid()` `credential_invalid()` `is_bvid()` |
 | `pet/tools/bilibili/duty.py` | 一轮刷 B 站：搜索、判重、读字幕，随机取几条返回给模型。 | `load_config()` `update_config()` `normalize_keywords()` `parse_keywords()` `set_keywords()` `set_dm_uid()` |
 | `pet/tools/bilibili/filters.py` | 评论与私信内容过滤。 | `describe()` `normalize()` `similarity()` `check_text()` |
 | `pet/tools/bilibili/login.py` | B 站扫码登录：生成二维码、轮询状态、提取凭证。 | `generate()` `poll()` |

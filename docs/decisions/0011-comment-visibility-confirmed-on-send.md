@@ -1,4 +1,4 @@
-# 0011 评论发出后立即复核可见性
+# 0011 评论发出后延时复核可见性
 
 - 状态：已采纳
 - 相关代码：`pet/tools/bilibili/duty.py`（`_confirm_comment`、`_reply_visibility`、`_guarded_write`、`_as_tool_result`、`verify`）
