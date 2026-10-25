@@ -620,7 +620,7 @@ class _BehaviorToolSession:
         self._behavior.add_context(role=role, content=content, is_summary=is_summary)
 
     def record_tool_events(self, group_id: str, calls: list, results: list, asides=None):
-        self._behavior.record_tool_events(group_id, calls, results, asides)
+        return self._behavior.record_tool_events(group_id, calls, results, asides)
 
     def executor(self):
         return ToolExecutor()

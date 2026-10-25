@@ -223,6 +223,13 @@ class _FailingEventSession(_FakeSession):
         raise RuntimeError("event store unavailable")
 
 
+class _RefusingEventSession(_FakeSession):
+    """事件库不可用：record_tool_events 返回 False。"""
+
+    def record_tool_events(self, group_id, calls, results, asides=None):
+        return False
+
+
 class TestToolBrief:
     """brief 回退链：context_brief → summary → 结果首行 → 兜底。"""
 
@@ -256,6 +263,12 @@ class TestToolBrief:
 class TestToolLoopRounds:
     def test_event_failure_falls_back_to_text_log(self):
         session = _FailingEventSession([("Speech: 好\n", {})])
+        run_tool_loop([], _tool_calls("timer__set"), "", session, max_rounds=3)
+        contents = [content for _, content in session.contexts]
+        assert any(content.startswith("[工具调用]") for content in contents)
+
+    def test_event_refusal_falls_back_to_text_log(self):
+        session = _RefusingEventSession([("Speech: 好\n", {})])
         run_tool_loop([], _tool_calls("timer__set"), "", session, max_rounds=3)
         contents = [content for _, content in session.contexts]
         assert any(content.startswith("[工具调用]") for content in contents)
@@ -391,16 +404,19 @@ class TestToolLoopCancellation:
 
 
 class _Recorder:
-    def __init__(self, items, summary=None, raises=None):
+    def __init__(self, items, summary=None, raises=None, covers=None):
         self.items = list(items)
         self.summary = summary
         self.raises = raises
+        self.covers = covers
         self.added = []
+        self.added_covers = []
         self.summarize_calls = 0
 
     def drain(self):
         items, self.items = self.items, []
-        return items
+        covers, self.covers = self.covers, None
+        return items, covers
 
     def summarize_fn(self, items):
         self.summarize_calls += 1
@@ -408,8 +424,9 @@ class _Recorder:
             raise self.raises
         return self.summary
 
-    def add_context(self, role, content, is_summary=False):
+    def add_context(self, role, content, is_summary=False, covers=None):
         self.added.append((role, content, is_summary))
+        self.added_covers.append(covers)
 
 
 class TestFlushSummaries:
@@ -462,6 +479,11 @@ class TestFlushSummaries:
         role, content, is_summary = rec.added[0]
         assert (role, is_summary) == ("system", True)
         assert content.endswith("拼接摘要") and content != "拼接摘要"
+
+    def test_covers_travels_with_summary(self):
+        rec = _Recorder(["[user] 甲"], summary="LLM 摘要", covers=(3, 9))
+        flush_summaries(self._hooks(rec))
+        assert rec.added_covers == [(3, 9)]
 
 
 class _Usage:

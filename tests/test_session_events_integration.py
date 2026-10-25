@@ -48,6 +48,42 @@ class TestLegacyTables:
         assert brain.get_multi_turn_messages() == []
 
 
+class TestToolEventRecording:
+    def test_written_events_report_success(self, tmp_path):
+        brain = _brain(tmp_path)
+        ok = brain.record_tool_events(
+            "g1",
+            [{"id": "c1", "name": "timer__set"}],
+            [{"tool_call_id": "c1", "ok": True, "brief": "已设置"}],
+        )
+        assert ok is True
+
+    def test_missing_event_store_reports_failure(self):
+        assert BrainMixin().record_tool_events("g1", [], []) is False
+
+
+class TestSummaryCovers:
+    def test_drained_covers_attach_to_summary_event(self, tmp_path):
+        brain = _brain(tmp_path)
+        brain._pending_summary_queue.extend(
+            [(1, 1, "[user] 甲"), (2, 2, "[assistant] 乙")])
+        texts, covers = brain.drain_pending_summaries()
+        assert texts == ["[user] 甲", "[assistant] 乙"]
+        assert covers == (1, 2)
+
+        brain.add_context("system", "[历史摘要] 甲乙", is_summary=True, covers=covers)
+        summary = [e for e in brain.dump_events() if e["type"] == "summary"][0]
+        assert summary["refs"]["covers"] == [1, 2]
+
+    def test_each_drain_returns_its_own_covers(self, tmp_path):
+        brain = _brain(tmp_path)
+        brain._pending_summary_queue.append((1, 3, "[user] 甲"))
+        _, first = brain.drain_pending_summaries()
+        brain._pending_summary_queue.append((5, 6, "[user] 乙"))
+        _, second = brain.drain_pending_summaries()
+        assert (first, second) == ((1, 3), (5, 6))
+
+
 class TestProjectionEntry:
     def test_tool_group_renders_native_when_channel_allows(self, tmp_path):
         brain = _brain(tmp_path)

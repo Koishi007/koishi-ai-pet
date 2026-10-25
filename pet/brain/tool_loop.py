@@ -258,7 +258,7 @@ def _tool_brief(result, tool_brief: str, result_text: str = "") -> str:
 
 def _record_tool_events(session, tool_calls_map: dict, sorted_indices: list,
                         tool_results: dict) -> bool:
-    """把本轮工具调用写成同组事件；会话不支持事件时返回 False。"""
+    """把本轮工具调用写成同组事件；失败返回 False 由调用方退回文本记录。"""
     recorder = getattr(session, "record_tool_events", None)
     if recorder is None:
         return False
@@ -280,8 +280,7 @@ def _record_tool_events(session, tool_calls_map: dict, sorted_indices: list,
         if tool_aside:
             asides.append((tc["id"], str(tool_aside)))
     try:
-        recorder(group_id, calls, results, asides)
-        return True
+        return bool(recorder(group_id, calls, results, asides))
     except Exception:
         logger.exception("[Behavior] record tool events failed")
         return False

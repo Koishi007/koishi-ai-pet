@@ -66,7 +66,6 @@ class BrainMixin:
         self._events: Optional[EventStore] = None
         self._save_debounce_timer: Optional[threading.Timer] = None
         self._pending_summary_queue: List[tuple] = []  # (start_seq, end_seq, 文本)
-        self._drained_covers: List[tuple] = []
         self._reported_groups: set = set()
 
         if db_path and config.CONTEXT_PERSIST_ENABLED:
@@ -200,12 +199,16 @@ class BrainMixin:
         return f"{days} 天 {remaining_hours} 小时" if remaining_hours else f"{days} 天"
 
 
-    def add_context(self, role: str, content: str, is_summary: bool = False):
-        """写一条事件，并维护供调试面板查看的内存快照。"""
+    def add_context(self, role: str, content: str, is_summary: bool = False,
+                    covers: Optional[tuple] = None):
+        """写一条事件，并维护供调试面板查看的内存快照。
+
+        covers 是摘要覆盖的事件区间，由排空待摘要队列的一方传入。
+        """
         with self._ctx_lock:
             if is_summary and self._replace_similar_summary(role, content):
                 return
-            event = self._write_event(role, content, is_summary)
+            event = self._write_event(role, content, is_summary, covers)
             self._context.append(ContextEntry(
                 role=role, content=content, is_summary=is_summary,
                 seq=event.seq if event else 0))
@@ -228,13 +231,13 @@ class BrainMixin:
                 break
         return False
 
-    def _write_event(self, role: str, content: str, is_summary: bool):
+    def _write_event(self, role: str, content: str, is_summary: bool,
+                     covers: Optional[tuple] = None):
         """把一次上下文写入映射为事件；失败不影响主流程。"""
         if self._events is None or not self._events.available:
             return None
         try:
             if is_summary:
-                covers = self._consume_covers()
                 refs = {"covers": list(covers)} if covers else None
                 return self._events.append("summary", {"text": content}, refs=refs)
             if role == "user":
@@ -245,17 +248,6 @@ class BrainMixin:
         except Exception as e:
             logger.warning(f"[BrainMixin] append event failed: {e}")
             return None
-
-    def _consume_covers(self) -> Optional[tuple]:
-        """摘要覆盖区间：取本轮淘汰事件的最小/最大 seq。"""
-        with self._ctx_lock:
-            ranges = list(self._drained_covers)
-            self._drained_covers.clear()
-        starts = [a for a, _ in ranges if a]
-        ends = [b for _, b in ranges if b]
-        if not starts or not ends:
-            return None
-        return (min(starts), max(ends))
 
     def record_failed_turn(self, text: str, finish_reason: str = "", tag: str = ""):
         """解析失败的响应只留档，不进入任何视图。"""
@@ -268,10 +260,14 @@ class BrainMixin:
             logger.warning(f"[BrainMixin] append failed_turn failed: {e}")
 
     def record_tool_events(self, group_id: str, calls: list, results: list,
-                           asides: Optional[list] = None):
-        """把一轮工具调用写成同组事件，供投影聚合成原子组。"""
+                           asides: Optional[list] = None) -> bool:
+        """把一轮工具调用写成同组事件，供投影聚合成原子组。
+
+        事件库不可用或任一写入失败时返回 False，调用方据此退回文本记录。
+        """
         if self._events is None or not self._events.available:
-            return
+            return False
+        ok = True
         for call_id, text in (asides or []):
             try:
                 self._events.append("assistant_speech", {"text": text},
@@ -279,6 +275,7 @@ class BrainMixin:
                                     refs={"tool_call_id": call_id})
             except Exception as e:
                 logger.warning(f"[BrainMixin] append assistant_speech failed: {e}")
+                ok = False
         for call in calls:
             call_id = call.get("id", "")
             try:
@@ -290,6 +287,7 @@ class BrainMixin:
                     group_id=group_id, refs={"tool_call_id": call_id})
             except Exception as e:
                 logger.warning(f"[BrainMixin] append tool_call failed: {e}")
+                ok = False
         for result in results:
             call_id = result.get("tool_call_id", "")
             artifact_id = None
@@ -305,6 +303,8 @@ class BrainMixin:
                     group_id=group_id, refs={"tool_call_id": call_id})
             except Exception as e:
                 logger.warning(f"[BrainMixin] append tool_result failed: {e}")
+                ok = False
+        return ok
 
     def _store_artifact(self, raw: str) -> Optional[str]:
         """原文超过内联阈值时落 artifacts，返回 id；否则不建。"""
@@ -318,7 +318,6 @@ class BrainMixin:
         with self._ctx_lock:
             self._context.clear()
             self._pending_summary_queue.clear()
-            self._drained_covers.clear()
 
         if self._save_debounce_timer:
             self._save_debounce_timer.cancel()
@@ -539,13 +538,15 @@ class BrainMixin:
 
         self._context = sorted(summaries + tool_calls + normal_chats, key=lambda e: e.timestamp)
 
-    def drain_pending_summaries(self) -> List[str]:
-        """取出待摘要文本，并记住对应 seq 区间供摘要事件标记 covers。"""
+    def drain_pending_summaries(self) -> tuple[list[str], Optional[tuple]]:
+        """取出待摘要文本与覆盖区间；区间由调用方随摘要一起写回。"""
         with self._ctx_lock:
             items = self._pending_summary_queue[:]
             self._pending_summary_queue.clear()
-            self._drained_covers = [(a, b) for a, b, _ in items if a or b]
-        return [text for _, _, text in items]
+        starts = [a for a, _, _ in items if a]
+        ends = [b for _, b, _ in items if b]
+        covers = (min(starts), max(ends)) if starts and ends else None
+        return [text for _, _, text in items], covers
 
     @staticmethod
     def _build_fallback_summary(items: List[str]) -> str:

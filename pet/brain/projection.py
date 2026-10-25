@@ -134,6 +134,16 @@ def degrade_messages(messages: list, channel: str = "user-note") -> list:
     return out
 
 
+def uses_native_tools(messages: list) -> bool:
+    """消息里是否还有 native 工具结构：assistant 的 tool_calls 或 role=tool。"""
+    for message in messages or []:
+        if not isinstance(message, dict):
+            continue
+        if message.get("role") == "tool" or message.get("tool_calls"):
+            return True
+    return False
+
+
 def sanitize_assistant_text(text: str) -> tuple[str, int]:
     """把伪调用行替换为 `[已省略]`，返回 (文本, 命中行数)。"""
     if not text:

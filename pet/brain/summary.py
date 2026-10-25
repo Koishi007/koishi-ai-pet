@@ -16,10 +16,11 @@ logger = logging.getLogger(__name__)
 class SummaryHooks:
     """摘要流水线需要的能力：队列、LLM 调用与写回，都由编排方注入。
 
+    `drain` 返回 (待摘要文本, 本轮覆盖区间)；区间随摘要一起写回，不经实例状态中转。
     `summarize` 为 None 表示 LLM 不可用（未配 API key 等），直接走 `fallback`。
     """
 
-    drain: Callable[[], List[str]]
+    drain: Callable[[], tuple]
     summarize: Optional[Callable[[List[str]], Optional[str]]]
     add_context: Callable[..., None]
     fallback: Callable[[List[str]], str]
@@ -27,7 +28,7 @@ class SummaryHooks:
 
 def flush_summaries(hooks: SummaryHooks) -> None:
     """处理待摘要队列：LLM 优先，失败退回拼接，最后作为系统摘要写回上下文。"""
-    items = hooks.drain()
+    items, covers = hooks.drain()
     if not items:
         return
 
@@ -43,7 +44,8 @@ def flush_summaries(hooks: SummaryHooks) -> None:
         summary = hooks.fallback(items)
 
     if summary:
-        hooks.add_context(role="system", content=f"[历史摘要] {summary}", is_summary=True)
+        hooks.add_context(role="system", content=f"[历史摘要] {summary}",
+                          is_summary=True, covers=covers)
         logger.info(f"[Behavior] flushed pending summaries: {len(items)} items → {summary[:50]}...")
 
 
