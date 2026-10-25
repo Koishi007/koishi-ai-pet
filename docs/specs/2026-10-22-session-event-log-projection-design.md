@@ -41,7 +41,7 @@
 
 ## §1 目标
 
-- 会话历史成为只追加的事件日志，不提供单条 UPDATE/DELETE；整段回收只发生在摘要覆盖（`purge_covered`）与清空上下文（`purge_sessions`）。
+- 会话历史成为只追加的事件日志，不提供单条 UPDATE/DELETE；整段回收只发生在 snapshot 折叠（`compact`）与切到新会话（`purge_sessions`）。
 - `Message[]` 由纯函数投影产生：同一份日志可按不同模型能力投影出不同视图。
 - 工具调用以事件组存储，投影时按组处理，不产生孤立的 `tool` 消息。
 - 模型能力差异（是否支持 `tool` 角色、是否支持多条 system）只影响投影，不影响存储。
@@ -107,21 +107,20 @@ CREATE TABLE IF NOT EXISTS session_artifacts (
 |---|---|---|---|
 | `user_msg` | `{text}` | 是 | 用户消息 |
 | `assistant_turn` | `{v, text?, summary?, emotion?, speech_parts?, actions?, memory?, mood?, vitals?}` | 是 | 一次**有效**模型响应的结构化记录；`v=1` 时 `text` 为原文（≤4KB，仅审计），投影只用其余字段 |
-| `assistant_speech` | `{text}` | 条件 | 工具 `arguments.aside` 产生的台词；投影时并入组内 assistant `content` |
-| `tool_call` | `{name, args_digest, side_effect}` | 是 | 一次工具调用；不含原始参数；`side_effect` 由工具注册表声明 |
+| `tool_call` | `{name, args_digest, side_effect}` | 是 | 一次工具调用；不含原始参数，`args_digest` 含置首的 `aside`；`side_effect` 由工具注册表声明 |
 | `tool_result` | `{ok, brief, artifact_id?}` | 是 | 结果摘要；大结果落 artifacts |
 | `failed_turn` | `{text, finish_reason, tag, reason}` | 否 | 解析失败的一次响应；只审计，不进入任何视图 |
 | `system_note` | `{text}` | 是 | 系统事实（离开提示、定时提醒等） |
 | `summary` | `{text}` | 是 | 上下文压缩；`refs.covers` 标记覆盖区间 |
-| `snapshot` | `{state}` | 条件 | 折叠事件，见 §6.3 |
+| `snapshot` | `{v, covered_until, summaries?, tail?}` | 条件 | 折叠事件，见 §6.3 |
 
 ### §3.3 写入规则
 
 1. 只 `INSERT`；不提供 UPDATE / DELETE 接口。
 2. 修正用补偿事件：结果被复核推翻时追加新的 `tool_result`，`refs.supersedes` 指向旧 seq。
 3. **时序**：最终响应由产出方写一条结构化 `assistant_turn`（`v=1`）；工具轮只写 `tool_call` 与执行后的 `tool_result`（同一 `group_id`），中间响应的 Summary / Speech 与最终输出重复，不入日志。
-4. `assistant_speech` 记录工具 `arguments.aside` 产生的台词，投影时并入组内 assistant `content`。
-5. `args_digest` 只保留参数要点，单条上限 120 字符；禁止写入完整 JSON。
+4. 工具轮 `arguments.aside` 不单独建事件：写进该次 `tool_call` 的 `args_digest` 并置首，投影时从摘要还原后并入工具轮 assistant `content`。
+5. `args_digest` 只保留参数要点：最多 3 个顶层标量，字符串截 40 字符；`aside` 置首保证不被工具参数挤出。
 6. `tool_result.brief` 必须是人类可读短句；原文超过 `ARTIFACT_INLINE_LIMIT`（默认 2048 字符）才落 `session_artifacts`，否则只存 brief，不建 artifact。
 7. `summary.covers` 允许相邻，不允许重叠；重叠视为对旧 summary 的 supersede。
 8. 解析失败的响应写 `failed_turn`，**不写** `assistant_turn`，因此不会进入下一轮视图。
@@ -196,8 +195,7 @@ def project(events: list[Event], profile: Profile, budget: Budget) -> list[dict]
 5. 事件 → 逻辑消息：
    - `user_msg` / `system_note` / `summary` 渲染成 `[相对时间] 正文`；
    - `assistant_turn` 按字段渲染：Summary → Emotion → Speech → Action → Memory → Mood → Vitals，顺序固定、不加时间标签；
-   - `assistant_speech` 渲染成 `Speech: 正文`；
-   - `tool_call` + `tool_result` 按 `group_id` 聚合为 `ToolExchange`；
+   - `tool_call` + `tool_result` 按 `group_id` 聚合为 `ToolExchange`；`aside` 从 `tool_call.args_digest` 还原，按 `Speech: 正文` 行并入工具轮的 assistant `content`；
    - `failed_turn` 直接丢弃。
 6. `ToolExchange` 按 profile 映射（§4.5）。
 7. 预算裁剪（§4.4），以组为原子单位。
@@ -263,8 +261,8 @@ for group in groups(按首个 seq 升序):
 
 - `content` 与 `tool_calls` 是**同一条** assistant 消息的并列字段；`content` 为空时置 `null`（OpenAI 允许）。
 - 一轮多个工具：一条 assistant 的 `tool_calls` 数组包含多项，随后按 `tool_call_id` 顺序输出多条 `tool`。
-- `aside` 在 native 档并入 `content`（有正文时以换行追加），避免模型下一轮"忘记自己说过什么"；它不单独占一条消息，否则会破坏 `tool_calls` 后必须紧跟 tool 消息的顺序约束。
-- 并入 `content` 的 aside 与独立 `assistant_speech` 同形，都带 `Speech: ` 前缀：同一语义只有一种历史形态，不给模型裸文本＝正文的示范。降级档同样使用带前缀的文本。
+- `aside` 在 native 档只留在 `tool_calls[].function.arguments` 的 `aside` 字段，`content` 置 `null`，避免同一轮出现两份台词；它不单独占一条消息，否则会破坏 `tool_calls` 后必须紧跟 tool 消息的顺序约束。
+- 文本档没有 `tool_calls` 载体，`aside` 并入 assistant `content` 并带 `Speech: ` 前缀：同一语义只有一种历史形态，不给模型裸文本＝正文的示范。降级档同样使用带前缀的文本。
 - `user-note` 档**不输出** `tool_calls`：只带 `tool_calls` 而不跟 `role="tool"` 的请求会被严格端点判定为缺配对，降级档必须自称完整。
 - 三个降级档在 `turn.text` 为空时省略该条 assistant，避免产出空 `content` 消息被兼容端点拒绝。
 - `user-note` 优于 `system-note` 的原因只在位置：user 消息留在对话流的时序位置上，system 会全部挤进 `[上下文备注]`，离发生点远、模型更易忽略。两者文案一致。
@@ -335,13 +333,12 @@ class MessageEncoder(Protocol):
 
 | 时机 | 事件 | 内容 |
 |---|---|---|
-| 工具轮响应 | `tool_call` × N | `name`、`args_digest`、`refs.tool_call_id`；`group_id=G` |
-| 工具轮响应 | `assistant_speech` | 工具 `arguments.aside` 产生的台词；`group_id=G` |
+| 工具轮响应 | `tool_call` × N | `name`、`args_digest`（含置首的 `aside`）、`refs.tool_call_id`；`group_id=G` |
 | 工具执行完成 | `tool_result` × N | `ok`、`brief`、`artifact_id`；`group_id=G`、`refs.parent_seq` 指向对应 call |
 | 解析失败 | `failed_turn` | 原文、`finish_reason`、tag；不参与投影 |
 | 最终响应 | `assistant_turn` | 结构化字段（`v=1`）与原文；不带 `group_id` |
 
-`aside` 不拼进工具记录，也不带 `（自言自语：` 标签。
+`aside` 只出现在 `tool_call.args_digest` 里，不单独建事件，也不带 `（自言自语：` 标签。
 
 ### §5.2 参数与结果摘要
 
@@ -426,8 +423,10 @@ tool 返回的 __context__
 
 - 优先级：`snapshot` > `summary` > 原始事件。
 - snapshot 内 summary 的 `covers` 只作元数据，不参与"跳过原始事件"的判断，因为原始事件已被整体覆盖。
-- 物理清理只删除"落在有效 `summary.covers` 区间内"的原始事件：投影本就跳过它们，删除不改变视图。`summary` 与 `snapshot` 自身不删。
-- 触发条件：清理挂在 slow_tick，事件数低于阈值（默认 800）直接跳过；本版不生成新 snapshot，只有历史遗留或将来写入的 snapshot 参与投影。
+- `compact` 折叠连续前缀：事件数达到阈值（默认 2000）时保留最近 `keep_tail` 条（默认 200），把前缀内仍生效的 summary 收进 snapshot；未被摘要覆盖的记录用兜底摘要保留。
+- 写入 snapshot 后删除前缀内原始事件（含已折叠的 summary 与旧 snapshot）；`snapshot` 自身不删，投影只读 `seq > covered_until`。
+- 折叠边界前移到工具组之外，不留下孤立的 `tool_call` / `tool_result`。
+- 触发条件：清理挂在 slow_tick；低于阈值直接跳过。
 
 ## §7 观测
 
@@ -475,7 +474,7 @@ tool 返回的 __context__
 4. 工具组裁剪：只删 `tool_call` 不删 `tool_result` 的情况不可能出现。
 5. 不完整组降为 `user-note`，且不产生 `role="tool"`。
 6. 四档投影的**自然语言文本**（`content`、`brief`、system/user 文案）不含工具内部名、原始 JSON、`→`、`[工具调用]`；`native` 的 `function.name` / `arguments` 属协议字段，不受此限。
-7. `assistant_speech` 以独立台词出现，无标签；与 `content` 相同时不重复写。
+7. `aside` 以 `Speech: ` 行并入工具轮 assistant `content`（native 档只在 `arguments`）；同一轮不重复写。
 8. 升级：旧表存在时新代码对 `context_entries` / `context_meta` 零读写；新事件只写 `session_events`。
 9. `failed_turn` 不出现在任何档位的投影里。
 10. 清洗：构造 `[工具调用] xxx → {...}` 正文，投影后该行变为 `[已省略]`，事件原文不变。
@@ -555,9 +554,9 @@ snapshot 一旦写入不可变，格式变更只能靠 `v` 迁移，因此：`su
 |---|---|---|
 | `assistant_turn` 时机 | 结果产出方写一条结构化事件（`v=1`），`text` 只作审计 | 投影按字段还原，历史与模型输出在字段层面一致；工具轮中间正文与最终输出重复，不入日志 |
 | 降档方式 | `degrade_messages` 改写本次请求体 | 重投影需要回传原始事件与 Profile，代价高于就地改写；缓存保证下一次投影直接是低档 |
-| `assistant_speech` | 与 `tool_call` 同组，投影时并入 assistant `content` | 满足"紧随 tool 消息"的顺序约束 |
+| `aside` 存储 | 写入 `tool_call.args_digest` 并置首，投影时还原 | 工具轮只留 `tool_call` 与 `tool_result` 两条事件；同一句话不落两份记录 |
 | `side_effect` | 由 `ToolDef` 声明，未注册工具按有副作用处理 | 崩溃窗口只关心"是否动过外部世界"；未知即保守 |
 | artifact 生产 | `record_tool_events` 收到原文超 2048 字符时落表 | `brief` 只是短句，原文需要可追溯的落点 |
-| 增长控制 | 按摘要覆盖区间物理回收（`purge_covered`），不写 snapshot 折叠 | 被覆盖事件投影本就跳过，删除不改视图；snapshot 折叠需要连续前缀覆盖，现实中难满足且收益低 |
+| 增长控制 | slow_tick 达到阈值后 `compact`：连续前缀折叠成 snapshot 并删除原始事件 | 清理不依赖模型摘要是否成功；前缀边界可预测，不留下区间空隙 |
 
 未实现：`supports_image` 未接入（图片仍只在当轮请求里）；`failed_turn` 在两条非流式与流式入口都会落库，修复轮会再记一条。

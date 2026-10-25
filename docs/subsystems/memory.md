@@ -116,7 +116,7 @@ slow tick 触发（默认每 10 分钟）：
 
 两条边界：
 
-- **记忆系统不做上下文摘要压缩**。上下文摘要属于 `context_entries` / `context_meta` +
+- **记忆系统不做上下文摘要压缩**。上下文摘要属于事件日志（`session_events`）+
   `pet/brain/summary.py`，与 `memories` 表没有数据交集；事件汇总在上面单独说明，它在 `memories`
   内部按同主题合并，产物仍是一条 event 记忆。
 - 维护本身没有网络 I/O、也没有单独的耗时保护，靠「容量上限 200」这个前提保持轻量。

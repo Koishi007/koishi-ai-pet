@@ -303,6 +303,23 @@ class _FailingEventSession(_FakeSession):
         raise RuntimeError("event store unavailable")
 
 
+class TestToolEventAside:
+    def test_aside_kept_in_args_digest(self):
+        recorded = {}
+
+        class _Recorder:
+            def record_tool_events(self, group_id, calls, results):
+                recorded["calls"] = calls
+
+        tc = {"id": "c1", "name": "game__play",
+              "arguments": '{"move": "rock", "aside": "我出石头"}'}
+        result = SimpleNamespace(ok=True, meta={})
+        tool_loop_mod._record_tool_events(
+            _Recorder(), {0: tc}, [0],
+            {0: (0, tc, result, "", "平局", "我出石头")})
+        assert 'aside="我出石头"' in recorded["calls"][0]["args_digest"]
+
+
 class TestFailureHints:
     """失败视图的下一步提示：只进当轮视图，按错误类型给出通用建议。"""
 

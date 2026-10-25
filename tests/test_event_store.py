@@ -67,32 +67,58 @@ class TestSession:
         assert other.current_session_id() == sid
 
 
-class TestPurge:
-    def test_purges_only_covered_events(self, tmp_path):
+class TestCompact:
+    def test_below_threshold_skips(self, tmp_path):
         s = store(tmp_path)
-        for i in range(20):
+        for i in range(5):
             s.append("user_msg", {"text": f"m{i}"})
-        s.append("summary", {"text": "前十条"}, refs={"covers": [1, 10]})
-        s.append("user_msg", {"text": "保留"})
-        assert s.purge_covered(min_events=10) == 10
-        texts = [e.payload.get("text") for e in s.load()]
-        assert "m0" not in texts
-        assert "保留" in texts
-        assert "前十条" in texts
+        assert s.compact(min_events=10, keep_tail=2) == 0
+        assert s.count() == 5
 
-    def test_no_summary_means_no_purge(self, tmp_path):
+    def test_folds_prefix_into_snapshot(self, tmp_path):
         s = store(tmp_path)
-        for _ in range(12):
-            s.append("user_msg", {"text": "x"})
-        assert s.purge_covered(min_events=10) == 0
-        assert s.count() == 12
+        for i in range(12):
+            s.append("user_msg", {"text": f"m{i}"})
 
-    def test_below_threshold_skips_scan(self, tmp_path):
+        assert s.compact(min_events=10, keep_tail=3) == 9
+
+        events = s.load()
+        assert [e.type for e in events] == ["user_msg"] * 3 + ["snapshot"]
+        snapshot = events[-1]
+        assert snapshot.payload["covered_until"] == 9
+        assert "m0" in snapshot.payload["summaries"][0]["text"]
+        assert [e.payload["text"] for e in events[:3]] == ["m9", "m10", "m11"]
+
+    def test_does_not_cut_tool_group(self, tmp_path):
         s = store(tmp_path)
-        s.append("user_msg", {"text": "a"})
-        s.append("summary", {"text": "摘要"}, refs={"covers": [1, 1]})
-        assert s.purge_covered(min_events=10) == 0
-        assert s.count() == 2
+        for i in range(7):
+            s.append("user_msg", {"text": f"m{i}"})
+        s.append("tool_call", {"name": "x__y"}, group_id="g1",
+                 refs={"tool_call_id": "c1"})
+        s.append("tool_result", {"ok": True, "brief": "好"}, group_id="g1",
+                 refs={"tool_call_id": "c1"})
+        s.append("user_msg", {"text": "tail"})
+
+        assert s.compact(min_events=8, keep_tail=2) == 7
+
+        events = s.load()
+        assert events[-1].payload["covered_until"] == 7
+        assert [e.type for e in events[:3]] == ["tool_call", "tool_result", "user_msg"]
+
+    def test_folds_summary_text(self, tmp_path):
+        s = store(tmp_path)
+        for i in range(6):
+            s.append("user_msg", {"text": f"m{i}"})
+        s.append("summary", {"text": "前六条摘要"}, refs={"covers": [1, 6]})
+        for i in range(6):
+            s.append("user_msg", {"text": f"n{i}"})
+
+        assert s.compact(min_events=8, keep_tail=3) == 10
+
+        events = s.load()
+        texts = [item["text"] for item in events[-1].payload["summaries"]]
+        assert "前六条摘要" in texts
+        assert all(e.type != "summary" for e in events)
 
 
 class TestPurgeSessions:

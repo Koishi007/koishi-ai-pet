@@ -14,7 +14,7 @@ from pet.db import get_conn
 logger = logging.getLogger(__name__)
 
 EVENT_TYPES = frozenset({
-    "user_msg", "assistant_turn", "assistant_speech", "tool_call",
+    "user_msg", "assistant_turn", "tool_call",
     "tool_result", "failed_turn", "system_note", "summary", "snapshot",
 })
 
@@ -26,6 +26,9 @@ ARTIFACT_TOTAL_BYTES = 100 * 1024 * 1024
 
 # 模型响应原文的入库上限：只作审计与回放，投影不使用
 ASSISTANT_TEXT_LIMIT = 4096
+
+# 模型可见的历史摘要前缀
+HISTORY_SUMMARY_PREFIX = "[历史摘要] "
 
 # assistant_turn 结构化 payload 的版本号
 ASSISTANT_TURN_VERSION = 1
@@ -85,7 +88,7 @@ def args_digest(args: dict | None) -> str:
 
 
 class EventStore:
-    """事件表、会话元数据与 artifact 存储；对外只提供追加接口。"""
+    """事件表、会话元数据与 artifact 存储；写入只追加，维护路径负责折叠与回收。"""
 
     def __init__(self, db_path: Optional[str] = None):
         self._lock = threading.RLock()
@@ -239,50 +242,121 @@ class EventStore:
                  "results": int(r["results"])}
                 for r in rows if int(r["calls"]) != int(r["results"])]
 
-    def purge_covered(self, min_events: int = 800, session_id: Optional[str] = None) -> int:
-        """删除已被摘要覆盖的原始事件：投影本就跳过它们，删除不改变视图。"""
+    def compact(self, min_events: int = 2000, keep_tail: int = 200,
+                max_summaries: int = 3, session_id: Optional[str] = None) -> int:
+        """把连续前缀折叠成 snapshot 并删除原始事件，返回删除条数。"""
         if self._conn is None:
             return 0
         sid = session_id or self.current_session_id()
-        if self.count(session_id=sid) < min_events:
-            return 0
-        events = self.load(session_id=sid)
-        ranges = []
+        with self._lock:
+            events = self.load(session_id=sid)
+            if len(events) < min_events or len(events) <= keep_tail:
+                return 0
+            boundary = self._group_safe_boundary(events, events[-keep_tail].seq - 1)
+            if boundary < events[0].seq:
+                return 0
+            prefix = [event for event in events if event.seq <= boundary]
+            payload = {
+                "v": 1,
+                "covered_until": boundary,
+                "summaries": self._snapshot_summaries(events, prefix, max_summaries),
+                "tail": [event.seq for event in events if event.seq > boundary][:50],
+            }
+            snapshot = self.append("snapshot", payload, session_id=sid)
+            if snapshot is None:
+                return 0
+            cur = self._conn.execute(
+                "DELETE FROM session_events WHERE session_id=? AND seq<=?",
+                (sid, boundary))
+            self._conn.commit()
+            removed = cur.rowcount or 0
+        logger.info(f"[EventStore] compacted {removed} events into snapshot {snapshot.seq}")
+        return removed
+
+    @staticmethod
+    def _group_safe_boundary(events: list, boundary: int) -> int:
+        """把边界前移到工具组之外，避免留下孤立的 tool 事件。"""
+        spans: dict[str, tuple[int, int]] = {}
         for event in events:
-            if event.type != "summary":
+            if event.type not in ("tool_call", "tool_result") or not event.group_id:
                 continue
+            start, end = spans.get(event.group_id, (event.seq, event.seq))
+            spans[event.group_id] = (min(start, event.seq), max(end, event.seq))
+        changed = True
+        while changed:
+            changed = False
+            for start, end in spans.values():
+                if start <= boundary < end:
+                    boundary = start - 1
+                    changed = True
+        return boundary
+
+    @classmethod
+    def _snapshot_summaries(cls, events: list, prefix: list,
+                            max_summaries: int) -> list[dict]:
+        """收集前缀内仍生效的摘要；未覆盖的记录补一条兜底摘要。"""
+        superseded = set()
+        for event in events:
+            value = event.refs.get("supersedes")
+            if isinstance(value, int):
+                superseded.add(value)
+            elif isinstance(value, (list, tuple)):
+                superseded.update(v for v in value if isinstance(v, int))
+
+        summaries = []
+        covered = set()
+        for event in prefix:
+            if event.type != "summary" or event.seq in superseded:
+                continue
+            text = str(event.payload.get("text") or "").strip()
+            if not text:
+                continue
+            item = {"text": text}
             covers = event.refs.get("covers")
             if isinstance(covers, (list, tuple)) and len(covers) == 2:
                 try:
-                    ranges.append((int(covers[0]), int(covers[1])))
+                    start, end = int(covers[0]), int(covers[1])
                 except (TypeError, ValueError):
-                    continue
-        if not ranges:
-            return 0
-        targets = [
-            event.seq for event in events
-            if event.type not in ("summary", "snapshot")
-            and any(start <= event.seq <= end for start, end in ranges)
-        ]
-        if not targets:
-            return 0
-        removed = 0
-        with self._lock:
-            for offset in range(0, len(targets), 500):
-                chunk = targets[offset:offset + 500]
-                marks = ",".join("?" * len(chunk))
-                cur = self._conn.execute(
-                    f"DELETE FROM session_events WHERE session_id=? AND seq IN ({marks})",
-                    (sid, *chunk))
-                removed += cur.rowcount or 0
-            self._conn.commit()
-        logger.info(f"[EventStore] purged {removed} covered events")
-        return removed
+                    pass
+                else:
+                    item["covers"] = [start, end]
+                    covered.update(range(start, end + 1))
+            summaries.append(item)
+
+        fallback = cls._fallback_text([
+            event for event in prefix
+            if event.seq not in covered
+            and event.type in ("user_msg", "assistant_turn", "system_note")
+        ])
+        keep = max(0, max_summaries - 1) if fallback else max_summaries
+        summaries = summaries[-keep:] if keep else []
+        if fallback:
+            summaries.append({"text": fallback})
+        if not summaries:
+            summaries.append({"text": f"{HISTORY_SUMMARY_PREFIX}此前 {len(prefix)} 条记录已折叠"})
+        return summaries
+
+    @staticmethod
+    def _fallback_text(events: list) -> str:
+        """取最早几条可见记录拼成兜底摘要。"""
+        parts = []
+        for event in events[:5]:
+            text = str(event.payload.get("text") or "")
+            if not text and event.type == "assistant_turn":
+                fields = [event.payload.get("summary")]
+                fields.extend(event.payload.get("speech_parts") or [])
+                text = "；".join(str(f) for f in fields if f)
+            text = " ".join(text.split())
+            if text:
+                parts.append(text[:50])
+        if not parts:
+            return ""
+        return HISTORY_SUMMARY_PREFIX + " | ".join(parts)
 
     def purge_sessions(self, session_id: str) -> int:
         """删除该会话之外的全部事件，并回收不再被引用的 artifact。
 
-        清空上下文按用户预期释放磁盘；旧会话没有查看入口，日志与对话历史另有存处。
+        切到新会话时按用户预期释放磁盘；旧会话没有查看入口，日志与对话历史另有存处。
         """
         if self._conn is None:
             return 0

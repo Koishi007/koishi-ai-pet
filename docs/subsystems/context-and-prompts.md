@@ -51,7 +51,8 @@
   历史里的 system 片段会被 `_merge_system_history` 并成一段 `[上下文备注]` 追加到 system 末尾，
   保持「一个 system + 若干 user/assistant」的干净结构。
 - `CONTEXT_HISTORY_ENTRIES`（默认 15）是 `_context` 池子的容量，`_evict_context()` 超出批量淘汰；
-  被淘汰的普通对话**必定**进 `_pending_summary_queue`，压成摘要事件后由 `covers` 隐藏原文。
+  被淘汰的普通对话**必定**进 `_pending_summary_queue`，压成摘要事件后由 `covers` 隐藏原文；
+  事件数达到阈值后 `compact` 把连续前缀折叠成 snapshot 并删除原始事件。
   每轮注入的条数上限取 `_MAX_POOL_ENTRIES = _MAX_ENTRIES + _EVICT_BATCH_SIZE`（默认 21），
   对事件日志做投影，不读 `_context` 快照。
 - 交互任务（`interact`）只发 system + user 两条，不带历史。

@@ -252,7 +252,7 @@ def _record_tool_events(session, tool_calls_map: dict, sorted_indices: list,
     if recorder is None:
         return
     group_id = new_group_id()
-    calls, results, asides = [], [], []
+    calls, results = [], []
     for idx in sorted_indices:
         _, tc, result, tool_brief, result_text, tool_aside = tool_results[idx]
         try:
@@ -260,16 +260,17 @@ def _record_tool_events(session, tool_calls_map: dict, sorted_indices: list,
         except json.JSONDecodeError:
             args = {}
         args.pop("aside", None)
+        if tool_aside:
+            # aside 置首：摘要最多 3 个键，放后面会被工具参数挤掉
+            args = {"aside": str(tool_aside), **args}
         calls.append({"id": tc["id"], "name": tc["name"],
                       "args_digest": args_digest(args),
                       "side_effect": TOOL_REGISTRY.is_side_effect(tc["name"])})
         brief = result.meta.get("record") or _tool_brief(result, result_text)
         results.append({"tool_call_id": tc["id"], "ok": bool(result.ok),
                         "brief": brief, "raw": result_text})
-        if tool_aside:
-            asides.append((tc["id"], str(tool_aside)))
     try:
-        recorder(group_id, calls, results, asides)
+        recorder(group_id, calls, results)
     except Exception:
         logger.exception("[Behavior] record tool events failed")
 
