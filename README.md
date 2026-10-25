@@ -232,7 +232,6 @@ chmod +x update.sh && ./update.sh
 | `allow_browse` | bool | `true` | 刷视频总开关 |
 | `allow_like` / `allow_coin` / `allow_comment` / `allow_dm` | bool | `false` | 四个写操作开关 |
 | `comment_per_day` | int | 7 | 每日评论上限 |
-| `dm_per_day` | int | 10 | 每日私信上限 |
 | `coin_per_day` | int | 2 | 每日投币上限 |
 | `dm_uid` | int | 0 | 私信收件人 UID，面板里填写，0 表示不发 |
 | `schedule_enabled` | bool | `false` | 定时提醒总开关 |
@@ -241,8 +240,8 @@ chmod +x update.sh && ./update.sh
 | `schedule_backoff_base_minutes` | int | 5 | 桌宠忙碌时的退避起点 |
 | `schedule_pause_hours` | str | 空 | 禁用时段，逗号分隔多个区间；非空且格式正确时生效 |
 | `schedule_pause_weekdays_only` | bool | `true` | 禁用时段只作用于工作日 |
-| `mention_enabled` | bool | `true` | 每次提醒前检查主人的 @ |
-| `mention_per_day` | int | 3 | 每日处理的 @ 上限 |
+| `mention_enabled` | bool | `false` | 每次提醒前同步主人的 @，未回复的会一直带出；评论可能被 B 站折叠，默认关闭 |
+| `mention_per_day` | int | 3 | 每轮带出的未回复 @ 上限 |
 | `min_interval_s` | float | 3.0 | 两次请求的最小间隔 |
 
 评论会经过长度、链接、隐私、内部术语、重复等检查，被拦下时不发送。同一视频最多保留 3 条有效评论。主人在评论里 @ 了恋恋时，回复会挂在那条评论下并带 `@昵称`。

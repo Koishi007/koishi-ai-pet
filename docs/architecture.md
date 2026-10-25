@@ -76,7 +76,7 @@ flowchart TB
 | 调度器 fast（默认 1s） | 看门狗、生理 tick、待机动画、粒子 | `pet/agent/scheduler.py`、`pet/agent/scheduled_tasks.py` |
 | 调度器 mid（默认 300s） | 自主决策触发 | 同上 |
 | 调度器 slow（默认 600s） | 数值落库、数值衰减、记忆维护、对话清理 | 同上 |
-| daemon 线程 | 记忆写入、摘要生成、单个工具执行、语音识别 | `pet/brain/memory*.py`、`pet/tools/executor.py`、`pet/voice/` |
+| daemon 线程 | 记忆写入、摘要生成、单个工具执行、语音识别、定时提醒取 @ | `pet/brain/memory*.py`、`pet/tools/executor.py`、`pet/tools/bilibili/schedule.py`、`pet/voice/` |
 
 要点：
 

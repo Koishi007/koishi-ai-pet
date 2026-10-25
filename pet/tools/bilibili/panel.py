@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from pet.tools.bilibili import duty, login, schedule
-from pet.tools.bilibili.core import CREDENTIAL_PATH, Credential
+from pet.tools.bilibili.core import Credential, credential_path
 
 logger = logging.getLogger(__name__)
 
@@ -220,11 +220,11 @@ class _LoginWorker(QThread):
                 self.failed.emit(f"轮询失败：{exc}")
                 return
             if state == "success" and credential is not None:
-                credential.save(CREDENTIAL_PATH)
+                credential.save(credential_path())
                 self.logged_in.emit(credential)
                 return
             self.state_changed.emit(state)
-            if state == "expired":
+            if state in ("expired", "error"):
                 return
             for _ in range(20):
                 if self._stop:
@@ -314,6 +314,11 @@ class AccountPanel(QWidget):
             self._checks[key] = box
         layout.addLayout(grid)
 
+        hide_hint = QLabel("评论与回应 @ 有概率被 B 站隐藏（仅自己可见、对方收不到通知），建议不启用")
+        hide_hint.setWordWrap(True)
+        hide_hint.setStyleSheet("font-size: 11px; color: #999;")
+        layout.addWidget(hide_hint)
+
         window_hint = QLabel(f"定时任务在夜间休息段（{cfg['schedule_active_hours']} 之外）自动停止")
         window_hint.setStyleSheet("font-size: 11px; color: #999;")
         layout.addWidget(window_hint)
@@ -323,7 +328,7 @@ class AccountPanel(QWidget):
         interval_title = QLabel("定时任务间隔（分钟）")
         interval_title.setStyleSheet(_SECTION_QSS)
         interval_row.addWidget(interval_title)
-        interval_row.addWidget(_help_label("两次提醒的最小间隔，10-1440，留空恢复 180；桌宠在忙时按退避顺延"))
+        interval_row.addWidget(_help_label("两次定时任务的最小间隔，10-1440，留空恢复 180；桌宠在忙时按退避顺延"))
         interval_row.addStretch()
         layout.addLayout(interval_row)
 
@@ -349,6 +354,16 @@ class AccountPanel(QWidget):
         self._pause_hours.setText(cfg["schedule_pause_hours"])
         self._pause_hours.editingFinished.connect(self._save_pause_hours)
         layout.addWidget(self._pause_hours)
+
+        trigger_row = QHBoxLayout()
+        trigger_row.setSpacing(4)
+        self._btn_trigger = QPushButton("触发定时任务")
+        self._btn_trigger.setStyleSheet(_BUTTON_QSS)
+        self._btn_trigger.clicked.connect(self._trigger_now)
+        trigger_row.addWidget(self._btn_trigger)
+        trigger_row.addWidget(_help_label("不检查开关与时段，直接发起一次定时任务；不改变下一次定时"))
+        trigger_row.addStretch()
+        layout.addLayout(trigger_row)
 
         kw_title = QLabel("搜索关键词")
         kw_title.setStyleSheet(_SECTION_QSS)
@@ -382,7 +397,7 @@ class AccountPanel(QWidget):
         layout.addWidget(self._btn_logout)
 
     def _refresh_login_state(self):
-        credential = Credential.from_file(CREDENTIAL_PATH)
+        credential = Credential.from_file(credential_path())
         if credential is None:
             self._state.setText("未登录")
             self._qr.setText("点这里扫码登录")
@@ -393,7 +408,7 @@ class AccountPanel(QWidget):
         self._btn_logout.setEnabled(True)
 
     def _on_qr_clicked(self):
-        if Credential.from_file(CREDENTIAL_PATH) is not None:
+        if Credential.from_file(credential_path()) is not None:
             self._hint.setText("已登录，换号请先退出登录")
             QTimer.singleShot(1500, self._hint.clear)
             return
@@ -409,7 +424,15 @@ class AccountPanel(QWidget):
         self._worker.state_changed.connect(self._on_state)
         self._worker.logged_in.connect(self._on_logged_in)
         self._worker.failed.connect(self._on_failed)
+        self._worker.finished.connect(self._on_login_finished)
         self._worker.start()
+
+    def _on_login_finished(self):
+        """轮询线程结束后释放引用，重新扫码可新建线程。"""
+        worker = self._worker
+        self._worker = None
+        if worker is not None:
+            worker.deleteLater()
 
     def _on_qr(self, data: bytes):
         pixmap = QPixmap()
@@ -448,8 +471,9 @@ class AccountPanel(QWidget):
 
     def _save_pause_hours(self):
         text = self._pause_hours.text().strip()
-        if text and not schedule.parse_pause_windows(text):
-            self._hint.setText("时段格式无效，示例 09:00-12:00")
+        bad = schedule.invalid_pause_parts(text)
+        if bad:
+            self._hint.setText(f"时段格式无效：{'、'.join(bad)}")
             return
         try:
             cfg = duty.update_config({"schedule_pause_hours": text})
@@ -462,6 +486,12 @@ class AccountPanel(QWidget):
             schedule.stop()
             schedule.start(cfg)
         self._hint.setText("已保存")
+        QTimer.singleShot(1500, self._hint.clear)
+
+    def _trigger_now(self):
+        """立即发起一次定时任务，不看开关与时段。"""
+        schedule.trigger_now()
+        self._hint.setText("已触发一次")
         QTimer.singleShot(1500, self._hint.clear)
 
     def _save_keywords(self):
@@ -505,7 +535,7 @@ class AccountPanel(QWidget):
 
     def _logout(self):
         try:
-            CREDENTIAL_PATH.unlink(missing_ok=True)
+            credential_path().unlink(missing_ok=True)
         except OSError as exc:
             logger.warning(f"[bili] 删除凭证失败：{exc}")
         self._qr.clear()

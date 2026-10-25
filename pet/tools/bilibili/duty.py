@@ -1,6 +1,6 @@
 """一轮刷 B 站：搜索、判重、读字幕，随机取几条返回给模型。
 
-写操作先占台账再发请求，超时后重复调用会被唯一索引挡住。
+写操作先占台账再发请求，超时后重复调用按有效记录数与 limit 拦住。
 """
 
 from __future__ import annotations
@@ -14,10 +14,10 @@ from datetime import date
 from pathlib import Path
 
 from pet.tools.bilibili.core import (
-    CREDENTIAL_PATH,
     BiliClient,
     BiliError,
     Credential,
+    credential_path,
     is_bvid,
     within_days,
 )
@@ -39,6 +39,22 @@ _MAX_SEARCH_KEYWORDS = 3
 # 同一视频最多留几条有效评论
 _COMMENT_PER_TARGET = 3
 
+# 本工具的错误码 → 下一步提示；引擎只负责渲染，不维护这些码
+_ERROR_HINTS = {
+    "disabled": "这个功能在设置里关着，本轮不要再调用，如实告诉用户即可。",
+    "not_ready": "工具还没启动完成，这次先不要调用。",
+    "not_logged_in": "登录失效或未登录，让用户在账号面板重新扫码后再试。",
+    "dm_uid_missing": "让用户在面板填好私信收件人 UID 后再试。",
+    "target_unknown": "先用 browse 拿到候选，再对候选里的 bvid 操作。",
+    "quota": "今天的额度用完了，今天不要再调用这个操作。",
+    "duplicate": "这个目标已有记录，不要重复调用。",
+    "no_receipt": "回执缺失，可能已经发出去了，不要再调用。",
+    "insufficient_coins": "硬币不够，不要再投币。",
+    "filtered": "内容被过滤，调整措辞后再试。",
+    "invalid_keyword": "换一个关键词或 BV 号。",
+    "request_failed": "接口请求失败，稍后再试。",
+}
+
 _DEFAULTS: dict = {
     "keywords": ["东方Project", "古明地觉", "古明地恋", "猫", "狗", "动物"],
     "max_videos": 6,
@@ -59,7 +75,6 @@ _DEFAULTS: dict = {
     "comment_max_chars": 100,
     "comment_blocklist": [],
     "dm_uid": 0,
-    "dm_per_day": 10,
     "dm_max_chars": 400,
     "schedule_enabled": False,
     "schedule_interval_minutes": 180,
@@ -67,7 +82,7 @@ _DEFAULTS: dict = {
     "schedule_backoff_base_minutes": 5,
     "schedule_pause_hours": "",
     "schedule_pause_weekdays_only": True,
-    "mention_enabled": True,
+    "mention_enabled": False,
     "mention_per_day": 3,
 }
 
@@ -174,7 +189,7 @@ def set_interval_minutes(text: str) -> dict:
 
 
 def load_credential() -> Credential | None:
-    return Credential.from_file(CREDENTIAL_PATH)
+    return Credential.from_file(credential_path())
 
 
 def split_keywords(keywords: list[str]) -> tuple[list[str], list[str]]:
@@ -296,7 +311,7 @@ def _collect(client: BiliClient, cfg: dict, storage: BiliStorage,
 
 
 def _guarded_write(storage: BiliStorage, uid: int, kind: str, target: str,
-                   content: str, send, limit: int = 1) -> dict:
+                   content: str, send, limit: int = 1, root: int = 0) -> dict:
     action_id = storage.claim_action(uid, kind, target, content, limit=limit)
     if action_id is None:
         return {"kind": kind, "target": target, "ok": False,
@@ -304,10 +319,13 @@ def _guarded_write(storage: BiliStorage, uid: int, kind: str, target: str,
     try:
         remote = send()
     except BiliError as exc:
-        storage.finish_action(action_id, "failed", reason=exc.kind)
+        # 没拿到回执时不知到底发没发出去，标记后不再重试
+        status = "unknown" if exc.kind == "receipt" else "failed"
+        reason = "no_receipt" if exc.kind == "receipt" else "send_failed"
+        storage.finish_action(action_id, status, reason=exc.kind)
         return {"kind": kind, "target": target, "ok": False,
-                "reason": "send_failed", "detail": str(exc)}
-    storage.finish_action(action_id, "done", remote_id=str(remote or ""))
+                "reason": reason, "detail": str(exc)}
+    storage.finish_action(action_id, "done", remote_id=str(remote or ""), root=root)
     return {"kind": kind, "target": target, "ok": True}
 
 
@@ -329,7 +347,7 @@ def _post_comment(client: BiliClient, storage: BiliStorage, cfg: dict,
     if root:
         result = _guarded_write(storage, uid, "comment", bvid, body,
                                 lambda: client.comment(aid, body, root=root),
-                                limit=_COMMENT_PER_TARGET)
+                                limit=_COMMENT_PER_TARGET, root=root)
     else:
         result = _guarded_write(storage, uid, "comment", bvid, body,
                                 lambda: client.comment(aid, body),
@@ -414,10 +432,10 @@ def run_round(storage: BiliStorage, keyword: str = "") -> dict:
                                 "coins": me.get("coins", 0)},
                 },
             }
-            cover = next((c["cover"] for c in chosen if c.get("cover")), "")
-            if cover:
-                result["images"] = [{"base64": cover, "mime": "image/jpeg",
-                                     "caption": f"封面《{videos[0]['title']}》"}]
+            first_cover = next((c for c in chosen if c.get("cover")), None)
+            if first_cover:
+                result["images"] = [{"base64": first_cover["cover"], "mime": "image/jpeg",
+                                     "caption": f"封面《{first_cover['title']}》"}]
             return result
     except BiliError as exc:
         logger.warning(f"[bili] 一轮失败：{exc}")
@@ -448,6 +466,14 @@ def _open(cfg: dict, credential: Credential):
     with BiliClient(credential, timeout=float(cfg["timeout_s"]),
                     interval=float(cfg["min_interval_s"])) as client:
         yield client
+
+
+def with_hint(payload: dict) -> dict:
+    """给错误返回附上本工具自己的下一步提示。"""
+    hint = _ERROR_HINTS.get(str(payload.get("code") or ""))
+    if payload.get("error") and hint:
+        payload["hint"] = hint
+    return payload
 
 
 def _as_tool_result(result: dict) -> dict:
@@ -481,8 +507,6 @@ def write_action(storage: BiliStorage, kind: str, *, bvid: str = "", text: str =
         if target_uid <= 0:
             return {"error": "私信收件人 UID 未配置，先在账号面板填写",
                     "code": "dm_uid_missing"}
-        if storage.count_today(uid, "dm", today) >= int(cfg["dm_per_day"]):
-            return {"error": "今天的私信额度用完了", "code": "quota"}
         ok, code = check_text(text, max_chars=int(cfg["dm_max_chars"]), allow_urls=True,
                               blocklist=tuple(cfg["comment_blocklist"]))
         if not ok:
@@ -543,6 +567,7 @@ def verify(storage: BiliStorage, limit: int = 10) -> dict:
 
     checked = 0
     found = 0
+    missing = 0
     with _open(cfg, credential) as client:
         for action in pending:
             checked += 1
@@ -552,7 +577,7 @@ def verify(storage: BiliStorage, limit: int = 10) -> dict:
                 logger.info(f"[bilibili] 复核 {action['target']} 失败：{exc}")
                 continue
             rpid = int(action.get("remote_id") or 0)
-            root = storage.mention_root(action["target"])
+            root = int(action.get("root") or 0) or storage.mention_root(action["target"])
             try:
                 replies = (client.comment_replies(aid, root) if root
                            else client.my_replies(aid))
@@ -566,6 +591,10 @@ def verify(storage: BiliStorage, limit: int = 10) -> dict:
                 hit = next((r for r in replies if mine(r) and head
                             and head in str((r.get("content") or {}).get("message") or "")), None)
             if hit is None:
+                # 看不到不等于没发出：留在 unverified，下轮再核
+                storage.finish_action(action["id"], "unverified",
+                                      remote_id=str(rpid), root=root)
+                missing += 1
                 continue
             if _reply_hidden(hit):
                 storage.finish_action(action["id"], "hidden", remote_id=str(rpid))
@@ -575,8 +604,9 @@ def verify(storage: BiliStorage, limit: int = 10) -> dict:
                 continue
             storage.finish_action(action["id"], "visible", remote_id=str(rpid))
             found += 1
-    return {"headline": f"检查 {checked} 条评论，确认 {found} 条已公开",
-            "data": {"checked": checked, "found": found}}
+    return {"headline": (f"检查 {checked} 条评论，确认 {found} 条已公开"
+                         + (f"，{missing} 条没查到" if missing else "")),
+            "data": {"checked": checked, "found": found, "missing": missing}}
 
 
 def status(storage: BiliStorage) -> dict:

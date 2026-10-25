@@ -18,7 +18,6 @@
     "comment_max_chars": 100,
     "comment_blocklist": [],
     "dm_uid": 0,
-    "dm_per_day": 10,
     "dm_max_chars": 400,
     "schedule_enabled": false,
     "schedule_interval_minutes": 180,
@@ -26,6 +25,6 @@
     "schedule_backoff_base_minutes": 5,
     "schedule_pause_hours": "",
     "schedule_pause_weekdays_only": true,
-    "mention_enabled": true,
+    "mention_enabled": false,
     "mention_per_day": 3
 }

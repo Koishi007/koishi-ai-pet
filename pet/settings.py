@@ -9,12 +9,12 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
-def settings_path() -> str:
-    """返回跨平台 settings.json 路径，确保目录存在。
+def app_dir() -> str:
+    """跨平台应用数据目录，与 settings.json 同目录。
 
-    Windows: %APPDATA%/KoishiAI/settings.json
-    macOS:   ~/Library/Application Support/KoishiAI/settings.json
-    Linux:   ~/.config/KoishiAI/settings.json
+    Windows: %APPDATA%/KoishiAI
+    macOS:   ~/Library/Application Support/KoishiAI
+    Linux:   ~/.config/KoishiAI
     """
     if sys.platform == "win32":
         base = os.environ.get("APPDATA", str(Path.home() / "AppData" / "Roaming"))
@@ -23,10 +23,14 @@ def settings_path() -> str:
     else:
         # XDG_CONFIG_HOME 或 ~/.config
         base = os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))
+    return os.path.join(base, "KoishiAI")
 
-    app_dir = os.path.join(base, "KoishiAI")
-    os.makedirs(app_dir, exist_ok=True)
-    return os.path.join(app_dir, "settings.json")
+
+def settings_path() -> str:
+    """返回跨平台 settings.json 路径，确保目录存在。"""
+    target = os.path.join(app_dir(), "settings.json")
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    return target
 
 
 def load_user_settings() -> dict:

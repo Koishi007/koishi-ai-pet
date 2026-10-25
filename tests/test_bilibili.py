@@ -6,15 +6,18 @@ import base64
 import io
 import json
 from datetime import date, datetime
+from pathlib import Path
 
 import httpx
 import pytest
 from PIL import Image
 
 from pet.tools.bilibili import core, duty, filters, schedule
+from pet.tools.bilibili import storage as bili_storage
 from pet.tools.bilibili.core import (
     BiliClient,
     Credential,
+    absolute_url,
     is_bvid,
     join_subtitle,
     mixin_key,
@@ -88,16 +91,46 @@ def test_parse_view_absolute_cover():
 
 def test_parse_mentions_keeps_video_only():
     data = {"items": [
-        {"id": 1, "uri": "bilibili://video/123", "source_id": 456,
-         "user": {"uid": 9, "nickname": "主人"}, "source_content": "@恋恋 看看这个"},
-        {"id": 2, "uri": "bilibili://dynamic/456", "user": {"uid": 9}},
+        {"id": 1, "user": {"mid": 9, "nickname": "主人"},
+         "item": {"uri": "https://www.bilibili.com/video/BV1j4411W7F7",
+                  "source_id": 456, "source_content": "@恋恋 看看这个"}},
+        {"id": 2, "user": {"mid": 9},
+         "item": {"uri": "https://www.bilibili.com/video/BV", "source_content": "无"}},
     ]}
     items = parse_mentions(data)
     assert len(items) == 1
-    assert items[0]["aid"] == 123
-    assert items[0]["uid"] == 9
-    assert items[0]["rpid"] == 456
-    assert items[0]["content"] == "@恋恋 看看这个"
+    assert items[0] == {"id": 1, "uid": 9, "name": "主人", "bvid": "BV1j4411W7F7",
+                         "rpid": 456, "content": "@恋恋 看看这个"}
+
+
+def test_parse_mentions_uses_source_id_as_rpid():
+    data = {"items": [{
+        "id": 7, "user": {"mid": 9, "nickname": "主人"},
+        "item": {"uri": "https://www.bilibili.com/video/BV1j4411W7F7",
+                 "root_id": 0, "source_id": 321793392864,
+                 "source_content": "@恋恋 看看"},
+    }]}
+    assert parse_mentions(data)[0]["rpid"] == 321793392864
+
+
+def test_parse_mentions_accepts_web_url():
+    data = {"items": [{
+        "id": 9, "user": {"mid": 9, "nickname": "主人"},
+        "item": {"uri": "https://www.bilibili.com/video/BV1j4411W7F7",
+                 "source_id": 321793392864, "source_content": "@恋恋 看看"},
+    }]}
+    item = parse_mentions(data)[0]
+    assert item["bvid"] == "BV1j4411W7F7"
+    assert item["rpid"] == 321793392864
+
+
+def test_parse_mentions_prefers_thread_root():
+    data = {"items": [{
+        "id": 8, "user": {"mid": 9, "nickname": "主人"},
+        "item": {"uri": "https://www.bilibili.com/video/BV1j4411W7F7",
+                 "root_id": 111, "source_id": 222, "source_content": "@恋恋"},
+    }]}
+    assert parse_mentions(data)[0]["rpid"] == 111
 
 
 def _cover_client(size, **kwargs):
@@ -210,6 +243,105 @@ def test_credential_missing_fields(tmp_path):
     assert Credential.from_file(path) is None
 
 
+def test_credential_repr_hides_secrets():
+    cred = Credential(sessdata="SECRET", bili_jct="CSRF", dedeuserid="9",
+                      ac_time_value="AC")
+    text = repr(cred)
+    assert "SECRET" not in text
+    assert "CSRF" not in text
+    assert "AC" not in text
+    assert "9" in text
+
+
+# ---------- 错误映射 ----------
+
+def test_mentions_requests_main_api_host(monkeypatch):
+    seen = {}
+
+    def handler(request):
+        seen["host"] = request.url.host
+        seen["path"] = request.url.path
+        return httpx.Response(200, json={"code": 0, "data": {"items": []}})
+
+    monkeypatch.setattr(core, "_buvid_pair", ("B3", "B4"))
+    client = BiliClient(Credential(sessdata="s", bili_jct="j", dedeuserid="9"),
+                        interval=0.0, transport=httpx.MockTransport(handler))
+    assert client.mentions() == []
+    client.close()
+    assert seen == {"host": "api.bilibili.com", "path": "/x/msgfeed/at"}
+
+
+def test_credential_path_under_app_dir():
+    assert core.credential_path().parent == Path(core.app_dir())
+
+
+def test_http_412_maps_to_risk():
+    def handler(request):
+        return httpx.Response(412, json={"code": -412, "message": "请求被拦截"})
+
+    client = BiliClient(Credential(sessdata="s", bili_jct="j", dedeuserid="9"),
+                        interval=0.0, transport=httpx.MockTransport(handler))
+    with pytest.raises(core.BiliError) as exc:
+        client.mentions()
+    client.close()
+    assert exc.value.kind == "risk"
+
+
+def test_http_error_without_code_maps_to_network():
+    def handler(request):
+        return httpx.Response(500, text="oops")
+
+    client = BiliClient(Credential(sessdata="s", bili_jct="j", dedeuserid="9"),
+                        interval=0.0, transport=httpx.MockTransport(handler))
+    with pytest.raises(core.BiliError) as exc:
+        client.mentions()
+    client.close()
+    assert exc.value.kind == "network"
+
+
+def test_absolute_url_forces_https():
+    assert absolute_url("//i0.hdslb.com/a.jpg") == "https://i0.hdslb.com/a.jpg"
+    assert absolute_url("http://i0.hdslb.com/a.jpg") == "https://i0.hdslb.com/a.jpg"
+    assert absolute_url("https://i0.hdslb.com/a.jpg") == "https://i0.hdslb.com/a.jpg"
+    assert absolute_url("") == ""
+
+
+def _receipt_client(monkeypatch, payload):
+    def handler(request):
+        if request.url.path == "/x/web-interface/nav":
+            return httpx.Response(200, json={"code": 0, "data": {"wbi_img": {
+                "img_url": f"https://i0.hdslb.com/bfs/wbi/{IMG}.png",
+                "sub_url": f"https://i0.hdslb.com/bfs/wbi/{SUB}.png",
+            }}})
+        return httpx.Response(200, json=payload)
+
+    monkeypatch.setattr(core, "_buvid_pair", ("B3", "B4"))
+    return BiliClient(Credential(sessdata="s", bili_jct="j", dedeuserid="9"),
+                      interval=0.0, transport=httpx.MockTransport(handler))
+
+
+def test_comment_without_rpid_raises(monkeypatch):
+    client = _receipt_client(monkeypatch, {"code": 0, "data": {}})
+    with pytest.raises(core.BiliError) as exc:
+        client.comment(42, "测试")
+    client.close()
+    assert exc.value.kind == "receipt"
+
+
+def test_dm_without_msg_key_raises(monkeypatch):
+    client = _receipt_client(monkeypatch, {"code": 0, "data": {}})
+    with pytest.raises(core.BiliError) as exc:
+        client.dm(9, "在吗")
+    client.close()
+    assert exc.value.kind == "receipt"
+
+
+def test_dm_returns_receipt(monkeypatch):
+    client = _receipt_client(monkeypatch, {"code": 0, "data": {"msg_key": 123}})
+    assert client.dm(9, "在吗")["msg_key"] == 123
+    client.close()
+
+
 # ---------- 评论请求 ----------
 
 def test_comment_request_carries_web_params(monkeypatch):
@@ -286,11 +418,13 @@ def test_claim_action_without_limit_skips_dedupe(store):
     assert store.count_live(1, "dm", "9") == 2
 
 
-def test_count_today(store):
+def test_count_today(store, monkeypatch):
+    monkeypatch.setattr(bili_storage, "_now", lambda: "2026-10-21T10:00:00")
+    monkeypatch.setattr(bili_storage, "_ago", lambda minutes: "2026-10-21T09:00:00")
     store.claim_action(1, "like", "BV1")
     store.claim_action(1, "like", "BV2")
-    assert store.count_today(1, "like", date.today().isoformat()) == 2
-    assert store.count_today(1, "coin", date.today().isoformat()) == 0
+    assert store.count_today(1, "like", "2026-10-21") == 2
+    assert store.count_today(1, "coin", "2026-10-21") == 0
 
 
 def test_unseen(store):
@@ -314,14 +448,29 @@ def test_recent_contents(store):
     assert store.recent_contents(1, "comment") == ["第一条"]
 
 
-def test_claim_mention_dedupes(store):
-    assert store.claim_mention(1, 9, "BV1", 456, "主人", "@恋恋 看看") is True
-    assert store.claim_mention(1, 9, "BV1", 456, "主人", "@恋恋 看看") is False
-    assert store.count_mentions_today(date.today().isoformat()) == 1
+def test_add_mention_dedupes(store, monkeypatch):
+    monkeypatch.setattr(bili_storage, "_now", lambda: "2026-10-21T10:00:00")
+    store.add_mention(1, 9, "BV1", "标题", 456, "主人", "@恋恋 看看")
+    assert store.has_mention(1)
+    store.add_mention(1, 9, "BV1", "新标题", 456, "主人", "@恋恋 看看")
+    rows = store.unreplied_mentions(9)
+    assert len(rows) == 1
+    assert rows[0]["title"] == "新标题"
+
+
+def test_unreplied_mentions_hide_after_reply(store, monkeypatch):
+    stamps = iter(["2026-10-21T10:00:00", "2026-10-21T10:01:00"])
+    monkeypatch.setattr(bili_storage, "_now", lambda: next(stamps))
+    store.add_mention(1, 9, "BV1", "标题", 456, "主人", "@恋恋 看看")
+    store.add_mention(2, 9, "BV2", "标题", 457, "主人", "@恋恋 再看")
+    assert [m["bvid"] for m in store.unreplied_mentions(9)] == ["BV2", "BV1"]
+    store.mark_mention_replied(1)
+    assert [m["bvid"] for m in store.unreplied_mentions(9)] == ["BV2"]
+    assert len(store.unreplied_mentions(9, limit=1)) == 1
 
 
 def test_mention_reply_roundtrip(store):
-    store.claim_mention(1, 9, "BV1", 456, "主人", "@恋恋 看看")
+    store.add_mention(1, 9, "BV1", "标题", 456, "主人", "@恋恋 看看")
     mention = store.mention_for_bvid("BV1")
     assert mention is not None
     assert mention["rpid"] == 456
@@ -347,6 +496,82 @@ def test_reviewable_actions_requires_remote_id(store):
     assert [a["target"] for a in store.reviewable_actions(1, "comment")] == ["BV1"]
 
 
+def test_finish_action_records_root(store):
+    action = store.claim_action(1, "comment", "BV1", "x")
+    store.finish_action(action, "done", remote_id="9", root=321)
+    row = store.find_live_action(1, "comment", "BV1")
+    assert row["remote_id"] == "9"
+    assert row["root"] == 321
+
+
+def test_unverified_comment_stays_reviewable(store):
+    action = store.claim_action(1, "comment", "BV1", "x")
+    store.finish_action(action, "unverified", remote_id="9", root=321)
+    assert [a["id"] for a in store.reviewable_actions(1, "comment")] == [action]
+
+
+def test_unknown_status_blocks_retry(store):
+    action = store.claim_action(1, "comment", "BV1", "x")
+    store.finish_action(action, "unknown", reason="receipt")
+    assert store.find_live_action(1, "comment", "BV1")["status"] == "unknown"
+    assert store.claim_action(1, "comment", "BV1", "x") is None
+
+
+def test_guarded_write_receipt_marks_unknown(store):
+    def boom():
+        raise core.BiliError("receipt", "评论回执缺少 rpid")
+
+    result = duty._guarded_write(store, 1, "comment", "BV1", "x", boom)
+    assert result["ok"] is False
+    assert result["reason"] == "no_receipt"
+    assert store.find_live_action(1, "comment", "BV1")["status"] == "unknown"
+
+
+def test_guarded_write_clear_failure_allows_retry(store):
+    def boom():
+        raise core.BiliError("api", "接口返回错误")
+
+    result = duty._guarded_write(store, 1, "comment", "BV1", "x", boom)
+    assert result["reason"] == "send_failed"
+    assert store.claim_action(1, "comment", "BV1", "x") is not None
+
+
+def test_with_hint_attaches_tool_hint():
+    payload = duty.with_hint({"error": "配置里没打开「评论」", "code": "disabled"})
+    assert payload["hint"]
+    assert "hint" not in duty.with_hint({"error": "未知错误", "code": "nope"})
+    assert "hint" not in duty.with_hint({"headline": "成功"})
+
+
+def test_claim_action_reclaims_stale_pending(store):
+    action = store.claim_action(1, "like", "BV1")
+    stale = bili_storage._ago(bili_storage._PENDING_TIMEOUT_MIN + 1)
+    store._conn.execute("UPDATE bili_actions SET created_at = ? WHERE id = ?",
+                        (stale, action))
+    store._conn.commit()
+    assert store.claim_action(1, "like", "BV1") is not None
+
+
+def test_prune_drops_expired_rows(store):
+    old = bili_storage._ago(bili_storage._RETENTION_DAYS * 24 * 60 + 60)
+    store.mark_seen([
+        {"bvid": "BV_OLD", "title": "t", "up": "u", "pubdate": 0,
+         "verdict": "picked", "note": ""},
+        {"bvid": "BV_NEW", "title": "t", "up": "u", "pubdate": 0,
+         "verdict": "picked", "note": ""},
+    ])
+    store._conn.execute("UPDATE bili_seen SET seen_at = ? WHERE bvid = ?", (old, "BV_OLD"))
+    store._conn.commit()
+    action = store.claim_action(1, "comment", "BV1", "x")
+    store.finish_action(action, "done", remote_id="1")
+    store._conn.execute("UPDATE bili_actions SET created_at = ?", (old,))
+    store._conn.commit()
+    store.prune()
+    assert not store.is_seen("BV_OLD")
+    assert store.is_seen("BV_NEW")
+    assert store.recent_contents(1, "comment") == []
+
+
 # ---------- 配置与未登录路径 ----------
 
 def test_load_config_defaults(monkeypatch, tmp_path):
@@ -366,10 +591,9 @@ def test_load_config_ignores_wrong_types(monkeypatch, tmp_path):
 
 
 def test_run_round_without_credential(monkeypatch, tmp_path, store):
-    monkeypatch.setattr(duty, "CREDENTIAL_PATH", tmp_path / "none.json")
+    monkeypatch.setattr(duty, "credential_path", lambda: tmp_path / "none.json")
     result = duty.run_round(store)
     assert result["code"] == "not_logged_in"
-    assert "登录" in result["error"]
 
 
 def test_update_config_persists_switch(monkeypatch, tmp_path):
@@ -478,6 +702,140 @@ def test_next_out_of_pause_returns_window_end():
         == datetime(2026, 10, 21, 12, 30)
 
 
+def test_parse_pause_windows_accepts_midnight_end():
+    assert schedule.parse_pause_windows("09:00-24:00") == [(540, 1440)]
+
+
+def test_invalid_pause_parts_reports_bad_entries():
+    assert schedule.invalid_pause_parts("09:00-12:00, bad") == ["bad"]
+    assert schedule.invalid_pause_parts("") == []
+
+
+def test_next_out_of_pause_supports_midnight_end():
+    windows = schedule.parse_pause_windows("09:00-24:00")
+    assert schedule.next_out_of_pause(datetime(2026, 10, 21, 22, 0), windows) \
+        == datetime(2026, 10, 22, 0, 0)
+
+
+def test_parse_pause_windows_accepts_cross_midnight():
+    assert schedule.parse_pause_windows("22:00-08:00") == [(1320, 480)]
+
+
+def test_is_paused_across_midnight():
+    windows = schedule.parse_pause_windows("22:00-08:00")
+    assert schedule.is_paused(datetime(2026, 10, 21, 23, 0), windows)
+    assert schedule.is_paused(datetime(2026, 10, 21, 7, 0), windows)
+    assert not schedule.is_paused(datetime(2026, 10, 21, 12, 0), windows)
+
+
+def test_next_out_of_pause_across_midnight():
+    windows = schedule.parse_pause_windows("22:00-08:00")
+    assert schedule.next_out_of_pause(datetime(2026, 10, 21, 23, 0), windows) \
+        == datetime(2026, 10, 22, 8, 0)
+    assert schedule.next_out_of_pause(datetime(2026, 10, 22, 7, 0), windows) \
+        == datetime(2026, 10, 22, 8, 0)
+
+
+def test_next_out_of_pause_takes_latest_end_of_overlaps():
+    windows = schedule.parse_pause_windows("09:00-12:00,10:00-14:00")
+    assert schedule.next_out_of_pause(datetime(2026, 10, 21, 10, 30), windows) \
+        == datetime(2026, 10, 21, 14, 0)
+
+
+def _boom(*_args, **_kwargs):
+    raise ValueError("boom")
+
+
+def test_tick_rearms_after_error(monkeypatch):
+    armed = []
+    monkeypatch.setattr(schedule, "load_config", lambda: dict(duty._DEFAULTS))
+    monkeypatch.setattr(schedule, "_advance", _boom)
+    monkeypatch.setattr(schedule, "_arm", armed.append)
+    schedule._tick()
+    assert armed
+
+
+def test_interact_appends_mentions(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(schedule, "schedule_text", lambda: "到点了")
+    monkeypatch.setattr(schedule, "_fetch_mentions", lambda cfg: [
+        {"name": "主人", "bvid": "BV1", "title": "小狗"}])
+    monkeypatch.setattr(schedule.TOOL_CTX, "request_interact",
+                        lambda hint, **kwargs: seen.setdefault("hint", hint))
+    schedule._interact({"mention_enabled": True})
+    assert "BV1" in seen["hint"]
+    assert "主人" in seen["hint"]
+
+
+def test_interact_skips_mentions_when_disabled(monkeypatch):
+    called = []
+    monkeypatch.setattr(schedule, "schedule_text", lambda: "到点了")
+    monkeypatch.setattr(schedule, "_fetch_mentions",
+                        lambda cfg: called.append(1) or [])
+    monkeypatch.setattr(schedule.TOOL_CTX, "request_interact",
+                        lambda hint, **kwargs: None)
+    schedule._interact({"mention_enabled": False})
+    assert called == []
+
+
+class _InlineThread:
+    """把 start() 变成同步调用，便于断言触发目标。"""
+
+    def __init__(self, target=None, args=(), daemon=None):
+        self._target = target
+        self._args = args
+
+    def start(self):
+        self._target(*self._args)
+
+
+class _InlineThreading:
+    Thread = _InlineThread
+
+
+def test_trigger_now_ignores_switch(monkeypatch):
+    seen = []
+    monkeypatch.setattr(schedule, "threading", _InlineThreading)
+    monkeypatch.setattr(schedule, "load_config",
+                        lambda: {"schedule_enabled": False, "mention_enabled": False})
+    monkeypatch.setattr(schedule, "_interact", seen.append)
+    schedule.trigger_now()
+    assert seen == [{"schedule_enabled": False, "mention_enabled": False}]
+
+
+class _MentionClient:
+    def __init__(self, items):
+        self._items = items
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def mentions(self, limit: int = 10):
+        return list(self._items)
+
+    def view(self, bvid: str):
+        return {"bvid": bvid, "title": "标题"}
+
+
+def test_fetch_mentions_keeps_unreplied(monkeypatch, store):
+    """未回复的 @ 每轮都带出来，回复后不再出现。"""
+    monkeypatch.setattr(schedule, "_storage", store)
+    monkeypatch.setattr(schedule, "load_credential",
+                        lambda: Credential("s", "j", "9"))
+    monkeypatch.setattr(schedule, "BiliClient", lambda *a, **k: _MentionClient([
+        {"id": 1, "uid": 9, "name": "主人", "bvid": "BV1",
+         "rpid": 456, "content": "@恋恋"},
+    ]))
+    cfg = dict(duty._DEFAULTS, dm_uid=9, mention_per_day=3)
+    assert [m["bvid"] for m in schedule._fetch_mentions(cfg)] == ["BV1"]
+    assert [m["bvid"] for m in schedule._fetch_mentions(cfg)] == ["BV1"]
+    store.mark_mention_replied(1)
+    assert schedule._fetch_mentions(cfg) == []
+
+
 def test_parse_keywords_limits_to_20():
     text = ",".join(f"k{i}" for i in range(30))
     assert len(duty.parse_keywords(text)) == 20
@@ -539,7 +897,7 @@ def test_dm_without_uid_reports_error(monkeypatch, tmp_path, store):
     monkeypatch.setattr(duty, "_CONFIG_FILE", path)
     cred_path = tmp_path / "credential.json"
     Credential(sessdata="s", bili_jct="j", dedeuserid="9").save(cred_path)
-    monkeypatch.setattr(duty, "CREDENTIAL_PATH", cred_path)
+    monkeypatch.setattr(duty, "credential_path", lambda: cred_path)
     result = duty.write_action(store, "dm", text="今天看了一个视频")
     assert result["code"] == "dm_uid_missing"
 
@@ -548,7 +906,7 @@ def test_run_round_when_browse_disabled(monkeypatch, tmp_path, store):
     path = tmp_path / "config.json"
     path.write_text('{"allow_browse": false}', encoding="utf-8")
     monkeypatch.setattr(duty, "_CONFIG_FILE", path)
-    monkeypatch.setattr(duty, "CREDENTIAL_PATH", tmp_path / "none.json")
+    monkeypatch.setattr(duty, "credential_path", lambda: tmp_path / "none.json")
     result = duty.run_round(store)
     assert result["code"] == "disabled"
 

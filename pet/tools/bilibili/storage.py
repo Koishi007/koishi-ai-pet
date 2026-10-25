@@ -1,7 +1,7 @@
 """B 站工具的持久化层：判重表、每日轮次、写操作台账。
 
-写操作台账的唯一索引保证同一账号、同一目标、同一操作只有一条有效记录，
-超时后重复调用不会产生第二条评论或第二次投币。
+写操作台账按 (uid, kind, target) 统计有效记录数，与调用方给的 limit 比较后占位；
+单实例内由实例锁串行，跨进程不保证。
 """
 
 from __future__ import annotations
@@ -9,20 +9,27 @@ from __future__ import annotations
 import logging
 import sqlite3
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from pet.db import get_conn
 from pet.tools.context import TOOL_CTX
 
 logger = logging.getLogger(__name__)
 
-# 有效状态：占住唯一索引，阻止重复写入
-_LIVE_STATUS = ("pending", "done", "visible", "hidden")
+# 有效状态：计入目标去重与每日额度。unknown 表示已发出但没拿到回执，不再重试
+_LIVE_STATUS = ("pending", "done", "visible", "hidden", "unverified", "unknown")
 _RETENTION_DAYS = 90
+# 占位后超过此时长仍未结案，视为调用被中断
+_PENDING_TIMEOUT_MIN = 10
 
 
 def _now() -> str:
     return datetime.now().isoformat(timespec="seconds")
+
+
+def _ago(minutes: int) -> str:
+    """与 `_now()` 同格式的过去时刻。"""
+    return (datetime.now() - timedelta(minutes=int(minutes))).isoformat(timespec="seconds")
 
 
 class BiliStorage:
@@ -67,12 +74,12 @@ class BiliStorage:
                     content    TEXT NOT NULL DEFAULT '',
                     status     TEXT NOT NULL,
                     remote_id  TEXT NOT NULL DEFAULT '',
+                    root       INTEGER NOT NULL DEFAULT 0,
                     reason     TEXT NOT NULL DEFAULT '',
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 )
             """)
-            self._conn.execute("DROP INDEX IF EXISTS idx_bili_actions_live")
             self._conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_bili_actions_target
                     ON bili_actions(uid, kind, target)
@@ -82,6 +89,7 @@ class BiliStorage:
                     msg_id   INTEGER PRIMARY KEY,
                     uid      INTEGER NOT NULL DEFAULT 0,
                     bvid     TEXT NOT NULL DEFAULT '',
+                    title    TEXT NOT NULL DEFAULT '',
                     rpid     INTEGER NOT NULL DEFAULT 0,
                     name     TEXT NOT NULL DEFAULT '',
                     content  TEXT NOT NULL DEFAULT '',
@@ -144,19 +152,38 @@ class BiliStorage:
         return dict(row) if row else {"day": day, "uid": int(uid), "picked": 0,
                                       "requests": 0, "last_run": ""}
 
-    def claim_mention(self, msg_id: int, uid: int, bvid: str, rpid: int,
-                      name: str, content: str) -> bool:
-        """记录一条 @，已存在返回 False。"""
+    def has_mention(self, msg_id: int) -> bool:
+        """该条 @ 是否已入库。"""
         with self._lock:
-            cursor = self._conn.execute(
-                "INSERT OR IGNORE INTO bili_mentions"
-                "(msg_id, uid, bvid, rpid, name, content, seen_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (int(msg_id), int(uid), bvid, int(rpid), name[:40],
+            row = self._conn.execute("SELECT 1 FROM bili_mentions WHERE msg_id = ?",
+                                     (int(msg_id),)).fetchone()
+        return row is not None
+
+    def add_mention(self, msg_id: int, uid: int, bvid: str, title: str, rpid: int,
+                    name: str, content: str):
+        """记录一条 @；已入库时只补标题与 BV 号。"""
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO bili_mentions"
+                " (msg_id, uid, bvid, title, rpid, name, content, seen_at)"
+                " VALUES (?,?,?,?,?,?,?,?)"
+                " ON CONFLICT(msg_id) DO UPDATE SET"
+                " bvid = excluded.bvid, title = excluded.title",
+                (int(msg_id), int(uid), bvid, title[:80], int(rpid), name[:40],
                  content[:120], _now()),
             )
             self._conn.commit()
-            return cursor.rowcount > 0
+
+    def unreplied_mentions(self, uid: int, limit: int = 3) -> list[dict]:
+        """未回复的 @，最近的在前。"""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT msg_id, bvid, title, rpid, name, content, seen_at"
+                " FROM bili_mentions WHERE handled = 0 AND bvid != '' AND uid = ?"
+                " ORDER BY seen_at DESC, msg_id DESC LIMIT ?",
+                (int(uid), int(limit)),
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def mention_for_bvid(self, bvid: str) -> dict | None:
         """取该视频下尚未回复的 @。"""
@@ -173,14 +200,6 @@ class BiliStorage:
             self._conn.execute("UPDATE bili_mentions SET handled = 1 WHERE msg_id = ?",
                                (int(msg_id),))
             self._conn.commit()
-
-    def count_mentions_today(self, day: str) -> int:
-        with self._lock:
-            row = self._conn.execute(
-                "SELECT COUNT(*) AS n FROM bili_mentions WHERE seen_at LIKE ?",
-                (f"{day}%",),
-            ).fetchone()
-        return int(row["n"] or 0)
 
     def _live_count(self, uid: int, kind: str, target: str) -> int:
         marks = ",".join(["?"] * len(_LIVE_STATUS))
@@ -201,6 +220,7 @@ class BiliStorage:
         """占位成功返回台账 id；有效记录达到 limit 时返回 None，limit 为 0 时不按目标去重。"""
         now = _now()
         with self._lock:
+            self._reclaim_pending(now)
             if limit > 0 and self._live_count(uid, kind, target) >= int(limit):
                 return None
             cur = self._conn.execute(
@@ -212,13 +232,22 @@ class BiliStorage:
             self._conn.commit()
             return int(cur.lastrowid or 0)
 
+    def _reclaim_pending(self, now: str):
+        """超时未结案的占位记为 failed：调用被中断时目标不会永久占额。"""
+        self._conn.execute(
+            "UPDATE bili_actions SET status = 'failed', reason = 'pending_timeout',"
+            " updated_at = ? WHERE status = 'pending' AND created_at < ?",
+            (now, _ago(_PENDING_TIMEOUT_MIN)),
+        )
+        self._conn.commit()
+
     def finish_action(self, action_id: int, status: str, *, remote_id: str = "",
-                      reason: str = ""):
+                      reason: str = "", root: int = 0):
         with self._lock:
             self._conn.execute(
-                "UPDATE bili_actions SET status = ?, remote_id = ?, reason = ?, updated_at = ?"
-                " WHERE id = ?",
-                (status, remote_id, reason, _now(), int(action_id)),
+                "UPDATE bili_actions SET status = ?, remote_id = ?, root = ?, reason = ?,"
+                " updated_at = ? WHERE id = ?",
+                (status, remote_id, int(root), reason, _now(), int(action_id)),
             )
             self._conn.commit()
 
@@ -258,7 +287,7 @@ class BiliStorage:
         with self._lock:
             rows = self._conn.execute(
                 "SELECT * FROM bili_actions WHERE uid = ? AND kind = ?"
-                " AND status = 'done' AND remote_id != ''"
+                " AND status IN ('done', 'unverified') AND remote_id != ''"
                 " ORDER BY id DESC LIMIT ?",
                 (int(uid), kind, int(limit)),
             ).fetchall()
@@ -285,14 +314,11 @@ class BiliStorage:
 
     def prune(self, days: int = _RETENTION_DAYS):
         """删掉过期的判重与已结案的台账；pending 留给复核处理。"""
+        threshold = _ago(int(days) * 24 * 60)
         with self._lock:
+            self._conn.execute("DELETE FROM bili_seen WHERE seen_at < ?", (threshold,))
             self._conn.execute(
-                "DELETE FROM bili_seen WHERE seen_at < datetime('now', ?)",
-                (f"-{int(days)} days",),
-            )
-            self._conn.execute(
-                "DELETE FROM bili_actions WHERE created_at < datetime('now', ?)"
-                " AND status NOT IN ('pending')",
-                (f"-{int(days)} days",),
+                "DELETE FROM bili_actions WHERE created_at < ? AND status != 'pending'",
+                (threshold,),
             )
             self._conn.commit()
