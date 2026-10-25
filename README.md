@@ -217,9 +217,9 @@ chmod +x update.sh && ./update.sh
 
 ### bilibili
 
-独立 B 站账号的刷视频与互动。首次使用在托盘右键菜单打开「B 站账号」扫码登录；凭证存 `pet/tools/bilibili/credential.json`，不进入版本库。
+独立 B 站账号的刷视频与互动。首次使用在托盘右键菜单打开「B 站账号」扫码登录；凭证存 `%APPDATA%/KoishiAI/bili_credential.json`（macOS/Linux 见 `pet/settings.py` 的 `app_dir()`），不进入版本库。
 
-- `browse(keyword)`：按关键词搜最近几天的视频，随机取几部连同字幕交给模型；无字幕的视频照常返回，靠标题、简介与封面判断；`keyword` 可临时指定关键词或 BV 号，不受配置列表限制；是否点赞、投币、评论由模型自己决定
+- `browse(keyword)`：按关键词搜最近几天的视频，随机取几部连同字幕交给模型；无字幕的视频照常返回，靠标题、简介与封面判断；`keyword` 可临时指定关键词或 BV 号，只传 BV 时直接取该视频、不再搜索关键词（也不受配置列表限制）；是否点赞、投币、评论由模型自己决定
 - `status`：账号昵称、UID、等级、硬币、关注关键词与今日各项次数
 - `like(bvid)` / `coin(bvid)` / `comment(bvid, text)` / `dm(text)`：单条互动，目标必须在最近一轮的候选里
 - `verify(limit)`：复核待确认的评论是否公开可见
