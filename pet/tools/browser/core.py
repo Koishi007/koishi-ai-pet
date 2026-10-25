@@ -412,12 +412,8 @@ class BrowserTool:
                 summary_parts.append(f"{i}. {r['title']}\n   {r['url']}\n   {r.get('snippet','')}")
 
             return {
-                "status": "success",
-                "query": query,
-                "engine": self._engine,
-                "results": results,
-                "summary": "\n\n".join(summary_parts),
-                "__context__": f"搜索「{query}」获得 {len(results)} 条结果",
+                "headline": f"搜索「{query}」获得 {len(results)} 条结果",
+                "body": "\n\n".join(summary_parts),
             }
 
         raise RuntimeError("unreachable")
@@ -490,17 +486,10 @@ class BrowserTool:
 
         logger.info(f"[BrowserTool] read_url: {url} → page {page}/{total_pages} ({len(text)} chars)")
         return {
-            "status": "success",
-            "url": url,
-            "title": title,
-            "text": text,
-            "page": page,
-            "page_size": page_size,
-            "total_pages": total_pages,
-            "total_chars": total_chars,
-            "truncated": truncated,
-            "has_next": has_next,
-            "__context__": f"读取网页 {url}「{title}」第{page}/{total_pages}页（{len(text)}字符）",
+            "headline": (f"读取网页「{title}」第 {page}/{total_pages} 页"
+                         f"（本页 {len(text)} 字符，全文 {total_chars} 字符）"),
+            "body": text,
+            "pagination": {"page": page, "page_size": page_size, "has_next": has_next},
         }
 
 
@@ -545,11 +534,7 @@ class BrowserTool:
         img_b64 = base64.b64encode(screenshot_bytes).decode("ascii")
         logger.info(f"[BrowserTool] screenshot_url: {url} → {len(screenshot_bytes)} bytes JPEG")
         return {
-            "status": "success",
-            "url": url,
-            "size": f"{width}x{height}",
-            "full_page": full_page,
-            "__image__": img_b64,
-            "__image_mime__": "image/jpeg",
-            "__context__": f"截图网页 {url}",
+            "headline": f"截图网页 {url}（{width}x{height}）",
+            "images": [{"base64": img_b64, "mime": "image/jpeg",
+                        "caption": f"截图 {url}"}],
         }

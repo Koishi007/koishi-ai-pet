@@ -10,6 +10,7 @@ from pet.tools import timer as timer_pkg  # noqa: F401  确保子模块已注册
 from pet.tools.timer import core as timer_core
 from pet.tools.timer.core import TimerTool
 from pet.tools.timer.storage import TimerStorage
+from pet.tools.todo.core import TodoListTool
 from pet.tools.todo.storage import TodoStorage
 
 
@@ -107,7 +108,7 @@ class TestTimerRestore:
         assert fake_ctx.events[0][0] == "timer"
         assert fake_ctx.alarms == []
         assert timer_storage.load_all() == []
-        assert tool.list_timers()["count"] == 0
+        assert "body" not in tool.list_timers()
 
     def test_offline_pending_timer_reregisters_alarm(self, fake_ctx, timer_storage):
         # 关机发生在 1 小时前，但 timer 尚未到点 → 仍应注册闹钟，不得立即触发
@@ -119,7 +120,7 @@ class TestTimerRestore:
         assert fake_ctx.alarms, "未到点的 timer 不应被立即触发"
         assert fake_ctx.alarms[0][2] == "timer_t1"
         assert fake_ctx.speeches == []
-        assert tool.list_timers()["count"] == 1
+        assert "喝水" in tool.list_timers()["body"]
 
     def test_pending_timer_reregisters_alarm(self, fake_ctx, timer_storage):
         timer_storage.save("t2", "timer_t2", "喝水", 600, time.time() + 300)
@@ -127,7 +128,7 @@ class TestTimerRestore:
         tool.restore_from_storage()
         assert len(fake_ctx.alarms) == 1
         assert fake_ctx.alarms[0][2] == "timer_t2"
-        assert tool.list_timers()["count"] == 1
+        assert "喝水" in tool.list_timers()["body"]
 
     def test_register_failure_cleans_up(self, fake_ctx, timer_storage, monkeypatch):
         def boom(*_args, **_kwargs):
@@ -137,7 +138,7 @@ class TestTimerRestore:
         timer_storage.save("t3", "timer_t3", "失败", 600, time.time() + 300)
         tool = TimerTool(storage=timer_storage)
         tool.restore_from_storage()
-        assert tool.list_timers()["count"] == 0
+        assert "body" not in tool.list_timers()
         assert timer_storage.load_all() == []
 
 
@@ -151,8 +152,9 @@ class TestSetTimer:
     def test_valid_timer_persisted_and_registered(self, fake_ctx, timer_storage):
         tool = TimerTool(storage=timer_storage)
         result = tool.set_timer(90, "泡茶")
-        assert result["label"] == "泡茶"
-        assert TimerTool._format_duration(90) in result["summary"]
+        assert result["headline"]
+        assert result["data"]["duration"] == 90
+        assert result["data"]["id"]
         assert len(timer_storage.load_all()) == 1
         assert len(fake_ctx.alarms) == 1
 
@@ -163,12 +165,12 @@ class TestSetTimer:
         monkeypatch.setattr(fake_ctx, "register_alarm", boom)
         tool = TimerTool(storage=timer_storage)
         assert "error" in tool.set_timer(60, "回滚")
-        assert tool.list_timers()["count"] == 0
+        assert "body" not in tool.list_timers()
         assert timer_storage.load_all() == []
 
     def test_cancel_removes_from_storage(self, fake_ctx, timer_storage):
         tool = TimerTool(storage=timer_storage)
-        timer_id = tool.set_timer(60, "取消我")["id"]
+        timer_id = tool.set_timer(60, "取消我")["data"]["id"]
         tool.cancel_timer(timer_id)
         assert timer_storage.load_all() == []
 
@@ -211,6 +213,43 @@ class TestTodoStorage:
         todo_id = storage.add("删除我")["id"]
         assert storage.delete(todo_id) is True
         assert storage.delete(todo_id) is False
+
+
+class TestTodoToolViews:
+    def test_list_all_keeps_ids_for_panel(self, case_db_path):
+        tool = TodoListTool.__new__(TodoListTool)
+        tool._storage = TodoStorage(db_path=str(case_db_path))
+        tool._storage.add("面板任务")
+
+        rows = tool.list_all()
+
+        assert [row["title"] for row in rows] == ["面板任务"]
+        assert rows[0]["id"]
+        tool._storage.close()
+
+    def test_complete_notify_reads_toggle_data(self, monkeypatch):
+        from pet.tools import todo as todo_tool
+
+        class Stub:
+            def toggle(self, todo_id):
+                return {"headline": "已完成",
+                        "data": {"id": todo_id, "title": "买菜", "status": "done"}}
+
+        notices, events = [], []
+        monkeypatch.setattr(todo_tool.store, "get_instance", lambda: Stub())
+        monkeypatch.setattr(todo_tool.TOOL_CTX, "notify",
+                            lambda title, body: notices.append((title, body)))
+        monkeypatch.setattr(todo_tool.TOOL_CTX, "note_event",
+                            lambda kind, text="": events.append((kind, text)))
+        monkeypatch.setattr(todo_tool.TOOL_CTX, "speech_random",
+                            lambda *args, **kwargs: None)
+
+        result = todo_tool._complete_with_notify(1)
+
+        assert result["data"]["status"] == "done"
+        assert notices and notices[0][1] == "买菜"
+        assert notices[0][0]
+        assert events[0][0] == "todo" and "买菜" in events[0][1]
 
 
 class TestConversationStore:

@@ -75,30 +75,87 @@ def register(registry):
 执行器会按同一份 spec 校验模型传来的参数（类型、必填、枚举），不合法时返回错误给模型而不是抛异常。
 参数会自动转换为 OpenAI function calling 格式，模型通过 `tool_calls` 调用。
 
-## 返回值
+## 返回值与输出契约
+
+handler 返回**规范值**，形状由 `add_method(output=...)` 声明的 schema 约束。框架按 schema 里的 `x-role` 把它渲染成模型可见的内容。
 
 ```python
-def do_something(target: str, mode: str = "fast") -> dict:
+from pet.tools.output import PAGINATION_SCHEMA, ToolOutputDefinition
+
+READ_FILE_OUTPUT = {
+    "type": "object",
+    "required": ["headline"],
+    "properties": {
+        "headline": {"type": "string", "x-role": "headline",
+                     "description": "一句话结论"},
+        "body":     {"type": "string", "x-role": "body", "description": "文件内容"},
+        "pagination": {**PAGINATION_SCHEMA},
+    },
+}
+
+def read_file(path: str, offset: int = 0) -> dict:
     return {
-        "summary": "操作成功的简短描述",   # LLM 优先读取
-        "data": {"result": "..."},        # 结构化数据
+        "headline": f"读取文件 {path}（offset={offset}，100 字符，还有更多）",
+        "body": content,
+        "pagination": {"page": 1, "page_size": 100,
+                       "total_items": 500, "has_next": True},
     }
+
+registry.add_method(TOOL_NAME, "read_file", "读取文件", handler=read_file,
+                    args={...}, output=ToolOutputDefinition(schema=READ_FILE_OUTPUT))
 ```
 
-| 返回类型 | LLM 看到的内容 |
-|----------|----------------|
-| `dict` 含 `summary` | `summary` 文本 + 其余字段的 JSON |
-| `dict` 不含 `summary` | JSON 字符串 |
-| `str` | 原始字符串 |
-| 其他 | `str(...)` |
+### `x-role` 决定字段怎么被渲染
 
-三个保留键会被执行器取出、不进入上面的序列化：
+| `x-role` | 当轮模型看到 | 进历史记录 |
+|---|---|---|
+| `headline` | 文本块，置于最前 | 是，截 120 字符 |
+| `body` | 文本块，保留换行 | 否 |
+| `data` | 压成 `key: value` 行 | 否 |
+| `hint` | 文本块，置于最后，提示下一步 | 否 |
+| `images` | 图片块，附在下一轮 user 消息 | 否 |
+| `pagination` | 「第 2 页，共 500 条，用 page=3 继续」 | 是，附在 headline 后 |
+| `suppress` | 丢弃 | 否 |
 
-| 键 | 作用 |
-|---|---|
-| `__image__` | base64 图片，作为多模态内容附给模型（见下节） |
-| `__image_mime__` | 图片 MIME，默认 `image/png` |
-| `__context__` | 一段文本，写入桌宠上下文（`context_brief`），适合放「模型后续应当记得」的短信息；图片结果会用它作为来源说明 |
+渲染顺序按上表固定，同角色内按 schema 声明顺序。**未声明的返回字段归入 `data`**，不判违约；schema 声明 `additionalProperties: false` 时例外。
+
+### 字段命名
+
+`x-role` 管语义，字段名管可读性：
+
+- 集合用复数：`items` / `images`；布尔用 `ok` / `has_*`
+- 数量带所指：`chars_read`、`total_items`，不用 `count`、`size`
+- 错误统一 `{"error": "...", "code": "..."}`，`code` 是稳定的蛇形标识
+- 禁止 `summary` 这类一名多用的字段，禁止 `__xxx__` 魔法键
+
+### 失败
+
+业务失败返回 `{"error": "...", "code": "..."}`，执行器转成 `ToolResult.error_code`，模型看到 `[FAIL 工具名] code: 文案`，历史记录取该错误文案。不要自己造 `ok=False` 之类的成功标记。
+
+返回值不符合 `output.schema` 时同样失败，`code` 为 `output_violation`，模型看到首个违约路径，返回值不渲染。
+
+### 校验
+
+`validate` 支持 `type` / `required` / `properties` / `items` / `enum` / `additionalProperties: false`，按严格模式执行：违约即本次调用失败。`headline` 的长度不参与校验，历史记录截断到 120 字符。
+
+### 图片
+
+不再用 `__image__` 魔法键，改用 `images` 字段：
+
+```python
+return {
+    "headline": f"截图网页 {url}",
+    "images": [{"base64": b64, "mime": "image/jpeg", "caption": f"截图 {url}"}],
+}
+```
+
+图片不进 `role="tool"` 消息，由编码层附在紧邻的 user 消息里（多数兼容端点不接受 tool 消息里的多模态内容）。
+
+### 生成参考文档
+
+schema 必须是**模块级字面量**（可以是常量名，跨文件片段用 `**常量名` 展开一层），函数调用解析不出来。运行 `python scripts/gen_docs.py` 后，`reference/tools.md` 会为每个已声明方法生成「字段 / 类型 / 必填 / 角色 / 说明」表。
+
+未声明 `output` 的方法把返回值原样交给模型：字符串直接作为文本，其余值序列化成 JSON。新建工具一律要声明。
 
 ## 图片注入（多模态）
 
@@ -107,13 +164,13 @@ import base64
 
 def capture() -> dict:
     return {
-        "summary": "截图完成",
-        "__image__": base64.b64encode(img_bytes).decode(),
+        "headline": "截图完成",
+        "images": [{"base64": base64.b64encode(img_bytes).decode(),
+                    "mime": "image/jpeg", "caption": "屏幕截图"}],
     }
 ```
 
-系统会把 `__image__` 提取为多模态消息，附在工具结果之后的下一轮请求里。每张图带一条来源说明
-（优先取 `__context__`，其次结果里的 `path` / `url`），多图按工具调用顺序排列。宿主没有视觉能力时不注入，
+每张图带一条 `caption` 作为来源说明，多图按工具调用顺序排列。宿主没有视觉能力时不注入，
 模型只看到文本结果；图片类工具可在返回前用 `TOOL_CTX.has_vision()` 判断，避免产出无人接收的图片。
 工具调用记录里保留「图片已读取，可再次调用查看」的引用，后续轮次可重新取图。
 
@@ -131,7 +188,7 @@ from pet.tools.context import TOOL_CTX
 def alert() -> dict:
     TOOL_CTX.speech("注意！", duration=3000)
     TOOL_CTX.action("bounce", kwargs={"dx": 0, "dy": -200})
-    return {"summary": "已提醒"}
+    return {"headline": "已提醒"}
 ```
 
 常用方法（完整清单以 `pet/tools/context.py` 为准）：
@@ -173,7 +230,7 @@ registry.add_file_action(TOOL_NAME, "ingest", "收进知识库", _ingest_files, 
 | 项 | 约定 |
 |---|---|
 | 声明位置 | `register()` 内，此时工具已持有可用实例 |
-| handler 签名 | `handler(files: list[FileRef]) -> {"ok": bool, "summary": str}`；一次点击调用一次，收到全部文件，工具自己循环处理并只播报一次 |
+| handler 签名 | `handler(files: list[FileRef]) -> {"ok": bool, "summary": str}`；一次点击调用一次，收到全部文件，工具自己循环处理并只播报一次。文件气泡直接调用，不经 LLM 工具循环，因此不需要声明 `output` |
 | `accepts` | `text` / `image` / `any`（不声明等价 `any`）；与文件的 `kind` 不匹配时按钮不出现 |
 | `needs_content` | 默认 `True`；`FILE_DROP_READ_CONTENT` 关闭时该动作不出现，只需文件名或路径的动作传 `False` |
 | 全文读取 | 用 `pet/file_intake` 的 `load_text_full` / `load_image`；体积、数量、拒绝名单与解码判定都由核心先做过 |

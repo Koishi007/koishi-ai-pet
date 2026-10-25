@@ -25,10 +25,10 @@
 |---|---|---|---|---|
 | [architecture.md](architecture.md) | 架构解释 | 手写 | 分层与线程模型、启动链路、数据流、状态机、模块职责、红线与常见改动入口 | 改架构时人工更新 |
 | [glossary.md](glossary.md) | 事实参考 | 手写 | 项目专有术语表 | 新增术语时人工补充 |
-| [tool-development.md](tool-development.md) | 操作指南 | 手写 | 工具开发：目录约定、`register()` 模板、参数与返回值约定、`TOOL_CTX` 能力、`aside`、启用方式 | 改工具约定时人工更新 |
+| [tool-development.md](tool-development.md) | 操作指南 | 手写 | 工具开发：目录约定、`register()` 模板、参数与输出契约（`output.schema` 与 `x-role`）、`TOOL_CTX` 能力、`aside`、启用方式 | 改工具约定时人工更新 |
 | [reference/config.md](reference/config.md) | 事实参考 | 生成 | 配置项全量（按设置页签分组）+ 字段含义 | `pet/config.py` 的 `_KEY_META` |
 | [reference/actions.md](reference/actions.md) | 事实参考 | 生成 | 动作表：分类、参数、示例、时长范围 | `pet/action/registry.py` |
-| [reference/tools.md](reference/tools.md) | 事实参考 | 生成 | 工具分组、方法、参数 | `pet/tools/**/__init__.py` 与 `pet/tools/registry.py` |
+| [reference/tools.md](reference/tools.md) | 事实参考 | 生成 | 工具分组、方法、参数，以及已声明方法的返回字段表 | `pet/tools/**/__init__.py` 与 `pet/tools/registry.py` |
 | [reference/effects.md](reference/effects.md) | 事实参考 | 生成 | 粒子特效名、生成函数、默认位置 | `pet/ui/particle.py` 的 `_SPAWNERS` |
 | [reference/prompt-blocks.md](reference/prompt-blocks.md) | 事实参考 | 生成 | 提示词块、感知段/任务段组合、合法组合白名单 | `pet/brain/prompts.py` |
 | [reference/modules.md](reference/modules.md) | 事实参考 | 生成 | 每个模块的一句话职责 | 模块 docstring |
@@ -52,6 +52,7 @@
 | [specs/2026-10-19-memory-event-recall-design.md](specs/2026-10-19-memory-event-recall-design.md) | 设计文档 | 手写 | 事件记忆随机注入的时效处理：整点定时汇总、读取侧取同主题最新、注入文案标注时效；含合并模型连接与记忆面板类别筛选 | 动手前写，落地后补齐结论 |
 | [specs/2026-10-21-bili-video-browse-design.md](specs/2026-10-21-bili-video-browse-design.md) | 设计文档 | 手写 | 独立账号刷 B 站：扫码登录与凭证、wbi 签名、一轮流程、点赞投币评论私信的限额与内容 filter、台账幂等与复核、记忆落点 | 动手前写，落地后补齐结论 |
 | [specs/2026-10-22-session-event-log-projection-design.md](specs/2026-10-22-session-event-log-projection-design.md) | 设计文档 | 手写 | 会话事件日志与消息投影：只追加事件表、纯函数投影、工具组原子裁剪、四档工具通道、传输编码层 | 动手前写，落地后补齐结论 |
+| [specs/2026-10-22-tool-output-projection-design.md](specs/2026-10-22-tool-output-projection-design.md) | 设计文档 | 手写 | 工具输出声明与投影：output.schema 与 x-role 角色标注、当轮与历史两条投影、严格校验、旧键去向 | 改契约时人工更新 |
 | [../CHANGELOG.md](../CHANGELOG.md) | 事实参考 | 生成 | 按版本分组的变更记录 | `python scripts/gen_changelog.py` |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | 操作指南 | 手写 | 开发流程、测试、提交与 PR 规范 | 流程变化时人工更新 |
 

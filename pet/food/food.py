@@ -166,32 +166,24 @@ class FoodManager(QObject):
     def spawn(self, food_type: Optional[str] = None) -> dict:
         """food__spawn：生成一份食物，返回坐标与相对宠物的偏移。"""
         if not config.FOOD_ENABLED:
-            return {
-                "summary": "觅食已关闭（FOOD_ENABLED=False）",
-                "success": False,
-                "error": "觅食已关闭（FOOD_ENABLED=False）",
-            }
+            return {"error": "觅食已关闭（FOOD_ENABLED=False）"}
         with self._lock:
             if not self._snapshot_ready:
-                return {
-                    "summary": "宠物位置尚未就绪，请稍后重试",
-                    "success": False,
-                    "error": "宠物位置快照尚未就绪（首个心跳未完成），请稍后重试",
-                }
+                return {"error": "宠物位置快照尚未就绪（首个心跳未完成），请稍后重试"}
             if self._food is not None:
                 f = self._food
                 dx, direction = self._dx_to(f["center_x"])
                 dy, bounce_height = self._dy_info(f["ground_y"])
                 remaining = max(0, int(f["ttl"] - (time.monotonic() - f["spawned_at"])))
                 return {
-                    "summary": f"桌面上已经有{f['name']}了，直接去吃吧",
-                    "success": True,
-                    "food_id": f["id"],
-                    "food_type": f["name"],
-                    "position": {"x": f["x"], "y": f["y"]},
-                    "dx": dx, "direction": direction,
-                    "dy": dy, "bounce_height": bounce_height,
-                    "ttl_seconds": remaining,
+                    "headline": f"桌面上已经有{f['name']}了，直接去吃吧",
+                    "data": {
+                        "food_id": f["id"], "food_type": f["name"],
+                        "position": {"x": f["x"], "y": f["y"]},
+                        "dx": dx, "direction": direction,
+                        "dy": dy, "bounce_height": bounce_height,
+                        "ttl_seconds": remaining,
+                    },
                 }
 
             emoji = pick_emoji(food_type)
@@ -238,17 +230,14 @@ class FoodManager(QObject):
             self.spawn_ui_requested.emit(food_id, emoji, x, y)
 
             return {
-                "summary": f"已生成{name}，在你{_side_text(direction)} {dx}px，{height_hint}",
-                "success": True,
-                "food_id": food_id,
-                "food_type": name,
-                "position": {"x": x, "y": y},
-                "dx": dx,
-                "direction": direction,
-                "dy": dy,
-                "bounce_height": bounce_height,
-                "height_hint": height_hint,
-                "ttl_seconds": config.FOOD_TTL_SECONDS,
+                "headline": f"已生成{name}，在你{_side_text(direction)} {dx}px，{height_hint}",
+                "data": {
+                    "food_id": food_id, "food_type": name,
+                    "position": {"x": x, "y": y},
+                    "dx": dx, "direction": direction, "dy": dy,
+                    "bounce_height": bounce_height, "height_hint": height_hint,
+                    "ttl_seconds": config.FOOD_TTL_SECONDS,
+                },
             }
 
     def status(self) -> dict:
@@ -257,10 +246,8 @@ class FoodManager(QObject):
             pet_pos = {"x": self._pet_x, "y": self._pet_y}
             if self._food is None:
                 return {
-                    "summary": "桌面上没有食物，可以调用 food__spawn 生成一份",
-                    "success": True,
-                    "has_food": False,
-                    "pet_position": pet_pos,
+                    "headline": "桌面上没有食物，可以调用 food__spawn 生成一份",
+                    "data": {"has_food": False, "pet_position": pet_pos},
                 }
             f = self._food
             dx, direction = self._dx_to(f["center_x"])
@@ -290,21 +277,16 @@ class FoodManager(QObject):
                            f"下一步输出最终回复即可，其中带上移动 Action 靠近它：{action_hint}；"
                            f"到达后自动开吃，不必再调用本工具。")
             return {
-                "summary": summary,
-                "success": True,
-                "has_food": True,
-                "food_id": f["id"],
-                "food_type": f["name"],
-                "position": {"x": f["x"], "y": f["y"]},
-                "pet_position": pet_pos,
-                "dx": dx,
-                "direction": direction,
-                "dy": dy,
-                "bounce_height": bounce_height,
-                "height_hint": height_hint,
-                "arrived": arrived,
-                "expired": expired,
-                "ttl_seconds": remaining,
+                "headline": summary,
+                "data": {
+                    "has_food": True, "food_id": f["id"],
+                    "food_type": f["name"],
+                    "position": {"x": f["x"], "y": f["y"]},
+                    "pet_position": pet_pos,
+                    "dx": dx, "direction": direction, "dy": dy,
+                    "bounce_height": bounce_height, "height_hint": height_hint,
+                    "arrived": arrived, "expired": expired, "ttl_seconds": remaining,
+                },
             }
 
     def set_window_factory(self, factory):

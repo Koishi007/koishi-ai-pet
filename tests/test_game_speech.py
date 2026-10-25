@@ -7,7 +7,6 @@ from pet.game.guess_number import GuessNumberGame
 from pet.game.rps import RockPaperScissorsGame
 from pet.game.tic_tac_toe import TicTacToeGame, _board_text
 from pet.game.twenty_questions import TwentyQuestionsGame
-from pet.tools.executor import ToolExecutor
 
 
 class _CtxSpy:
@@ -55,12 +54,12 @@ def ctx(monkeypatch):
     return spy
 
 
-def test_summary_is_never_spoken(ctx):
-    """summary 只面向模型：即使内容完整也不播出，没有台词就保持沉默。"""
+def test_headline_is_never_spoken(ctx):
+    """headline 只面向模型：即使内容完整也不播出，没有台词就保持沉默。"""
     board = [["O", "", "O"], ["", "X", ""], ["X", "X", ""]]
-    summary = f"轮到谁了呢\n{_board_text(board)}"
+    headline = f"轮到谁了呢\n{_board_text(board)}"
 
-    gamebase.GameBase()._emit_speech(_SilentGame(), {"summary": summary, "ended": False})
+    gamebase.GameBase()._emit_speech(_SilentGame(), {"headline": headline, "ended": False})
 
     assert ctx.spoken == []
 
@@ -84,14 +83,13 @@ def _started_base():
 
 
 def test_running_round_hint(ctx):
-    """未结束的回合给继续推进的指令，summary 保持纯事实。"""
+    """未结束的回合在 agent_hint 里给参数提示，headline 保持一行事实。"""
     base, _ = _started_base()
 
     result = base.play("tic_tac_toe")
 
-    assert result["model_hint"] is gamebase._MODEL_HINT_RUNNING
-    assert result["model_hint"] not in result["summary"]
-    assert len(result["summary"].splitlines()) == 1
+    assert "ttt_move" in result["agent_hint"]
+    assert len(result["headline"].splitlines()) == 1
 
 
 def test_ended_round_hint(ctx):
@@ -104,11 +102,11 @@ def test_ended_round_hint(ctx):
     result = base.play("tic_tac_toe", ttt_move="A3")
 
     assert result["ended"] and result["won"] is True
-    assert result["model_hint"] is gamebase._MODEL_HINT_ENDED
+    assert result["agent_hint"] is gamebase._MODEL_HINT_ENDED
 
 
-def test_tic_tac_toe_summary_excludes_board(ctx):
-    """井字棋 summary 只留自然语言，盘面仍由 board_text 字段交给模型。"""
+def test_tic_tac_toe_headline_excludes_board(ctx):
+    """井字棋 headline 只留自然语言，盘面仍由 board_text 字段交给模型。"""
     game = TicTacToeGame()
     state = game.new_state()
     pet = state["pet_mark"]
@@ -120,14 +118,17 @@ def test_tic_tac_toe_summary_excludes_board(ctx):
 
     assert result["ended"] and result["won"] is True
     for line in result["board_text"].splitlines():
-        assert line not in result["summary"]
+        assert line not in result["headline"]
 
 
-def test_normalize_puts_hint_next_to_summary():
-    """工具结果里 model_hint 与 summary 并排打头，不被埋进 JSON。"""
-    text = ToolExecutor._normalize({"summary": "完成", "model_hint": "继续推进", "n": 1})
+def test_invalid_move_puts_instruction_in_hint(ctx):
+    """无效落子的纠正指令进 agent_hint，headline 只留事实。"""
+    base, _ = _started_base()
 
-    assert text == '完成\n继续推进\n{"n": 1}'
+    result = base.play("tic_tac_toe", ttt_move="Z9")
+
+    assert "A1~C3" not in result["headline"]
+    assert "A1~C3" in result["agent_hint"]
 
 
 @pytest.mark.parametrize(

@@ -115,7 +115,8 @@ class HigherLowerGame(Game):
         choice = params.get("hl_choice")
         if choice not in CHOICES:
             return {
-                "summary": f"无效押注 {choice!r}，请用 higher/lower",
+                "headline": f"无效押注 {choice!r}",
+                "agent_hint": "请用 higher/lower 重新押注。",
                 "ended": False,
                 "hl_choice": choice,
                 "base": base,
@@ -126,7 +127,8 @@ class HigherLowerGame(Game):
         if odds_map[choice] is None:
             other = "lower" if choice == "higher" else "higher"
             return {
-                "summary": f"基准 {base} 没有比它{_CN[choice]}的牌了，请改押{_CN[other]}",
+                "headline": f"基准 {base} 没有比它{_CN[choice]}的牌",
+                "agent_hint": f"请改押{_CN[other]}。",
                 "ended": False,
                 "hl_choice": choice,
                 "base": base,
@@ -140,18 +142,18 @@ class HigherLowerGame(Game):
         if state.get("_cancelled"):
             if state.get("_forfeit"):
                 return {
-                    "summary": "用户主动结束了猜高低，不算胜负",
+                    "headline": "用户主动结束了猜高低，不算胜负",
                     "ended": True,
                     "won": None,
                     "forfeit": True,
                 }
-            return {"summary": "游戏已结束", "ended": True, "won": None,
+            return {"headline": "游戏已结束", "ended": True, "won": None,
                     "suppress_speech": True}
         if move is None:
             self._emit_panel(state, waiting=False, pet_bet=True,
                              message="长时间未操作，本局结束")
             return {
-                "summary": f"你在 {self.MOVE_TIMEOUT} 秒内没有下注，本局结束",
+                "headline": f"你在 {self.MOVE_TIMEOUT} 秒内没有下注，本局结束",
                 "speech": random.choice(self._TIMEOUT_SPEECH),
                 "ended": True,
                 "won": None,
@@ -162,7 +164,8 @@ class HigherLowerGame(Game):
         if user_choice not in CHOICES or odds_map[user_choice] is None:
             # 防御：面板只提交可选边，异常值不消耗回合
             return {
-                "summary": f"无效押注 {user_choice!r}，请点击面板上的下注按钮",
+                "headline": f"用户押注 {user_choice!r} 无效",
+                "agent_hint": "请重新调用 game__play 等待用户下注。",
                 "ended": False,
                 "hl_choice": choice,
                 "base": base,
@@ -199,7 +202,7 @@ class HigherLowerGame(Game):
                          revealed=revealed, outcome=outcome,
                          message=f"揭晓 {revealed}，{score_text}")
         return {
-            "summary": (f"基准 {base}，我押{_CN[choice]}，你押{_CN[user_choice]}，"
+            "headline": (f"基准 {base}，我押{_CN[choice]}，你押{_CN[user_choice]}，"
                         f"揭晓 {revealed}；{detail}。{score_text}"),
             "ended": ended,
             "won": won,
@@ -222,7 +225,7 @@ class HigherLowerGame(Game):
 
     @staticmethod
     def _detail(judged: dict, choice: str) -> str:
-        """把判定结果写成一句自然语言（供 summary 与日志阅读）。"""
+        """把判定结果写成一句自然语言（供 headline 与日志阅读）。"""
         outcome = judged["outcome"]
         if outcome == "same_hit":
             return f"两边都押{_CN[choice]}，命中 +{judged['pet_delta']}"

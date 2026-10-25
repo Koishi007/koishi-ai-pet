@@ -1,9 +1,43 @@
 from pet.tools.file_ops.core import FileOpsTool
 from pet.tools.context import TOOL_CTX
+from pet.tools.output import IMAGES_SCHEMA, PAGINATION_SCHEMA, ToolOutputDefinition
 
 TOOL_NAME = "file_ops"
 TOOL_DESCRIPTION = "文件操作（读写、列目录、查看图片，限桌面/文档）"
 TOOL_GROUP = "file"
+
+LIST_DIR_OUTPUT = {
+    "type": "object",
+    "required": ["headline"],
+    "properties": {
+        "headline": {"type": "string", "x-role": "headline",
+                     "description": "一句话结论，进历史记录"},
+        "body": {"type": "string", "x-role": "body", "description": "文件名列表，每行一项"},
+        "pagination": {**PAGINATION_SCHEMA},
+    },
+}
+
+READ_FILE_OUTPUT = {
+    "type": "object",
+    "required": ["headline"],
+    "properties": {
+        "headline": {"type": "string", "x-role": "headline",
+                     "description": "一句话结论，进历史记录"},
+        "body": {"type": "string", "x-role": "body", "description": "文本内容"},
+        "images": IMAGES_SCHEMA,
+        "agent_hint": {"type": "string", "x-role": "hint",
+                       "description": "如何继续读取，如用 offset 翻页"},
+    },
+}
+
+WRITE_FILE_OUTPUT = {
+    "type": "object",
+    "required": ["headline"],
+    "properties": {
+        "headline": {"type": "string", "x-role": "headline",
+                     "description": "一句话结论，进历史记录"},
+    },
+}
 
 _instance: FileOpsTool | None = None
 
@@ -49,6 +83,7 @@ def register(registry):
             "page": {"type": "int", "required": False, "default": 1,
                      "desc": "页码，从1开始"},
         },
+        output=ToolOutputDefinition(schema=LIST_DIR_OUTPUT),
     )
     registry.add_method(
         TOOL_NAME, "read_file",
@@ -61,6 +96,7 @@ def register(registry):
             "offset": {"type": "int", "required": False, "default": 0,
                        "desc": "读取起始位置（字符偏移），从0开始，上限5000"},
         },
+        output=ToolOutputDefinition(schema=READ_FILE_OUTPUT),
     )
     registry.add_method(
         TOOL_NAME, "write_note",
@@ -70,6 +106,7 @@ def register(registry):
             "filename": {"type": "str", "required": True, "desc": "文件名（含扩展名）"},
             "content": {"type": "str", "required": True, "desc": "写入内容"},
         },
+        output=ToolOutputDefinition(schema=WRITE_FILE_OUTPUT),
     )
     registry.add_method(
         TOOL_NAME, "write_file",
@@ -82,4 +119,5 @@ def register(registry):
                      "desc": "写入模式: w=覆盖, a=追加",
                      "enum": ["w", "a"]},
         },
+        output=ToolOutputDefinition(schema=WRITE_FILE_OUTPUT),
     )

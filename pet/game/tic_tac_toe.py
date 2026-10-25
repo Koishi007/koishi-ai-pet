@@ -108,7 +108,7 @@ class TicTacToeGame(Game):
         pet_mark = state["pet_mark"]
         user_mark = state["user_mark"]
 
-        # 首次调用：在 summary 里告知双方执子与先后手，供模型 speech 转述给用户
+        # 首次调用：在 headline 里告知双方执子与先后手，供模型 speech 转述给用户
         first_notice = ""
         if not state.get("_notified"):
             state["_notified"] = True
@@ -124,7 +124,8 @@ class TicTacToeGame(Game):
         if state["turn"] == pet_mark:
             if not params.get("ttt_move"):
                 return {
-                    "summary": _s("轮到我落子，请传 ttt_move 参数（A1~C3）。"),
+                    "headline": _s("轮到我落子"),
+                    "agent_hint": "请传 ttt_move 参数（A1~C3）重新调用 game__play。",
                     "ended": False,
                     "pet_mark": pet_mark,
                     "user_mark": user_mark,
@@ -134,7 +135,8 @@ class TicTacToeGame(Game):
             pos = _POS_MAP.get(str(params["ttt_move"]).strip().upper())
             if pos is None:
                 return {
-                    "summary": _s(f"无效位置 {params['ttt_move']}，请用 A1~C3 格式"),
+                    "headline": _s(f"无效位置 {params['ttt_move']}"),
+                    "agent_hint": "请用 A1~C3 格式传 ttt_move。",
                     "ended": False,
                     "pet_mark": pet_mark,
                     "user_mark": user_mark,
@@ -144,7 +146,8 @@ class TicTacToeGame(Game):
             r, c = pos
             if board[r][c]:
                 return {
-                    "summary": _s(f"位置 {params['ttt_move']} 已经有子了，请换个位置"),
+                    "headline": _s(f"位置 {params['ttt_move']} 已经有子了"),
+                    "agent_hint": "请换一个位置传 ttt_move。",
                     "ended": False,
                     "pet_mark": pet_mark,
                     "user_mark": user_mark,
@@ -157,7 +160,7 @@ class TicTacToeGame(Game):
             if winner == pet_mark:
                 self._finish(state, "我获胜")
                 return {
-                    "summary": _s(f"我落子 {params['ttt_move']} 连成三子，我获胜。"),
+                    "headline": _s(f"我落子 {params['ttt_move']} 连成三子，我获胜。"),
                     "ended": True,
                     "won": True,
                     "pet_mark": pet_mark,
@@ -169,7 +172,7 @@ class TicTacToeGame(Game):
             if _is_full(board):
                 self._finish(state, "平局")
                 return {
-                    "summary": _s(f"我落子 {params['ttt_move']} 后棋盘已满，平局。"),
+                    "headline": _s(f"我落子 {params['ttt_move']} 后棋盘已满，平局。"),
                     "ended": True,
                     "won": None,
                     "pet_mark": pet_mark,
@@ -186,7 +189,7 @@ class TicTacToeGame(Game):
             if state.get("_forfeit"):
                 # 用户主动关闭棋盘结束游戏：不算胜负
                 return {
-                    "summary": _s("用户主动结束了游戏，不算胜负。"),
+                    "headline": _s("用户主动结束了游戏，不算胜负。"),
                     "ended": True,
                     "won": None,
                     "forfeit": True,
@@ -198,13 +201,13 @@ class TicTacToeGame(Game):
                 }
             self._emit_board(state, waiting=False, message="游戏已结束")
             # 外部取消（如 game__stop/闲置收场）已由调用方播收场词，这里抑制兜底台词避免重复
-            return {"summary": _s("游戏已结束"), "ended": True, "won": None,
+            return {"headline": _s("游戏已结束"), "ended": True, "won": None,
                     "suppress_speech": True, "board": board}
         if move is None:
             # 用户超时未落子 → 结束本局，不算胜负
             self._emit_board(state, waiting=False, message="长时间未操作，本局结束")
             return {
-                "summary": _s(f"你在 {self.MOVE_TIMEOUT} 秒内没有落子，本局结束。"),
+                "headline": _s(f"你在 {self.MOVE_TIMEOUT} 秒内没有落子，本局结束。"),
                 "speech": random.choice(self._TIMEOUT_SPEECH),
                 "ended": True,
                 "won": None,
@@ -223,7 +226,7 @@ class TicTacToeGame(Game):
         if winner == user_mark:
             self._emit_board(state, waiting=False, message="你获胜")
             return {
-                "summary": _s(f"你落子 {_GRID_LABELS[r][c]} 连成三子，你获胜。"),
+                "headline": _s(f"你落子 {_GRID_LABELS[r][c]} 连成三子，你获胜。"),
                 "ended": True,
                 "won": False,
                 "pet_mark": pet_mark,
@@ -235,7 +238,7 @@ class TicTacToeGame(Game):
         if _is_full(board):
             self._emit_board(state, waiting=False, message="平局")
             return {
-                "summary": _s(f"你落子 {_GRID_LABELS[r][c]} 后棋盘已满，平局。"),
+                "headline": _s(f"你落子 {_GRID_LABELS[r][c]} 后棋盘已满，平局。"),
                 "ended": True,
                 "won": None,
                 "pet_mark": pet_mark,
@@ -247,7 +250,7 @@ class TicTacToeGame(Game):
 
         self._emit_board(state, waiting=False, message="轮到我")
         return {
-            "summary": _s(f"你落子 {_GRID_LABELS[r][c]}，轮到我。"),
+            "headline": _s(f"你落子 {_GRID_LABELS[r][c]}，轮到我。"),
             "ended": False,
             "pet_mark": pet_mark,
             "user_mark": user_mark,

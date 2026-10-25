@@ -162,7 +162,7 @@ class TodoPanel(QWidget):
 
 
     def _refresh(self):
-        items = self._core.list_todos(status="all")["items"]
+        items = self._core.list_all()
         self._list.clear()
         for t in items:
             if t["status"] == "done":
@@ -170,7 +170,7 @@ class TodoPanel(QWidget):
             else:
                 text = f"  [ ] {t['title']}"
             item = QListWidgetItem(text)
-            item.setData(Qt.ItemDataRole.UserRole, t["todo_id"])
+            item.setData(Qt.ItemDataRole.UserRole, t["id"])
             item.setData(Qt.ItemDataRole.ToolTipRole, t["title"])
             self._list.addItem(item)
         done_count = sum(1 for t in items if t["status"] == "done")

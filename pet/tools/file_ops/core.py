@@ -87,20 +87,12 @@ class FileOpsTool:
         page = max(1, min(page, total_pages))
         start = (page - 1) * page_size
         items = all_items[start:start + page_size]
-        result = {
-            "path": abs_path,
-            "items": items,
-            "count": len(items),
-            "total": total,
-            "page": page,
-            "total_pages": total_pages,
-            "has_next": page < total_pages,
-            "has_prev": page > 1,
+        return {
+            "headline": f"列出目录 {abs_path}（第 {page}/{total_pages} 页，{len(items)}/{total} 项）",
+            "body": "\n".join(items),
+            "pagination": {"page": page, "page_size": page_size,
+                           "total_items": total, "has_next": page < total_pages},
         }
-        if total_pages > 1:
-            result["hint"] = f"第 {page}/{total_pages} 页（每页 {page_size} 项），has_next={result['has_next']}"
-        result["__context__"] = f"列出目录 {abs_path}（第{page}/{total_pages}页，{len(items)}/{total}项）"
-        return result
 
     _MAX_OFFSET = 5000  # offset 上限，防止翻页耗尽轮次
 
@@ -123,20 +115,17 @@ class FileOpsTool:
             # 到达上限则标记无下一页
             if next_offset >= self._MAX_OFFSET:
                 has_next = False
-            result = {
-                "path": abs_path,
-                "content": content,
-                "offset": actual_offset,
-                "chars_read": len(content),
-                "has_next": has_next,
-            }
+            hint = ""
             if has_next:
-                result["next_offset"] = next_offset
-                result["hint"] = f"还有更多内容，用 offset={next_offset} 读取下一段"
+                hint = f"还有更多内容，用 offset={next_offset} 继续读取"
             elif next_offset >= self._MAX_OFFSET:
-                result["hint"] = f"已达读取上限（{self._MAX_OFFSET}字符）"
-            result["__context__"] = f"读取文件 {abs_path}（offset={actual_offset}，{len(content)}字符{'，还有更多' if has_next else ''}）"
-            return result
+                hint = f"已达读取上限（{self._MAX_OFFSET} 字符），不再翻页"
+            return {
+                "headline": (f"读取文件 {abs_path}（offset={actual_offset}，"
+                             f"{len(content)} 字符{'，还有更多' if has_next else ''}）"),
+                "body": content,
+                "agent_hint": hint,
+            }
         except Exception as e:
             return {"error": str(e)}
 
@@ -156,12 +145,9 @@ class FileOpsTool:
             image.close()
         logger.info(f"[FileOps] read image: {abs_path} {width}x{height}")
         return {
-            "path": abs_path,
-            "kind": "image",
-            "size": f"{width}x{height}",
-            "__image__": payload,
-            "__image_mime__": "image/jpeg",
-            "__context__": f"查看图片 {abs_path}（{width}x{height}）",
+            "headline": f"查看图片 {abs_path}（{width}x{height}）",
+            "images": [{"base64": payload, "mime": "image/jpeg",
+                        "caption": f"查看图片 {abs_path}（{width}x{height}）"}],
         }
 
     def write_note(self, filename: str, content: str) -> dict:
@@ -179,8 +165,7 @@ class FileOpsTool:
                 f.write(content)
         except OSError as e:
             return {"error": f"写入失败: {e}"}
-        return {"status": "written", "path": abs_path,
-                "__context__": f"写入文件 {abs_path}（{len(content)}字节）"}
+        return {"headline": f"写入文件 {abs_path}（{len(content)} 字节）"}
 
     def write_file(self, path: str, content: str, mode: str = "w") -> dict:
         if mode not in ("w", "a"):
@@ -189,11 +174,9 @@ class FileOpsTool:
             abs_path = self._check_path(path)
         except PermissionError as e:
             return {"error": str(e)}
-        label = "appended" if mode == "a" else "written"
         try:
             with open(abs_path, mode, encoding="utf-8") as f:
                 f.write(content)
         except OSError as e:
             return {"error": f"写入失败: {e}"}
-        return {"status": label, "path": abs_path,
-                "__context__": f"{'追加' if mode == 'a' else '写入'}文件 {abs_path}（{len(content)}字节）"}
+        return {"headline": f"{'追加' if mode == 'a' else '写入'}文件 {abs_path}（{len(content)} 字节）"}

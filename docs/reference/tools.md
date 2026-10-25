@@ -34,6 +34,57 @@
 | `dm` | `text`（str, 必需） 私信正文 | 给主人在 B 站发一条私信。收件人取配置里的 dm_uid，未配置时不发送。 |
 | `verify` | `limit`（int, 默认 10） 最多检查几条 | 复核待确认的评论是否已经公开可见。未核到的保持待确认，不会重发。 |
 
+**`browse` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 关键词与刷到的部数 |
+| `body` | string | 否 | body | 每部：标题、网址、字幕全文 |
+| `images` | array | 否 | images | 图片列表 |
+| `data` | object | 否 | data | 略过与统计 |
+
+**`status` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 操作结果的一句话 |
+| `data` | object | 否 | data | 结构化明细 |
+
+**`like` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 操作结果的一句话 |
+| `data` | object | 否 | data | 结构化明细 |
+
+**`coin` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 操作结果的一句话 |
+| `data` | object | 否 | data | 结构化明细 |
+
+**`comment` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 操作结果的一句话 |
+| `data` | object | 否 | data | 结构化明细 |
+
+**`dm` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 操作结果的一句话 |
+| `data` | object | 否 | data | 结构化明细 |
+
+**`verify` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 操作结果的一句话 |
+| `data` | object | 否 | data | 结构化明细 |
+
 ### `browser`
 
 - 目录：`pet/tools/browser/`
@@ -46,6 +97,34 @@
 | `read_url` | `url`（str, 必需） 要读取的网页地址（包含 http/https）<br>`max_chars`（int, 默认 10000） 最大提取字符数<br>`wait_seconds`（float, 默认 3.0） 页面加载等待时间(秒)<br>`page`（int, 默认 1） 分页页码，从1开始<br>`page_size`（int, 默认 3000） 每页字符数 | 用无头浏览器打开URL并提取页面正文文本，支持分页（默认每页3000字），返回当前页内容及总页数 |
 | `screenshot_url` | `url`（str, 必需） 要截图的网页地址（包含 http/https）<br>`width`（int, 默认 1280） 视口宽度(px)<br>`height`（int, 默认 800） 视口高度(px)<br>`wait_seconds`（float, 默认 3.0） 页面加载等待时间(秒)<br>`full_page`（bool, 默认 False） 是否截取整页（默认仅可视区域） | 用无头浏览器打开URL并截图，可以'看到'网页外观 |
 | `close` | 无参数 | 关闭浏览器，释放内存（所有网页操作完成后调用） |
+
+**`search` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 搜索词与命中条数 |
+| `body` | string | 否 | body | 每条结果三行：标题、网址、摘要 |
+
+**`read_url` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 网页标题与分页概况 |
+| `body` | string | 否 | body | 当前页正文 |
+| `pagination` | object | 否 | pagination | 分页信息 |
+
+**`screenshot_url` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 截图对象与尺寸 |
+| `images` | array | 否 | images | 图片列表 |
+
+**`close` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 关闭结果 |
 
 ### `file_ops`
 
@@ -60,6 +139,35 @@
 | `write_note` | `filename`（str, 必需） 文件名（含扩展名）<br>`content`（str, 必需） 写入内容 | 在桌面创建一个文本笔记 |
 | `write_file` | `path`（str, 必需） 文件路径<br>`content`（str, 必需） 写入内容<br>`mode`（str, 默认 "w", 可选：w/a） 写入模式: w=覆盖, a=追加 | 写入/覆盖/追加文件内容（限桌面/文档。追加时 mode='a'，覆盖 mode='w'） |
 
+**`list_dir` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 一句话结论，进历史记录 |
+| `body` | string | 否 | body | 文件名列表，每行一项 |
+| `pagination` | object | 否 | pagination | 分页信息 |
+
+**`read_file` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 一句话结论，进历史记录 |
+| `body` | string | 否 | body | 文本内容 |
+| `images` | array | 否 | images | 图片列表 |
+| `agent_hint` | string | 否 | hint | 如何继续读取，如用 offset 翻页 |
+
+**`write_note` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 一句话结论，进历史记录 |
+
+**`write_file` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 一句话结论，进历史记录 |
+
 ### `knowledge`
 
 - 目录：`pet/tools/knowledge/`
@@ -70,6 +178,21 @@
 |---|---|---|
 | `search` | `query`（str, 必需） 搜索查询文本<br>`limit`（int, 默认 3） 返回结果数量(1~10) | 语义检索知识库，返回与查询最相关的知识片段。当用户询问你之前学过的知识、你录入的笔记、或你需要参考已存储的文档来回答问题时调用此工具。 |
 | `list` | `page`（int, 默认 1） 页码(从1开始) | 分页列出知识库中的条目。 |
+
+**`search` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 查询词与命中条数 |
+| `body` | string | 否 | body | 命中的知识片段 |
+
+**`list` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 知识库总量与分页概况 |
+| `body` | string | 否 | body | 每条一行：编号与标题 |
+| `pagination` | object | 否 | pagination | 分页信息 |
 
 ### `system_monitor`
 
@@ -84,6 +207,34 @@
 | `get_memory_detail` | 无参数 | 获取详细内存信息（物理内存+交换分区） |
 | `get_network` | 无参数 | 获取网络流量统计（累计发送/接收字节数） |
 
+**`get_overview` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 一句话结论 |
+| `data` | object | 否 | data | 原始数值 |
+
+**`get_top_processes` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 进程条数 |
+| `body` | string | 否 | body | 每个进程一行 |
+
+**`get_memory_detail` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 一句话结论 |
+| `data` | object | 否 | data | 原始数值 |
+
+**`get_network` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 一句话结论 |
+| `data` | object | 否 | data | 原始数值 |
+
 ### `timer`
 
 - 目录：`pet/tools/timer/`
@@ -96,6 +247,33 @@
 | `list` | 无参数 | 查看当前所有活跃的定时器。 |
 | `cancel` | `timer_id`（str, 必需） 定时器ID | 取消指定定时器。 |
 | `cancel_all` | 无参数 | 取消所有活跃的定时器。 |
+
+**`set` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 确认设定的一句话 |
+| `data` | object | 否 | data | 定时器 id 与秒数 |
+
+**`list` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 活跃定时器数量 |
+| `body` | string | 否 | body | 每个定时器一行 |
+
+**`cancel` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 取消结果 |
+| `data` | object | 否 | data | 定时器 id |
+
+**`cancel_all` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 取消数量 |
 
 ### `todo`
 
@@ -111,6 +289,40 @@
 | `delete` | `todo_id`（int, 必需） 任务ID | 删除指定任务 |
 | `update` | `todo_id`（int, 必需） 任务ID<br>`title`（str, 必需） 新标题 | 修改已有任务的标题 |
 
+**`add` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 确认添加的一句话 |
+| `data` | object | 否 | data | 任务 id 与标题 |
+
+**`list` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 待办条数 |
+| `body` | string | 否 | body | 每条一行，含状态标记 |
+
+**`toggle` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 状态变化与任务名 |
+| `data` | object | 否 | data | 任务 id、标题与新状态 |
+
+**`delete` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 删除结果 |
+
+**`update` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 更新结果 |
+| `data` | object | 否 | data | 任务 id |
+
 ### `weather`
 
 - 目录：`pet/tools/weather/`
@@ -121,6 +333,21 @@
 |---|---|---|
 | `get_current` | `city`（str, 默认 "Beijing"） 城市名（中英文均可，如 Beijing/北京/Tokyo/東京） | 查询指定城市当前天气（含未来3日简要预报） |
 | `get_forecast` | `city`（str, 默认 "Beijing"） 城市名（中英文均可）<br>`days`（int, 默认 3） 预报天数（1-7） | 查询指定城市未来N日天气预报 |
+
+**`get_current` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 城市、天气与气温 |
+| `body` | string | 否 | body | 湿度、风速与未来简报 |
+| `data` | object | 否 | data | 原始数值 |
+
+**`get_forecast` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 城市与预报天数 |
+| `body` | string | 否 | body | 每日一行 |
 
 ### `web_search`
 
@@ -133,6 +360,21 @@
 | `search` | `query`（str, 必需） 搜索关键词<br>`count`（int, 默认 5） 返回结果数量（1-10）<br>`language`（str, 默认 "zh-CN", 可选：zh-CN/en-US/ja-JP） 语言/区域代码（zh-CN / en-US / ja-JP 等）<br>`page`（int, 默认 1） 页码，从1开始（结果不够时翻页获取更多） | 搜索网络获取最新信息（返回标题和摘要），直接请求搜索 API，速度快 |
 | `fetch` | `url`（str, 必需） 要抓取的网页地址（含 http:// 或 https://）<br>`max_chars`（int, 默认 10000） 正文最大字符数 | 抓取指定 URL 的网页正文并转为纯文本，不支持 JS 渲染页面 |
 
+**`search` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 搜索词与结果条数 |
+| `body` | string | 否 | body | 每条三行：标题、摘要、网址 |
+| `pagination` | object | 否 | pagination | 分页信息 |
+
+**`fetch` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 网页标题与字符数 |
+| `body` | string | 否 | body | 正文纯文本 |
+
 ## 元工具（注册在 `pet/tools/registry.py`）
 
 元工具由系统内置，不可禁用，也不出现在工具管理列表中。
@@ -142,25 +384,125 @@
 - 分组：`default`
 - 说明：工具发现：浏览和搜索可用的工具
 
-_（未解析到 add_method 调用）_
+| 方法 | 参数 | 说明 |
+|---|---|---|
+| `list_groups` | 无参数 | 【优先使用】列出所有可用的工具分组，含每组下的工具名称和功能描述。先调用此方法了解全局有哪些工具可用，再决定用哪个。仅需1次调用，无需参数，始终返回完整列表。 |
+| `search` | `keyword`（str） 一个或多个关键词，用空格分隔，如 '文件'、'天气 提醒' | 按关键词搜索工具，匹配工具名、方法名、描述与分组名。多个关键词用空格分开，返回命中全部关键词的工具；都不满足时退回命中任一关键词的工具。搜索返回的分组会在后续请求中自动变为可用。命中后必须直接调用返回的函数，不要为同一件事重复搜索。单次最多返回 5 个工具；无匹配时返回全部分组清单，请换个词再搜。提示：要浏览全部工具用 list_groups。 |
+
+**`list_groups` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 一句话结论，进历史记录 |
+| `body` | string | 否 | body | 按分组列出的工具清单 |
+
+**`search` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 一句话结论，进历史记录 |
+| `body` | string | 否 | body | 命中的工具与方法清单 |
+| `agent_hint` | string | 否 | hint | 下一步该直接调用哪个函数 |
+| `groups` | array | 否 | suppress | 命中的工具分组，供行为层激活 |
 
 ### `food`
 
 - 分组：`default`
 - 说明：觅食：在桌面上生成食物，或查询食物状态与距离
 
-_（未解析到 add_method 调用）_
+| 方法 | 参数 | 说明 |
+|---|---|---|
+| `spawn` | `food_type`（str, 可选：蛋糕/饭团/苹果/拉面/鸡腿/甜甜圈/披萨/草莓/饺子/寿司） 想要的食物类型；不填则随机 | 在肚子饿了的时候调用，在桌面随机位置生成食物，返回需要移动的水平距离 dx、方向 direction 和建议跳高 bounce_height；用 walk/drive 接近、bounce 原地跳起来吃，走到附近自动开吃；已有食物时不重复生成。 |
+| `status` | 无参数 | 查询当前食物状态：实时偏移 dx/dy/bounce_height、是否到达、剩余过期时间；无食物则确认是否需要生成。 |
+
+**`spawn` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 一句话结论，进历史记录 |
+| `data` | object | 否 | data | 食物位置与相对宠物的偏移 |
+
+**`status` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 一句话结论，进历史记录 |
+| `data` | object | 否 | data | 食物位置与相对宠物的偏移 |
 
 ### `game`
 
 - 分组：`default`
 - 说明：游戏：玩回合制小游戏，如猜数字
 
-_（未解析到 add_method 调用）_
+| 方法 | 参数 | 说明 |
+|---|---|---|
+| `list` | 无参数 | 列出当前可玩的游戏及规则。想玩游戏时先调用此方法了解可选游戏。 |
+| `init` | `game_name`（str, 必需） 要初始化/重新初始化的游戏名 | 开始（或重新开始）一局游戏：传 game_name 创建新对局。所有游戏必须先调用 game__init 开启，再通过 game__play 推进；游戏结束（ended=True）或返回『未开始/已结束』后，需要再次调用 game__init 才能开新局。 |
+| `play` | 无参数 | 玩一回合游戏：需先调用 game__init 开启对局，再传 game_name 和该游戏需要的动作参数（参数因游戏而异，见 game_name 枚举及参数说明），返回本回合结果。游戏未结束（ended=False）前必须继续调用 game__play 推进游戏，不要提前输出最终答复；结束（ended=True）时会自动结算，也可以主动调 game__stop 结束不想玩的游戏。你可以在一次输出里连续调用多次 game__play，根据每次返回结果继续，直到某次返回 ended=True。 |
+| `stop` | `game_name`（str, 必需） 要结束的游戏名 | 主动结束某个进行中的游戏。游戏自然结束后无需调用。 |
+
+**`list` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 一句话结论，进历史记录 |
+| `agent_hint` | string | 否 | hint | 下一步该传什么参数 |
+| `ended` | boolean | 否 | data | 本局是否结束 |
+| `won` | - | 否 | data | 胜负：true 获胜，false 失败，null 平局或未分胜负 |
+| `data` | object | 否 | data | 对局状态与游戏专属字段 |
+
+**`init` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 一句话结论，进历史记录 |
+| `agent_hint` | string | 否 | hint | 下一步该传什么参数 |
+| `ended` | boolean | 否 | data | 本局是否结束 |
+| `won` | - | 否 | data | 胜负：true 获胜，false 失败，null 平局或未分胜负 |
+| `data` | object | 否 | data | 对局状态与游戏专属字段 |
+
+**`play` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 一句话结论，进历史记录 |
+| `agent_hint` | string | 否 | hint | 下一步该传什么参数 |
+| `ended` | boolean | 否 | data | 本局是否结束 |
+| `won` | - | 否 | data | 胜负：true 获胜，false 失败，null 平局或未分胜负 |
+| `data` | object | 否 | data | 对局状态与游戏专属字段 |
+
+**`stop` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 一句话结论，进历史记录 |
+| `agent_hint` | string | 否 | hint | 下一步该传什么参数 |
+| `ended` | boolean | 否 | data | 本局是否结束 |
+| `won` | - | 否 | data | 胜负：true 获胜，false 失败，null 平局或未分胜负 |
+| `data` | object | 否 | data | 对局状态与游戏专属字段 |
 
 ### `recall`
 
 - 分组：`default`
 - 说明：回忆：主动检索你关于用户的长期记忆。系统每轮自动注入的记忆条数有限；当你感觉记忆不完整、想不起细节，或看到/听到的线索（画面里的人、物、地点、照片、应用，对话中的人名、事件、话题）与用户有关、而注入段中没有时，主动用此工具补齐。
 
-_（未解析到 add_method 调用）_
+| 方法 | 参数 | 说明 |
+|---|---|---|
+| `search` | `query`（str, 必需） 回忆的线索：画面或对话中的关键词，如人名、地点、事件、话题、应用名<br>`limit`（int, 默认 5） 返回条数(1~10) | 按语义或关键词回忆与线索相关的记忆。以下情况应主动调用：① 线索似曾相识——画面里的人/物/地点/照片/应用，或窗口标题里的应用名、文档名、项目名——想确认是否与用户有关；② 用户提到过去的人/事/地点，而注入的记忆段中没有；③ 想不起细节，或用户问『你还记得…吗』『我之前说过什么』。结果直接使用即可，同一话题无需重复检索；想起来的记忆本来就在库里，自然说出来就行，不必再输出 Memory 行。没检索到就是你没有这段记忆，如实说想不起来，不要顺着话题编。 |
+| `browse` | `start_date`（str, 默认 ""） 开始日期(YYYY-MM-DD)，含当天；不填=不限<br>`end_date`（str, 默认 ""） 结束日期(YYYY-MM-DD)，含当天；不填=不限<br>`keyword`（str, 默认 ""） 内容/关键词模糊匹配<br>`page`（int, 默认 1） 页码(从1开始) | 分页翻阅你关于用户的全部记忆，可按创建日期范围/关键词筛选。日期均为 YYYY-MM-DD 且含首尾两天，可只填一端表示不限。想回忆某一天或某段时间发生了什么、或想按时间顺序把记过的东西过一遍时用它；按具体线索（人名/地点/话题）查记忆用 recall__search。没翻阅到就是你没有那段记忆，如实说想不起来，不要编。 |
+
+**`search` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 一句话结论，进历史记录 |
+| `body` | string | 否 | body | 每条记忆一行 |
+| `pagination` | object | 否 | pagination | 分页信息 |
+
+**`browse` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 一句话结论，进历史记录 |
+| `body` | string | 否 | body | 每条记忆一行 |
+| `pagination` | object | 否 | pagination | 分页信息 |

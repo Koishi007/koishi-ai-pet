@@ -10,12 +10,36 @@ import logging
 from pet.tools.bilibili import duty, schedule
 from pet.tools.bilibili.storage import BiliStorage
 from pet.tools.context import TOOL_CTX
+from pet.tools.output import IMAGES_SCHEMA, ToolOutputDefinition
 
 logger = logging.getLogger(__name__)
 
 TOOL_NAME = "bilibili"
 TOOL_DESCRIPTION = "B 站：按关键词、BV号刷视频、读字幕，点赞、投币、评论、私信"
 TOOL_GROUP = "info"
+
+BRIEF_OUTPUT = {
+    "type": "object",
+    "required": ["headline"],
+    "properties": {
+        "headline": {"type": "string", "x-role": "headline",
+                     "description": "操作结果的一句话"},
+        "data": {"type": "object", "x-role": "data", "description": "结构化明细"},
+    },
+}
+
+BROWSE_OUTPUT = {
+    "type": "object",
+    "required": ["headline"],
+    "properties": {
+        "headline": {"type": "string", "x-role": "headline",
+                     "description": "关键词与刷到的部数"},
+        "body": {"type": "string", "x-role": "body",
+                 "description": "每部：标题、网址、字幕全文"},
+        "images": IMAGES_SCHEMA,
+        "data": {"type": "object", "x-role": "data", "description": "略过与统计"},
+    },
+}
 
 _storage: BiliStorage | None = None
 
@@ -29,13 +53,13 @@ def _show_panel():
 
 def _browse(keyword: str = "", **_):
     if _storage is None:
-        return {"ok": False, "reason": "not_ready", "summary": "B 站工具未初始化"}
+        return {"error": "B 站工具未初始化", "code": "not_ready"}
     return duty.run_round(_storage, keyword=(keyword or "").strip())
 
 
 def _status(**_):
     if _storage is None:
-        return {"ok": False, "reason": "not_ready", "summary": "B 站工具未初始化"}
+        return {"error": "B 站工具未初始化", "code": "not_ready"}
     return duty.status(_storage)
 
 
@@ -81,6 +105,7 @@ def register(registry):
                         "desc": "一个或多个关键词，逗号分隔，最多 3 个；留空时从关注列表随机选一个"},
         },
         timeout=300.0,
+        output=ToolOutputDefinition(schema=BROWSE_OUTPUT),
     )
 
     registry.add_method(
@@ -88,6 +113,7 @@ def register(registry):
         "查看 B 站账号状态：昵称、UID、等级、硬币、关注关键词，以及今日各项操作次数与开关。",
         handler=_status,
         timeout=20.0,
+        output=ToolOutputDefinition(schema=BRIEF_OUTPUT),
     )
 
     registry.add_method(
@@ -96,6 +122,7 @@ def register(registry):
         handler=_like,
         args={"bvid": {"type": "str", "required": True, "desc": "视频 BV 号"}},
         timeout=30.0,
+        output=ToolOutputDefinition(schema=BRIEF_OUTPUT),
     )
 
     registry.add_method(
@@ -104,6 +131,7 @@ def register(registry):
         handler=_coin,
         args={"bvid": {"type": "str", "required": True, "desc": "视频 BV 号"}},
         timeout=30.0,
+        output=ToolOutputDefinition(schema=BRIEF_OUTPUT),
     )
 
     registry.add_method(
@@ -116,6 +144,7 @@ def register(registry):
             "text": {"type": "str", "required": True, "desc": "评论正文"},
         },
         timeout=30.0,
+        output=ToolOutputDefinition(schema=BRIEF_OUTPUT),
     )
 
     registry.add_method(
@@ -124,6 +153,7 @@ def register(registry):
         handler=_dm,
         args={"text": {"type": "str", "required": True, "desc": "私信正文"}},
         timeout=30.0,
+        output=ToolOutputDefinition(schema=BRIEF_OUTPUT),
     )
 
     registry.add_method(
@@ -133,6 +163,7 @@ def register(registry):
         args={"limit": {"type": "int", "required": False, "default": 10,
                         "desc": "最多检查几条"}},
         timeout=60.0,
+        output=ToolOutputDefinition(schema=BRIEF_OUTPUT),
     )
 
     registry.add_menu_action(TOOL_NAME, "B 站账号", _show_panel)

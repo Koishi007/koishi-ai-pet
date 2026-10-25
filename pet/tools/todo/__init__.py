@@ -7,6 +7,7 @@ from __future__ import annotations
 import logging
 
 from pet.tools.context import TOOL_CTX
+from pet.tools.output import ToolOutputDefinition
 from pet.tools.todo import store
 
 logger = logging.getLogger(__name__)
@@ -14,6 +15,55 @@ logger = logging.getLogger(__name__)
 TOOL_NAME = "todo"
 TOOL_DESCRIPTION = "待办事项管理。支持添加、查看、完成、删除任务。"
 TOOL_GROUP = "productivity"
+
+ADD_OUTPUT = {
+    "type": "object",
+    "required": ["headline"],
+    "properties": {
+        "headline": {"type": "string", "x-role": "headline",
+                     "description": "确认添加的一句话"},
+        "data": {"type": "object", "x-role": "data", "description": "任务 id 与标题"},
+    },
+}
+
+LIST_OUTPUT = {
+    "type": "object",
+    "required": ["headline"],
+    "properties": {
+        "headline": {"type": "string", "x-role": "headline",
+                     "description": "待办条数"},
+        "body": {"type": "string", "x-role": "body", "description": "每条一行，含状态标记"},
+    },
+}
+
+TOGGLE_OUTPUT = {
+    "type": "object",
+    "required": ["headline"],
+    "properties": {
+        "headline": {"type": "string", "x-role": "headline",
+                     "description": "状态变化与任务名"},
+        "data": {"type": "object", "x-role": "data", "description": "任务 id、标题与新状态"},
+    },
+}
+
+DELETE_OUTPUT = {
+    "type": "object",
+    "required": ["headline"],
+    "properties": {
+        "headline": {"type": "string", "x-role": "headline",
+                     "description": "删除结果"},
+    },
+}
+
+UPDATE_OUTPUT = {
+    "type": "object",
+    "required": ["headline"],
+    "properties": {
+        "headline": {"type": "string", "x-role": "headline",
+                     "description": "更新结果"},
+        "data": {"type": "object", "x-role": "data", "description": "任务 id"},
+    },
+}
 
 
 def _show_panel():
@@ -43,10 +93,10 @@ def _complete_with_notify(todo_id: int) -> dict:
     TOOL_CTX.speech_random(["完成…", "搞定…", "好耶…", "做完啦…"])
     result = store.get_instance().toggle(todo_id)
     if "error" not in result:
-        item = result.get("item", {})
-        label = "已完成" if item.get("status") == "done" else "已恢复"
-        TOOL_CTX.notify(f"待办{label}", item.get("title", ""))
-        TOOL_CTX.note_event("todo", f"待办「{item.get('title', '')}」{label}")
+        data = result.get("data") or {}
+        label = "已完成" if data.get("status") == "done" else "已恢复"
+        TOOL_CTX.notify(f"待办{label}", data.get("title", ""))
+        TOOL_CTX.note_event("todo", f"待办「{data.get('title', '')}」{label}")
     return result
 
 
@@ -76,6 +126,7 @@ def register(registry):
         args={
             "title": {"type": "str", "required": True, "desc": "任务标题"},
         },
+        output=ToolOutputDefinition(schema=ADD_OUTPUT),
     )
 
     registry.add_method(
@@ -87,6 +138,7 @@ def register(registry):
                        "desc": "状态: pending/done/all",
                        "enum": ["pending", "done", "all"]},
         },
+        output=ToolOutputDefinition(schema=LIST_OUTPUT),
     )
 
     registry.add_method(
@@ -96,6 +148,7 @@ def register(registry):
         args={
             "todo_id": {"type": "int", "required": True, "desc": "任务ID"},
         },
+        output=ToolOutputDefinition(schema=TOGGLE_OUTPUT),
     )
 
     registry.add_method(
@@ -105,6 +158,7 @@ def register(registry):
         args={
             "todo_id": {"type": "int", "required": True, "desc": "任务ID"},
         },
+        output=ToolOutputDefinition(schema=DELETE_OUTPUT),
     )
 
     registry.add_method(
@@ -115,6 +169,7 @@ def register(registry):
             "todo_id": {"type": "int", "required": True, "desc": "任务ID"},
             "title": {"type": "str", "required": True, "desc": "新标题"},
         },
+        output=ToolOutputDefinition(schema=UPDATE_OUTPUT),
     )
 
 

@@ -82,22 +82,23 @@ class TwentyQuestionsGame(Game):
 
         if guess and question:
             return {
-                "summary": "tq_question 和 tq_guess 不要同时传：要么问问题，要么给出最终猜测。"
-                           "请重新调用 game__play 只传其中一个参数继续本局，不要输出最终答复。",
+                "headline": "tq_question 和 tq_guess 不能同时传",
+                "agent_hint": "请只传其中一个参数重新调用 game__play。",
                 "ended": False,
             }
         if guess:
             return self._handle_guess(state, guess)
         if not question:
             return {
-                "summary": "请传 tq_question（一个'是/否'问题）继续提问，或传 tq_guess 给出最终猜测；"
-                           "请继续调用 game__play 推进本局，不要输出最终答复。",
+                "headline": "tq_question 与 tq_guess 都没有传",
+                "agent_hint": "请传 tq_question（一个'是/否'问题）继续提问，"
+                              "或传 tq_guess 给出最终猜测。",
                 "ended": False,
             }
         if state["round"] >= state["max"]:
             return {
-                "summary": f"问题已用完（{state['max']} 个），本局尚未结束，"
-                           f"请继续调用 game__play 并传 tq_guess 给出最终猜测。",
+                "headline": f"问题已用完（{state['max']} 个），本局尚未结束",
+                "agent_hint": "请传 tq_guess 给出最终猜测。",
                 "ended": False,
             }
 
@@ -112,19 +113,19 @@ class TwentyQuestionsGame(Game):
         if state.get("_cancelled"):
             if state.get("_forfeit"):
                 return {
-                    "summary": "用户主动结束了二十问，不算胜负",
+                    "headline": "用户主动结束了二十问，不算胜负",
                     "ended": True,
                     "won": None,
                     "forfeit": True,
                 }
-            return {"summary": "游戏已结束", "ended": True, "won": None,
+            return {"headline": "游戏已结束", "ended": True, "won": None,
                     "suppress_speech": True}
         if mv is None:
             self._emit_panel(state, mode="question", text="",
                              round_text="", waiting=False,
                              message="长时间未操作，本局结束")
             return {
-                "summary": f"你在 {self.ANSWER_TIMEOUT} 秒内没有作答，本局结束",
+                "headline": f"你在 {self.ANSWER_TIMEOUT} 秒内没有作答，本局结束",
                 "speech": random.choice(self._TIMEOUT_SPEECH),
                 "ended": True,
                 "won": None,
@@ -136,7 +137,8 @@ class TwentyQuestionsGame(Game):
             # 防御：面板只提交合法作答，忽略继续等待
             state["round"] -= 1
             return {
-                "summary": "作答无效，请重新作答（是/否/不确定）",
+                "headline": "作答无效",
+                "agent_hint": "请重新作答（是/否/不确定）。",
                 "ended": False,
                 "round": state["round"],
             }
@@ -146,10 +148,10 @@ class TwentyQuestionsGame(Game):
                          round_text="", waiting=False,
                          message=f"你的回答：{ANSWER_TEXT[answer]}")
         return {
-            "summary": f"第 {round_no} 问：{question} → 你的回答是「{ANSWER_TEXT[answer]}」。"
-                       f"（已问 {round_no}/{state['max']}，还可问 {questions_left} 个）"
-                       f"本局尚未结束，请继续调用 game__play 提出下一个问题，"
-                       f"或把握较大时传 tq_guess 给出最终猜测。",
+            "headline": f"第 {round_no} 问：{question} → 你的回答是「{ANSWER_TEXT[answer]}」。"
+                       f"（已问 {round_no}/{state['max']}，还可问 {questions_left} 个）",
+            "agent_hint": "请继续调用 game__play 提出下一个问题，"
+                          "或传 tq_guess 给出最终猜测。",
             "ended": False,
             "answer": answer,
             "round": round_no,
@@ -168,19 +170,19 @@ class TwentyQuestionsGame(Game):
         if state.get("_cancelled"):
             if state.get("_forfeit"):
                 return {
-                    "summary": "用户主动结束了二十问，不算胜负",
+                    "headline": "用户主动结束了二十问，不算胜负",
                     "ended": True,
                     "won": None,
                     "forfeit": True,
                 }
-            return {"summary": "游戏已结束", "ended": True, "won": None,
+            return {"headline": "游戏已结束", "ended": True, "won": None,
                     "suppress_speech": True}
         if mv is None:
             self._emit_panel(state, mode="guess", text="",
                              round_text="", waiting=False,
                              message="长时间未操作，本局结束")
             return {
-                "summary": f"你在 {self.ANSWER_TIMEOUT} 秒内没有确认，本局结束",
+                "headline": f"你在 {self.ANSWER_TIMEOUT} 秒内没有确认，本局结束",
                 "speech": random.choice(self._TIMEOUT_SPEECH),
                 "ended": True,
                 "won": None,
@@ -194,7 +196,8 @@ class TwentyQuestionsGame(Game):
             # 防御：面板只提交合法判定，忽略继续等待
             state["round"] -= 1
             return {
-                "summary": "判定无效，请确认'猜对了/猜错了'",
+                "headline": "判定无效",
+                "agent_hint": "请重新确认'猜对了/猜错了'。",
                 "ended": False,
                 "round": state["round"],
             }
@@ -204,7 +207,7 @@ class TwentyQuestionsGame(Game):
                              round_text="", waiting=False,
                              message="猜对了！")
             return {
-                "summary": f"我猜中了！答案是「{guess}」，用了 {round_no} 轮",
+                "headline": f"我猜中了！答案是「{guess}」，用了 {round_no} 轮",
                 "ended": True,
                 "won": True,
                 "target": guess,
@@ -216,7 +219,7 @@ class TwentyQuestionsGame(Game):
                              round_text="", waiting=False,
                              message="没猜中，问题也问完了")
             return {
-                "summary": f"我猜的「{guess}」不对，且 {state['max']} 轮已用完，算我输。"
+                "headline": f"我猜的「{guess}」不对，且 {state['max']} 轮已用完，算我输。"
                            f"正确答案就由你悄悄留着吧…",
                 "ended": True,
                 "won": False,
@@ -229,8 +232,8 @@ class TwentyQuestionsGame(Game):
                          round_text="", waiting=False,
                          message="没猜中，继续猜")
         return {
-            "summary": f"我猜的「{guess}」不对。还剩 {questions_left} 个问题可用。"
-                       f"本局尚未结束，请继续调用 game__play 提问或再次给出猜测（tq_guess）。",
+            "headline": f"我猜的「{guess}」不对，还剩 {questions_left} 个问题可用",
+            "agent_hint": "请继续调用 game__play 提问，或再次传 tq_guess。",
             "ended": False,
             "correct": False,
             "guess": guess,

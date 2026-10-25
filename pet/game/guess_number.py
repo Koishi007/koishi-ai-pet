@@ -44,14 +44,15 @@ class GuessNumberGame(Game):
         number = params.get("guess")
         if not isinstance(number, int) or not (self.RANGE_MIN <= number <= self.RANGE_MAX):
             return {
-                "summary": f"请传一个 {self.RANGE_MIN}-{self.RANGE_MAX} 之间的整数 guess",
+                "headline": f"没有收到 {self.RANGE_MIN}-{self.RANGE_MAX} 之间的整数 guess",
+                "agent_hint": f"请传 {self.RANGE_MIN}-{self.RANGE_MAX} 之间的整数 guess 重新调用 game__play。",
                 "ended": False,
             }
         state["guesses"] += 1
         left = state["max"] - state["guesses"]
         if number == state["target"]:
             return {
-                "summary": f"我猜中了！答案是 {state['target']}，用了 {state['guesses']} 次",
+                "headline": f"我猜中了！答案是 {state['target']}，用了 {state['guesses']} 次",
                 "ended": True,
                 "won": True,
                 "target": state["target"],
@@ -59,7 +60,7 @@ class GuessNumberGame(Game):
             }
         if left <= 0:
             return {
-                "summary": f"机会用完了，答案是 {state['target']}。下次加油",
+                "headline": f"机会用完了，答案是 {state['target']}。下次加油",
                 "ended": True,
                 "won": False,
                 "target": state["target"],
@@ -67,7 +68,7 @@ class GuessNumberGame(Game):
             }
         hint = "大了" if number > state["target"] else "小了"
         return {
-            "summary": f"我猜 {number}：{hint}，还有 {left} 次机会",
+            "headline": f"我猜 {number}：{hint}，还有 {left} 次机会",
             "ended": False,
             "result": hint,
             "guesses_left": left,

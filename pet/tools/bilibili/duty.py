@@ -336,34 +336,34 @@ def run_round(storage: BiliStorage, keyword: str = "") -> dict:
     """
     cfg = load_config()
     if not cfg["allow_browse"]:
-        return {"ok": False, "reason": "disabled", "summary": "刷视频已在面板里关闭"}
+        return {"error": "刷视频已在面板里关闭", "code": "disabled"}
     words = normalize_keywords(keyword.replace("，", ",").split(",")) if keyword else []
     if keyword and not words:
-        return {"ok": False, "reason": "invalid_keyword",
-                "summary": "关键词不合法：为空或超过 50 字"}
+        return {"error": "关键词不合法：为空或超过 50 字", "code": "invalid_keyword"}
     words = words[:_MAX_SEARCH_KEYWORDS]
     credential = load_credential()
     if credential is None:
-        return {"ok": False, "reason": "not_logged_in",
-                "summary": "还没登录 B 站账号，右键菜单打开「B 站账号」扫码"}
+        return {"error": "还没登录 B 站账号，右键菜单打开「B 站账号」扫码",
+                "code": "not_logged_in"}
 
     try:
         with BiliClient(credential, timeout=float(cfg["timeout_s"]),
                         interval=float(cfg["min_interval_s"])) as client:
             me = client.whoami()
             if not me.get("login"):
-                return {"ok": False, "reason": "not_logged_in",
-                        "summary": "B 站登录已失效，右键菜单重新扫码"}
+                return {"error": "B 站登录已失效，右键菜单重新扫码",
+                        "code": "not_logged_in"}
 
             candidates, meta, requests = _collect(client, cfg, storage, words)
             skipped = meta["skipped"]
             if not candidates:
                 return {
-                    "ok": True,
-                    "summary": (f"这一轮没找到能看的：已看过 {skipped['seen']} 条，"
-                                f"无字幕 {skipped['no_subtitle']} 条，读取失败 {skipped['failed']} 条"),
-                    "videos": [], "skipped": skipped, "errors": meta["errors"],
-                    "keyword": (meta["keywords"] or [""])[0], "requests": requests,
+                    "headline": (f"这一轮没找到能看的：已看过 {skipped['seen']} 条，"
+                                 f"无字幕 {skipped['no_subtitle']} 条，"
+                                 f"读取失败 {skipped['failed']} 条"),
+                    "data": {"skipped": skipped, "errors": meta["errors"],
+                             "keyword": (meta["keywords"] or [""])[0],
+                             "requests": requests},
                 }
 
             count = max(1, min(int(cfg["per_run"]), len(candidates)))
@@ -392,27 +392,26 @@ def run_round(storage: BiliStorage, keyword: str = "") -> dict:
 
             kw = "、".join(meta["keywords"])
             result = {
-                "ok": True,
-                "summary": (f"从「{kw}」刷到 {len(videos)} 部，字幕全文如下" if kw
-                            else f"刷到 {len(videos)} 部，字幕全文如下"),
-                "keyword": kw,
-                "videos": videos,
-                "skipped": skipped,
-                "errors": meta["errors"],
-                "requests": requests,
-                "account": {"name": me.get("name", ""), "uid": me.get("uid", 0),
-                            "level": me.get("level", 0), "coins": me.get("coins", 0)},
+                "headline": (f"从「{kw}」刷到 {len(videos)} 部" if kw
+                             else f"刷到 {len(videos)} 部"),
+                "body": "\n\n".join(
+                    f"《{v['title']}》{v['url']}\n{v['subtitle']}" for v in videos),
+                "data": {
+                    "keyword": kw, "skipped": skipped, "errors": meta["errors"],
+                    "requests": requests,
+                    "account": {"name": me.get("name", ""), "uid": me.get("uid", 0),
+                                "level": me.get("level", 0),
+                                "coins": me.get("coins", 0)},
+                },
             }
             cover = next((c["cover"] for c in chosen if c.get("cover")), "")
             if cover:
-                result["__image__"] = cover
-                result["__image_mime__"] = "image/jpeg"
-                result["__context__"] = f"刷 B 站，看了《{videos[0]['title']}》"
+                result["images"] = [{"base64": cover, "mime": "image/jpeg",
+                                     "caption": f"封面《{videos[0]['title']}》"}]
             return result
     except BiliError as exc:
         logger.warning(f"[bili] 一轮失败：{exc}")
-        return {"ok": False, "reason": "request_failed", "summary": f"这一轮失败：{exc}",
-                "videos": [], "skipped": {}, "errors": [], "requests": 0}
+        return {"error": f"这一轮失败：{exc}", "code": "request_failed"}
 
 
 _RECENT: dict[str, dict] = {}
@@ -442,22 +441,27 @@ def _open(cfg: dict, credential: Credential):
 
 
 def _as_tool_result(result: dict) -> dict:
+    """把一次写操作的内部结果映射成输出契约。"""
     if result.get("ok"):
-        return {**result, "summary": f"{_KIND_TEXT.get(result['kind'], '操作')}完成"}
-    return {**result, "summary": result.get("detail") or "操作失败"}
+        return {
+            "headline": f"{_KIND_TEXT.get(result.get('kind', ''), '操作')}完成",
+            "data": {"kind": result.get("kind", ""),
+                     "target": result.get("target", "")},
+        }
+    return {"error": result.get("detail") or "操作失败",
+            "code": result.get("reason") or "write_failed"}
 
 
 def write_action(storage: BiliStorage, kind: str, *, bvid: str = "", text: str = "") -> dict:
-    """执行一次写操作；失败返回 ok: false 与 reason code。"""
+    """执行一次写操作；失败返回 error 与 code。"""
     cfg = load_config()
     credential = load_credential()
     if credential is None:
-        return {"ok": False, "reason": "not_logged_in", "summary": "还没登录 B 站账号"}
+        return {"error": "还没登录 B 站账号", "code": "not_logged_in"}
     if kind not in _KIND_TEXT:
-        return {"ok": False, "reason": "unsupported", "summary": "不支持的操作"}
+        return {"error": "不支持的操作", "code": "unsupported"}
     if not cfg.get(f"allow_{kind}", False):
-        return {"ok": False, "reason": "disabled",
-                "summary": f"配置里没打开「{_KIND_TEXT[kind]}」"}
+        return {"error": f"配置里没打开「{_KIND_TEXT[kind]}」", "code": "disabled"}
 
     uid = int(credential.dedeuserid)
     today = date.today().isoformat()
@@ -465,15 +469,14 @@ def write_action(storage: BiliStorage, kind: str, *, bvid: str = "", text: str =
     if kind == "dm":
         target_uid = int(cfg["dm_uid"])
         if target_uid <= 0:
-            return {"ok": False, "reason": "dm_uid_missing",
-                    "summary": "私信收件人 UID 未配置，先在账号面板填写"}
+            return {"error": "私信收件人 UID 未配置，先在账号面板填写",
+                    "code": "dm_uid_missing"}
         if storage.count_today(uid, "dm", today) >= int(cfg["dm_per_day"]):
-            return {"ok": False, "reason": "quota", "summary": "今天的私信额度用完了"}
+            return {"error": "今天的私信额度用完了", "code": "quota"}
         ok, code = check_text(text, max_chars=int(cfg["dm_max_chars"]), allow_urls=True,
                               blocklist=tuple(cfg["comment_blocklist"]))
         if not ok:
-            return {"ok": False, "reason": "filtered", "reason_code": code,
-                    "summary": f"私信没发出去：{describe(code)}"}
+            return {"error": f"私信没发出去：{describe(code)}", "code": "filtered"}
         with _open(cfg, credential) as client:
             result = _guarded_write(storage, uid, "dm", str(target_uid), text,
                                     lambda: client.dm(target_uid, text))
@@ -481,8 +484,8 @@ def write_action(storage: BiliStorage, kind: str, *, bvid: str = "", text: str =
 
     target = recent_target(bvid)
     if target is None:
-        return {"ok": False, "reason": "target_unknown",
-                "summary": "这个视频不在最近一轮刷到的候选里，先跑一轮"}
+        return {"error": "这个视频不在最近一轮刷到的候选里，先跑一轮",
+                "code": "target_unknown"}
 
     if kind == "like":
         with _open(cfg, credential) as client:
@@ -492,18 +495,17 @@ def write_action(storage: BiliStorage, kind: str, *, bvid: str = "", text: str =
 
     if kind == "coin":
         if storage.count_today(uid, "coin", today) >= int(cfg["coin_per_day"]):
-            return {"ok": False, "reason": "quota", "summary": "今天的投币额度用完了"}
+            return {"error": "今天的投币额度用完了", "code": "quota"}
         with _open(cfg, credential) as client:
             me = client.whoami()
             if int(me.get("coins") or 0) <= int(cfg["coin_floor"]):
-                return {"ok": False, "reason": "insufficient_coins",
-                        "summary": "硬币不够，先留着"}
+                return {"error": "硬币不够，先留着", "code": "insufficient_coins"}
             result = _guarded_write(storage, uid, "coin", bvid, "",
                                     lambda: client.coin(bvid))
         return _as_tool_result(result)
 
     if storage.count_today(uid, "comment", today) >= int(cfg["comment_per_day"]):
-        return {"ok": False, "reason": "quota", "summary": "今天的评论额度用完了"}
+        return {"error": "今天的评论额度用完了", "code": "quota"}
     with _open(cfg, credential) as client:
         result = _post_comment(client, storage, cfg, uid, bvid,
                                int(target["aid"]), text)
@@ -520,11 +522,11 @@ def verify(storage: BiliStorage, limit: int = 10) -> dict:
     cfg = load_config()
     credential = load_credential()
     if credential is None:
-        return {"ok": False, "summary": "还没登录 B 站账号"}
+        return {"error": "还没登录 B 站账号", "code": "not_logged_in"}
     uid = int(credential.dedeuserid)
     pending = storage.reviewable_actions(uid, "comment", int(limit))
     if not pending:
-        return {"ok": True, "summary": "没有待确认的评论", "checked": 0, "found": 0}
+        return {"headline": "没有待确认的评论"}
 
     def mine(reply: dict) -> bool:
         return int((reply.get("member") or {}).get("mid") or 0) == uid
@@ -563,8 +565,8 @@ def verify(storage: BiliStorage, limit: int = 10) -> dict:
                 continue
             storage.finish_action(action["id"], "visible", remote_id=str(rpid))
             found += 1
-    return {"ok": True, "summary": f"检查 {checked} 条，确认 {found} 条",
-            "checked": checked, "found": found}
+    return {"headline": f"检查 {checked} 条评论，确认 {found} 条已公开",
+            "data": {"checked": checked, "found": found}}
 
 
 def status(storage: BiliStorage) -> dict:
@@ -572,28 +574,29 @@ def status(storage: BiliStorage) -> dict:
     cfg = load_config()
     credential = load_credential()
     if credential is None:
-        return {"ok": False, "reason": "not_logged_in", "summary": "未登录 B 站账号"}
+        return {"error": "未登录 B 站账号", "code": "not_logged_in"}
     try:
         with BiliClient(credential, timeout=float(cfg["timeout_s"]),
                         interval=0.0) as client:
             me = client.whoami()
     except BiliError as exc:
-        return {"ok": False, "reason": "request_failed", "summary": f"查询失败：{exc}"}
+        return {"error": f"查询失败：{exc}", "code": "request_failed"}
     today = date.today().isoformat()
     uid = int(me.get("uid") or 0)
     return {
-        "ok": bool(me.get("login")),
-        "summary": (f"{me.get('name', '')}（UID {uid}）Lv{me.get('level', 0)}，"
-                    f"硬币 {me.get('coins', 0)}"),
-        "account": me,
-        "today": {
-            "picked": storage.get_round(uid, today)["picked"],
-            "like": storage.count_today(uid, "like", today),
-            "coin": storage.count_today(uid, "coin", today),
-            "comment": storage.count_today(uid, "comment", today),
-            "dm": storage.count_today(uid, "dm", today),
+        "headline": (f"{me.get('name', '')}（UID {uid}）Lv{me.get('level', 0)}，"
+                     f"硬币 {me.get('coins', 0)}"),
+        "data": {
+            "account": me,
+            "today": {
+                "picked": storage.get_round(uid, today)["picked"],
+                "like": storage.count_today(uid, "like", today),
+                "coin": storage.count_today(uid, "coin", today),
+                "comment": storage.count_today(uid, "comment", today),
+                "dm": storage.count_today(uid, "dm", today),
+            },
+            "switches": {k: cfg[k] for k in ("allow_browse", "allow_like",
+                                             "allow_coin", "allow_comment", "allow_dm")},
+            "keywords": cfg["keywords"],
         },
-        "switches": {k: cfg[k] for k in ("allow_browse", "allow_like", "allow_coin",
-                                         "allow_comment", "allow_dm")},
-        "keywords": cfg["keywords"],
     }

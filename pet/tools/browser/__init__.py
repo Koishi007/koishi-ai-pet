@@ -3,12 +3,54 @@ import logging
 
 from pet.tools.browser.core import BrowserTool
 from pet.tools.context import TOOL_CTX
+from pet.tools.output import IMAGES_SCHEMA, PAGINATION_SCHEMA, ToolOutputDefinition
 
 logger = logging.getLogger(__name__)
 
 TOOL_NAME = "browser"
 TOOL_DESCRIPTION = "无头浏览器（Playwright）：读取网页正文、截图；搜索靠加载搜索引擎页面解析结果，较慢"
 TOOL_GROUP = "web"
+
+SEARCH_OUTPUT = {
+    "type": "object",
+    "required": ["headline"],
+    "properties": {
+        "headline": {"type": "string", "x-role": "headline",
+                     "description": "搜索词与命中条数"},
+        "body": {"type": "string", "x-role": "body",
+                 "description": "每条结果三行：标题、网址、摘要"},
+    },
+}
+
+READ_URL_OUTPUT = {
+    "type": "object",
+    "required": ["headline"],
+    "properties": {
+        "headline": {"type": "string", "x-role": "headline",
+                     "description": "网页标题与分页概况"},
+        "body": {"type": "string", "x-role": "body", "description": "当前页正文"},
+        "pagination": {**PAGINATION_SCHEMA},
+    },
+}
+
+SCREENSHOT_OUTPUT = {
+    "type": "object",
+    "required": ["headline"],
+    "properties": {
+        "headline": {"type": "string", "x-role": "headline",
+                     "description": "截图对象与尺寸"},
+        "images": IMAGES_SCHEMA,
+    },
+}
+
+CLOSE_OUTPUT = {
+    "type": "object",
+    "required": ["headline"],
+    "properties": {
+        "headline": {"type": "string", "x-role": "headline",
+                     "description": "关闭结果"},
+    },
+}
 
 _instance: BrowserTool | None = None
 
@@ -40,8 +82,9 @@ def _screenshot_url(**kw):
 def _close():
     """关闭浏览器；实例从未创建时直接返回。"""
     if _instance is None:
-        return None
-    return _instance.close()
+        return {"headline": "浏览器未启动，无需关闭"}
+    _instance.close()
+    return {"headline": "浏览器已关闭"}
 
 
 def _check_playwright() -> None:
@@ -83,6 +126,7 @@ def register(registry):
             "query": {"type": "str", "required": True, "desc": "搜索关键词"},
             "count": {"type": "int", "required": False, "desc": "返回结果数量(1-10)", "default": 10},
         },
+        output=ToolOutputDefinition(schema=SEARCH_OUTPUT),
     )
     registry.add_method(
         TOOL_NAME, "read_url",
@@ -96,6 +140,7 @@ def register(registry):
             "page": {"type": "int", "required": False, "desc": "分页页码，从1开始", "default": 1},
             "page_size": {"type": "int", "required": False, "desc": "每页字符数", "default": 3000},
         },
+        output=ToolOutputDefinition(schema=READ_URL_OUTPUT),
     )
     registry.add_method(
         TOOL_NAME, "screenshot_url",
@@ -109,9 +154,11 @@ def register(registry):
             "wait_seconds": {"type": "float", "required": False, "desc": "页面加载等待时间(秒)", "default": 3.0},
             "full_page": {"type": "bool", "required": False, "desc": "是否截取整页（默认仅可视区域）", "default": False},
         },
+        output=ToolOutputDefinition(schema=SCREENSHOT_OUTPUT),
     )
     registry.add_method(
         TOOL_NAME, "close",
         "关闭浏览器，释放内存（所有网页操作完成后调用）",
         handler=_close,
+        output=ToolOutputDefinition(schema=CLOSE_OUTPUT),
     )

@@ -85,10 +85,9 @@ class GameBase:
     def list_games(self) -> dict:
         games = list(self._games)
         return {
-            "summary": "暂无可玩的游戏" if not games else "可玩游戏：" + ", ".join(
+            "headline": "暂无可玩的游戏" if not games else "可玩游戏：" + ", ".join(
                 f"{n}（{self._games[n].description()}）" for n in games),
-            "success": True,
-            "games": games,
+            "data": {"games": games},
         }
 
     def submit(self, game_name: str, payload: dict) -> bool:
@@ -181,10 +180,9 @@ class GameBase:
         game = self._games.get(game_name)
         if game is None:
             return {
-                "summary": f"没有叫 {game_name} 的游戏，可玩：{', '.join(self._games) or '无'}",
-                "model_hint": _MODEL_HINT_ABORT,
-                "success": False,
-                "ended": True,
+                "headline": f"没有叫 {game_name} 的游戏，可玩：{', '.join(self._games) or '无'}",
+                "agent_hint": _MODEL_HINT_ABORT,
+                "data": {"ended": True},
             }
         old = self._sessions.pop(game_name, None)
         if old is not None:
@@ -202,24 +200,22 @@ class GameBase:
         except Exception:
             pass
         return {
-            "summary": f"{game_name} 游戏初始化完成，但游戏尚未开始。",
-            "model_hint": (
+            "headline": f"{game_name} 游戏初始化完成，但游戏尚未开始。",
+            "agent_hint": (
                 f"请立即继续调用 game__play(game_name=\"{game_name}\" 及该游戏出招参数) "
                 f"开启第一回合并持续推进，不要在此输出最终答复；"
                 f"只有某次 game__play 返回 ended=True 才代表游戏结束。"
             ),
-            "success": True,
-            "ended": False,
+            "data": {"ended": False},
         }
 
     def play(self, game_name: str, **params) -> dict:
         game = self._games.get(game_name)
         if game is None:
             return {
-                "summary": f"没有叫 {game_name} 的游戏，可玩：{', '.join(self._games) or '无'}",
-                "model_hint": _MODEL_HINT_ABORT,
-                "success": False,
-                "ended": True,
+                "headline": f"没有叫 {game_name} 的游戏，可玩：{', '.join(self._games) or '无'}",
+                "agent_hint": _MODEL_HINT_ABORT,
+                "data": {"ended": True},
             }
         # 参数归属校验：传入的参数必须属于该游戏，避免模型把别家参数传过来
         # 参数名全局唯一（guess/ttt_move/rps_move），通过 参数名→游戏 映射判定
@@ -228,11 +224,10 @@ class GameBase:
         unknown = [k for k in params if owners.get(k) != game_name]
         if unknown:
             return {
-                "summary": f"参数 {', '.join(unknown)} 不属于 {game_name}，"
-                           f"{game_name} 需要的参数：{', '.join(game_args) or '无'}。",
-                "model_hint": "请用正确的参数重新调用 game__play 继续游戏，不要输出最终答复。",
-                "success": False,
-                "ended": False,  # 本回合未执行，游戏状态不变，模型可纠正后重试
+                "headline": f"参数 {', '.join(unknown)} 不属于 {game_name}，"
+                            f"{game_name} 需要的参数：{', '.join(game_args) or '无'}。",
+                "agent_hint": "请用正确的参数重新调用 game__play 继续游戏，不要输出最终答复。",
+                "data": {"ended": False},
             }
         state = self._sessions.get(game_name)
         if state is not None and time.time() - state.get("last_active", 0) > self.SESSION_TTL:
@@ -243,10 +238,9 @@ class GameBase:
         if state is None:
             # 未开始或已结束：要求显式 game__init，避免模型误以为可续局/静默重开
             return {
-                "summary": f"{game_name} 游戏未开始或已结束",
-                "model_hint": _MODEL_HINT_NEED_INIT,
-                "success": False,
-                "ended": True,
+                "headline": f"{game_name} 游戏未开始或已结束",
+                "agent_hint": _MODEL_HINT_NEED_INIT,
+                "data": {"ended": True},
             }
         state["last_active"] = time.time()
         # 预检：会话已被外部取消（用户点×/stop/换脑线程）但 play 尚未退出。
@@ -260,20 +254,19 @@ class GameBase:
                 pass
             if state.get("_forfeit"):
                 result = {
-                    "summary": f"用户主动结束了 {game_name} 游戏。",
+                    "headline": f"用户主动结束了 {game_name} 游戏。",
                     "ended": True,
                     "won": None,
                     "forfeit": True,
                 }
             else:
                 result = {
-                    "summary": f"{game_name} 游戏已结束",
+                    "headline": f"{game_name} 游戏已结束",
                     "ended": True,
                     "won": None,
                     "suppress_speech": True,
                 }
-            result["model_hint"] = _MODEL_HINT_ENDED_NEUTRAL
-            result.setdefault("success", True)
+            result["agent_hint"] = _MODEL_HINT_ENDED_NEUTRAL
             result.setdefault("game_name", game_name)
             self._emit_speech(game, result)
             return result
@@ -284,10 +277,9 @@ class GameBase:
             if self._sessions.get(game_name) is state:
                 self._sessions.pop(game_name, None)
             return {
-                "summary": f"游戏 {game_name} 出错了：{e}",
-                "model_hint": _MODEL_HINT_ABORT,
-                "success": False,
-                "ended": True,
+                "headline": f"游戏 {game_name} 出错了：{e}",
+                "agent_hint": _MODEL_HINT_ABORT,
+                "data": {"ended": True},
             }
         # 明确告知游戏已结束，避免模型继续调用 game__play/game__stop
         if result.get("ended"):
@@ -299,8 +291,7 @@ class GameBase:
                     else _MODEL_HINT_ENDED)
         else:
             hint = _MODEL_HINT_RUNNING
-        result.setdefault("model_hint", hint)  # 游戏自带更精细的指令优先
-        result.setdefault("success", True)
+        result.setdefault("agent_hint", hint)  # 游戏自带更精细的指令优先
         result.setdefault("game_name", game_name)
         self._emit_speech(game, result)
         return result
@@ -309,42 +300,26 @@ class GameBase:
         """主动结束（模型 game__stop / 面板闲置超时）：普通收场，不算胜负。"""
         if game_name not in self._sessions:
             return {
-                "summary": f"{game_name} 没有进行中的对局（已结束或未开始）。",
-                "model_hint": "无需调用 game__stop；想再玩一局请先调用 game__init，否则直接输出最终回复。",
-                "success": False,
-                "ended": True,
+                "headline": f"{game_name} 没有进行中的对局（已结束或未开始）。",
+                "agent_hint": "无需调用 game__stop；想再玩一局请先调用 game__init，否则直接输出最终回复。",
+                "data": {"ended": True},
             }
         self._teardown(game_name)
         if TOOL_CTX.is_model_aside_pending():
-            return {
-                "summary": f"已结束 {game_name} 游戏",
-                "model_hint": _MODEL_HINT_ENDED_NEUTRAL,
-                "success": True,
-                "ended": True,
-            }
+            return self._ended(game_name)
         game = self._games.get(game_name)
         speech = game.stop_speech() if game else None
         if not speech:
             speech = f"不玩了，{game_name} 先到这吧"
         TOOL_CTX.speech(speech)
-        return {
-            "summary": f"已结束 {game_name} 游戏",
-            "model_hint": _MODEL_HINT_ENDED_NEUTRAL,
-            "success": True,
-            "ended": True,
-        }
+        return self._ended(game_name)
 
     def forfeit(self, game_name: str) -> dict:
         """用户主动结束（棋盘面板点击关闭/结束）：不算胜负"""
         state = self._sessions.get(game_name)
         if state is None:
             # 游戏已提前结束，用户只是关闭残留面板：不播台词、不回应 LLM
-            return {
-                "summary": f"已结束 {game_name} 游戏",
-                "model_hint": _MODEL_HINT_ENDED_NEUTRAL,
-                "success": True,
-                "ended": True,
-            }
+            return self._ended(game_name)
         state["_forfeit"] = True
         state["_cancelled"] = True
         ev = state.get("wait_event")
@@ -355,11 +330,18 @@ class GameBase:
         except Exception:
             pass
         return {
-            "summary": f"你结束了 {game_name} 游戏",
-            "model_hint": _MODEL_HINT_ENDED_NEUTRAL,
-            "success": True,
-            "ended": True,
-            "won": None,
+            "headline": f"你结束了 {game_name} 游戏",
+            "agent_hint": _MODEL_HINT_ENDED_NEUTRAL,
+            "data": {"ended": True, "won": None},
+        }
+
+    @staticmethod
+    def _ended(game_name: str) -> dict:
+        """普通收场的统一形态。"""
+        return {
+            "headline": f"已结束 {game_name} 游戏",
+            "agent_hint": _MODEL_HINT_ENDED_NEUTRAL,
+            "data": {"ended": True},
         }
 
     def _teardown(self, game_name: str):

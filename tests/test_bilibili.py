@@ -429,8 +429,8 @@ def test_load_config_ignores_wrong_types(monkeypatch, tmp_path):
 def test_run_round_without_credential(monkeypatch, tmp_path, store):
     monkeypatch.setattr(duty, "CREDENTIAL_PATH", tmp_path / "none.json")
     result = duty.run_round(store)
-    assert result["ok"] is False
-    assert result["reason"] == "not_logged_in"
+    assert result["code"] == "not_logged_in"
+    assert "登录" in result["error"]
 
 
 def test_update_config_persists_switch(monkeypatch, tmp_path):
@@ -485,8 +485,7 @@ def test_normalize_keywords_rejects_non_list():
 def test_run_round_rejects_blank_keyword(monkeypatch, tmp_path, store):
     monkeypatch.setattr(duty, "_CONFIG_FILE", tmp_path / "config.json")
     result = duty.run_round(store, keyword="   ")
-    assert result["ok"] is False
-    assert result["reason"] == "invalid_keyword"
+    assert result["code"] == "invalid_keyword"
 
 
 def test_parse_window_defaults_on_invalid():
@@ -587,8 +586,7 @@ def test_dm_without_uid_reports_error(monkeypatch, tmp_path, store):
     Credential(sessdata="s", bili_jct="j", dedeuserid="9").save(cred_path)
     monkeypatch.setattr(duty, "CREDENTIAL_PATH", cred_path)
     result = duty.write_action(store, "dm", text="今天看了一个视频")
-    assert result["ok"] is False
-    assert result["reason"] == "dm_uid_missing"
+    assert result["code"] == "dm_uid_missing"
 
 
 def test_run_round_when_browse_disabled(monkeypatch, tmp_path, store):
@@ -597,8 +595,7 @@ def test_run_round_when_browse_disabled(monkeypatch, tmp_path, store):
     monkeypatch.setattr(duty, "_CONFIG_FILE", path)
     monkeypatch.setattr(duty, "CREDENTIAL_PATH", tmp_path / "none.json")
     result = duty.run_round(store)
-    assert result["ok"] is False
-    assert result["reason"] == "disabled"
+    assert result["code"] == "disabled"
 
 
 def test_reply_hidden_detects_avalon_state():

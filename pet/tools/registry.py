@@ -4,10 +4,11 @@ import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Callable, Any
+from typing import Callable, Any, Optional
 
 from pet.config import config
 from pet.tools.context import TOOL_CTX
+from pet.tools.output import PAGINATION_SCHEMA, ToolOutputDefinition
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +20,7 @@ class ToolMethod:
     args: dict = field(default_factory=dict)
     handler: Callable = None
     timeout: float = 30.0
+    output: Optional["ToolOutputDefinition"] = None  # 输出契约，None 表示走旧渲染
 
 
 @dataclass
@@ -37,6 +39,67 @@ _SEARCH_SPLIT = re.compile(r"[\s,，、;；/|+&]+")
 
 # 单次搜索最多返回的工具数：与文件/浏览/知识库的分页同一个思路，避免一次吐出全部定义
 _MAX_SEARCH_RESULTS = 5
+
+_HEADLINE = {"type": "string", "x-role": "headline",
+             "description": "一句话结论，进历史记录"}
+
+FOOD_OUTPUT = {
+    "type": "object",
+    "required": ["headline"],
+    "properties": {
+        "headline": _HEADLINE,
+        "data": {"type": "object", "x-role": "data",
+                 "description": "食物位置与相对宠物的偏移"},
+    },
+}
+
+GAME_OUTPUT = {
+    "type": "object",
+    "required": ["headline"],
+    "properties": {
+        "headline": _HEADLINE,
+        "agent_hint": {"type": "string", "x-role": "hint",
+                       "description": "下一步该传什么参数"},
+        "ended": {"type": "boolean", "x-role": "data",
+                  "description": "本局是否结束"},
+        "won": {"x-role": "data",
+                "description": "胜负：true 获胜，false 失败，null 平局或未分胜负"},
+        "data": {"type": "object", "x-role": "data",
+                 "description": "对局状态与游戏专属字段"},
+    },
+}
+
+SEARCH_OUTPUT = {
+    "type": "object",
+    "required": ["headline"],
+    "properties": {
+        "headline": _HEADLINE,
+        "body": {"type": "string", "x-role": "body", "description": "命中的工具与方法清单"},
+        "agent_hint": {"type": "string", "x-role": "hint",
+                       "description": "下一步该直接调用哪个函数"},
+        "groups": {"type": "array", "x-role": "suppress",
+                   "description": "命中的工具分组，供行为层激活"},
+    },
+}
+
+GROUPS_OUTPUT = {
+    "type": "object",
+    "required": ["headline"],
+    "properties": {
+        "headline": _HEADLINE,
+        "body": {"type": "string", "x-role": "body", "description": "按分组列出的工具清单"},
+    },
+}
+
+RECALL_OUTPUT = {
+    "type": "object",
+    "required": ["headline"],
+    "properties": {
+        "headline": _HEADLINE,
+        "body": {"type": "string", "x-role": "body", "description": "每条记忆一行"},
+        "pagination": {**PAGINATION_SCHEMA},
+    },
+}
 
 
 def _search_normalize(text: str) -> str:
@@ -83,12 +146,13 @@ class ToolRegistry:
 
     def add_method(self, tool_name: str, method_name: str,
                    description: str, handler: Callable, args: dict = None,
-                   timeout: float = None):
+                   timeout: float = None, output: "ToolOutputDefinition | None" = None):
         tool = self._tools[tool_name]
         tool.methods[method_name] = ToolMethod(
             name=method_name, description=description,
             args=args or {}, handler=handler,
             timeout=timeout if timeout is not None else 30.0,
+            output=output,
         )
 
     def add_menu_action(self, tool_name: str, label: str,
@@ -191,6 +255,7 @@ class ToolRegistry:
                 "仅需1次调用，无需参数，始终返回完整列表。"
             ),
             handler=self._tool_search_list_groups,
+            output=ToolOutputDefinition(schema=GROUPS_OUTPUT),
         )
         self.add_method(
             tool_name="tool_search",
@@ -210,6 +275,7 @@ class ToolRegistry:
                     "description": "一个或多个关键词，用空格分隔，如 '文件'、'天气 提醒'",
                 }
             },
+            output=ToolOutputDefinition(schema=SEARCH_OUTPUT),
         )
         # 觅食工具
         if config.FOOD_ENABLED:
@@ -232,6 +298,7 @@ class ToolRegistry:
                 "用 walk/drive 接近、bounce 原地跳起来吃，走到附近自动开吃；已有食物时不重复生成。"
             ),
             handler=self._food_spawn,
+            output=ToolOutputDefinition(schema=FOOD_OUTPUT),
             args={
                 "food_type": {
                     "type": "str",
@@ -249,6 +316,7 @@ class ToolRegistry:
                 "无食物则确认是否需要生成。"
             ),
             handler=self._food_status,
+            output=ToolOutputDefinition(schema=FOOD_OUTPUT),
         )
 
     def _food_spawn(self, food_type: str = None) -> dict:
@@ -272,6 +340,7 @@ class ToolRegistry:
                 "列出当前可玩的游戏及规则。想玩游戏时先调用此方法了解可选游戏。"
             ),
             handler=self._game_list,
+            output=ToolOutputDefinition(schema=GAME_OUTPUT),
         )
         self.add_method(
             tool_name="game",
@@ -289,6 +358,7 @@ class ToolRegistry:
                     "description": "要初始化/重新初始化的游戏名",
                 },
             },
+            output=ToolOutputDefinition(schema=GAME_OUTPUT),
         )
         self.add_method(
             tool_name="game",
@@ -301,6 +371,7 @@ class ToolRegistry:
                 "你可以在一次输出里连续调用多次 game__play，根据每次返回结果继续，直到某次返回 ended=True。"
             ),
             handler=self._game_play,
+            output=ToolOutputDefinition(schema=GAME_OUTPUT),
         )
         self.add_method(
             tool_name="game",
@@ -316,6 +387,7 @@ class ToolRegistry:
                     "description": "要结束的游戏名",
                 },
             },
+            output=ToolOutputDefinition(schema=GAME_OUTPUT),
         )
 
     def _register_recall_tools(self):
@@ -356,6 +428,7 @@ class ToolRegistry:
                 },
             },
             timeout=30.0,
+            output=ToolOutputDefinition(schema=RECALL_OUTPUT),
         )
         self.add_method(
             tool_name="recall",
@@ -394,13 +467,13 @@ class ToolRegistry:
                     "desc": "页码(从1开始)",
                 },
             },
+            output=ToolOutputDefinition(schema=RECALL_OUTPUT),
         )
 
     @staticmethod
-    def _empty_recall(summary: str) -> dict:
+    def _empty_recall(msg: str) -> dict:
         """recall__browse 的空结果（含参数错误提示）。"""
-        return {"summary": summary, "memories": [], "total": 0,
-                "page": 1, "total_pages": 0}
+        return {"error": msg}
 
     @staticmethod
     def _normalize_date(value: str, name: str) -> tuple[str, str]:
@@ -418,16 +491,13 @@ class ToolRegistry:
             return "", f"{name} 格式无效，请使用 YYYY-MM-DD，例如 2025-08-01"
 
     @staticmethod
-    def _format_recall_memory(row: dict) -> dict:
-        """将记忆行精简为 LLM 可读字段。"""
+    def _format_recall_memory(row: dict) -> str:
+        """将记忆行渲染成一行可读文本。"""
         # 模块级导入会经 pet.brain.__init__ → behavior 回指本模块成环，保持函数内导入
         from pet.brain.memory import get_memory_store
-        return {
-            "content": row.get("content", ""),
-            "level": row.get("level", "L2"),
-            "importance": row.get("importance", 3),
-            "time": get_memory_store().format_memory_time(row.get("created_at", "")),
-        }
+        time_str = get_memory_store().format_memory_time(row.get("created_at", ""))
+        level = row.get("level", "L2")
+        return f"[{time_str}]（{level}）{row.get('content', '')}"
 
     def _recall_search(self, query: str, limit: int = 5) -> dict:
         """recall__search 工具实现。"""
@@ -435,20 +505,17 @@ class ToolRegistry:
         TOOL_CTX.speech_random(["让我想想…", "回忆一下…", "翻翻记忆…"])
         query = (query or "").strip()
         if not query:
-            return {"summary": "回忆线索为空，请提供人名、事件或话题关键词",
-                    "memories": [], "count": 0}
+            return {"error": "回忆线索为空，请提供人名、事件或话题关键词"}
         try:
             limit = max(1, min(int(limit), 10))
         except (TypeError, ValueError):
             limit = 5
         results = get_memory_store().search_memories(query, limit=limit)
         if not results:
-            return {"summary": "没有想起相关记忆", "memories": [], "count": 0}
-        memories = [self._format_recall_memory(r) for r in results]
+            return {"headline": f"没有想起与「{query}」相关的记忆"}
         return {
-            "summary": f"想起 {len(memories)} 条与「{query}」相关的记忆",
-            "memories": memories,
-            "count": len(memories),
+            "headline": f"想起 {len(results)} 条与「{query}」相关的记忆",
+            "body": "\n".join(self._format_recall_memory(r) for r in results),
         }
 
     def _recall_browse(self, start_date: str = "", end_date: str = "",
@@ -490,19 +557,18 @@ class ToolRegistry:
         total_pages = (total + page_size - 1) // page_size
         if not rows:
             if total == 0:
-                return {"summary": f"没有符合条件的记忆{filter_str}",
-                        "memories": [], "total": 0, "page": page, "total_pages": 0}
+                return {"headline": f"没有符合条件的记忆{filter_str}"}
             # 页码越界：明确告知范围，避免模型误判为「没有记忆」
-            return {"summary": f"第 {page} 页超出范围：共 {total} 条记忆，仅 {total_pages} 页{filter_str}",
-                    "memories": [], "total": total, "page": page,
-                    "total_pages": total_pages}
+            return {
+                "headline": (f"第 {page} 页超出范围：共 {total} 条记忆，"
+                             f"仅 {total_pages} 页{filter_str}"),
+            }
         memories = [self._format_recall_memory(r) for r in rows]
         return {
-            "summary": f"共 {total} 条记忆，第 {page}/{total_pages} 页{filter_str}",
-            "memories": memories,
-            "total": total,
-            "page": page,
-            "total_pages": total_pages,
+            "headline": f"共 {total} 条记忆，第 {page}/{total_pages} 页{filter_str}",
+            "body": "\n".join(memories),
+            "pagination": {"page": page, "page_size": page_size,
+                           "total_items": total, "has_next": page < total_pages},
         }
 
     def _game_list(self) -> dict:
@@ -555,7 +621,10 @@ class ToolRegistry:
                 "tool_count": len(enabled),
                 "tools": [{"name": t.name, "description": t.description} for t in enabled],
             })
-        return {"groups": groups}
+        return {
+            "headline": f"共 {len(groups)} 个工具分组，{sum(g['tool_count'] for g in groups)} 个工具",
+            "body": self._format_catalog(groups),
+        }
 
     @staticmethod
     def _tool_search_entry(tool: "ToolDef") -> dict:
@@ -609,15 +678,14 @@ class ToolRegistry:
                 + "。下一轮直接调用这些函数，不要再调用 tool_search。")
             brief = f"搜到 {len(matched)} 个：" + "、".join(t.name for t in matched[:3])
 
-        payload = {
-            "keyword": keyword,
-            "matches": [self._tool_search_entry(tool) for tool in matched],
-            "hint": hint,
-            "__context__": brief or f"列出全部 {len(matched)} 个可用工具",
+        return {
+            "headline": brief or f"列出全部 {len(matched)} 个可用工具",
+            "body": (self._format_catalog(catalog) if catalog
+                     else self._format_entries(
+                         [self._tool_search_entry(tool) for tool in matched])),
+            "agent_hint": hint or "",
+            "groups": sorted({tool.group for tool in matched if tool.group != "default"}),
         }
-        if catalog:
-            payload["groups"] = catalog
-        return payload
 
     @staticmethod
     def _group_catalog(tools: list) -> list[dict]:
@@ -627,6 +695,25 @@ class ToolRegistry:
             groups.setdefault(tool.group, []).append(
                 {"name": tool.name, "description": tool.description})
         return [{"group": name, "tools": items} for name, items in groups.items()]
+
+    @staticmethod
+    def _format_entries(entries: list[dict]) -> str:
+        """命中结果的可读文本：工具一行，方法缩进列出。"""
+        lines = []
+        for entry in entries:
+            lines.append(f"{entry['name']}（{entry['group']}）：{entry['description']}")
+            for method in entry.get("methods") or []:
+                lines.append(f"  - {method['name']}：{method['description']}")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _format_catalog(catalog: list[dict]) -> str:
+        lines = []
+        for group in catalog:
+            lines.append(f"[{group['group']}]")
+            for tool in group["tools"]:
+                lines.append(f"  - {tool['name']}：{tool['description']}")
+        return "\n".join(lines)
 
     _TYPE_TO_JSON_SCHEMA = {
         "str": "string",

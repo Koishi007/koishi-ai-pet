@@ -291,12 +291,21 @@ def load_tools() -> dict:
     return {"tools": tools, "meta_tools": meta_tools}
 
 
+def _shared_consts() -> dict:
+    """output.py 里的公共 schema 片段，供 ** 展开使用。"""
+    path = ROOT / "pet" / "tools" / "output.py"
+    if not path.exists():
+        return {}
+    return _collect_const_dicts(ast.parse(_read(path)))
+
+
 def _collect_methods(tree: ast.AST) -> list[dict]:
+    consts = {**_shared_consts(), **_collect_const_dicts(tree)}
     return [
         method
         for node in _walk_source_order(tree)
         if isinstance(node, ast.Call)
-        for method in [_method_from_call(node)]
+        for method in [_method_from_call(node, consts=consts)]
         if method
     ]
 
@@ -304,45 +313,143 @@ def _collect_methods(tree: ast.AST) -> list[dict]:
 def _collect_registrations(tree: ast.AST) -> list[dict]:
     """从 registry.py 收集 register()/add_method() 的字面量声明。"""
     by_name: dict[str, dict] = {}
+    consts = {**_shared_consts(), **_collect_const_dicts(tree)}
     for call in _walk_source_order(tree):
         if not isinstance(call, ast.Call):
             continue
         attr = getattr(call.func, "attr", "")
-        args = [a.value for a in call.args if isinstance(a, ast.Constant)]
-        if attr == "register" and len(args) >= 1 and isinstance(args[0], str):
-            name = args[0]
+        if attr == "register":
+            name = _literal(_arg_node(call, 0, "tool_name"))
+            if not isinstance(name, str) or not name:
+                continue
             by_name.setdefault(name, {
                 "name": name,
-                "description": args[1] if len(args) > 1 and isinstance(args[1], str) else "",
+                "description": _literal(_arg_node(call, 1, "description"), ""),
                 "group": _keyword(call, "group", "default"),
                 "meta": bool(_keyword(call, "meta", False)),
                 "methods": [],
             })
-        elif attr == "add_method" and len(args) >= 2:
-            tool_name = args[0]
+        elif attr == "add_method":
+            tool_name = _literal(_arg_node(call, 0, "tool_name"))
+            if not isinstance(tool_name, str) or not tool_name:
+                continue
             entry = by_name.setdefault(tool_name, {
                 "name": tool_name, "description": "", "group": "default", "meta": False,
                 "methods": [],
             })
-            method = _method_from_call(call, tool_name=tool_name)
+            method = _method_from_call(call, tool_name=tool_name, consts=consts)
             if method:
                 entry["methods"].append(method)
     return list(by_name.values())
 
 
-def _method_from_call(call: ast.Call, tool_name: str | None = None) -> dict | None:
-    if getattr(call.func, "attr", "") != "add_method" or len(call.args) < 3:
+def _arg_node(call: ast.Call, index: int, keyword: str) -> ast.AST | None:
+    """取位置实参，缺省时取同名关键字实参。"""
+    if len(call.args) > index:
+        return call.args[index]
+    return _keyword_node(call, keyword)
+
+
+def _method_from_call(call: ast.Call, tool_name: str | None = None,
+                      consts: dict | None = None) -> dict | None:
+    if getattr(call.func, "attr", "") != "add_method":
         return None
-    name_node, desc_node = call.args[1], call.args[2]
+    name_node = _arg_node(call, 1, "method_name")
     if not (isinstance(name_node, ast.Constant) and isinstance(name_node.value, str)):
         return None
-    args_node = _keyword_node(call, "args")
+    desc_node = _arg_node(call, 2, "description")
+    args_node = _arg_node(call, 4, "args")
     return {
-        "tool": tool_name or _literal(call.args[0]),
+        "tool": tool_name or _literal(_arg_node(call, 0, "tool_name")),
         "name": name_node.value,
-        "description": _literal(desc_node),
+        "description": _literal(desc_node, ""),
         "args": _parse_args_dict(args_node) if args_node is not None else [],
+        "has_output": _keyword_node(call, "output") is not None,
+        "output": _parse_output(call, consts or {}),
     }
+
+
+def _collect_const_dicts(tree: ast.AST) -> dict[str, ast.Dict]:
+    """同文件里的「NAME = {...}」字面量常量，供 output= 与 ** 展开使用。"""
+    consts: dict[str, ast.Dict] = {}
+    for node in _walk_source_order(tree):
+        item = _assigned_dict(node)
+        if item:
+            consts[item[0]] = item[1]
+    return consts
+
+
+def _expand_dict(node: ast.AST | None, consts: dict, depth: int = 0) -> dict:
+    """把 dict 字面量展开成 {键: AST}，支持常量名与一层 {**CONST}。"""
+    merged: dict = {}
+    if isinstance(node, ast.Name):
+        node = consts.get(node.id)
+    if not isinstance(node, ast.Dict) or depth > 2:
+        return merged
+    for key, value in zip(node.keys, node.values):
+        if key is None:
+            if isinstance(value, ast.Name):
+                merged.update(_expand_dict(consts.get(value.id), consts, depth + 1))
+            continue
+        if isinstance(key, ast.Constant):
+            merged[str(key.value)] = value
+    return merged
+
+
+def _parse_output(call: ast.Call, consts: dict) -> list[dict]:
+    """解析 add_method(output=ToolOutputDefinition(schema=...)) 的返回字段。"""
+    output = _keyword_node(call, "output")
+    if not isinstance(output, ast.Call):
+        return []
+    schema = _expand_dict(_keyword_node(output, "schema"), consts)
+    props = schema.get("properties")
+    if not isinstance(props, ast.Dict):
+        return []
+    required_node = schema.get("required")
+    required = set()
+    if isinstance(required_node, (ast.List, ast.Tuple)):
+        required = {str(_literal(e)) for e in required_node.elts}
+
+    fields: list[dict] = []
+    for key, value in zip(props.keys, props.values):
+        if key is None:
+            # 片段自带 x-role，展开成独立字段
+            if isinstance(value, ast.Name):
+                fields.extend(_parse_output_fields(consts.get(value.id), consts, required))
+            continue
+        spec = _expand_dict(value, consts)
+        fields.append({
+            "name": str(_literal(key)),
+            "type": _literal(spec.get("type"), "-"),
+            "required": str(_literal(key)) in required,
+            "role": _literal(spec.get("x-role"), "data"),
+            "description": _literal(spec.get("description"), ""),
+        })
+    return fields
+
+
+def _parse_output_fields(node: ast.AST | None, consts: dict, required: set) -> list[dict]:
+    """把片段常量的 properties 展开成字段列表。"""
+    spec = _expand_dict(node, consts)
+    props = spec.get("properties")
+    if not isinstance(props, ast.Dict):
+        return []
+    role = _literal(spec.get("x-role"), "data")
+    fields = []
+    for key, value in zip(props.keys, props.values):
+        if key is None:
+            if isinstance(value, ast.Name):
+                fields.extend(_parse_output_fields(consts.get(value.id), consts, required))
+            continue
+        sub = _expand_dict(value, consts)
+        fields.append({
+            "name": str(_literal(key)),
+            "type": _literal(sub.get("type"), "-"),
+            "required": str(_literal(key)) in required,
+            "role": role,
+            "description": _literal(sub.get("description"), ""),
+        })
+    return fields
 
 
 def _parse_args_dict(node: ast.AST) -> list[dict]:
@@ -716,7 +823,7 @@ def render_tools(data: dict) -> str:
             f"- 说明：{tool['description'] or '（模块未声明 TOOL_DESCRIPTION）'}",
             "",
         ]
-        lines += [_render_methods(tool["methods"]), ""] if tool["methods"] else ["_（未解析到 add_method 调用）_", ""]
+        lines += _render_tool_body(tool["methods"])
 
     lines += [
         "## 元工具（注册在 `pet/tools/registry.py`）",
@@ -732,9 +839,40 @@ def render_tools(data: dict) -> str:
             f"- 说明：{tool['description'] or '（未解析到描述）'}",
             "",
         ]
-        lines += [_render_methods(tool["methods"]), ""] if tool["methods"] else ["_（未解析到 add_method 调用）_", ""]
+        lines += _render_tool_body(tool["methods"])
 
     return "\n".join(lines)
+
+
+def _render_tool_body(methods: list[dict]) -> list[str]:
+    """方法表与返回字段表；没有方法时给占位说明。"""
+    if not methods:
+        return ["_（未解析到 add_method 调用）_", ""]
+    lines = [_render_methods(methods), ""]
+    outputs = _render_outputs(methods)
+    if outputs:
+        lines += [outputs, ""]
+    return lines
+
+
+def _render_outputs(methods: list[dict]) -> str:
+    """为声明了 output 的方法生成返回字段表。"""
+    blocks = []
+    for method in methods:
+        fields = method.get("output") or []
+        if not fields:
+            continue
+        rows = [
+            [f"`{field['name']}`", field["type"],
+             "是" if field["required"] else "否",
+             field["role"], field["description"] or ""]
+            for field in fields
+        ]
+        blocks.append(
+            f"**`{method['name']}` 返回字段**\n\n"
+            + _table(["字段", "类型", "必填", "角色", "说明"], rows)
+        )
+    return "\n\n".join(blocks)
 
 
 def _render_methods(methods: list[dict]) -> str:

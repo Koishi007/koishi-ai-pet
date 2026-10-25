@@ -14,10 +14,11 @@ from pet.brain.events import args_digest, new_group_id
 from pet.brain.output import BehaviorOutput
 from pet.brain.parsing import parse_behavior
 from pet.tools.executor import ToolCall, ToolExecutor
+from pet.tools.output import (RECORD_LIMIT, ImageBlock, TextBlock, render_record,
+                              render_turn, validate)
 from pet.tools.registry import TOOL_REGISTRY
 
 logger = logging.getLogger(__name__)
-
 
 class ToolSession(Protocol):
     """工具轮次需要的会话能力：轮次策略、工具开关、分组激活与流式回传。
@@ -54,18 +55,6 @@ class ToolSession(Protocol):
 
     def stream(self, messages: list, max_tokens: int, tools, thinking: Optional[bool], *,
                tag: str, on_chunk=None, on_stream_end=None): ...
-
-
-def _image_source(result, tool_name: str) -> str:
-    """图片的来源说明：优先用工具写的 context_brief，其次路径或 URL。"""
-    if result.context_brief:
-        return result.context_brief
-    if isinstance(result.data, dict):
-        for key in ("path", "url"):
-            value = result.data.get(key)
-            if value:
-                return str(value)
-    return tool_name
 
 
 def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, session: ToolSession, *,
@@ -141,17 +130,19 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
                 "tool_call_id": tc["id"],
                 "content": result_text,
             })
-            logger.info(f"[Behavior] tool_round_{display_round} {tc['name']} -> {'OK' if result.success else 'FAIL'}")
-            log_entry = f"{tc['name']} → {result.context_brief or tool_brief or result_text[:200]}"
+            logger.info(f"[Behavior] tool_round_{display_round} {tc['name']} -> {'OK' if result.ok else 'FAIL'}")
+            log_entry = f"{tc['name']} → {result.meta.get('record') or tool_brief or result_text[:200]}"
             if tool_aside:
                 log_entry = f"（自言自语：{tool_aside}）{log_entry}"
-            if result.image_b64 and session.has_vision:
+            images = result.meta.get("images") or []
+            if images and session.has_vision:
                 # 图片只在当轮上下文里，工具记录留一条可再次读取的引用
                 log_entry = f"{log_entry}（图片已读取，可再次调用查看）"
-                round_images.append((
-                    f"data:{result.image_mime};base64,{result.image_b64}",
-                    _image_source(result, tc["name"]),
-                ))
+                for image in images:
+                    round_images.append((
+                        f"data:{image.get('mime', 'image/png')};base64,{image.get('base64', '')}",
+                        image.get("caption") or tc["name"],
+                    ))
             round_log.append(log_entry)
 
             # 搜索工具执行后自动激活匹配的分组
@@ -239,21 +230,16 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
     return result
 
 
-def _tool_brief(result, tool_brief: str, result_text: str = "") -> str:
-    """结果短句：context_brief → summary → 结果文本首行，去掉 JSON 后截 120 字符。"""
-    text = (result.context_brief or tool_brief or "").strip()
-    if not text and not result.success:
-        text = str(result.error or "").strip()
+def _tool_brief(result, result_text: str = "") -> str:
+    """未声明输出契约时的历史短句：结果文本首行，去 JSON 后截 120 字符。"""
+    text = ""
+    if not result.ok:
+        text = str(result.error_message or "").strip()
     if not text and result_text:
-        # 纯文本结果才取首行；JSON 结果没有可读结论，跳过
         head = result_text.strip().splitlines()[0].strip() if result_text.strip() else ""
         if head and not head.startswith(("{", "[")):
             text = head
-    if text.startswith(("{", "[")):
-        text = ""
-    if not text:
-        text = "操作已完成" if result.success else "操作失败"
-    return text[:120]
+    return (text or ("操作已完成" if result.ok else "操作失败"))[:RECORD_LIMIT]
 
 
 def _record_tool_events(session, tool_calls_map: dict, sorted_indices: list,
@@ -274,9 +260,9 @@ def _record_tool_events(session, tool_calls_map: dict, sorted_indices: list,
         calls.append({"id": tc["id"], "name": tc["name"],
                       "args_digest": args_digest(args),
                       "side_effect": TOOL_REGISTRY.is_side_effect(tc["name"])})
-        results.append({"tool_call_id": tc["id"], "ok": bool(result.success),
-                        "brief": _tool_brief(result, tool_brief, result_text),
-                        "raw": result_text})
+        brief = result.meta.get("record") or _tool_brief(result, result_text)
+        results.append({"tool_call_id": tc["id"], "ok": bool(result.ok),
+                        "brief": brief, "raw": result_text})
         if tool_aside:
             asides.append((tc["id"], str(tool_aside)))
     try:
@@ -314,6 +300,11 @@ def _execute_round(tool_calls_map: dict, sorted_indices: list, executor: ToolExe
     return tool_results
 
 
+def _fail_text(name: str, result) -> str:
+    """失败调用的模型可见文本。"""
+    return f"[FAIL {name}] {result.error_code}: {result.error_message}"
+
+
 def _exec_tool(tool_calls_map: dict, idx: int, executor: ToolExecutor, session: ToolSession):
     """执行单个工具调用，返回 (idx, tc, result, tool_brief, result_text, tool_aside)。"""
     tc = tool_calls_map[idx]
@@ -332,9 +323,34 @@ def _exec_tool(tool_calls_map: dict, idx: int, executor: ToolExecutor, session: 
     finally:
         if tool_aside:
             session.end_aside()
-    # 摘要供日志与上下文使用；_normalize 不改动原 dict，顺序无所谓
-    tool_brief = ""
-    if result.success and isinstance(result.data, dict):
-        tool_brief = result.data.get("summary", "")
-    result_text = executor.normalize(result.data) if result.success else result.error
-    return idx, tc, result, tool_brief, result_text, tool_aside
+    if not result.ok:
+        return idx, tc, result, "", _fail_text(tc["name"], result), tool_aside
+
+    definition = _output_of(tc["name"])
+    if definition is None:
+        # 没有输出契约：整体当文本交给模型，历史记录走首行兜底
+        text = (result.output if isinstance(result.output, str)
+                else json.dumps(result.output, ensure_ascii=False))
+        return idx, tc, result, "", text, tool_aside
+
+    problems = validate(definition, result.output)
+    if problems:
+        logger.warning(f"[Behavior] {tc['name']} 输出不符合 schema: {problems[:3]}")
+        result.error_code = "output_violation"
+        result.error_message = problems[0]
+        return idx, tc, result, "", _fail_text(tc["name"], result), tool_aside
+    blocks = render_turn(definition, result.output)
+    text = "\n\n".join(b.text for b in blocks if isinstance(b, TextBlock)).strip()
+    images = [b for b in blocks if isinstance(b, ImageBlock)]
+    if images:
+        result.meta["images"] = [
+            {"base64": b.base64, "mime": b.mime, "caption": b.caption} for b in images
+        ]
+    result.meta["record"] = render_record(definition, result.output)
+    return idx, tc, result, "", text or "操作已完成", tool_aside
+
+
+def _output_of(name: str):
+    """取方法声明的输出契约；未声明返回 None，调用方整体当文本。"""
+    method = TOOL_REGISTRY.get_method(name)
+    return getattr(method, "output", None)
