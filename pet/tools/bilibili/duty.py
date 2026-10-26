@@ -11,7 +11,7 @@ import random
 import threading
 import time
 from contextlib import contextmanager
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from pet.tools.bilibili.core import (
@@ -41,8 +41,10 @@ _MAX_SEARCH_KEYWORDS = 3
 _COMMENT_PER_TARGET = 3
 # 评论列表刷新有延迟，发出后隔这段时间再核可见性
 _CONFIRM_DELAY_S = 60.0
+# 两次评论之间的最短间隔：评论是唯一会被风控的写操作
+_COMMENT_COOLDOWN_S = 120
 
-# 本工具的错误码 → 下一步提示；引擎只负责渲染，不维护这些码
+# 本工具的错误码
 _ERROR_HINTS = {
     "disabled": "这个功能在设置里关着，本轮不要再调用，如实告诉用户即可。",
     "not_ready": "工具还没启动完成，这次先不要调用。",
@@ -58,6 +60,8 @@ _ERROR_HINTS = {
     "invalid_keyword": "换一个关键词或 BV 号。",
     "invalid_bvid": "检查 BV 号格式（BV + 10 位字母数字），或改用 keyword 搜索。",
     "request_failed": "接口请求失败，稍后再试。",
+    "mobile_unbound": "账号未绑定手机，评论会仅自己可见；先在 B 站 App 完成手机绑定。",
+    "cooldown": "两条评论间隔不足，等冷却结束再试，不要连续重试。",
 }
 
 _DEFAULTS: dict = {
@@ -348,18 +352,31 @@ def _match_reply(replies: list[dict], uid: int, rpid: int,
 
 
 def _confirm_comment(client: BiliClient, uid: int, aid: int, root: int,
-                     rpid: int, content: str) -> str:
-    """拉一次列表判可见性；列表里还没有这条时返回 done。"""
-    replies = (client.comment_replies(aid, root) if root
-               else client.my_replies(aid))
-    hit = _match_reply(replies, uid, rpid, content)
-    return _reply_visibility(hit) if hit is not None else "done"
+                     rpid: int, content: str, bvid: str = "") -> str:
+    """按公开视角判可见性：匿名列表里看得到才算公开。"""
+    try:
+        public = (client.comment_replies(aid, root, bvid=bvid, anonymous=True) if root
+                  else client.my_replies(aid, bvid=bvid, anonymous=True))
+    except BiliError as exc:
+        logger.info(f"[bilibili] 匿名复核失败：{exc}")
+        public = None
+    if public is not None:
+        hit = _match_reply(public, uid, rpid, content)
+        if hit is not None:
+            return _reply_visibility(hit)
+    own = (client.comment_replies(aid, root, bvid=bvid) if root
+           else client.my_replies(aid, bvid=bvid))
+    mine = _match_reply(own, uid, rpid, content)
+    if mine is not None and public is not None:
+        return "hidden"
+    return "done"
 
 
 def _apply_confirm(storage: BiliStorage, action_id: int, root: int, rpid: int,
-                   client: BiliClient, uid: int, aid: int, content: str):
+                   client: BiliClient, uid: int, aid: int, content: str,
+                   bvid: str = ""):
     """核验单条评论并写回台账；查不到时保留原状态。"""
-    state = _confirm_comment(client, uid, aid, root, rpid, content)
+    state = _confirm_comment(client, uid, aid, root, rpid, content, bvid)
     if state != "done":
         storage.finish_action(action_id, state, remote_id=str(rpid), root=root)
 
@@ -373,7 +390,7 @@ def _confirm_later(storage: BiliStorage, credential: Credential, cfg: dict,
         try:
             with _open(cfg, credential) as client:
                 _apply_confirm(storage, action_id, root, rpid, client,
-                               int(credential.dedeuserid), aid, content)
+                               int(credential.dedeuserid), aid, content, bvid)
         except Exception as exc:
             logger.info(f"[bilibili] 延时复核 {bvid} 失败：{exc}")
 
@@ -416,7 +433,7 @@ def _guarded_write(storage: BiliStorage, uid: int, kind: str, target: str,
 def _post_comment(client: BiliClient, storage: BiliStorage, cfg: dict,
                   credential: Credential, uid: int, bvid: str, aid: int,
                   text: str) -> dict:
-    """发评论；该视频有未回复的 @ 时挂在 @ 评论下并前缀 @昵称。"""
+    """发评论；该视频有未回复的 @ 时挂在 @ 评论下。"""
     ok, code = check_text(text, max_chars=int(cfg["comment_max_chars"]),
                           blocklist=tuple(cfg["comment_blocklist"]),
                           recent=tuple(storage.recent_contents(uid, "comment")))
@@ -424,10 +441,18 @@ def _post_comment(client: BiliClient, storage: BiliStorage, cfg: dict,
         return {"kind": "comment", "target": bvid, "ok": False,
                 "reason": "filtered", "reason_code": code, "detail": describe(code)}
 
+    me = client.whoami()
+    if not me.get("login"):
+        return {"kind": "comment", "target": bvid, "ok": False,
+                "reason": "not_logged_in", "detail": "B 站登录已失效"}
+    if not me.get("mobile_verified"):
+        return {"kind": "comment", "target": bvid, "ok": False,
+                "reason": "mobile_unbound",
+                "detail": "账号未绑定手机，评论会仅自己可见"}
+
     mention = storage.mention_for_bvid(bvid)
     root = int((mention or {}).get("rpid") or 0)
-    prefix = f"@{mention['name']} " if root and mention.get("name") else ""
-    body = (prefix + text).strip()
+    body = text
 
     def defer(action_id: int, rpid: int):
         _confirm_later(storage, credential, cfg, action_id, bvid, aid, root,
@@ -435,11 +460,11 @@ def _post_comment(client: BiliClient, storage: BiliStorage, cfg: dict,
 
     if root:
         result = _guarded_write(storage, uid, "comment", bvid, body,
-                                lambda: client.comment(aid, body, root=root),
+                                lambda: client.comment(aid, body, bvid=bvid, root=root),
                                 limit=_COMMENT_PER_TARGET, root=root, defer=defer)
     else:
         result = _guarded_write(storage, uid, "comment", bvid, body,
-                                lambda: client.comment(aid, body),
+                                lambda: client.comment(aid, body, bvid=bvid),
                                 limit=_COMMENT_PER_TARGET, defer=defer)
     if result.get("ok") and root:
         storage.mark_mention_replied(mention["msg_id"])
@@ -573,6 +598,26 @@ def _open(cfg: dict, credential: Credential):
         yield client
 
 
+def _elapsed_seconds(since: str) -> float:
+    """该时刻已经过去多少秒；格式不对按很久以前处理。"""
+    try:
+        return (datetime.now() - datetime.fromisoformat(since)).total_seconds()
+    except ValueError:
+        return float("inf")
+
+
+def _comment_gate(storage: BiliStorage, uid: int) -> dict | None:
+    """两条评论之间的最短间隔；点赞、投币、私信不受限。"""
+    last = storage.last_comment_at(uid)
+    if not last:
+        return None
+    remain = _COMMENT_COOLDOWN_S - _elapsed_seconds(last)
+    if remain > 0:
+        return {"error": f"评论间隔不足，{max(1, round(remain))} 秒后再试",
+                "code": "cooldown"}
+    return None
+
+
 def with_hint(payload: dict) -> dict:
     """给错误返回附上本工具自己的下一步提示。"""
     hint = _ERROR_HINTS.get(str(payload.get("code") or ""))
@@ -646,6 +691,9 @@ def write_action(storage: BiliStorage, kind: str, *, bvid: str = "", text: str =
 
     if storage.count_today(uid, "comment", today) >= int(cfg["comment_per_day"]):
         return {"error": "今天的评论额度用完了", "code": "quota"}
+    blocked = _comment_gate(storage, uid)
+    if blocked:
+        return blocked
     with _open(cfg, credential) as client:
         result = _post_comment(client, storage, cfg, credential, uid, bvid,
                                int(target["aid"]), text)
@@ -679,22 +727,17 @@ def verify(storage: BiliStorage, limit: int = 10) -> dict:
             root = action.get("root")
             root = int(root) if root is not None else storage.mention_root(action["target"])
             try:
-                replies = (client.comment_replies(aid, root) if root
-                           else client.my_replies(aid))
+                state = _confirm_comment(client, uid, aid, root, rpid,
+                                         action.get("content") or "", action["target"])
             except BiliError as exc:
                 logger.info(f"[bilibili] 复核 {action['target']} 失败：{exc}")
                 continue
 
-            hit = _match_reply(replies, uid, rpid, action.get("content") or "")
-            if hit is None:
-                # 看不到不等于没发出：留在 unverified，下轮再核
+            if state == "done":
+                # 两边都看不到不等于没发出：留在 unverified，下轮再核
                 storage.finish_action(action["id"], "unverified",
                                       remote_id=str(rpid), root=root)
                 missing += 1
-                continue
-            state = _reply_visibility(hit)
-            if state == "done":
-                # 审核或折叠中：保持 done，下一轮再核
                 continue
             storage.finish_action(action["id"], state, remote_id=str(rpid))
             if state == "visible":

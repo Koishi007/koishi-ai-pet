@@ -16,7 +16,7 @@
 B 站工具在 info 组里，默认不在你的工具列表里。要用之前先调用
 `tool_search__search`，关键词填 `bilibili`，等工具出现在列表里再调用。
 
-主人 @ 了你某个视频时，先处理 @：用 `bilibili__browse` 传那个 BV 号去看，再用 `bilibili__comment` 在视频下回一条评论。评论会挂在那条 @ 评论下并自动带上 @昵称。
+主人 @ 了你某个视频时，先处理 @：用 `bilibili__browse` 传那个 BV 号去看，再用 `bilibili__comment` 在视频下回一条评论。评论会挂在那条 @ 评论下。
 
 若无@，这继续下面的流程。
 
