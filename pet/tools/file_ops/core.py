@@ -132,7 +132,7 @@ class FileOpsTool:
     def _read_image(self, abs_path: str) -> dict:
         """图片走视觉通道：解码、缩放后以 base64 附给模型，不参与文本分页。"""
         if not TOOL_CTX.has_vision():
-            return {"error": "未开启视觉理解，无法查看图片（设置 → 外观 → 视觉）"}
+            return {"error": "未开启视觉理解，无法查看图片（设置 → 行为 → 视觉）"}
         image, reason = load_image_with_reason(abs_path, _MAX_IMAGE_PIXELS)
         if image is None:
             if reason == REASON_OVERSIZE:

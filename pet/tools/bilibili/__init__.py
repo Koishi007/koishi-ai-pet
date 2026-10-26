@@ -188,7 +188,7 @@ def register(registry):
 
     registry.add_method(
         TOOL_NAME, "verify",
-        "复核待确认的评论是否已经公开可见。未核到的保持待确认，不会重发。",
+        "按未登录视角复核待确认的评论是否公开可见。未核到的保持待确认，不会重发。",
         handler=_verify,
         args={"limit": {"type": "int", "required": False, "default": 10,
                         "desc": "最多检查几条"}},

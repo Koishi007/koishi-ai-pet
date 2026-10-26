@@ -7,6 +7,124 @@
 发布前刷新一次：`python scripts/gen_changelog.py`，流程见
 [docs/operations/release.md](https://github.com/Koishi007/koishi-ai-pet/blob/master/docs/operations/release.md)。
 
+## v1.7.0 — 2026-10-26
+
+**新功能**
+- **bilibili**: qrcode 缺失时阻塞工具加载（e40699e）
+- **ui**: 切到新会话移到托盘菜单并加确认（e70a1f6）
+- **bilibili**: browse 支持 bvid 参数，集齐 per_run 即返回（fee4815）
+- **bilibili**: 工具目录行提示拿到 BV 时用 browse 只传 BV（33e56ef）
+- **bilibili**: BV 直通，指定 BV 时不再搜索关键词（436188d）
+- **bilibili**: @ 语义重构与定时提醒收敛（1d044ae）
+- **brain**: 模型输出结构化落库，工具与投影契约收敛（a6b1da5）
+- **settings**: slow_tick 默认 10 分钟，设置页收敛连接与数值项（6d1f4c6）
+- **prompt**: 历史后补字段说明，收拢重复的动作引导（cc5b4f1）
+- **memory**: 事件汇总纳入 conversation，产物固定 event（5f7edc6）
+- **brain**: 同回合摘要与台词合并成一条历史消息（63137a9）
+- **bilibili**: 面板增加定时任务间隔设置（df14a75）
+- **tools**: 工具输出契约接入运行时观测（a54bfc0）
+- **tools**: food / game 声明输出契约，全部工具纳入（e377555）
+- **tools**: bilibili / tool_search / recall 声明输出契约（5b19066）
+- **tools**: timer / todo / weather / system_monitor / web_search 声明输出契约（db424f3）
+- **tools**: browser / file_ops / knowledge 声明输出契约（阶段 2）（2ed9bc5）
+- **tools**: 输出契约声明层与渲染投影（阶段 1）（ebc5e2b）
+- **brain**: 会话历史改为只追加事件日志与纯函数投影（ba11576）
+- **tools**: 新增 bilibili 账号工具：刷视频、互动、定时提醒（443e992）
+- **ui**: 抢占时已输出的台词继续播完（3d4fe1b）
+- **ui**: 记忆设置新增汇总模型连接测试（b94f1ee）
+- **memory**: 整点汇总事件记忆，旧事注入取同主题最新（c67dd21）
+- **file_ops**: 支持读取图片并接入视觉通道（9d11fa6）
+- **ui**: 退出与菜单贴边加淡入淡出（85f9c37）
+- **edge**: 屏幕边缘吸附与贴边提示词（6a3a397）
+- **assets**: shake_arms_wall 合并为两帧动作，idle_wall 补闭眼帧（dfd6a61）
+- **assets**: 加入 11 个屏幕侧边停靠姿势素材（*_wall）（c3cd2a1）
+- **web_search**: 新增 Tavily 搜索与抓取后端（a04cae7）
+- **web_search**: 新增 DeepSeek 搜索后端，明确与 browser 的搜索分工（43ea787）
+
+**修复**
+- **bilibili**: 评论锁延迟到首次使用，满足模块级无副作用（33392ec）
+- **bilibili**: 评论冷却与发送加锁，复核写回保留楼中楼 root（e33299e）
+- **bilibili**: 复核按 done、unverified、hidden 排序，避免隐藏记录占满批次（3c4f40a）
+- **bilibili**: 评论改用公开视角复核，收窄写限制并去掉自动 @（4324f6e）
+- **bilibili**: 右键子菜单改名设置并同步文档（bd1f0b5）
+- **bilibili**: 面板提示登录失效（d0c2d8c）
+- **bilibili**: 处理 #60 评审意见（fc747db）
+- **bilibili**: 评论发出后延时复核可见性（99f44eb）
+- 处理 #59 评审意见（29b3816）
+- **brain/bilibili/ui**: 处理 #57 评审意见（1b5b176）
+- **brain/bilibili**: 评审修复适配结构化输出架构（c063e55）
+- **brain**: 摘要去重消费覆盖区间，参数回显消歧（cba0fef）
+- **tools**: 冻结打包跳过工具依赖 pip 安装（78b1a0c）
+- **app**: 锁不可用时按失败原因告警，文件日志提前落盘（41fdd81）
+- **ui**: 汇总进行中关闭设置页不再阻塞（95e758d）
+- **brain**: 台词分段落库并在修复轮丢弃半截台词（e797493）
+- **brain**: 修复轮回传上一轮原文并只补缺失字段（97280cf）
+- **bilibili**: 私信只按每日额度限流，间隔下限降到 10 分钟（7ceddbe）
+- **prompt**: 动作数量按任务区间生成并强化必填引导（f6d085a）
+- **brain**: 剥掉 Summary 行首自造的绝对时间标签（9c7cc04）
+- **brain**: 修复轮校验必填字段并按任务提示动作数量（fb66780）
+- **brain**: 工具轮 aside 统一渲染成 Speech 行（8df3739）
+- **brain**: 上下文 dump 补 tool_calls 并压成单行（55d59e3）
+- **brain**: 空解析进入修复轮，历史行按协议渲染，清空上下文删除历史（6c59e20）
+- **tools**: 修复输出契约缺陷并改为严格校验（4c6fe6b）
+- **bilibili**: 请求超时记 unknown，解析容忍脏字段（2bdb6c0）
+- **brain**: 事件写入失败退回文本记录，摘要覆盖区间随队列显式传递（d2d8c2a）
+- **brain**: 工具组时序、预算配额与工具搜索索引（9894131）
+- **projection**: 两遍构建工具组，aside 不再落成孤立 assistant 消息（f546e8d）
+- **brain**: 启动时从事件重建调试面板的上下文快照（9dd1251）
+- **brain**: 修复 content 为 null 时上下文转储崩溃，tool_search 支持全名与可读摘要（f7dd444）
+- **brain**: 上下文构建失败时记录堆栈并退回本地兜底（0b4d89c）
+- **brain**: 事件日志缺陷修复与增长控制（d02502e）
+- **bilibili**: 评论请求对齐 Web 端风控参数，复核识别阿瓦隆隐藏（53f58ce）
+- **tools**: tool_search 支持多关键词并纳入方法说明（749e882）
+- **ui**: 记忆连接测试互斥，关闭时清理汇总线程（e935704）
+- **ui**: 流式台词信号带调用令牌，转发处过滤迟到的旧流（1624756）
+- **brain**: 工具图片只随紧接的一次请求发送（fe7746f）
+- **memory**: 写回前复核成员内容，无效组不占用 id（e681b2e）
+- **memory**: 汇总游标失败回退，重启按库内 marker 初始化（70d9f84）
+- …另有 11 条同类改动
+
+**调优**
+- **anim**: grim/finger_heart/confuse/shy/embarrassed 补呼吸位移（b414d88）
+- **anim**: 呼吸位移 1px 调至 2px（146d423）
+- **web_search**: 工具与 fetch 描述去掉后端名称（e2cec54）
+- **web_search**: auto 路由改为 Tavily 优先，连通探测覆盖所有已配置后端（6dc0705）
+
+**重构**
+- **brain**: 工具轮双事件与 snapshot 折叠（eb00fba）
+- **tools**: 失败提示由工具自带，提示字段统一为 hint（96aec64）
+- **game**: 内部键名统一到输出契约（31108f7）
+- **tools**: 删除输出契约的兼容路径（ef204f1）
+- **tools**: bilibili 与 game 就地返回规范值（53b9713）
+- **web_search**: deep_search 拆为 search + fetch，对齐业界工具划分（d01b008）
+
+**文档**
+- 架构文档同步 slow_tick 默认间隔为 600s（7a2c6f1）
+- 调整部分注释（b084440）
+- 工具输出声明与投影设计（6d6f7bf）
+- **specs**: 工具通道改为 native 首选，新增错误反馈降档与传输编码层（db0fdca）
+- **specs**: 新增会话事件日志与消息投影设计（c9b8935）
+- **memory**: 触发规则按 marker 增量描述（2577623）
+- **memory**: 同步汇总游标、写回复核与同主题取最新（f5965fe）
+- **edge**: 贴边设计文档与提示词说明对齐实现（6e04aff）
+- **memory**: 同步事件汇总的增量触发与清理日志（78073d7）
+- **ui**: 调整事件汇总设置项的说明文案（e2705b1）
+- **file_ops**: 调整 read_file 的工具说明（9bcb5a0）
+- 刷新 modules.md 的 web_search 函数列表（0ca2bd2）
+
+**测试**
+- **web_search**: SSRF 拒绝用例改为断言请求未发出（6e8cb74）
+- 去掉测试中的产品文案断言，改为行为与结构断言（45b3cc7）
+
+**杂项**
+- **bilibili**: 精简间隔校验的 docstring（8f24c8d）
+- **memory**: 汇总日志截断时标注省略号与剩余字数（bfbd472）
+
+**其他**
+- merge master into batch/3-ui-polish（48b22fe）
+- merge master into batch/2-memory-fileops（bf85a3f）
+- tune：统一dock事件的描述（bda5f7c）
+
 ## v1.6.1 — 2026-10-16
 
 **新功能**
@@ -94,6 +212,7 @@
 - **ui**: 气泡队列测试改手动驱动定时器（becbee0）
 
 **杂项**
+- 版本号 1.6.1，刷新变更记录（5196621）
 - 去掉多余注释（91e0618）
 - 精简注释，只保留做什么（55d16cd）
 - **anim**: 替换 look_around 两帧素材（034771d）

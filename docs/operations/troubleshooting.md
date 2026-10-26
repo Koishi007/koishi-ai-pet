@@ -42,7 +42,7 @@ python scripts/gen_docs.py --check      # 文档是否与代码一致
 sqlite3 pet.db "SELECT satiety, energy FROM vitals; SELECT affection, joy, sanity FROM mood;"
 sqlite3 pet.db "SELECT level, COUNT(*) FROM memories GROUP BY level;"
 sqlite3 pet.db "SELECT datetime(created_at), substr(content,1,50) FROM memories ORDER BY created_at DESC LIMIT 10;"
-sqlite3 pet.db "SELECT * FROM context_meta;"     # 上下文持久化状态
+sqlite3 pet.db "SELECT type, COUNT(*) FROM session_events GROUP BY type;"   # 会话事件分布
 ```
 
 `pet.db` 在项目根目录；记忆的向量表 `memories_vec` 是 sqlite-vec 虚拟表，普通 CLI 查不了。
