@@ -44,7 +44,7 @@ _CONFIRM_DELAY_S = 60.0
 # 两次评论之间的最短间隔：评论是唯一会被风控的写操作
 _COMMENT_COOLDOWN_S = 120
 # 冷却检查与发送放在同一临界区：工具轮次可能并行调用 comment
-_COMMENT_LOCK = threading.Lock()
+_COMMENT_LOCK: threading.Lock | None = None
 
 # 本工具的错误码
 _ERROR_HINTS = {
@@ -608,6 +608,14 @@ def _elapsed_seconds(since: str) -> float:
         return float("inf")
 
 
+def _comment_lock() -> threading.Lock:
+    """评论临界区锁；首次使用时创建。"""
+    global _COMMENT_LOCK
+    if _COMMENT_LOCK is None:
+        _COMMENT_LOCK = threading.Lock()
+    return _COMMENT_LOCK
+
+
 def _comment_gate(storage: BiliStorage, uid: int) -> dict | None:
     """两条评论之间的最短间隔；点赞、投币、私信不受限。"""
     last = storage.last_comment_at(uid)
@@ -693,7 +701,7 @@ def write_action(storage: BiliStorage, kind: str, *, bvid: str = "", text: str =
 
     if storage.count_today(uid, "comment", today) >= int(cfg["comment_per_day"]):
         return {"error": "今天的评论额度用完了", "code": "quota"}
-    with _COMMENT_LOCK:
+    with _comment_lock():
         blocked = _comment_gate(storage, uid)
         if blocked:
             return blocked
