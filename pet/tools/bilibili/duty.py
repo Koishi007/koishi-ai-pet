@@ -43,6 +43,8 @@ _COMMENT_PER_TARGET = 3
 _CONFIRM_DELAY_S = 60.0
 # 两次评论之间的最短间隔：评论是唯一会被风控的写操作
 _COMMENT_COOLDOWN_S = 120
+# 冷却检查与发送放在同一临界区：工具轮次可能并行调用 comment
+_COMMENT_LOCK = threading.Lock()
 
 # 本工具的错误码
 _ERROR_HINTS = {
@@ -691,12 +693,13 @@ def write_action(storage: BiliStorage, kind: str, *, bvid: str = "", text: str =
 
     if storage.count_today(uid, "comment", today) >= int(cfg["comment_per_day"]):
         return {"error": "今天的评论额度用完了", "code": "quota"}
-    blocked = _comment_gate(storage, uid)
-    if blocked:
-        return blocked
-    with _open(cfg, credential) as client:
-        result = _post_comment(client, storage, cfg, credential, uid, bvid,
-                               int(target["aid"]), text)
+    with _COMMENT_LOCK:
+        blocked = _comment_gate(storage, uid)
+        if blocked:
+            return blocked
+        with _open(cfg, credential) as client:
+            result = _post_comment(client, storage, cfg, credential, uid, bvid,
+                                   int(target["aid"]), text)
     return _as_tool_result(result)
 
 
@@ -739,7 +742,7 @@ def verify(storage: BiliStorage, limit: int = 10) -> dict:
                                       remote_id=str(rpid), root=root)
                 missing += 1
                 continue
-            storage.finish_action(action["id"], state, remote_id=str(rpid))
+            storage.finish_action(action["id"], state, remote_id=str(rpid), root=root)
             if state == "visible":
                 found += 1
             else:
