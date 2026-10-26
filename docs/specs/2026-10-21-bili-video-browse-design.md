@@ -171,7 +171,7 @@ wbi 签名约定：
 - 点赞与评论的目标必须是最近一轮 `browse` 看到的 `bvid`，进程内只保留最近一轮，30 分钟后失效。提示注入无法指定任意视频。
 - 投币前检查硬币余额，低于 `coin_floor + 1` 时跳过；`multiply` 固定 1，`select_like` 固定 0，由点赞操作单独控制。
 - 私信只发给配置里的 `dm_uid`；未配置时返回错误，不静默跳过。
-- 该视频存在未回复的 @ 时，评论挂在 @ 那条评论下（`root` 与 `parent` 填它的 `rpid`），正文前缀 `@昵称 `，前缀不计入 filter 长度；发送成功后把该 @ 标为已回复。
+- 该视频存在未回复的 @ 时，评论挂在 @ 那条评论下（`root` 与 `parent` 填它的 `rpid`），正文不加 @ 前缀；发送成功后把该 @ 标为已回复。
 - 点赞、投币每个目标 1 条有效记录；评论每个目标最多 3 条，由台账计数保证。私信目标恒定，不做目标去重，也不设每日上限。
 - 每个写开关独立，默认全部关闭；刷视频自身由 `allow_browse` 控制，默认开启。
 - 五个开关都在账号面板里，改动即时写回 `config.json`；关闭 `allow_browse` 时 `bilibili__browse` 直接返回原因，不发起请求。
@@ -212,6 +212,7 @@ pending → failed（业务码非 0，确定没发出去，可重试）
 pending → unknown（业务码 0 但回执缺 rpid / msg_key，可能已发出，不再重试）
 done → visible / hidden / unverified（复核结果）
 unverified → visible / hidden（下一轮复核）
+hidden → visible / hidden / unverified（下一轮复核）
 ```
 
 | 场景 | 处理 |
@@ -229,13 +230,14 @@ unverified → visible / hidden（下一轮复核）
 
 | 项 | 约定 |
 |---|---|
-| 目的 | 确认评论是否公开可见，收敛 `pending`、`done` 与 `unverified` |
-| 查询 | 顶层用 `reply/main`（`mode=2` 按时间）；有 `@` 回复时用 `reply/reply` 按台账记录的 `root` 拉楼中楼 |
+| 目的 | 确认评论是否公开可见，收敛 `pending`、`done`、`unverified` 与 `hidden` |
+| 查询 | 顶层用 `reply/main`（`mode=2` 按时间）；有 `@` 回复时用 `reply/reply` 按台账记录的 `root` 拉楼中楼；先不带登录态查公开视角，再带登录态复查 |
 | 触发 | `bilibili__verify` 手动触发 |
 | 命中判定 | 按 `rpid` 精确匹配，且 `member.mid` 必须是本人；未命中时退回正文前 20 字匹配 |
-| `invisible` | 命中但接口标了 `invisible`，记 `hidden`，不重发 |
-| `state` | 非 0 视为审核或折叠，保持 `done`，下一轮再核 |
-| 未命中 | 记 `unverified`，下一轮再核；看不到不等于没发出，不重发 |
+| `invisible` | 公开视角命中但接口标了 `invisible`，记 `hidden`，不重发 |
+| `state` | 公开视角命中且 `state` 为 17 记 `hidden`；其余非 0 视为审核或折叠，保持 `done`，下一轮再核 |
+| 仅自己可见 | 公开视角未命中、登录视角命中，记 `hidden`；该记录仍参与后续复核 |
+| 未命中 | 两边都未命中记 `unverified`，下一轮再核；看不到不等于没发出，不重发 |
 | 私信 | 不参与复核，接口无公开可查状态 |
 
 ## §8 数据落点
@@ -435,7 +437,7 @@ CREATE TABLE IF NOT EXISTS bili_mentions (
 | 凭证泄露 | 本机文件可被其他程序读取 | 凭证与配置分离、面板可一键退出登录、文档写明明文存储 |
 | 超时重复发送 | 同一视频两条评论 | 台账唯一索引、pending 10 分钟拒绝重发、复核收敛 |
 | filter 误杀 | 正常评论被拒 | 拒绝原因返回模型与日志；词表可由配置追加，不可删除内置规则 |
-| 评论未公开 | 台账 `done` 但实际仅自己可见 | `bilibili__verify` 复核，标记 `hidden`，不重发 |
+| 评论未公开 | 台账 `done` 但实际仅自己可见 | `bilibili__verify` 用公开视角复核，标记 `hidden`，不重发 |
 | 接口变更 | wbi 签名或字段变化导致全量失败 | 字段解析容错、失败降级为原因文本；接口集中在 `core.py` |
 | 记忆膨胀 | event 记忆挤出其他内容 | 每轮最多 1 条，`importance` 固定 3 |
 | 长耗时阻塞 | 300s 内未返回，执行器超时后线程仍在后台 | 请求间隔、候选上限与 90s 采集预算共同约束上界；字幕与封面走 CDN 不占接口间隔 |
@@ -466,7 +468,7 @@ CREATE TABLE IF NOT EXISTS bili_mentions (
 
 @ 的处理不做事件驱动：只在每次提醒前顺带拉一次，新 @ 落表后与历史未回复的一起带出，提示词把 @ 处理排在必做任务之前；模型用 `bilibili__browse` 看过那个视频后，用 `bilibili__comment` 在视频下回复，成功后该条 @ 不再出现在后续提示词里。每轮带出的候选 @ 记一行日志。`dm_uid` 为 0 时不处理任何 @。
 
-只回复 `dm_uid` 的 @。回复时用通知里的 `rpid` 挂到该评论下，正文前缀 `@昵称 `；`rpid` 为 0 时退化为视频下的顶级评论。
+只回复 `dm_uid` 的 @。回复时用通知里的 `rpid` 挂到该评论下，正文不额外加 @ 前缀；`rpid` 为 0 时退化为视频下的顶级评论。
 
 待定项：
 

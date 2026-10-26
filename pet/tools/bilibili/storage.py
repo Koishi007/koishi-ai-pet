@@ -283,12 +283,13 @@ class BiliStorage:
         return [dict(r) for r in rows]
 
     def reviewable_actions(self, uid: int, kind: str, limit: int = 10) -> list[dict]:
-        """已发出且有远端 id、尚未确认可见的记录。"""
+        """已发出且有远端 id 的待复核记录：未复核的 done 优先，其次 unverified，最后 hidden。"""
         with self._lock:
             rows = self._conn.execute(
                 "SELECT * FROM bili_actions WHERE uid = ? AND kind = ?"
-                " AND status IN ('done', 'unverified') AND remote_id != ''"
-                " ORDER BY id DESC LIMIT ?",
+                " AND status IN ('done', 'unverified', 'hidden') AND remote_id != ''"
+                " ORDER BY CASE status WHEN 'done' THEN 0 WHEN 'unverified' THEN 1 ELSE 2 END,"
+                " id DESC LIMIT ?",
                 (int(uid), kind, int(limit)),
             ).fetchall()
         return [dict(r) for r in rows]
@@ -311,6 +312,16 @@ class BiliStorage:
                 (int(uid), kind, int(limit)),
             ).fetchall()
         return [r["content"] for r in rows]
+
+    def last_comment_at(self, uid: int) -> str:
+        """该账号最近一次评论的开始时间；没评论过返回空串。"""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT MAX(created_at) AS t FROM bili_actions"
+                " WHERE uid = ? AND kind = 'comment'",
+                (int(uid),),
+            ).fetchone()
+        return str(row["t"] or "") if row else ""
 
     def prune(self, days: int = _RETENTION_DAYS):
         """删掉过期的判重与已结案的台账；pending 留给复核处理。"""

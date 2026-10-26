@@ -648,6 +648,20 @@ def test_unverified_comment_stays_reviewable(store):
     assert [a["id"] for a in store.reviewable_actions(1, "comment")] == [action]
 
 
+def test_hidden_comment_stays_reviewable(store):
+    action = store.claim_action(1, "comment", "BV1", "x")
+    store.finish_action(action, "hidden", remote_id="9")
+    assert [a["id"] for a in store.reviewable_actions(1, "comment")] == [action]
+
+
+def test_reviewable_actions_prioritizes_done(store):
+    hidden = store.claim_action(1, "comment", "BV1", "x")
+    store.finish_action(hidden, "hidden", remote_id="1")
+    done = store.claim_action(1, "comment", "BV2", "x")
+    store.finish_action(done, "done", remote_id="2")
+    assert [a["id"] for a in store.reviewable_actions(1, "comment")] == [done, hidden]
+
+
 def test_unknown_status_blocks_retry(store):
     action = store.claim_action(1, "comment", "BV1", "x")
     store.finish_action(action, "unknown", reason="receipt")
@@ -1180,6 +1194,31 @@ def test_reply_hidden_detects_avalon_state():
     assert not duty._reply_hidden({"state": 0, "invisible": False})
 
 
+def test_comment_gate_allows_when_idle(store):
+    assert duty._comment_gate(store, 1) is None
+
+
+def test_comment_gate_blocks_within_cooldown(store):
+    assert store.claim_action(1, "comment", "BV1", "x") is not None
+    assert duty._comment_gate(store, 1)["code"] == "cooldown"
+
+
+def test_comment_gate_ignores_other_writes(store):
+    assert store.claim_action(1, "like", "BV1") is not None
+    assert store.claim_action(1, "coin", "BV1") is not None
+    assert duty._comment_gate(store, 1) is None
+
+
+def test_confirm_comment_requires_public_view():
+    client = _SplitReplyClient([], [_my_reply(7, 0, "x")])
+    assert duty._confirm_comment(client, 9, 42, 0, 7, "x") == "hidden"
+
+
+def test_confirm_comment_visible_in_public_view():
+    client = _SplitReplyClient([_my_reply(7, 0, "x")], [_my_reply(7, 0, "x")])
+    assert duty._confirm_comment(client, 9, 42, 0, 7, "x") == "visible"
+
+
 # ---------- 发送后复核 ----------
 
 class _ReplyClient:
@@ -1188,11 +1227,25 @@ class _ReplyClient:
     def __init__(self, replies):
         self.replies = replies
 
-    def my_replies(self, _aid):
+    def my_replies(self, _aid, *, bvid="", anonymous=False):
         return self.replies
 
-    def comment_replies(self, _aid, _root):
+    def comment_replies(self, _aid, _root, *, bvid="", anonymous=False):
         return self.replies
+
+
+class _SplitReplyClient:
+    """公开视角与登录视角返回不同列表的桩。"""
+
+    def __init__(self, public, own):
+        self.public = public
+        self.own = own
+
+    def my_replies(self, _aid, *, bvid="", anonymous=False):
+        return self.public if anonymous else self.own
+
+    def comment_replies(self, _aid, _root, *, bvid="", anonymous=False):
+        return self.public if anonymous else self.own
 
 
 def _my_reply(rpid: int, state: int, message: str) -> dict:

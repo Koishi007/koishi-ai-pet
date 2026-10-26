@@ -95,6 +95,11 @@ _HEADERS = {
     "Origin": _WEB,
 }
 
+
+def _video_referer(bvid: str) -> str:
+    """互动请求的来源页：B 站校验来源页与目标视频是否一致。"""
+    return f"{_WEB}/video/{bvid}/"
+
 # wbi：64 项混入表重排后取前 32 位作为 mixin key
 _MIXIN_TAB = (
     46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35,
@@ -457,9 +462,13 @@ class BiliClient:
 
     def _cookie_header(self) -> str:
         if not self._cred:
-            pairs = {"buvid3": self._buvid3, "buvid4": self._buvid4}
-            return "; ".join(f"{k}={v}" for k, v in pairs.items() if v)
+            return self._anon_cookie_header()
         return self._cred.cookie_header(self._buvid3, self._buvid4)
+
+    def _anon_cookie_header(self) -> str:
+        """匿名视角的 cookie：只带设备 buvid，不含登录态。"""
+        pairs = {"buvid3": self._buvid3, "buvid4": self._buvid4}
+        return "; ".join(f"{k}={v}" for k, v in pairs.items() if v)
 
     def _ensure_fingerprint(self):
         """补齐 buvid3/buvid4；进程内复用同一对，失败不阻断请求。"""
@@ -508,6 +517,8 @@ class BiliClient:
         auth: bool = False,
         base: str = _API,
         allow_error_codes: bool = False,
+        referer: str | None = None,
+        anonymous: bool = False,
     ) -> dict:
         """统一请求入口：限速、签名、csrf 与错误映射。"""
         self._ensure_fingerprint()
@@ -520,7 +531,9 @@ class BiliClient:
                 raise BiliError("auth", "未登录 B 站")
             body["csrf"] = self._cred.bili_jct
         headers = dict(_HEADERS)
-        cookie = self._cookie_header()
+        if referer:
+            headers["Referer"] = referer
+        cookie = self._anon_cookie_header() if anonymous else self._cookie_header()
         if cookie:
             headers["Cookie"] = cookie
         try:
@@ -586,6 +599,7 @@ class BiliClient:
             "level": int((data.get("level_info") or {}).get("current_level") or 0),
             "coins": int(data.get("money") or 0),
             "fans": int(data.get("follower") or 0),
+            "mobile_verified": bool(data.get("mobile_verified")),
         }
 
     def search(self, keyword: str, *, order: str = "pubdate", page: int = 1) -> list[dict]:
@@ -655,13 +669,16 @@ class BiliClient:
 
     def like(self, bvid: str, *, undo: bool = False) -> dict:
         return self._request("POST", "/x/web-interface/archive/like",
-                             data={"bvid": bvid, "like": 0 if undo else 1}, auth=True)
+                             data={"bvid": bvid, "like": 0 if undo else 1}, auth=True,
+                             referer=_video_referer(bvid))
 
     def coin(self, bvid: str) -> dict:
         return self._request("POST", "/x/web-interface/coin/add",
-                             data={"bvid": bvid, "multiply": 1, "select_like": 0}, auth=True)
+                             data={"bvid": bvid, "multiply": 1, "select_like": 0}, auth=True,
+                             referer=_video_referer(bvid))
 
-    def comment(self, aid: int, text: str, *, root: int = 0, parent: int = 0) -> int:
+    def comment(self, aid: int, text: str, *, bvid: str = "",
+                root: int = 0, parent: int = 0) -> int:
         """发评论；root 非 0 时回复该评论，parent 默认与 root 相同。"""
         payload = {
             "oid": int(aid), "type": 1, "message": text,
@@ -674,7 +691,8 @@ class BiliClient:
             payload["root"] = int(root)
             payload["parent"] = int(parent or root)
         data = self._request("POST", "/x/v2/reply/add", params=_dm_params(),
-                             data=payload, sign=True, auth=True)
+                             data=payload, sign=True, auth=True,
+                             referer=_video_referer(bvid) if bvid else None)
         rpid = int(data.get("rpid") or 0)
         if not rpid:
             raise BiliError("receipt", "评论回执缺少 rpid")
@@ -701,17 +719,22 @@ class BiliClient:
             raise BiliError("receipt", "私信回执缺少 msg_key")
         return data
 
-    def my_replies(self, aid: int) -> list[dict]:
-        """顶层评论，按时间排序取第一页。"""
+    def my_replies(self, aid: int, *, bvid: str = "", anonymous: bool = False) -> list[dict]:
+        """顶层评论，按时间排序取第一页；anonymous 为真时用未登录视角。"""
         data = self._request("GET", "/x/v2/reply/main",
                              params={"oid": int(aid), "type": 1, "mode": 2, "next": 0},
-                             auth=True)
+                             auth=not anonymous,
+                             referer=_video_referer(bvid) if bvid else None,
+                             anonymous=anonymous)
         return data.get("replies") or []
 
-    def comment_replies(self, aid: int, root: int) -> list[dict]:
-        """某条评论下的楼中楼。"""
+    def comment_replies(self, aid: int, root: int, *, bvid: str = "",
+                        anonymous: bool = False) -> list[dict]:
+        """某条评论下的楼中楼；anonymous 为真时用未登录视角。"""
         data = self._request("GET", "/x/v2/reply/reply",
                              params={"oid": int(aid), "type": 1, "root": int(root),
                                      "ps": 20, "pn": 1},
-                             auth=True)
+                             auth=not anonymous,
+                             referer=_video_referer(bvid) if bvid else None,
+                             anonymous=anonymous)
         return data.get("replies") or []
