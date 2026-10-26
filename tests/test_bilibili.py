@@ -654,6 +654,14 @@ def test_hidden_comment_stays_reviewable(store):
     assert [a["id"] for a in store.reviewable_actions(1, "comment")] == [action]
 
 
+def test_reviewable_actions_prioritizes_done(store):
+    hidden = store.claim_action(1, "comment", "BV1", "x")
+    store.finish_action(hidden, "hidden", remote_id="1")
+    done = store.claim_action(1, "comment", "BV2", "x")
+    store.finish_action(done, "done", remote_id="2")
+    assert [a["id"] for a in store.reviewable_actions(1, "comment")] == [done, hidden]
+
+
 def test_unknown_status_blocks_retry(store):
     action = store.claim_action(1, "comment", "BV1", "x")
     store.finish_action(action, "unknown", reason="receipt")

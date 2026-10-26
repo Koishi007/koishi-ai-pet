@@ -283,12 +283,13 @@ class BiliStorage:
         return [dict(r) for r in rows]
 
     def reviewable_actions(self, uid: int, kind: str, limit: int = 10) -> list[dict]:
-        """已发出且有远端 id、可见性未确认或曾被隐藏的记录；审核中的评论可能在之后放出。"""
+        """已发出且有远端 id 的待复核记录：未复核的 done 优先，其次 unverified，最后 hidden。"""
         with self._lock:
             rows = self._conn.execute(
                 "SELECT * FROM bili_actions WHERE uid = ? AND kind = ?"
                 " AND status IN ('done', 'unverified', 'hidden') AND remote_id != ''"
-                " ORDER BY id DESC LIMIT ?",
+                " ORDER BY CASE status WHEN 'done' THEN 0 WHEN 'unverified' THEN 1 ELSE 2 END,"
+                " id DESC LIMIT ?",
                 (int(uid), kind, int(limit)),
             ).fetchall()
         return [dict(r) for r in rows]
