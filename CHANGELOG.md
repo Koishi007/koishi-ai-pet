@@ -7,7 +7,7 @@
 发布前刷新一次：`python scripts/gen_changelog.py`，流程见
 [docs/operations/release.md](https://github.com/Koishi007/koishi-ai-pet/blob/master/docs/operations/release.md)。
 
-## v1.7.0 — 2026-10-26
+## v1.7.0 — 2026-10-27
 
 **新功能**
 - **bilibili**: qrcode 缺失时阻塞工具加载（e40699e）
@@ -42,6 +42,7 @@
 - **web_search**: 新增 DeepSeek 搜索后端，明确与 browser 的搜索分工（43ea787）
 
 **修复**
+- **brain**: 遮挡链排除工具窗口与透明覆盖层，补齐 Win32 原型声明（01501a8）
 - **bilibili**: 评论锁延迟到首次使用，满足模块级无副作用（33392ec）
 - **bilibili**: 评论冷却与发送加锁，复核写回保留楼中楼 root（e33299e）
 - **bilibili**: 复核按 done、unverified、hidden 排序，避免隐藏记录占满批次（3c4f40a）
@@ -81,8 +82,7 @@
 - **ui**: 流式台词信号带调用令牌，转发处过滤迟到的旧流（1624756）
 - **brain**: 工具图片只随紧接的一次请求发送（fe7746f）
 - **memory**: 写回前复核成员内容，无效组不占用 id（e681b2e）
-- **memory**: 汇总游标失败回退，重启按库内 marker 初始化（70d9f84）
-- …另有 11 条同类改动
+- …另有 12 条同类改动
 
 **调优**
 - **anim**: grim/finger_heart/confuse/shy/embarrassed 补呼吸位移（b414d88）
