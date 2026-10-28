@@ -16,6 +16,9 @@
 | **aside** | 工具调用的附带参数：让桌宠在动手的同时说一句话，保证言行一致 | `pet/tools/registry.py` 自动追加 |
 | **看门狗（watchdog）** | 检测脑线程「长时间无进展」并在超时后强制恢复的机制 | `pet/agent/scheduled_tasks.py` 的 `_brain_watchdog` |
 | **进展（progress）** | 脑线程的心跳：收到流式 chunk、完成工具轮次等都会上报，用于喂看门狗 | `Behavior.note_progress` |
+| **会话事件日志（session events）** | 只追加的会话记录：用户消息、模型轮次、工具调用与结果、失败轮、系统备注 | `pet/brain/events.py` 的 `EventLog` |
+| **投影（projection）** | 把事件日志还原成模型可见 messages 的纯函数，按模型 Profile 决定工具通道 | `pet/brain/projection.py` 的 `project` |
+| **工具通道（tool channel）** | 工具结果的承载方式：`native` → `user-note` → `system-note` → `none`，端点明确拒绝时逐档降级并缓存 | `pet/brain/tool_channel.py` |
 
 ## 数值与需求
 
@@ -61,13 +64,14 @@
 | **呼吸（breath）** | 帧动画上叠加的姿态：`amplitude`（位移 px，≤4）、`scale_x`/`scale_y`（0.5~2.0）、`period_ticks` | 同上 |
 | **粒子特效（effect）** | 名字 → 生成函数的注册表；动作或事件按名字触发 | `pet/ui/particle.py` 的 `_SPAWNERS` |
 | **帧序** | 动作目录里帧文件的排序结果，决定播放顺序 | `pet/ui/pet_animations.py` |
+| **贴边（edge dock）** | 拖拽松手靠近边缘或甩飞撞边时贴住屏幕左右边缘，换用侧边姿势；贴边时动作表只剩 `EDGE_ACTION_NAMES` | `pet/ui/edge_dock.py`、`pet/action/registry.py` |
 | **素材规格** | 每帧是 512×512 的透明 webp，配一个同名 json，落到 `assets/actions/<name>/`；去背与压码用什么工具都可以 | [subsystems/assets-pipeline.md](subsystems/assets-pipeline.md) |
 
 ## 工程词
 
 | 术语 | 含义 | 在哪 |
 |---|---|---|
-| **调度器（Scheduler）** | 三档定时器：`fast`（默认 1s）、`mid`（默认 5min）、`slow`（默认 5min）；系统空闲时整体暂停 | `pet/agent/scheduler.py` |
+| **调度器（Scheduler）** | 三档定时器：`fast`（默认 1s）、`mid`（默认 5min）、`slow`（默认 10min）；系统空闲时整体暂停 | `pet/agent/scheduler.py` |
 | **状态机（StateMachine）** | `IDLE` / `AUTONOMOUS` / `INTERACTING` 三状态，带合法迁移校验 | `pet/agent/state.py` |
 | **配置项真源** | `_KEY_META`：每一项的类型、默认值、分组、是否需重启、是否隐藏 | `pet/config.py` |
 | **设置页签** | 设置界面的「连接/行为/提示词/通用」四页，归属是界面代码手写的，与 `category` 不同 | `pet/ui/settings_window.py` |
@@ -75,3 +79,4 @@
 | **单实例锁** | 防止重复启动的 `QLockFile`，与 `settings.json` 同目录 | `pet/single_instance.py` |
 | **启动标记 / 崩溃报告** | 运行状态标记与异常落盘，用于下次启动时判断上次是否异常退出 | `pet/crash_reporter.py` |
 | **prompt 缓存** | `LLM_CACHE_PROMPT`：保持 system 前缀稳定以命中服务端缓存 | `pet/brain/llm_client.py` |
+| **输出契约（output contract）** | 工具方法的返回 schema：字段用 `x-role` 声明渲染方式，违约时本次调用失败（`output_violation`） | `pet/tools/output.py` |

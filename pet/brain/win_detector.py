@@ -13,6 +13,34 @@ GW_HWNDPREV = 3
 MIN_WINDOW_SIZE = 50
 OCCLUSION_THRESHOLD = 0.8
 DWMWA_CLOAKED = 14
+WS_EX_LAYERED = 0x00080000
+WS_EX_TRANSPARENT = 0x00000020
+LWA_ALPHA = 0x00000002
+MIN_OPAQUE_ALPHA = 16
+
+# 显式原型：否则 ctypes 按 c_int 处理，64 位下 HWND 被截断
+user32.IsWindow.argtypes = [wintypes.HWND]
+user32.IsWindow.restype = wintypes.BOOL
+user32.IsWindowVisible.argtypes = [wintypes.HWND]
+user32.IsWindowVisible.restype = wintypes.BOOL
+user32.IsIconic.argtypes = [wintypes.HWND]
+user32.IsIconic.restype = wintypes.BOOL
+user32.GetWindow.argtypes = [wintypes.HWND, wintypes.UINT]
+user32.GetWindow.restype = wintypes.HWND
+user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.c_void_p]
+user32.GetWindowRect.restype = wintypes.BOOL
+user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
+user32.GetWindowLongW.restype = ctypes.c_long
+user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+user32.GetWindowTextW.restype = ctypes.c_int
+user32.GetLayeredWindowAttributes.argtypes = [
+    wintypes.HWND, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p,
+]
+user32.GetLayeredWindowAttributes.restype = wintypes.BOOL
+dwmapi.DwmGetWindowAttribute.argtypes = [
+    wintypes.HWND, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD,
+]
+dwmapi.DwmGetWindowAttribute.restype = ctypes.c_long
 
 
 def _is_cloaked(hwnd: int) -> bool:
@@ -26,6 +54,30 @@ def _is_cloaked(hwnd: int) -> bool:
         return hr == 0 and cloaked.value != 0
     except Exception:
         return False
+
+
+def _is_effectively_invisible(hwnd: int, ex_style: int) -> bool:
+    """分层窗口是否实际不可见：alpha 近 0，或鼠标穿透的贴图覆盖层。"""
+    if not (ex_style & WS_EX_LAYERED):
+        return False
+
+    alpha = wintypes.BYTE(0)
+    key = wintypes.DWORD(0)
+    flags = wintypes.DWORD(0)
+    if user32.GetLayeredWindowAttributes(
+            hwnd, ctypes.byref(key), ctypes.byref(alpha), ctypes.byref(flags)):
+        if flags.value & LWA_ALPHA:
+            return alpha.value < MIN_OPAQUE_ALPHA
+    return bool(ex_style & WS_EX_TRANSPARENT)
+
+
+def _is_occluder(hwnd: int, ex_style: int) -> bool:
+    """窗口能否算作遮挡物：可见、非最小化、非隐身、非工具窗口与透明覆盖层。"""
+    if not user32.IsWindowVisible(hwnd) or user32.IsIconic(hwnd) or _is_cloaked(hwnd):
+        return False
+    if (ex_style & WS_EX_TOOLWINDOW) and not (ex_style & WS_EX_APPWINDOW):
+        return False
+    return not _is_effectively_invisible(hwnd, ex_style)
 
 
 def is_window_alive(hwnd: int) -> bool:
@@ -106,9 +158,7 @@ def is_window_occluded(hwnd: int, threshold: float = OCCLUSION_THRESHOLD, skip_h
 
     while current:
         if (current != skip_hwnd
-                and user32.IsWindowVisible(current)
-                and not user32.IsIconic(current)
-                and not _is_cloaked(current)):
+                and _is_occluder(current, user32.GetWindowLongW(current, GWL_EXSTYLE))):
             above_rect = wintypes.RECT()
             if user32.GetWindowRect(current, ctypes.byref(above_rect)):
                 ox1 = max(rect[0], above_rect.left)
@@ -130,7 +180,7 @@ def is_window_occluded(hwnd: int, threshold: float = OCCLUSION_THRESHOLD, skip_h
 
 
 def get_visible_windows() -> list[dict]:
-    """返回所有可见顶层窗口，过滤掉工具窗口、最小化窗口、隐身窗口和极小窗口。"""
+    """返回所有可见顶层窗口，过滤工具窗口、最小化、隐身、透明覆盖层和极小窗口。"""
     windows = []
 
     def callback(hwnd, _):
@@ -144,6 +194,8 @@ def get_visible_windows() -> list[dict]:
 
             ex_style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
             if (ex_style & WS_EX_TOOLWINDOW) and not (ex_style & WS_EX_APPWINDOW):
+                return True
+            if _is_effectively_invisible(hwnd, ex_style):
                 return True
 
             rect = wintypes.RECT()

@@ -210,14 +210,14 @@ system 动作表换成 `EDGE_ACTION_NAMES` 的八个贴边动作；调度器、�
 | 包 | 职责 | 主要文件 |
 |---|---|---|
 | `pet/agent/` | 编排层：`PetAgent` 管线、三速调度、状态机、截图 | `pet_agent.py`、`scheduler.py`、`scheduled_tasks.py`、`state.py` |
-| `pet/brain/` | 决策与记忆：上下文组装、LLM 客户端与重试、输出解析、记忆库与事件汇总、窗口探测、对话历史 | `behavior.py`、`context_builder.py`、`prompts.py`、`memory.py`、`memory_merge.py` |
+| `pet/brain/` | 决策与记忆：上下文组装、LLM 客户端与重试、输出解析、会话事件日志与投影、记忆库与事件汇总、窗口探测、对话历史 | `behavior.py`、`context_builder.py`、`prompts.py`、`memory.py`、`memory_merge.py`、`events.py`、`projection.py` |
 | `pet/action/` | 动作系统：动作定义与注册、帧动画播放队列、重力与站立、动作产出 | `registry.py`、`action.py`、`action_queue.py`、`gravity.py` |
 | `pet/pulse/` | 数值引擎：生理（饱食/精力）与心理（好感/愉悦/理智），含衰减、阈值与落库 | `vitals.py`、`mood.py` |
 | `pet/file_intake/` | 拖入文件的纯逻辑：类型嗅探、解码链、截断与额度、图片闸门与缩放、拒绝名单、目录摘要 | `sniff.py`、`text.py`、`image.py` |
-| `pet/tools/` | 工具层：注册表、执行器、上下文、加载器，以及各工具子包 | `registry.py`、`executor.py`、`context.py` |
+| `pet/tools/` | 工具层：注册表、执行器、上下文、输出契约、加载器，以及各工具子包 | `registry.py`、`executor.py`、`context.py`、`output.py` |
 | `pet/ui/` | 界面层：宠物窗口、各类气泡、表情、粒子、拖拽惯性钟摆、贴边几何、设置/调试/记忆面板、托盘 | `pet_window.py`、`particle.py`、`swing.py`、`edge_dock.py`、`settings_window.py` |
 | `pet/food/` | 觅食：需求驱动的地面食物生成与食用 | `food.py` |
-| `pet/game/` | 小游戏：猜数字、猜拳、井字棋、二十问 | `gamebase.py` 与各游戏 |
+| `pet/game/` | 小游戏：猜数字、猜拳、井字棋、二十问、猜高低 | `gamebase.py` 与各游戏 |
 | `pet/voice/` | 语音输入：热键、麦克风采集、讯飞听写 | `voice_session.py` |
 | `assets/` | 素材：每个动作一个目录（`<name>.json` + 帧 webp） | `assets/actions/` |
 | `tests/` | pytest 用例（CI 在 ubuntu + windows 上跑） | 见 `CONTRIBUTING.md`；结构红线见 [test_architecture_contracts.py](../tests/test_architecture_contracts.py) |
@@ -235,6 +235,10 @@ system 动作表换成 `EDGE_ACTION_NAMES` 的八个贴边动作；调度器、�
 | `local_fallback.py` | 本地兜底：LLM 不可用或抢锁失败时的降级产出 |
 | `summary.py` | 摘要执行端：待摘要队列 → LLM 压缩或拼接 → 写回上下文 |
 | `output.py` | 输出契约：`BehaviorOutput` / `ActionStep` / `CancelledError` |
+| `events.py` | 会话事件日志：只追加写入、会话切换与旧会话回收 |
+| `projection.py` | 投影：把事件还原成模型可见的 messages（纯函数） |
+| `tool_channel.py` | 工具通道：native 优先，端点明确拒绝时按 user-note / system-note / none 降级并缓存 |
+| `conversation_store.py` | 对话历史：`chat_history` 表的读写与按天清理 |
 
 顶层模块（`pet/*.py`）：
 
@@ -260,7 +264,7 @@ system 动作表换成 `EDGE_ACTION_NAMES` 的八个贴边动作；调度器、�
 | 位置 | 内容 | 说明 |
 |---|---|---|
 | `%APPDATA%/KoishiAI/settings.json` | 用户配置（macOS/Linux 见 `pet/settings.py`） | 与默认值合并；`settings-schema.json` 是给外部编辑器的 schema |
-| `<项目根>/pet.db` | SQLite：`vitals`、`mood`、`context_entries`、`context_meta`、`chat_history`、记忆相关表 | 连接参数统一在 `pet/db.py`（WAL、busy_timeout） |
+| `<项目根>/pet.db` | SQLite：`vitals`、`mood`、`session_events`、`session_meta`、`session_artifacts`、`chat_history`、记忆相关表 | 连接参数统一在 `pet/db.py`（WAL、busy_timeout）；`context_entries` / `context_meta` 是旧表，代码不再读写 |
 | `pet/tools/<tool>/config.json` | 工具私有配置 | 首次运行时由 `config.example.json` 复制生成 |
 | `logs/` | `koishiai.log`（按天轮转 3 份）、`crash/`（崩溃报告）、`startup.state` | 排障的第一入口 |
 | `KoishiAI.lock` | 单实例锁（与 settings.json 同目录） | 异常残留时可手删 |
@@ -337,7 +341,7 @@ system 动作表换成 `EDGE_ACTION_NAMES` 的八个贴边动作；调度器、�
 | 加一个粒子特效 | `pet/ui/particle.py` 的 `_SPAWNERS` 与 `_DEFAULT_Y` | 调试面板自动列出；重生成 [reference/effects.md](reference/effects.md) |
 | 加一个配置项 | `pet/config.py` 的 `_KEY_META` | 要在界面可见则同时改 `pet/ui/settings_window.py`；重生成 [reference/config.md](reference/config.md) |
 | 改提示词 | `pet/brain/prompts.py`；运行时段落改 `pet/brain/context_builder.py` | 组合白名单；重生成 [reference/prompt-blocks.md](reference/prompt-blocks.md) |
-| 加一个工具 | `pet/tools/<name>/__init__.py` | 声明 `TOOL_NAME`/`TOOL_DESCRIPTION`/`register()`，可加 `TOOL_GROUP`；重生成 [reference/tools.md](reference/tools.md) |
+| 加一个工具 | `pet/tools/<name>/__init__.py` | 声明 `TOOL_NAME`/`TOOL_DESCRIPTION`/`register()`，可加 `TOOL_GROUP`；每个方法声明 `output` 输出契约（见 [tool-development.md](tool-development.md) §返回值与输出契约）；重生成 [reference/tools.md](reference/tools.md) |
 | 加一个文件动作 | `pet/tools/<name>/__init__.py` 的 `register()` 内 `add_file_action(...)` | 拖入文件时由文件气泡渲染成按钮，工具被禁用则不出现；契约见 [tool-development.md](tool-development.md) |
 | 调数值手感 | `pet/pulse/vitals.py`、`pet/pulse/mood.py` + `_KEY_META` 的阈值项 | 文案档位同步（第 11 节第 2 条） |
 | 改记忆策略 | `pet/brain/memory.py` | 被动注入不要动访问统计 |
