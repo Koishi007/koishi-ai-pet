@@ -1128,7 +1128,7 @@ class SettingsWindow(QWidget):
                     continue
                 for k, w in self._fields.items():
                     if w is buddy:
-                        self._label_cache[k] = label.text().rstrip(":：").removesuffix("（需重启）")
+                        self._label_cache[k] = label.text().rstrip(":：")
                         break
         return self._label_cache.get(key) or _KEY_META.get(key, {}).get("description", key)
 
@@ -1149,14 +1149,11 @@ class SettingsWindow(QWidget):
             self._msg("输入有误",
                       f"以下字段的数值无效，未能保存：\n{details}\n\n请按提示范围修改后再保存。")
             return
-        needs_restart_keys = []
         needs_rebuild_client = False
         needs_scheduler_update = False
 
         for key, value in values.items():
-            _, needs_restart = config.save(key, value)
-            if needs_restart:
-                needs_restart_keys.append(key)
+            config.save(key, value)
 
             meta = _KEY_META.get(key)
             if meta is None:
@@ -1192,11 +1189,7 @@ class SettingsWindow(QWidget):
             self._apply_pet_scale()
         self._update_profile_ui()
 
-        if needs_restart_keys:
-            names = "、".join(self._field_label(k) for k in needs_restart_keys)
-            self._msg("设置已保存", f"已保存。需重启后生效：\n{names}")
-        else:
-            self._msg("设置已保存", "所有设置已即时生效。")
+        self._msg("设置已保存", "已保存。部分设置须重启后生效。")
         self._take_snapshot()
 
     def _apply_pet_scale(self):
