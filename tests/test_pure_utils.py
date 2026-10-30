@@ -119,8 +119,13 @@ class TestValidateArgs:
         "flag": {"type": "bool", "default": False},
     }
 
-    def test_type_mismatch_rejected(self):
+    def test_numeric_string_coerced(self):
         args, err = ToolExecutor._validate_args({"count": "5"}, self.SCHEMA)
+        assert err == ""
+        assert args["count"] == 5
+
+    def test_type_mismatch_rejected(self):
+        args, err = ToolExecutor._validate_args({"count": "很多"}, self.SCHEMA)
         assert args == {}
         assert "count" in err
 
@@ -141,6 +146,26 @@ class TestValidateArgs:
         args, err = ToolExecutor._validate_args({"count": 1, "mode": "slow"}, self.SCHEMA)
         assert err == ""
         assert args["mode"] == "slow"
+
+    def test_null_falls_back_to_default(self):
+        args, err = ToolExecutor._validate_args({"count": 1, "mode": None, "flag": None}, self.SCHEMA)
+        assert err == ""
+        assert args == {"count": 1, "mode": "fast", "flag": False}
+
+    def test_null_for_required_rejected(self):
+        args, err = ToolExecutor._validate_args({"count": None}, self.SCHEMA)
+        assert args == {}
+        assert "count" in err
+
+    def test_bool_not_accepted_as_int(self):
+        args, err = ToolExecutor._validate_args({"count": True}, self.SCHEMA)
+        assert err == ""
+        assert args["count"] == 1
+
+    def test_fractional_value_rejected(self):
+        args, err = ToolExecutor._validate_args({"count": 3.9}, self.SCHEMA)
+        assert args == {}
+        assert "count" in err
 
 
 class TestLogPreview:

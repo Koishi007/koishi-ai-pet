@@ -60,7 +60,8 @@ def registry() -> ToolRegistry:
     reg.add_method("demo", "echo", "回显文本", handler=_echo,
                    args={"text": {"type": "str", "desc": "要回显的文本"}},
                    output=_OUTPUT)
-    reg.add_method("demo", "count", "计数", handler=lambda n=1: {"summary": f"n={n}"},
+    reg.add_method("demo", "count", "计数",
+                   handler=lambda n=1, mode="fast": {"summary": f"n={n}"},
                    args={"n": {"type": "int", "desc": "次数"},
                          "mode": {"type": "str", "desc": "模式",
                                   "enum": ["fast", "slow"], "default": "fast"}},
@@ -322,12 +323,61 @@ class TestExecutorRouting:
         assert result.meta == {}
         assert "__image__" in result.output
 
+    def test_numeric_string_coerced_to_int(self, executor):
+        result = executor.execute([ToolCall("demo__count", {"n": "5", "mode": "fast"})])[0]
+        assert result.ok is True
+        assert result.output["summary"] == "n=5"
+
+    def test_bool_coerced_to_int(self, executor):
+        result = executor.execute([ToolCall("demo__count", {"n": True, "mode": "fast"})])[0]
+        assert result.ok is True
+        assert result.output["summary"] == "n=1"
+
     def test_multiple_calls_all_reported(self, executor):
         results = executor.execute([
             ToolCall("demo__echo", {"text": "a"}),
             ToolCall("demo__boom", {}),
         ])
         assert [r.ok for r in results] == [True, False]
+
+
+class TestArgCoercion:
+    """模型常见错型参数：能无损转换就转换，转不动仍报类型错误。"""
+
+    @pytest.mark.parametrize("raw, expected", [
+        ("10", 10), (" 7 ", 7), ("3.0", 3), (5.0, 5), (True, 1),
+    ])
+    def test_int(self, raw, expected):
+        assert executor_mod._coerce_arg(raw, "int") == (expected, True)
+
+    @pytest.mark.parametrize("raw", ["3.9", 5.7, "nan", "inf"])
+    def test_int_rejects_fraction_and_non_finite(self, raw):
+        assert executor_mod._coerce_arg(raw, "int")[1] is False
+
+    def test_float(self):
+        assert executor_mod._coerce_arg("3.5", "float") == (3.5, True)
+        assert executor_mod._coerce_arg(2, "float") == (2.0, True)
+        assert executor_mod._coerce_arg(True, "float") == (1.0, True)
+
+    @pytest.mark.parametrize("raw, expected", [
+        ("true", True), ("FALSE", False), ("1", True), ("0", False), (1, True),
+    ])
+    def test_bool(self, raw, expected):
+        assert executor_mod._coerce_arg(raw, "bool") == (expected, True)
+
+    def test_str(self):
+        assert executor_mod._coerce_arg(2, "str") == ("2", True)
+        assert executor_mod._coerce_arg(True, "str") == ("true", True)
+
+    def test_unconvertible_kept(self):
+        assert executor_mod._coerce_arg("不是数字", "int")[1] is False
+        assert executor_mod._coerce_arg("也许", "bool")[1] is False
+        assert executor_mod._coerce_arg({"a": 1}, "str")[1] is False
+
+    def test_bool_not_matched_as_number(self):
+        assert executor_mod._match_type(True, int, "int") is False
+        assert executor_mod._match_type(True, (int, float), "float") is False
+        assert executor_mod._match_type(True, bool, "bool") is True
 
 
 class TestSideEffectDeclaration:

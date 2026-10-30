@@ -1,6 +1,7 @@
 """工具执行器 — 解析 LLM 输出中的 Tool JSON，路由执行，返回结果。"""
 
 import logging
+import math
 import threading
 from dataclasses import dataclass, field
 from typing import Any
@@ -40,6 +41,61 @@ _TYPE_MAP = {
     "dict": dict,
     "any": object,
 }
+
+_TRUE_WORDS = {"true", "1", "yes", "y", "on", "是"}
+_FALSE_WORDS = {"false", "0", "no", "n", "off", "否"}
+
+
+def _match_type(value: Any, expected_type: Any, type_name: str) -> bool:
+    """类型匹配判定：bool 不算 int/float，避免 true 静默当数值。"""
+    if isinstance(value, bool) and type_name in ("int", "float"):
+        return False
+    return isinstance(value, expected_type)
+
+
+def _coerce_arg(value: Any, type_name: str) -> tuple[Any, bool]:
+    """把模型常见的错型参数转成声明类型；转不动返回 (原值, False)。"""
+    if type_name == "int":
+        if isinstance(value, bool):
+            return int(value), True
+        if isinstance(value, (int, float, str)):
+            try:
+                number = float(value.strip() if isinstance(value, str) else value)
+            except (ValueError, OverflowError):
+                return value, False
+            # 非整数不静默截断，交给上层报错或由模型重传
+            if math.isfinite(number) and number.is_integer():
+                return int(number), True
+            return value, False
+    elif type_name == "float":
+        if isinstance(value, bool):
+            return float(value), True
+        if isinstance(value, int):
+            return float(value), True
+        if isinstance(value, str):
+            try:
+                number = float(value.strip())
+            except ValueError:
+                return value, False
+            if math.isfinite(number):
+                return number, True
+            return value, False
+    elif type_name == "bool":
+        if isinstance(value, str):
+            text = value.strip().lower()
+            if text in _TRUE_WORDS:
+                return True, True
+            if text in _FALSE_WORDS:
+                return False, True
+            return value, False
+        if isinstance(value, (int, float)):
+            return bool(value), True
+    elif type_name == "str":
+        if isinstance(value, bool):
+            return ("true" if value else "false"), True
+        if isinstance(value, (int, float)):
+            return str(value), True
+    return value, False
 
 
 @dataclass
@@ -141,23 +197,31 @@ class ToolExecutor:
             type_name = spec.get("type", "any")
             required = spec.get("required", False)
             default = spec.get("default")
+            value = provided.get(key)
 
-            if key in provided:
-                value = provided[key]
-                expected_type = _TYPE_MAP.get(type_name, object)
-                if expected_type is not object and not isinstance(value, expected_type):
+            if value is None:
+                # 显式 null 与缺参同义：必需报错，否则走默认
+                if required:
+                    return {}, f"缺少必需参数 {key!r} ({type_name})"
+                if default is not None:
+                    validated[key] = default
+                continue
+
+            expected_type = _TYPE_MAP.get(type_name, object)
+            if expected_type is not object and not _match_type(value, expected_type, type_name):
+                coerced, ok = _coerce_arg(value, type_name)
+                if not ok:
                     return {}, f"参数 {key!r} 类型错误，期望 {type_name}，实际 {type(value).__name__}"
-                enum_values = spec.get("enum")
-                if enum_values and value not in enum_values:
-                    return {}, f"参数 {key!r} 值 {value!r} 不在允许范围 {enum_values} 内"
-                validated[key] = value
-            elif required:
-                return {}, f"缺少必需参数 {key!r} ({type_name})"
-            elif default is not None:
-                validated[key] = default
+                logger.info(f"[ToolExecutor] coerced arg {key!r}: {type(value).__name__} "
+                            f"{str(value)[:_MAX_LOG_VALUE_LEN]!r} -> {type_name}")
+                value = coerced
+            enum_values = spec.get("enum")
+            if enum_values and value not in enum_values:
+                return {}, f"参数 {key!r} 值 {value!r} 不在允许范围 {enum_values} 内"
+            validated[key] = value
 
         for key, value in provided.items():
-            if key not in validated:
+            if key not in schema and key not in validated:
                 validated[key] = value
 
         return validated, ""
