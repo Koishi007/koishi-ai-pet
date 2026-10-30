@@ -69,8 +69,7 @@
 
 | 键 | 类型 | 默认 | 需重启 | 说明 |
 |---|---|---|---|---|
-| `PET_WIDTH` | int | 125 | 是 | 宠物窗口宽度(px) |
-| `PET_HEIGHT` | int | 125 | 是 | 宠物窗口高度(px) |
+| `PET_SCALE` | str | `"100%"` | 是 | 宠物大小挡位（100% = 125×125，宽高恒为 1:1）（可选：50% / 75% / 100% / 125% / 150% / 200%） |
 | `BUBBLE_MAX_WIDTH` | int | 300 | 是 | 气泡最大宽度(px) |
 | `BUBBLE_FONT_SIZE` | int | 14 | 是 | 气泡字号 |
 | `TOOLS_ENABLED` | str_list | ["*"] | 是 | 启用的工具插件(逗号分隔, *=全部) |
@@ -173,4 +172,4 @@
 - `hidden`：`true` 表示不在界面显示，只能直接编辑 `settings.json`
 - `enum` / `minimum` / `maximum`：取值约束，会写进 `settings-schema.json`
 
-共 110 项（其中 55 项未在界面列出）。
+共 109 项（其中 55 项未在界面列出）。

@@ -10,9 +10,9 @@ from types import MethodType, SimpleNamespace
 
 import pytest
 from PySide6.QtGui import QIntValidator
-from PySide6.QtWidgets import QApplication, QLineEdit
+from PySide6.QtWidgets import QApplication, QComboBox, QLineEdit
 
-from pet.config import _KEY_META
+from pet.config import Config, _KEY_META
 from pet.ui import settings_window as sw
 
 _SRC = Path(sw.__file__).read_text(encoding="utf-8")
@@ -46,6 +46,70 @@ def test_visible_keys_have_controls():
     visible = {k for k, m in _KEY_META.items() if not m["hidden"]}
     missing = visible - _registered_keys() - {"LLM_ACTIVE_PROFILE"}
     assert missing == set(), f"设置页缺少控件：{sorted(missing)}"
+
+
+class TestPetScale:
+    """宠物大小只暴露挡位，宽高由挡位映射推导且恒为正方形。"""
+
+    def test_steps_are_hardcoded(self):
+        assert list(sw.PET_SCALE_STEPS) == ["50%", "75%", "100%", "125%", "150%", "200%"]
+
+    def test_combo_collects_step_label(self, qt_app):
+        combo = QComboBox()
+        combo.addItems(list(sw.PET_SCALE_STEPS))
+        combo.setCurrentIndex(3)
+        fake = SimpleNamespace(_fields={"PET_SCALE": combo})
+
+        values, invalid = sw.SettingsWindow._collect_values(fake)
+
+        assert invalid == []
+        assert values == {"PET_SCALE": "125%"}
+
+    def test_combo_selects_step(self, qt_app):
+        combo = QComboBox()
+        combo.addItems(list(sw.PET_SCALE_STEPS))
+
+        sw.SettingsWindow._select_combo(combo, "125%")
+        assert combo.currentText() == "125%"
+
+    @pytest.fixture
+    def fresh_config(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("APPDATA", str(tmp_path))
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+        return Config()
+
+    def test_default_is_125_square(self, fresh_config):
+        assert fresh_config.PET_SCALE == "100%"
+        assert (fresh_config.PET_WIDTH, fresh_config.PET_HEIGHT) == (125, 125)
+
+    def test_save_step_derives_square_size(self, fresh_config):
+        fresh_config.save("PET_SCALE", "200%")
+        assert (fresh_config.PET_WIDTH, fresh_config.PET_HEIGHT) == (250, 250)
+
+    def test_unknown_step_falls_back_to_default(self, fresh_config):
+        fresh_config.save("PET_SCALE", "1.6")
+        assert fresh_config.PET_SCALE == "100%"
+        assert fresh_config.PET_WIDTH == 125
+
+    def test_legacy_size_keys_ignored(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("APPDATA", str(tmp_path))
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+        path = tmp_path / "KoishiAI" / "settings.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('{"PET_WIDTH": 250, "PET_HEIGHT": 250}', encoding="utf-8")
+
+        cfg = Config()
+
+        assert cfg.PET_SCALE == "100%"
+        assert cfg.PET_WIDTH == 125
+
+    def test_reset_restores_default_size(self, fresh_config):
+        fresh_config.save("PET_SCALE", "200%")
+
+        fresh_config.reset(["PET_SCALE"])
+
+        assert fresh_config.PET_SCALE == "100%"
+        assert (fresh_config.PET_WIDTH, fresh_config.PET_HEIGHT) == (125, 125)
 
 
 @pytest.fixture(scope="module")

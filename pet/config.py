@@ -12,6 +12,11 @@ from pet.settings import load_user_settings, save_user_setting, delete_user_sett
 logger = logging.getLogger(__name__)
 
 
+PET_BASE_SIZE = 125  # 基准边长(px)
+PET_SCALE_STEPS = {"50%": 0.5, "75%": 0.75, "100%": 1.0,
+                   "125%": 1.25, "150%": 1.5, "200%": 2.0}
+
+
 # key: 包含 type, default, category, needs_restart, hidden, description[, enum, placeholder, minimum, maximum] 键的字典
 # type: "str", "int", "float", "bool", "str_list"
 # category: "connection", "behavior", "appearance", "personality"
@@ -84,8 +89,7 @@ _KEY_META = {
     "VISION_SCALE":              {"type": "float",    "default": 0.7,          "category": "appearance", "needs_restart": False, "hidden": False, "description": "截图缩放比例(0.1~1.0)"},
     "SCREENSHOT_FORMAT":         {"type": "str",      "default": "jpeg",       "category": "appearance", "needs_restart": False, "hidden": False, "description": "截图编码格式", "enum": ["jpeg", "png"]},
     "TOOLS_ENABLED":            {"type": "str_list", "default": ["*"],         "category": "appearance", "needs_restart": True,  "hidden": False, "description": "启用的工具插件(逗号分隔, *=全部)"},
-    "PET_WIDTH":                 {"type": "int",      "default": 125,           "category": "appearance", "needs_restart": True,  "hidden": False, "description": "宠物窗口宽度(px)"},
-    "PET_HEIGHT":                {"type": "int",      "default": 125,           "category": "appearance", "needs_restart": True,  "hidden": False, "description": "宠物窗口高度(px)"},
+    "PET_SCALE":                 {"type": "str",      "default": "100%",        "category": "appearance", "needs_restart": True,  "hidden": False, "description": "宠物大小挡位（100% = 125×125，宽高恒为 1:1）", "enum": list(PET_SCALE_STEPS)},
     "PET_FPS":                   {"type": "int",      "default": 15,            "category": "appearance", "needs_restart": True,  "hidden": True,  "description": "动画帧率"},
     "BUBBLE_MAX_WIDTH":          {"type": "int",      "default": 300,           "category": "appearance", "needs_restart": True,  "hidden": False, "description": "气泡最大宽度(px)"},
     "BUBBLE_FONT_SIZE":          {"type": "int",      "default": 14,            "category": "appearance", "needs_restart": True,  "hidden": False, "description": "气泡字号"},
@@ -153,6 +157,7 @@ class Config:
     def __init__(self):
         self._load_defaults()
         self._load_user_settings()
+        self._sync_pet_size()
         self._generate_schema()
 
     def _load_defaults(self):
@@ -210,6 +215,14 @@ class Config:
             except (ValueError, TypeError):
                 pass  # 跳过类型转换失败的条目
 
+    def _sync_pet_size(self):
+        """按挡位推导窗口宽高；PET_WIDTH / PET_HEIGHT 是派生属性。"""
+        if self.PET_SCALE not in PET_SCALE_STEPS:
+            logger.warning(f"[Config] 未知大小挡位 {self.PET_SCALE!r}，回落 100%")
+            self.PET_SCALE = "100%"
+        size = max(1, int(PET_BASE_SIZE * PET_SCALE_STEPS[self.PET_SCALE] + 0.5))
+        self.PET_WIDTH = self.PET_HEIGHT = size
+
     def save(self, key: str, value) -> tuple[bool, list[str]]:
         """将单个设置保存到 settings.json 并更新实例属性。
 
@@ -219,7 +232,12 @@ class Config:
         """
         type_name = _KEY_META[key]["type"]
         converted = _convert(value, type_name)
-        setattr(self, key, converted)
+        if key == "PET_SCALE":
+            self.PET_SCALE = converted if converted in PET_SCALE_STEPS else "100%"
+            self._sync_pet_size()
+            converted = self.PET_SCALE
+        else:
+            setattr(self, key, converted)
         save_user_setting(key, converted)
         needs_restart = [key] if _KEY_META[key]["needs_restart"] else []
         return (True, needs_restart)
@@ -229,6 +247,7 @@ class Config:
         delete_user_settings(keys)
         self._load_defaults()
         self._load_user_settings()
+        self._sync_pet_size()
 
 
 config = Config()

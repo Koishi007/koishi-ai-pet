@@ -14,7 +14,7 @@ from PySide6.QtCore import Qt, QThread, Signal, QObject
 from PySide6.QtGui import QIcon, QFont, QPainter, QPainterPath, QPen, QColor, QIntValidator, QDoubleValidator
 
 from pet.brain.memory_merge import run_merge
-from pet.config import config, _KEY_META
+from pet.config import config, _KEY_META, PET_SCALE_STEPS
 from pet.auto_start import set_auto_start
 from pet.ui.styles import (
     ICON_PATH, SETTING_ICON_PATH, SHOW_ICON_PATH, HIDE_ICON_PATH, PANEL_QSS, BUTTON_QSS, BUTTON_PRIMARY_QSS,
@@ -451,6 +451,12 @@ class SettingsWindow(QWidget):
         cb.setStyleSheet(COMBOBOX_QSS)
         self._fields[key] = cb
         return cb
+
+    @staticmethod
+    def _select_combo(widget: QComboBox, value) -> None:
+        """按值选中下拉项，找不到时保持第一项。"""
+        idx = widget.findText(str(value))
+        widget.setCurrentIndex(max(idx, 0))
 
     def _text_area(self, key: str) -> MarkdownEdit:
         """创建 MarkdownEdit 并注册到 _fields。"""
@@ -894,8 +900,10 @@ class SettingsWindow(QWidget):
         restart_label.setStyleSheet(f"color:{_COLOR_WARNING}; font-size:11px; font-weight:bold;")
         form.addRow(restart_label)
 
-        form.addRow("宠物宽度:", self._line("PET_WIDTH", "125", QIntValidator(50, 500)))
-        form.addRow("宠物高度:", self._line("PET_HEIGHT", "125", QIntValidator(50, 500)))
+        form.addRow("宠物大小:", self._combo("PET_SCALE", list(PET_SCALE_STEPS)))
+        size_hint = QLabel("100% = 125×125，按比例等比缩放，窗口保持正方形")
+        size_hint.setStyleSheet(f"color:{_COLOR_TEXT_MUTED}; font-size:11px;")
+        form.addRow("", size_hint)
         form.addRow("气泡最大宽度:", self._line("BUBBLE_MAX_WIDTH", "300", QIntValidator(100, 1000)))
         form.addRow("气泡字号:", self._line("BUBBLE_FONT_SIZE", "14", QIntValidator(8, 48)))
         tools_edit = self._line("TOOLS_ENABLED", "*")
@@ -1033,8 +1041,7 @@ class SettingsWindow(QWidget):
             elif isinstance(widget, QCheckBox):
                 widget.setChecked(bool(value))
             elif isinstance(widget, QComboBox):
-                idx = widget.findText(str(value))
-                widget.setCurrentIndex(max(idx, 0))
+                self._select_combo(widget, value)
             elif isinstance(widget, (QTextEdit, MarkdownEdit)):
                 widget.setPlainText(str(value))
         self._update_profile_ui()
