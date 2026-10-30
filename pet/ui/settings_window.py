@@ -862,9 +862,8 @@ class SettingsWindow(QWidget):
         """)
         memory_layout.addWidget(self._conn_test_output)
 
-        # 重启提示
-        memory_hint = QLabel("修改记忆设置后需重启生效。")
-        memory_hint.setStyleSheet(f"color:{_COLOR_WARNING}; font-size:11px; font-weight:bold;")
+        memory_hint = QLabel("修改向量记忆相关设置需重启后生效。")
+        memory_hint.setStyleSheet(f"color:{_COLOR_TEXT_MUTED}; font-size:11px;")
         memory_hint.setWordWrap(True)
         memory_layout.addWidget(memory_hint)
 
@@ -895,21 +894,16 @@ class SettingsWindow(QWidget):
         form = QFormLayout()
         form.setSpacing(6)
 
-        # 需重启提示
-        restart_label = QLabel("以下设置需要重启后生效：")
-        restart_label.setStyleSheet(f"color:{_COLOR_WARNING}; font-size:11px; font-weight:bold;")
-        form.addRow(restart_label)
-
         form.addRow("宠物大小:", self._combo("PET_SCALE", list(PET_SCALE_STEPS)))
         size_hint = QLabel("100% = 125×125，按比例等比缩放，窗口保持正方形")
         size_hint.setStyleSheet(f"color:{_COLOR_TEXT_MUTED}; font-size:11px;")
         form.addRow("", size_hint)
         form.addRow("气泡最大宽度:", self._line("BUBBLE_MAX_WIDTH", "300", QIntValidator(100, 1000)))
-        form.addRow("气泡字号:", self._line("BUBBLE_FONT_SIZE", "14", QIntValidator(8, 48)))
+        form.addRow("气泡字号（需重启）:", self._line("BUBBLE_FONT_SIZE", "14", QIntValidator(8, 48)))
         tools_edit = self._line("TOOLS_ENABLED", "*")
         tools_edit.setPlaceholderText("* 表示全部，多个用逗号分隔")
-        form.addRow("启用工具:", tools_edit)
-        form.addRow("", self._check("SHOW_TRAY", "显示托盘图标"))
+        form.addRow("启用工具（需重启）:", tools_edit)
+        form.addRow("", self._check("SHOW_TRAY", "显示托盘图标（需重启）"))
         form.addRow("", self._check("NOTIFY_ENABLED", "允许发送通知"))
         form.addRow("", self._check("AUTO_START_ON_BOOT", "开机自动启动"))
         form.addRow("", self._check("GRAB_SWING_ENABLED", "拖拽时身体惯性摆动"))
@@ -1134,7 +1128,7 @@ class SettingsWindow(QWidget):
                     continue
                 for k, w in self._fields.items():
                     if w is buddy:
-                        self._label_cache[k] = label.text().rstrip(":：")
+                        self._label_cache[k] = label.text().rstrip(":：").removesuffix("（需重启）")
                         break
         return self._label_cache.get(key) or _KEY_META.get(key, {}).get("description", key)
 
@@ -1194,13 +1188,26 @@ class SettingsWindow(QWidget):
         # LLM 客户端重建（在后台线程执行，避免阻塞 GUI）
         if needs_rebuild_client:
             self._rebuild_llm_client()
+        if "PET_SCALE" in values:
+            self._apply_pet_scale()
         self._update_profile_ui()
 
         if needs_restart_keys:
-            self._msg("设置已保存", "已保存。部分设置须重启后生效。")
+            names = "、".join(self._field_label(k) for k in needs_restart_keys)
+            self._msg("设置已保存", f"已保存。需重启后生效：\n{names}")
         else:
             self._msg("设置已保存", "所有设置已即时生效。")
         self._take_snapshot()
+
+    def _apply_pet_scale(self):
+        """立即应用新挡位：窗口尺寸与当前动作帧一起刷新。"""
+        window = getattr(self.agent, "pet_window", None) if self.agent else None
+        if window is None:
+            return
+        try:
+            window.apply_scale()
+        except Exception as e:
+            logger.exception(f"[Settings] apply_scale failed: {e}")
 
 
     def _test_llm(self):

@@ -146,6 +146,11 @@ class PetAgent(QObject):
         self._sync_food_tool()
 
     @property
+    def pet_window(self):
+        """桌宠窗口，装配前为 None。"""
+        return self._pet_window
+
+    @property
     def dock_side(self) -> str:
         return self._dock_side
 

@@ -103,6 +103,15 @@ class TestPetScale:
         assert cfg.PET_SCALE == "100%"
         assert cfg.PET_WIDTH == 125
 
+    def test_save_applies_scale_to_window(self, qt_app):
+        calls = []
+        window = SimpleNamespace(apply_scale=lambda: calls.append(1))
+        fake = SimpleNamespace(agent=SimpleNamespace(pet_window=window))
+
+        sw.SettingsWindow._apply_pet_scale(fake)
+
+        assert calls == [1]
+
     def test_reset_restores_default_size(self, fresh_config):
         fresh_config.save("PET_SCALE", "200%")
 
