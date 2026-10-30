@@ -31,6 +31,7 @@ from pet.file_intake import KIND_LABELS, load_image, load_text
 from pet.config import config
 from pet.auto_start import set_auto_start
 from pet.crash_reporter import get_guard
+from pet.relaunch import spawn_relaunch
 from pet.self_update import apply_pending_update_scripts
 from pet.single_instance import SingleInstanceGuard
 from pet.version_check import UpdateChecker
@@ -446,6 +447,7 @@ def main():
                 logger.warning(f"shutdown: close {_w.objectName() or type(_w).__name__} failed: {e}")
 
     _quit_done = False
+    _restart_on_exit = False
 
     def _finish_quit():
         """淡出结束后收尾退出；回调与兜底定时器都走这里，只执行一次。"""
@@ -453,6 +455,11 @@ def main():
         if _quit_done:
             return
         _quit_done = True
+        if _restart_on_exit:
+            # 先放锁再拉起，避免新实例被单实例检查拦下；旧标记由新进程覆盖
+            _guard.release()
+            if not spawn_relaunch():
+                tray.report_restart_failure()
         try:
             window.shutdown()
             window.close()
@@ -501,6 +508,13 @@ def main():
             logger.warning(f"shutdown: fade_out failed: {e}")
             _finish_quit()
 
+    def _do_restart():
+        """重启应用：走正常退出流程，收尾时拉起新实例。"""
+        nonlocal _restart_on_exit
+        logger.info("restart requested")
+        _restart_on_exit = True
+        _do_quit()
+
     def _shutdown():
         """aboutToQuit 回调：轻量善后。"""
         logging.getLogger().removeHandler(_log_handler)
@@ -510,9 +524,10 @@ def main():
 
     app.aboutToQuit.connect(_shutdown)
 
-    # 将退出函数注入到需要的地方
+    # 将退出/重启函数注入到需要的地方
     window.quit_fn = _do_quit
     tray.quit_fn = _do_quit
+    tray.restart_fn = _do_restart
 
     # 初始化完成：更新启动标记，区分"启动中途崩溃"与"正常运行中崩溃"
     get_guard().mark_started()

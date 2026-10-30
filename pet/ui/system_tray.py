@@ -92,6 +92,14 @@ class SystemTrayManager(QObject):
         self.tray_icon.showMessage(title, message,
                                    QSystemTrayIcon.MessageIcon.Information, duration)
 
+    def report_restart_failure(self):
+        """重启失败提示，不受通知总开关限制。"""
+        if self.tray_icon is None:
+            return
+        self.tray_icon.showMessage(
+            "重启失败", "没能拉起新实例，请手动启动。",
+            QSystemTrayIcon.MessageIcon.Warning, 8000)
+
     def _update_tooltip(self):
         """定时更新托盘 tooltip，显示 pulse 参数 + 进程资源。"""
         local_ver = get_local_version() or "?"
@@ -166,6 +174,13 @@ class SystemTrayManager(QObject):
         settings_action.triggered.connect(lambda: SettingsWindow.show_instance(self._agent, self.pet))
         menu.addAction(settings_action)
         menu.addSeparator()
+
+        # 重启入口：设置改动大多需要重启才生效
+        if hasattr(self, "restart_fn"):
+            restart_action = QAction("重启", menu)
+            restart_action.triggered.connect(self.restart_fn)
+            menu.addAction(restart_action)
+            menu.addSeparator()
 
         quit_action = QAction("退出", menu)
         if hasattr(self, "quit_fn"):

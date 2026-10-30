@@ -72,6 +72,7 @@
 | `pet/pulse/__init__.py` | Pulse 层 — 生理与心理状态引擎：vitals(饱食度/精力)、mood(好感/愉悦/理智)，含数值衰减与 SQLite 持久化。 |  |
 | `pet/pulse/mood.py` | 情绪 — 心理数值引擎：好感度、愉悦度、理智值 | `MoodThresholds` `MoodDecayConfig` `Mood` |
 | `pet/pulse/vitals.py` | 体征 — 生理数值引擎：饱食度、精力 | `Thresholds` `Vitals` |
+| `pet/relaunch.py` | 进程重启：按当前运行方式拉起一个新实例。 | `relaunch_command()` `spawn_relaunch()` |
 | `pet/self_update.py` | 启动时应用遗留的 update 脚本更新 | `apply_pending_update_scripts()` |
 | `pet/settings.py` | 用户设置持久化 — JSON 文件读写。 | `app_dir()` `settings_path()` `load_user_settings()` `save_user_setting()` `delete_user_settings()` |
 | `pet/single_instance.py` | 单实例限制 — 防止桌宠被重复启动导致状态/数据库冲突。 | `SingleInstanceGuard` |
@@ -147,4 +148,4 @@
 | `pet/voice/voice_session.py` | 语音会话编排：麦克风采集 → 讯飞识别 | `VoiceSession` |
 | `pet/voice/xunfei_stt.py` | 讯飞语音听写 (iat) WebSocket API 封装 | `XunfeiSTT` |
 
-共 139 个模块。
+共 140 个模块。
