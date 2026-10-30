@@ -9,7 +9,8 @@ from pathlib import Path
 from types import MethodType, SimpleNamespace
 
 import pytest
-from PySide6.QtGui import QIntValidator
+from PySide6.QtCore import QPoint, QPointF, Qt
+from PySide6.QtGui import QIntValidator, QWheelEvent
 from PySide6.QtWidgets import QApplication, QComboBox, QLineEdit
 
 from pet.config import Config, _KEY_META
@@ -46,6 +47,23 @@ def test_visible_keys_have_controls():
     visible = {k for k, m in _KEY_META.items() if not m["hidden"]}
     missing = visible - _registered_keys() - {"LLM_ACTIVE_PROFILE"}
     assert missing == set(), f"设置页缺少控件：{sorted(missing)}"
+
+
+def test_combo_ignores_wheel(qt_app):
+    """滚轮扫过下拉框时不能改选中项，事件留给外层滚动区。"""
+    fake = SimpleNamespace(_fields={})
+    combo = sw.SettingsWindow._combo(fake, "LLM_TOOL_ROLE_MODE", ["auto", "native"])
+    combo.setCurrentIndex(0)
+    event = QWheelEvent(
+        QPointF(5, 5), QPointF(5, 5), QPoint(0, 0), QPoint(0, 120),
+        Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier,
+        Qt.ScrollPhase.NoScrollPhase, False,
+    )
+
+    combo.wheelEvent(event)
+
+    assert combo.currentIndex() == 0
+    assert event.isAccepted() is False
 
 
 class TestPetScale:

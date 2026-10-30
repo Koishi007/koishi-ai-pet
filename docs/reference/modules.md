@@ -140,6 +140,7 @@
 | `pet/ui/system_tray.py` | （模块未提供 docstring） | `SystemTrayManager` |
 | `pet/ui/tic_tac_toe_panel.py` | 井字棋棋盘面板 — 继承 GamePanelBase，负责棋盘渲染与点击落子。 | `TicTacToePanel` |
 | `pet/ui/twenty_questions_panel.py` | 二十问面板 — 桌宠提问猜东西，用户在面板点击"是/否/不确定"作答， | `TwentyQuestionsPanel` |
+| `pet/ui/widgets.py` | 通用控件。 | `NoWheelComboBox` |
 | `pet/version_check.py` | 启动时版本检查 | `get_local_version()` `_CheckWorker` `UpdateChecker` |
 | `pet/version_utils.py` | 版本号解析与比较的纯逻辑。 | `strip_v()` `ver_newer()` |
 | `pet/voice/__init__.py` | 语音层 — 全局热键、麦克风采集与讯飞听写编排。 |  |
@@ -148,4 +149,4 @@
 | `pet/voice/voice_session.py` | 语音会话编排：麦克风采集 → 讯飞识别 | `VoiceSession` |
 | `pet/voice/xunfei_stt.py` | 讯飞语音听写 (iat) WebSocket API 封装 | `XunfeiSTT` |
 
-共 140 个模块。
+共 141 个模块。

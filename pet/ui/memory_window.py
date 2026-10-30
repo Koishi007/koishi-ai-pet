@@ -7,15 +7,16 @@ from PySide6.QtWidgets import (
     QGroupBox, QLabel, QLineEdit,
     QFormLayout, QTableWidget, QTableWidgetItem,
     QHeaderView, QAbstractItemView, QCheckBox,
-    QComboBox, QScrollArea, QTextEdit, QMessageBox,
+    QScrollArea, QTextEdit, QMessageBox,
     QSizePolicy, QSpacerItem, QDateEdit,
 )
 from datetime import datetime
 
-from PySide6.QtCore import Qt, QTimer, QEvent, QDate, QSignalBlocker
+from PySide6.QtCore import Qt, QTimer, QDate, QSignalBlocker
 from PySide6.QtGui import QFont, QIcon, QPainter, QPainterPath, QColor, QPen
 
 from pet.brain.memory import MEMORY_CATEGORIES
+from pet.ui.widgets import NoWheelComboBox
 from pet.ui.styles import (
     ICON_PATH, WINDOW_QSS, PANEL_QSS, BUTTON_QSS,
     BUTTON_PRIMARY_QSS, BUTTON_DANGER_QSS,
@@ -217,7 +218,7 @@ class MemoryWindow(QWidget):
         self._label_cat = QLabel("类别:")
         self._label_cat.setStyleSheet("font-size: 12px; color: #333;")
         row1.addWidget(self._label_cat)
-        self._category_combo = QComboBox()
+        self._category_combo = NoWheelComboBox()
         self._category_combo.setFixedWidth(120)
         self._category_combo.addItem("全部", "")
         self._category_combo.currentIndexChanged.connect(self._on_filter_category)
@@ -265,7 +266,7 @@ class MemoryWindow(QWidget):
         row2.addStretch()
 
         row2.addWidget(QLabel("每页:"))
-        self._page_size_combo = QComboBox()
+        self._page_size_combo = NoWheelComboBox()
         self._page_size_combo.addItems([str(s) for s in _PAGE_SIZES])
         self._page_size_combo.setCurrentText(str(_DEFAULT_PAGE_SIZE))
         self._page_size_combo.currentTextChanged.connect(self._on_page_size_changed)
@@ -342,16 +343,14 @@ class MemoryWindow(QWidget):
         self._detail_category = QLabel("—")
         layout.addRow("分类:", self._detail_category)
 
-        self._detail_level = QComboBox()
+        self._detail_level = NoWheelComboBox()
         self._detail_level.addItems(["L1", "L2", "L3"])
         self._detail_level.currentTextChanged.connect(self._mark_dirty)
-        self._detail_level.installEventFilter(self)
         layout.addRow("级别:", self._detail_level)
 
-        self._detail_importance = QComboBox()
+        self._detail_importance = NoWheelComboBox()
         self._detail_importance.addItems([str(i) for i in range(1, 6)])
         self._detail_importance.currentTextChanged.connect(self._mark_dirty)
-        self._detail_importance.installEventFilter(self)
         layout.addRow("重要性:", self._detail_importance)
 
         self._detail_keywords = QLineEdit()
@@ -709,13 +708,6 @@ class MemoryWindow(QWidget):
 
         self._detail_panel.setVisible(True)
         self._btn_save.setEnabled(False)
-
-    def eventFilter(self, obj, event):
-        if event.type() == QEvent.Type.Wheel:
-            if obj is self._detail_level or obj is self._detail_importance:
-                event.ignore()
-                return True
-        return super().eventFilter(obj, event)
 
     def _mark_dirty(self):
         if self._current_detail_id is None:

@@ -24,6 +24,7 @@ from pet.ui.styles import (
     _COLOR_TEXT_SEC, _COLOR_TEXT_MUTED, _COLOR_WARNING,
     make_minimize_button, make_close_button, ensure_taskbar_icon,
 )
+from pet.ui.widgets import NoWheelComboBox
 
 logger = logging.getLogger(__name__)
 
@@ -446,7 +447,7 @@ class SettingsWindow(QWidget):
 
     def _combo(self, key: str, items: list[str]) -> QComboBox:
         """创建 QComboBox 并注册到 _fields。"""
-        cb = QComboBox()
+        cb = NoWheelComboBox()
         cb.addItems(items)
         cb.setStyleSheet(COMBOBOX_QSS)
         self._fields[key] = cb
@@ -487,7 +488,7 @@ class SettingsWindow(QWidget):
         self._fields = {}
 
         # 调用模式
-        self._brain_combo = QComboBox()
+        self._brain_combo = NoWheelComboBox()
         self._brain_combo.addItems(["local", "api", "ollama"])
         self._fields["BRAIN"] = self._brain_combo
         form.addRow("调用模式:", self._brain_combo)
