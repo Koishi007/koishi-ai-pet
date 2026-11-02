@@ -896,7 +896,7 @@ class SettingsWindow(QWidget):
         form.setSpacing(6)
 
         form.addRow("宠物大小:", self._combo("PET_SCALE", list(PET_SCALE_STEPS)))
-        size_hint = QLabel("100% = 125×125，按比例等比缩放，窗口保持正方形")
+        size_hint = QLabel("100%: 125px×125px")
         size_hint.setStyleSheet(f"color:{_COLOR_TEXT_MUTED}; font-size:11px;")
         form.addRow("", size_hint)
         form.addRow("气泡最大宽度:", self._line("BUBBLE_MAX_WIDTH", "300", QIntValidator(100, 1000)))
