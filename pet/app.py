@@ -449,6 +449,17 @@ def main():
     _quit_done = False
     _restart_on_exit = False
 
+    def _notify_restart_failure():
+        """重启失败：托盘气泡可能不显示，用对话框保证用户看到。"""
+        try:
+            tray.report_restart_failure()
+        except Exception as e:
+            logger.warning(f"shutdown: tray restart notice failed: {e}")
+        try:
+            QMessageBox.critical(None, "重启失败", "没能启动新的实例，请手动启动 Koishi。")
+        except Exception as e:
+            logger.warning(f"shutdown: restart failure dialog failed: {e}")
+
     def _finish_quit():
         """淡出结束后收尾退出；回调与兜底定时器都走这里，只执行一次。"""
         nonlocal _quit_done
@@ -459,7 +470,7 @@ def main():
             # 先放锁再拉起，避免新实例被单实例检查拦下；旧标记由新进程覆盖
             _guard.release()
             if not spawn_relaunch():
-                tray.report_restart_failure()
+                _notify_restart_failure()
         try:
             window.shutdown()
             window.close()

@@ -379,6 +379,14 @@ class TestArgCoercion:
         assert executor_mod._match_type(True, (int, float), "float") is False
         assert executor_mod._match_type(True, bool, "bool") is True
 
+    def test_int_string_keeps_precision(self):
+        assert executor_mod._coerce_arg("9007199254740993", "int") == (9007199254740993, True)
+
+    def test_float_rejects_non_finite(self):
+        assert executor_mod._coerce_arg("inf", "float")[1] is False
+        assert executor_mod._coerce_arg("nan", "float")[1] is False
+        assert executor_mod._coerce_arg(float("inf"), "float")[1] is False
+
 
 class TestSideEffectDeclaration:
     def test_declared_tools(self, registry):

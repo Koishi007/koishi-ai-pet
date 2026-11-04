@@ -109,8 +109,12 @@ class CrashReporter:
             self._write_marker("running")
 
     def clear_marker(self) -> None:
-        """正常退出时清除启动标记。幂等。"""
+        """正常退出时清除启动标记。幂等。只清除本进程写入的标记。"""
         try:
+            marker = self._read_marker()
+            # 重启期间新实例已写入自己的标记，删除会让新实例的异常退出无从检测
+            if marker and marker.get("pid") not in (None, os.getpid()):
+                return
             if os.path.exists(self.marker_path):
                 os.remove(self.marker_path)
         except OSError:

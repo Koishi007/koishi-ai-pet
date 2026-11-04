@@ -168,6 +168,24 @@ class TestValidateArgs:
         assert "count" in err
 
 
+class TestNonFiniteFloat:
+    SCHEMA = {"ratio": {"type": "float", "required": True}}
+
+    @pytest.mark.parametrize("value", [float("inf"), float("-inf"), float("nan")])
+    def test_non_finite_rejected(self, value):
+        args, err = ToolExecutor._validate_args({"ratio": value}, self.SCHEMA)
+        assert args == {}
+        assert "ratio" in err
+
+    def test_finite_values_accepted(self):
+        args, err = ToolExecutor._validate_args({"ratio": 1.5}, self.SCHEMA)
+        assert err == ""
+        assert args["ratio"] == 1.5
+        args, err = ToolExecutor._validate_args({"ratio": 5}, self.SCHEMA)
+        assert err == ""
+        assert args["ratio"] == 5
+
+
 class TestLogPreview:
     def test_long_value_truncated_with_marker(self):
         value = "x" * 400

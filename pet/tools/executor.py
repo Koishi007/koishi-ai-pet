@@ -58,15 +58,27 @@ def _coerce_arg(value: Any, type_name: str) -> tuple[Any, bool]:
     if type_name == "int":
         if isinstance(value, bool):
             return int(value), True
-        if isinstance(value, (int, float, str)):
+        if isinstance(value, int):
+            return value, True
+        if isinstance(value, float):
+            if math.isfinite(value) and value.is_integer():
+                return int(value), True
+            return value, False
+        if isinstance(value, str):
+            text = value.strip()
+            # 整数字符串直接按整数解析，避免经 float 舍入
             try:
-                number = float(value.strip() if isinstance(value, str) else value)
+                return int(text), True
+            except (ValueError, OverflowError):
+                pass
+            try:
+                number = float(text)
             except (ValueError, OverflowError):
                 return value, False
             # 非整数不静默截断，交给上层报错或由模型重传
             if math.isfinite(number) and number.is_integer():
                 return int(number), True
-            return value, False
+        return value, False
     elif type_name == "float":
         if isinstance(value, bool):
             return float(value), True
@@ -206,6 +218,9 @@ class ToolExecutor:
                 if default is not None:
                     validated[key] = default
                 continue
+
+            if type_name == "float" and isinstance(value, float) and not math.isfinite(value):
+                return {}, f"参数 {key!r} 必须是有限数值，收到 {value!r}"
 
             expected_type = _TYPE_MAP.get(type_name, object)
             if expected_type is not object and not _match_type(value, expected_type, type_name):
