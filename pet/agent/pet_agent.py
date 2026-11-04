@@ -17,6 +17,7 @@ from pet.brain.memory import get_memory_store
 from pet.brain.conversation_store import ConversationStore
 from pet.action.registry import default_duration, has_duration
 from pet.tools.registry import TOOL_REGISTRY
+from pet.tools.context import TOOL_CTX
 from pet.game.gamebase import GAME
 from pet.pulse.vitals import Vitals
 from pet.pulse.mood import Mood
@@ -70,6 +71,7 @@ class PetAgent(QObject):
     notify_requested   = Signal(str, str, int)  # title, message, duration_ms
     game_board_requested = Signal(str, object)  # (game_name, board_payload)
     tool_interact_requested = Signal(dict)  # 工具线程请求的即时交互（kwargs），转回主线程执行
+    confirm_requested = Signal(object)  # 需要展示的确认请求（ConfirmRequest），同一时刻只有一条
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -101,6 +103,9 @@ class PetAgent(QObject):
         self._retired: list[tuple[QThread, BrainWorker]] = []  # 被抢占且仍在运行的旧脑线程
         self._call_token: object | None = None  # 当前调用的令牌；派发时新建，中断或被顶替即失效
         self._last_interact_ms: dict[str, int] = {}
+        self._confirm_queue: list = []  # 待展示的确认请求，按到达顺序排队
+        self._confirm_showing: bool = False
+        self._confirm_lock = threading.Lock()  # 工具线程入队与主线程推进共用一把锁
         self.state_machine.state_changed.connect(self._on_state_changed)
         self.tool_interact_requested.connect(self._trigger_tool_interact)
 
@@ -554,6 +559,7 @@ class PetAgent(QObject):
         ts = datetime.now().strftime("%H:%M:%S")
         thread, worker = self._thread, self._worker
         self._request_cancel()  # 不等待：令牌失效 + 请求线程退出，线程交给 _retire 回收
+        self.reject_pending_confirms(reason)
         self._retire(thread, worker)
         self._thread = None
         self._worker = None
@@ -562,6 +568,54 @@ class PetAgent(QObject):
         self.behavior.reset_active_tool_groups()
         logger.info(f"[{ts}] [PetAgent] current call interrupted by {reason}")
         return True
+
+    def request_confirm(self, request) -> None:
+        """确认请求入队；没有展示中的卡片时通知界面。"""
+        if request is None:
+            return
+        with self._confirm_lock:
+            self._confirm_queue.append(request)
+            self._renumber_confirms()
+            emit = not self._confirm_showing
+        if emit:
+            self._emit_next_confirm()
+
+    def next_confirm(self) -> None:
+        """当前卡片已结束，展示队列中的下一条。"""
+        with self._confirm_lock:
+            if self._confirm_queue:
+                self._confirm_queue.pop(0)
+            self._renumber_confirms()
+        self._emit_next_confirm()
+
+    def reject_pending_confirms(self, reason: str = "") -> int:
+        """拒绝队列中的全部请求并清空队列，返回受影响的条数。"""
+        with self._confirm_lock:
+            pending = list(self._confirm_queue)
+            self._confirm_queue.clear()
+            self._confirm_showing = False
+        for request in pending:
+            request.result = False
+            request.event.set()
+        count = TOOL_CTX.reject_pending_confirms(reason)
+        if pending:
+            logger.info(f"[PetAgent] 拒绝 {len(pending)} 条未决确认：{reason}")
+        return max(count, len(pending))
+
+    def _renumber_confirms(self) -> None:
+        total = len(self._confirm_queue)
+        for index, item in enumerate(self._confirm_queue, start=1):
+            item.sequence = index
+            item.total = total
+
+    def _emit_next_confirm(self) -> None:
+        with self._confirm_lock:
+            if not self._confirm_queue:
+                self._confirm_showing = False
+                return
+            self._confirm_showing = True
+            request = self._confirm_queue[0]
+        self.confirm_requested.emit(request)
 
     def _cancel_running_thread(self, ts: str = ""):
         """协作式取消当前脑线程：请求取消并短窗口等待退出"""

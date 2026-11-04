@@ -17,6 +17,9 @@ class ToolContext:
         self._pending_callbacks: list[Callable] = []
         self._model_aside_pending = 0
         self._speech_lock = threading.Lock()
+        self._confirm_sink: Callable | None = None
+        self._confirm_lock = threading.Lock()
+        self._pending_confirms: list = []
 
     def bind(self, agent):
         self._agent = agent
@@ -156,6 +159,43 @@ class ToolContext:
             callback()
         else:
             self._pending_callbacks.append(callback)
+
+    def set_confirm_sink(self, sink: Callable | None):
+        """注册确认接收者；传 None 注销。"""
+        self._confirm_sink = sink
+
+    def confirm(self, request: "ConfirmRequest") -> bool:
+        """请求用户确认一条命令；任何异常与超时都按拒绝处理。"""
+        sink = self._confirm_sink
+        if sink is None:
+            logger.warning("[ToolContext] 确认接收者未注册，按拒绝处理")
+            return False
+        with self._confirm_lock:
+            self._pending_confirms.append(request)
+        try:
+            sink(request)
+            if not request.event.wait(max(0.0, float(request.timeout_s))):
+                return False
+            return bool(request.result)
+        except Exception:
+            logger.exception("[ToolContext] 确认调用异常，按拒绝处理")
+            return False
+        finally:
+            with self._confirm_lock:
+                self._pending_confirms = [
+                    item for item in self._pending_confirms if item is not request]
+
+    def reject_pending_confirms(self, reason: str = "") -> int:
+        """拒绝全部未决确认，返回受影响的条数。"""
+        with self._confirm_lock:
+            pending = list(self._pending_confirms)
+            self._pending_confirms = []
+        for request in pending:
+            request.result = False
+            request.event.set()
+        if pending:
+            logger.info("[ToolContext] 拒绝 %s 条未决确认：%s", len(pending), reason)
+        return len(pending)
 
     def db_path(self) -> str:
         """返回数据库路径，供工具使用。"""

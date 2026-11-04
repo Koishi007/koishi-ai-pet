@@ -54,6 +54,11 @@ class _AgentStub:
         self.state_machine = _StateMachine()
         self.behavior = _Behavior()
         self.notify_requested = _Signal()
+        self.rejected_confirms: list[str] = []
+
+    def reject_pending_confirms(self, reason: str = "") -> int:
+        self.rejected_confirms.append(reason)
+        return 0
 
     def can_interrupt(self) -> bool:
         return PetAgent.can_interrupt(self)  # 走真实谓词

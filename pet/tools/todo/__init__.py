@@ -110,6 +110,35 @@ def _update(**kw):
     return store.get_instance().update(**kw)
 
 
+def _resolve_command(arg: str) -> tuple[str, dict]:
+    """把 `:todo` 的参数翻成方法名与参数。"""
+    parts = str(arg or "").split(None, 1)
+    head = parts[0].lower() if parts else "list"
+    rest = parts[1].strip() if len(parts) > 1 else ""
+    if head == "list":
+        status = rest if rest in ("pending", "done", "all") else "pending"
+        return "list", {"status": status}
+    if head == "add":
+        if not rest:
+            raise ValueError("缺少待办标题")
+        return "add", {"title": rest}
+    raise ValueError(f"未知子命令「{head}」")
+
+
+def register_commands(registry):
+    """注册终端的 `:todo` 命令：只翻译参数，实际调用走通用执行器。"""
+    registry.add_command(
+        TOOL_NAME,
+        name="todo",
+        group="计时与待办",
+        rows=((":todo add <title>", "添加待办"),
+              (":todo list [status]", "列出待办，status 可选 pending、done、all")),
+        resolve=_resolve_command,
+        words=("add", "list"),
+        examples=(":todo add 写周报",),
+    )
+
+
 def register(registry):
     try:
         store.init_instance()
@@ -175,5 +204,6 @@ def register(registry):
 
     registry.add_menu_action(TOOL_NAME, "查看待办", _show_panel)
 
+    register_commands(registry)
 
     logger.info("[todo] tool registered")

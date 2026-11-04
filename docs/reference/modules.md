@@ -52,6 +52,11 @@
 | `pet/brain/tool_loop.py` | 工具轮次：执行 LLM 请求的工具并循环，直到模型不再请求工具。 | `ToolSession` `run_tool_loop()` |
 | `pet/brain/win_detector.py` | Win32 窗口枚举 | `is_window_alive()` `get_window_rect()` `is_window_occluded()` `get_visible_windows()` |
 | `pet/brain/window_detector.py` | 窗口枚举 — 根据平台分发到 Win32 / Quartz / X11 后端 |  |
+| `pet/cli/__init__.py` | 终端本地命令：冒号前缀的分发、帮助与补全数据。 |  |
+| `pet/cli/builtins.py` | 终端内建命令：只处理终端自身的能力，不碰工具。 | `check()` `status()` `policy_snapshot()` `clear()` |
+| `pet/cli/catalog.py` | 命令目录：内建命令表 + 工具登记的命令，供分发、帮助与补全使用。 | `commands()` `command_names()` `subcommands()` `path_commands()` `method_exists()` `find()` |
+| `pet/cli/dispatch.py` | 命令分发：冒号前缀判定，以及内建与工具命令的两条执行路径。 | `is_local()` `run()` |
+| `pet/cli/types.py` | 终端本地命令的数据类型与返回码。 | `LocalResult` `LocalContext` `LocalCommand` |
 | `pet/config.py` | 配置系统：`_KEY_META` 是所有配置项的唯一真源，`settings.json` 存用户覆盖（路径见 `pet/settings.py`）。 | `Config` |
 | `pet/crash_reporter.py` | 崩溃信息收集与持久化 | `CrashReporter` `get_guard()` `install()` `mark_started()` `clear_marker()` |
 | `pet/db.py` | 数据库路径管理 — 集中管理 pet.db 路径与统一连接配置。 | `get_db_path()` `get_conn()` |
@@ -76,6 +81,11 @@
 | `pet/self_update.py` | 启动时应用遗留的 update 脚本更新 | `apply_pending_update_scripts()` |
 | `pet/settings.py` | 用户设置持久化 — JSON 文件读写。 | `app_dir()` `settings_path()` `load_user_settings()` `save_user_setting()` `delete_user_settings()` |
 | `pet/single_instance.py` | 单实例限制 — 防止桌宠被重复启动导致状态/数据库冲突。 | `SingleInstanceGuard` |
+| `pet/terminal/__init__.py` | 终端能力：命令解析、策略、执行核心与 Runner，不依赖 Qt。 |  |
+| `pet/terminal/confirm.py` | 确认请求的数据结构：执行层与界面层共用，不依赖 Qt。 | `ConfirmRequest` |
+| `pet/terminal/core.py` | 命令执行核心：解析、内建命令路由、进程树终止、解码与截断。 | `Parsed` `RunResult` `parse_command()` `shell_argv()` `shell_choices()` `quotes_paired()` |
+| `pet/terminal/policy.py` | 终端命令策略：档位、免确认命令、危险模式、程序解析与沙箱目录。 | `Verdict` `desktop_dir()` `sandbox_root()` `parse_allow_entry()` `program_key()` `extra_allow()` |
+| `pet/terminal/runner.py` | TerminalRunner：模型命令与用户终端共用的执行编排。 | `failure()` `TerminalRunner` `platform_name()` `get_runner()` |
 | `pet/tools/__init__.py` | 工具加载器 — 自动发现 + 自动安装依赖 + 配置选择性加载。 | `load_tools()` |
 | `pet/tools/bilibili/__init__.py` | bili 工具 — 刷 B 站：搜索、读字幕、点赞投币评论、给主人发私信。 | `register()` |
 | `pet/tools/bilibili/core.py` | B 站接口客户端：wbi 签名、请求、解析、写操作。 | `credential_path()` `invalid_mark_path()` `mark_credential_invalid()` `clear_credential_invalid()` `credential_invalid()` `is_bvid()` |
@@ -91,18 +101,18 @@
 | `pet/tools/executor.py` | 工具执行器 — 解析 LLM 输出中的 Tool JSON，路由执行，返回结果。 | `ToolCall` `ToolResult` `ToolExecutor` |
 | `pet/tools/file_ops/__init__.py` | （模块未提供 docstring） | `register()` |
 | `pet/tools/file_ops/core.py` | 文件操作工具：列目录、读写文本、读取图片，限桌面与文档目录。 | `FileOpsTool` |
-| `pet/tools/knowledge/__init__.py` | knowledge 工具 — 轻量 RAG 知识库。只读检索，写入/删除仅限面板操作。 | `register()` |
+| `pet/tools/knowledge/__init__.py` | knowledge 工具 — 轻量 RAG 知识库。只读检索，写入/删除仅限面板操作。 | `register_commands()` `register()` |
 | `pet/tools/knowledge/chunker.py` | 轻量文本分块器 — 按段落 + 字数窗口切分。 | `chunk_text()` |
 | `pet/tools/knowledge/panel.py` | 知识库管理面板 — 添加、导入文件、搜索、删除。 | `KnowledgePanel` `show_panel()` |
 | `pet/tools/knowledge/storage.py` | 知识库存储层 — SQLite + sqlite-vec 向量检索。 | `KnowledgeStorage` |
 | `pet/tools/output.py` | 工具输出的声明与投影：schema 约束规范值，render 产出内部内容块，由编码层压平成 wire 格式。 | `TextBlock` `ImageBlock` `ToolOutputDefinition` `validate()` `render_turn()` `render_text()` |
-| `pet/tools/registry.py` | 工具注册表 — 自动发现、注册、描述可用工具。 | `ToolMethod` `ToolDef` `ToolRegistry` `food_tool_available()` |
+| `pet/tools/registry.py` | 工具注册表 — 自动发现、注册、描述可用工具，并聚合工具登记的终端命令。 | `ToolMethod` `ToolDef` `ToolCommand` `ToolRegistry` `food_tool_available()` |
 | `pet/tools/system_monitor/__init__.py` | （模块未提供 docstring） | `register()` |
 | `pet/tools/system_monitor/core.py` | （模块未提供 docstring） | `get_overview()` `get_top_processes()` `get_memory_detail()` `get_network()` |
-| `pet/tools/timer/__init__.py` | timer 工具 — 倒计时定时器，到时间宠物主动提醒。支持持久化重启后恢复。 | `register()` |
+| `pet/tools/timer/__init__.py` | timer 工具 — 倒计时定时器，到时间宠物主动提醒。支持持久化重启后恢复。 | `parse_duration()` `register_commands()` `register()` |
 | `pet/tools/timer/core.py` | 定时器核心 — 基于 Scheduler 的倒计时提醒，重启后可恢复。 | `TimerTool` |
 | `pet/tools/timer/storage.py` | 定时器持久化 — SQLite 存储，重启后可恢复未完成的定时器。 | `TimerStorage` |
-| `pet/tools/todo/__init__.py` | todo 工具 — 极简单代办事项管理。 | `register()` |
+| `pet/tools/todo/__init__.py` | todo 工具 — 极简单代办事项管理。 | `register_commands()` `register()` |
 | `pet/tools/todo/core.py` | TodoList 核心处理逻辑 — LLM 可见方法实现。 | `TodoListTool` |
 | `pet/tools/todo/panel.py` | Todo 管理面板 | `TodoPanel` `show_panel()` |
 | `pet/tools/todo/storage.py` | Todo 持久化存储 — SQLite 数据层。 | `TodoStorage` |
@@ -116,6 +126,8 @@
 | `pet/ui/base_window.py` | （模块未提供 docstring） | `TransparentWindow` |
 | `pet/ui/chat_bubble.py` | 桌宠聊天交互组件 | `ChatBubble` |
 | `pet/ui/chat_history.py` | 对话历史窗口 — 以对话气泡形式展示用户与桌宠的对话记录。 | `ChatBubbleDelegate` `ChatHistoryWindow` |
+| `pet/ui/completion.py` | 终端输入补全的纯逻辑：候选来源、公共前缀、引号与大小写策略。 | `Completion` `CompletionContext` `complete()` `token_start()` `first_word()` `has_path_sep()` |
+| `pet/ui/confirm_card.py` | 命令确认卡片：队列展示、倒计时、允许与拒绝。 | `card_position()` `_CountdownBar` `ConfirmCard` |
 | `pet/ui/debounce.py` | 按钮与提交的防抖：一次物理操作只产生一次请求。 | `Debounce` |
 | `pet/ui/debug_window.py` | 调试面板 | `DebugWindow` |
 | `pet/ui/edge_dock.py` | 屏幕边缘贴边的纯几何与策略计算。 | `pick_dock_side()` `dock_x()` `edge_mask_rect()` |
@@ -135,9 +147,10 @@
 | `pet/ui/rps_panel.py` | 猜拳面板 — 继承 GamePanelBase，负责出拳展示与点击提交。 | `RpsPanel` |
 | `pet/ui/settings_window.py` | 设置界面 — 用户配置的图形界面。 | `_LLMTestWorker` `_EmbeddingTestWorker` `_MemoryMergeWorker` `_ModelsFetchWorker` `_VoiceTestWorker` `MarkdownEdit` |
 | `pet/ui/speech_bubble.py` | 桌宠对话气泡：同一时刻只讲一句，多出来的排队 | `SpeechBubble` |
-| `pet/ui/styles.py` | QSS 样式库 —— 扁平化圆角风格。 | `bubble_column_y()` `make_title_button()` `make_minimize_button()` `make_close_button()` `ensure_taskbar_icon()` |
+| `pet/ui/styles.py` | 界面样式库：米白扁平 QSS、终端暗色色板、字体回退链与窗口通用按钮。 | `bubble_column_y()` `make_title_button()` `make_minimize_button()` `make_close_button()` `ensure_taskbar_icon()` `terminal_source_color()` |
 | `pet/ui/swing.py` | 拖拽惯性钟摆：窗口加速度驱动贴图绕抓取点摆动，松手后自由衰减。 | `step_pendulum()` `SwingController` |
 | `pet/ui/system_tray.py` | （模块未提供 docstring） | `SystemTrayManager` |
+| `pet/ui/terminal_window.py` | 终端窗口：只读回显、输入行、来源标记、命令历史与补全交互。 | `resolve_initial_cwd()` `cd_target()` `drive_target()` `push_history()` `elide_cwd()` `cwd_prompt()` |
 | `pet/ui/tic_tac_toe_panel.py` | 井字棋棋盘面板 — 继承 GamePanelBase，负责棋盘渲染与点击落子。 | `TicTacToePanel` |
 | `pet/ui/twenty_questions_panel.py` | 二十问面板 — 桌宠提问猜东西，用户在面板点击"是/否/不确定"作答， | `TwentyQuestionsPanel` |
 | `pet/ui/widgets.py` | 通用控件。 | `NoWheelComboBox` |
@@ -149,4 +162,4 @@
 | `pet/voice/voice_session.py` | 语音会话编排：麦克风采集 → 讯飞识别 | `VoiceSession` |
 | `pet/voice/xunfei_stt.py` | 讯飞语音听写 (iat) WebSocket API 封装 | `XunfeiSTT` |
 
-共 141 个模块。
+共 154 个模块。

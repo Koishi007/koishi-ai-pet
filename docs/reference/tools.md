@@ -9,7 +9,7 @@
 
 | 分组 | 工具 |
 |---|---|
-| `default` | `tool_search`、`food`、`game`、`recall` |
+| `default` | `tool_search`、`food`、`game`、`recall`、`terminal` |
 | `file` | `file_ops` |
 | `info` | `bilibili`、`system_monitor`、`weather` |
 | `knowledge` | `knowledge` |
@@ -513,3 +513,36 @@
 | `headline` | string | 是 | headline | 一句话结论，进历史记录 |
 | `body` | string | 否 | body | 每条记忆一行 |
 | `pagination` | object | 否 | pagination | 分页信息 |
+
+### `terminal`
+
+- 分组：`default`
+- 说明：终端命令执行：运行系统命令并返回退出码与输出
+
+| 方法 | 参数 | 说明 |
+|---|---|---|
+| `run` | `command`（str, 必需） 要执行的命令；shell 为空时按参数列表拆分<br>`cwd`（str, 默认 ""） 工作目录，留空为沙箱根<br>`timeout`（int, 默认 30） 命令超时秒数，0 表示取默认值<br>`shell`（str, 默认 ""） 交给系统 shell 执行，留空表示按参数列表拆分 | 执行一条系统命令并返回退出码与输出。一次只发一条命令，拿到结果后再决定下一条；每次执行都需要用户确认，被拒绝或返回 busy 时不要重试。有专用工具可做同一件事时优先用专用工具。不确定本机允许哪些命令时先调用 terminal__list。 |
+| `list` | 无参数 | 查询本机终端命令策略：平台、沙箱根、允许命令与安装情况、一律转询问的解释器、危险模式覆盖的类别。不确定某条命令是否允许时先调用它。 |
+
+**`run` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 一句话结论，进历史记录 |
+| `body` | string | 否 | body | 标准输出与标准错误，已截断 |
+| `exit_code` | integer | 否 | data | 退出码，非零表示命令自己报错 |
+| `hint` | string | 否 | hint | 下一步该传什么参数 |
+
+**`list` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 一句话结论，进历史记录 |
+| `body` | string | 是 | body | 允许命令、解释器与沙箱根，每行一项 |
+| `platform` | string | 否 | data | Windows / Linux / macOS |
+| `sandbox_root` | string | 否 | data | 模型命令允许的工作目录上限 |
+| `allowed` | array | 否 | data | 默认命令与额外命令的「程序 + 参数」，附 installed 标记 |
+| `interpreters` | array | 否 | data | 一律转询问的解释器名单 |
+| `deny_categories` | array | 否 | data | 危险模式覆盖的类别名 |
+| `shell_mode` | boolean | 否 | data | TERMINAL_ALLOW_SHELL 是否开启 |
+| `mode` | string | 否 | data | 当前档位 |

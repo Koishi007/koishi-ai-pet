@@ -174,6 +174,7 @@ chmod +x update.sh && ./update.sh
 | `default` | `food` | `spawn` / `status` | 觅食：在桌面生成食物、查询食物位置与过期状态 |
 | `default` | `game` | `list` / `init` / `play` / `stop` | 回合制小游戏：列出游戏、开局、玩一回合、主动结束 |
 | `default` | `recall` | `search` / `browse` | 回忆：主动检索恋恋关于用户的长期记忆（语义回忆、分页翻阅） |
+| `default` | `terminal` | `run` / `list` | 终端命令执行：运行系统命令、查询策略快照 |
 | `web` | `browser` | `search` / `read_url` / `screenshot_url` / `close` | 多引擎网页搜索、读取网页正文（分页）、截图 |
 | `web` | `web_search` | `search` / `fetch` | SearXNG / Tavily / DeepSeek / Bing 搜索与网页正文抓取 |
 | `info` | `bilibili` | `browse` / `status` / `like` / `coin` / `comment` / `dm` / `verify` | 独立 B 站账号：刷视频、读字幕、点赞投币评论私信 |
@@ -214,6 +215,17 @@ chmod +x update.sh && ./update.sh
 - `browse(start_date, end_date, keyword, page)`：分页翻阅全部记忆，可按创建日期范围（`YYYY-MM-DD`，闭区间、可只填一端）、关键词筛选，每页 10 条
 
 检索到的记忆进入召回冷却（防止随后输出重复的 Memory 行）并获得回忆强化（L3 高频访问自动升级 L2）。
+
+### terminal
+
+终端命令执行，`TERMINAL_ENABLED` 默认开启，`TERMINAL_MODE` 默认 `ask`；右键菜单的**终端**入口始终显示，不受上述开关影响。
+
+- `run(command, cwd, timeout, shell)`：执行一条命令，返回退出码与截断后的输出；模型发起的命令按 `TERMINAL_MODE` 判定，需确认时弹出确认卡片
+- `list()`：返回平台、共享工作目录、免确认命令与安装情况、解释器名单、危险模式类别
+
+`TERMINAL_MODE` 三档：`deny` 不允许执行任何命令，`ask` 任何命令都要询问，`auto` 免确认清单内的命令自动执行、其余询问。解释器（python、node、cmd 等）在 `auto` 档也询问。免确认清单就是 `TERMINAL_ALLOW`，默认填了一组只读命令（`dir`、`ls`、`where`、`whoami`、`hostname` 与 git 只读子命令），可在设置页增删，留空时 `auto` 档全部询问；条目格式为「程序名 + 参数前缀」，`git status` 匹配 `git status --short`，`git *` 匹配任意参数。用户自己在终端输入的命令不做策略判定。终端回显只存在内存，不额外落盘；模型命令的记录在事件日志里。用户与恋恋共用工作目录：打开时取 `TERMINAL_SANDBOX_ROOT`（留空为桌面），终端里 `cd` 后恋恋的默认目录跟着变；恋恋自己不能切换目录。
+
+终端还认一组冒号前缀的本地命令，由窗口自己处理，不启动子进程（工具类命令由工具自己登记，关掉工具后对应命令随之消失）：`:help` 列出全部命令，`:check <命令>` 按模型身份试算策略判定（排查免确认清单为什么没生效），`:status` 与 `:policy` 看当前策略，`:timer`、`:todo`、`:memory search`、`:knowledge search` 分别对接定时器、待办、记忆与知识库，`:clear` 清屏。命令名与子命令支持 `Tab` 补全。
 
 ### bilibili
 
@@ -363,6 +375,7 @@ RAG 知识库，支持语义检索。可配置向量嵌入以启用语义搜索�
 | **中断当前调用** | 中止恋恋正在进行的这一次 LLM 调用，立刻回到待机 | 觉得恋恋想偏了或不想等时点一下 |
 | **调试面板** | 打开实时状态窗口，显示饥饿、精力、心情等内部数值 | 开发调试用；普通用户一般不需要 |
 | **日志** | 打开运行日志窗口，实时查看 LLM 调用、工具执行、错误等信息 | 排查问题或了解内部发生了什么 |
+| **终端** | 打开命令行终端，直接输入并执行命令 | 跑脚本、查目录；与恋恋共用同一把执行闸门 |
 | **对话历史** | 查看与 LLM 的完整对话记录 | 回顾之前的互动；了解模型如何理解上下文 |
 | **记忆管理** | 打开记忆管理面板，查看、搜索、删除已存储的记忆条目 | 清理不准确的记忆；搜索"恋恋记住了什么" |
 | **设置** | 打开设置窗口，配置模型连接、提示词、语音等 | 同托盘"设置"入口 |

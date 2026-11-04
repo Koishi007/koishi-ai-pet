@@ -111,6 +111,12 @@ _FOOD_GUIDE = """[觅食]
 - 先走过去再原地跳：Action: walk right <dx> → Action: bounce right 0 <bounce_height>（direction 为 left 时方向相应改成 left）
 - 走到食物附近自动开吃；没吃到就继续，可以多试几次；吃到了用 Vitals: satiety+N 反映饱食度变化"""
 
+_TERMINAL_GUIDE = """[终端]
+- terminal__run 执行一条系统命令，返回退出码与输出；每次调用都需要用户确认，一次只发一条，拿到结果后再决定下一条
+- 有专用工具能做同一件事时优先用专用工具
+- 用户拒绝、超时或返回 busy 时不要重试，把情况告诉用户
+- 不确定本机允许哪些命令时先调用 terminal__list，不要凭猜测反复试"""
+
 _TOOL_ASIDE_GUIDE = ("调用工具时，可以配合 aside 字段表现地言行统一；"
                      "aside 是你行动时的自言自语，内容要贴合你的人格与口吻（用词、语气、习惯都和你平时说话一致），"
                      "仅作为辅助让用户理解你正在行动，不会作为对用户的正式回复；"
@@ -221,6 +227,12 @@ _PERCEPTION_SECTIONS = {
 def _food_guide_available() -> bool:
     """觅食引导只在工具注册且启用时注入。"""
     return bool(config.FOOD_ENABLED and food_tool_available())
+
+
+def _terminal_guide_available() -> bool:
+    """终端引导只在工具注册且启用时注入。"""
+    tool = TOOL_REGISTRY.get_tool("terminal")
+    return bool(config.TERMINAL_ENABLED and tool is not None and TOOL_REGISTRY.is_enabled("terminal"))
 
 
 def _task_format(*, header: str, summary: str, emotion: str,
@@ -336,6 +348,8 @@ def _autonomous_task(docked: bool = False) -> list[str]:
     guides = [_MOOD_GUIDE, _VITALS_GUIDE, _tool_guide()]
     if not docked and _food_guide_available():
         guides.append(_FOOD_GUIDE)
+    if _terminal_guide_available():
+        guides.append(_TERMINAL_GUIDE)
     return [format_guide] + constraints + guides
 
 
@@ -376,6 +390,8 @@ def _chat_task(docked: bool = False) -> list[str]:
     guides = [_MOOD_GUIDE, _VITALS_GUIDE, _tool_guide()]
     if not docked and _food_guide_available():
         guides.append(_FOOD_GUIDE)
+    if _terminal_guide_available():
+        guides.append(_TERMINAL_GUIDE)
     return [format_guide] + constraints + guides
 
 
@@ -401,7 +417,10 @@ def _interact_task(docked: bool = False) -> list[str]:
         "2. Speech 是本能反应，≤30字，可以分句表达，让对话更自然，语气由性格决定；也可以选择沉默（比如生气时一言不发），省略 Speech 只输出动作；根据互动类型选择不同动作",
     ]
 
-    return [format_guide] + constraints + [_MOOD_GUIDE, _VITALS_GUIDE]
+    guides = [_MOOD_GUIDE, _VITALS_GUIDE]
+    if _terminal_guide_available():
+        guides.append(_TERMINAL_GUIDE)
+    return [format_guide] + constraints + guides
 
 
 def _analyze_task(docked: bool = False) -> list[str]:

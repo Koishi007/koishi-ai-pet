@@ -453,6 +453,30 @@ class SettingsWindow(QWidget):
         self._fields[key] = cb
         return cb
 
+    def _help_badge(self, tooltip: str) -> QLabel:
+        """「?」圆形标记：悬停显示说明与风险。"""
+        badge = QLabel("?")
+        badge.setFixedSize(16, 16)
+        badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        badge.setCursor(Qt.CursorShape.WhatsThisCursor)
+        badge.setStyleSheet(
+            f"QLabel {{ color:{_COLOR_TEXT_MUTED}; border:1px solid {_COLOR_BORDER_DARK};"
+            f" border-radius:8px; font-size:11px; }}"
+        )
+        badge.setToolTip(tooltip)
+        return badge
+
+    def _label_with_help(self, text: str, tooltip: str) -> QWidget:
+        """右对齐的表单标签，右侧紧跟「?」标记。"""
+        holder = QWidget()
+        row = QHBoxLayout(holder)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(4)
+        row.addStretch()
+        row.addWidget(QLabel(text))
+        row.addWidget(self._help_badge(tooltip))
+        return holder
+
     @staticmethod
     def _select_combo(widget: QComboBox, value) -> None:
         """按值选中下拉项，找不到时保持第一项。"""
@@ -791,23 +815,14 @@ class SettingsWindow(QWidget):
         merge_head.setSpacing(6)
         merge_head.addWidget(self._check("MEMORY_EVENT_MERGE_ENABLED", "整点汇总事件记忆"))
 
-        merge_help = QLabel("?")
-        merge_help.setFixedSize(16, 16)
-        merge_help.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        merge_help.setCursor(Qt.CursorShape.WhatsThisCursor)
-        merge_help.setStyleSheet(
-            f"QLabel {{ color:{_COLOR_TEXT_MUTED}; border:1px solid {_COLOR_BORDER_DARK};"
-            f" border-radius:8px; font-size:11px; }}"
-        )
-        merge_help.setToolTip(
+        merge_head.addWidget(self._help_badge(
             "整点（或点下方「立即汇总」）把同主题的 event 与 conversation 记忆交给模型，合并成一条 event 汇总：\n"
             "将散落的同一主题事件合并成一条，记忆召回内容更加完整。\n\n"
             "风险：\n"
             "· 被合并的原始记忆会被删除，只留汇总，不可撤销\n"
             "· 汇总由模型生成，可能丢细节或概括偏差\n"
             "· 每次调用都消耗模型 token；未单独填汇总模型时用当前对话模型"
-        )
-        merge_head.addWidget(merge_help)
+        ))
         merge_head.addStretch()
         memory_layout.addLayout(merge_head)
 
@@ -911,6 +926,62 @@ class SettingsWindow(QWidget):
         form.addRow("", self._check("EDGE_DOCK_ENABLED", "开启贴边吸附（拖到屏幕边缘松手贴住）"))
 
         inner.addLayout(form)
+
+        # 终端
+        terminal_group = QGroupBox("终端")
+        terminal_form = QFormLayout(terminal_group)
+        terminal_form.setSpacing(8)
+        terminal_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        terminal_enable = self._check("TERMINAL_ENABLED", "允许恋恋执行命令（需重启）")
+        enable_row = QHBoxLayout()
+        enable_row.setSpacing(6)
+        enable_row.addWidget(terminal_enable)
+        enable_row.addWidget(self._help_badge(
+            "开启后恋恋获得终端工具，可执行系统命令；每条命令按「命令放行策略」判定，"
+            "且只能在工作目录根及其子目录内执行。\n"
+            "python、node、cmd、powershell 等解释器始终弹卡片询问。\n\n"
+            "风险：\n"
+            "· 命令由恋恋发起，提示注入可能让它执行你没预期的操作\n"
+            "· 允许写操作类程序会改动磁盘上的文件"
+        ))
+        enable_row.addStretch()
+        terminal_form.addRow("", enable_row)
+
+        terminal_mode = self._combo("TERMINAL_MODE", ["deny", "ask", "auto"])
+        terminal_form.addRow(self._label_with_help(
+            "命令放行策略:",
+            "控制恋恋发起的命令如何放行；终端里你自己输入的命令不受影响。\n"
+            "· deny：不允许执行任何命令\n"
+            "· ask：每条命令都弹确认卡片\n"
+            "· auto：清单里的命令直接执行，其余询问\n"
+            "解释器在 auto 档也询问；命中危险规则时同样转询问。\n\n"
+            "风险：\n"
+            "· auto 档不弹卡片就直接执行，免确认清单写得过宽会放大影响面"
+        ), terminal_mode)
+
+        terminal_allow = self._line("TERMINAL_ALLOW", "逗号分隔，如 git status, git log, dir *")
+        terminal_form.addRow(self._label_with_help(
+            "auto 档免确认命令:",
+            "auto 档里免确认的命令，默认已填常用只读命令，留空表示全部询问；ask 与 deny 档不读取。\n"
+            "格式为「程序名 + 参数前缀」，逗号分隔：git status 放行该子命令及其后续参数，"
+            "git * 放行任意子命令。\n"
+            "解释器写了也不生效：python、node、npm、powershell、cmd、bash、sh、wsl 等程序"
+            "不论怎么写进清单，auto 档仍弹卡片。\n\n"
+            "风险：\n"
+            "· 写操作命令会免确认直接改动文件\n"
+            "· 条目写得过宽（如 git *）会把 push、reset 这类写操作一并放开"
+        ), terminal_allow)
+
+        terminal_root = self._line("TERMINAL_SANDBOX_ROOT", "留空为桌面")
+        terminal_form.addRow(self._label_with_help(
+            "工作目录根:",
+            "用户与恋恋共用的工作目录根，也是终端打开时的初始目录；留空表示桌面。\n"
+            "终端里 cd 切换后，恋恋的默认工作目录跟着变，命令只能在该目录及其子目录里运行；"
+            "恋恋自己不能切换目录。\n\n"
+            "风险：\n"
+            "· 目录切到盘符根后，恋恋可读写范围随之扩大到该盘"
+        ), terminal_root)
+        inner.addWidget(terminal_group)
 
         voice_group = QGroupBox("语音输入")
         voice_layout = QVBoxLayout(voice_group)
