@@ -131,6 +131,35 @@ class TestReadFile:
         result = FileOpsTool().read_file(str(target), max_chars=100, offset=0)
         assert result["hint"] == ""
 
+    def test_offset_is_char_based_for_multibyte(self, sandbox):
+        target = sandbox / "中文.txt"
+        target.write_text("甲乙丙丁戊" * 10, encoding="utf-8")
+        tool = FileOpsTool()
+        result = tool.read_file(str(target), max_chars=7, offset=7)
+        assert result["body"] == ("甲乙丙丁戊" * 10)[7:14]
+        assert "offset=14" in result["hint"]
+
+    def test_offset_larger_than_file_reports_eof(self, sandbox):
+        target = sandbox / "短文.txt"
+        target.write_text("只有一点内容", encoding="utf-8")
+        result = FileOpsTool().read_file(str(target), max_chars=100, offset=50)
+        assert result["body"] == ""
+        assert result["hint"] == "已到文件末尾"
+
+    def test_full_paging_covers_file_without_loss(self, sandbox):
+        target = sandbox / "长文.txt"
+        text = "恋恋的日记\n" * 60
+        target.write_bytes(text.encode("utf-8"))
+        tool = FileOpsTool()
+        chunks, offset = [], 0
+        while True:
+            result = tool.read_file(str(target), max_chars=37, offset=offset)
+            chunks.append(result["body"])
+            if "offset=" not in result["hint"]:
+                break
+            offset = int(result["hint"].split("offset=")[1].split(" ")[0])
+        assert "".join(chunks) == text
+
     def test_illegal_path_raises_permission_error(self, sandbox):
         # read_file 不做兜底，由执行器统一转为错误结果
         with pytest.raises(PermissionError):

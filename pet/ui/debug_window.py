@@ -3,7 +3,7 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QGroupBox, QTextEdit, QLabel, QLineEdit,
-    QFormLayout, QCheckBox, QFrame, QComboBox, QListWidget,
+    QFormLayout, QCheckBox, QFrame, QListWidget,
     QGridLayout, QScrollArea, QApplication,
 )
 from datetime import datetime
@@ -20,6 +20,7 @@ from pet.ui.styles import (
     make_minimize_button, make_close_button, ensure_taskbar_icon,
 )
 
+from pet.ui.widgets import NoWheelComboBox
 from pet.ui.speech_bubble import SpeechBubble
 from pet.ui.emotion import EmotionBubble, EMOTION_MAP
 from pet.ui.particle import ParticleWidget
@@ -209,7 +210,7 @@ class DebugWindow(QWidget):
         anim_layout.addWidget(sep)
 
         win_row = QHBoxLayout()
-        self.bounce_dir = QComboBox()
+        self.bounce_dir = NoWheelComboBox()
         self.bounce_dir.addItems(["right", "left"])
         self.bounce_dir.setFixedWidth(60)
         win_row.addWidget(self.bounce_dir)
@@ -249,12 +250,12 @@ class DebugWindow(QWidget):
 
         walk_row = QHBoxLayout()
         walk_row.addWidget(QLabel("类型:"))
-        self.walk_type = QComboBox()
+        self.walk_type = NoWheelComboBox()
         self.walk_type.addItems(["drive", "walk"])
         self.walk_type.setCurrentText("drive")
         walk_row.addWidget(self.walk_type)
         walk_row.addWidget(QLabel("方向:"))
-        self.walk_dir = QComboBox()
+        self.walk_dir = NoWheelComboBox()
         self.walk_dir.addItems(["left", "right"])
         self.walk_dir.setCurrentText("right")
         walk_row.addWidget(self.walk_dir)

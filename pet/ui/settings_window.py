@@ -14,7 +14,7 @@ from PySide6.QtCore import Qt, QThread, Signal, QObject
 from PySide6.QtGui import QIcon, QFont, QPainter, QPainterPath, QPen, QColor, QIntValidator, QDoubleValidator
 
 from pet.brain.memory_merge import run_merge
-from pet.config import config, _KEY_META
+from pet.config import config, _KEY_META, PET_SCALE_STEPS
 from pet.auto_start import set_auto_start
 from pet.ui.styles import (
     ICON_PATH, SETTING_ICON_PATH, SHOW_ICON_PATH, HIDE_ICON_PATH, PANEL_QSS, BUTTON_QSS, BUTTON_PRIMARY_QSS,
@@ -24,6 +24,7 @@ from pet.ui.styles import (
     _COLOR_TEXT_SEC, _COLOR_TEXT_MUTED, _COLOR_WARNING,
     make_minimize_button, make_close_button, ensure_taskbar_icon,
 )
+from pet.ui.widgets import NoWheelComboBox
 
 logger = logging.getLogger(__name__)
 
@@ -446,11 +447,17 @@ class SettingsWindow(QWidget):
 
     def _combo(self, key: str, items: list[str]) -> QComboBox:
         """创建 QComboBox 并注册到 _fields。"""
-        cb = QComboBox()
+        cb = NoWheelComboBox()
         cb.addItems(items)
         cb.setStyleSheet(COMBOBOX_QSS)
         self._fields[key] = cb
         return cb
+
+    @staticmethod
+    def _select_combo(widget: QComboBox, value) -> None:
+        """按值选中下拉项，找不到时保持第一项。"""
+        idx = widget.findText(str(value))
+        widget.setCurrentIndex(max(idx, 0))
 
     def _text_area(self, key: str) -> MarkdownEdit:
         """创建 MarkdownEdit 并注册到 _fields。"""
@@ -481,7 +488,7 @@ class SettingsWindow(QWidget):
         self._fields = {}
 
         # 调用模式
-        self._brain_combo = QComboBox()
+        self._brain_combo = NoWheelComboBox()
         self._brain_combo.addItems(["local", "api", "ollama"])
         self._fields["BRAIN"] = self._brain_combo
         form.addRow("调用模式:", self._brain_combo)
@@ -856,9 +863,8 @@ class SettingsWindow(QWidget):
         """)
         memory_layout.addWidget(self._conn_test_output)
 
-        # 重启提示
-        memory_hint = QLabel("修改记忆设置后需重启生效。")
-        memory_hint.setStyleSheet(f"color:{_COLOR_WARNING}; font-size:11px; font-weight:bold;")
+        memory_hint = QLabel("修改向量记忆相关设置需重启后生效。")
+        memory_hint.setStyleSheet(f"color:{_COLOR_TEXT_MUTED}; font-size:11px;")
         memory_hint.setWordWrap(True)
         memory_layout.addWidget(memory_hint)
 
@@ -889,19 +895,16 @@ class SettingsWindow(QWidget):
         form = QFormLayout()
         form.setSpacing(6)
 
-        # 需重启提示
-        restart_label = QLabel("以下设置需要重启后生效：")
-        restart_label.setStyleSheet(f"color:{_COLOR_WARNING}; font-size:11px; font-weight:bold;")
-        form.addRow(restart_label)
-
-        form.addRow("宠物宽度:", self._line("PET_WIDTH", "125", QIntValidator(50, 500)))
-        form.addRow("宠物高度:", self._line("PET_HEIGHT", "125", QIntValidator(50, 500)))
+        form.addRow("宠物大小:", self._combo("PET_SCALE", list(PET_SCALE_STEPS)))
+        size_hint = QLabel("100%: 125px×125px")
+        size_hint.setStyleSheet(f"color:{_COLOR_TEXT_MUTED}; font-size:11px;")
+        form.addRow("", size_hint)
         form.addRow("气泡最大宽度:", self._line("BUBBLE_MAX_WIDTH", "300", QIntValidator(100, 1000)))
-        form.addRow("气泡字号:", self._line("BUBBLE_FONT_SIZE", "14", QIntValidator(8, 48)))
+        form.addRow("气泡字号（需重启）:", self._line("BUBBLE_FONT_SIZE", "14", QIntValidator(8, 48)))
         tools_edit = self._line("TOOLS_ENABLED", "*")
         tools_edit.setPlaceholderText("* 表示全部，多个用逗号分隔")
-        form.addRow("启用工具:", tools_edit)
-        form.addRow("", self._check("SHOW_TRAY", "显示托盘图标"))
+        form.addRow("启用工具（需重启）:", tools_edit)
+        form.addRow("", self._check("SHOW_TRAY", "显示托盘图标（需重启）"))
         form.addRow("", self._check("NOTIFY_ENABLED", "允许发送通知"))
         form.addRow("", self._check("AUTO_START_ON_BOOT", "开机自动启动"))
         form.addRow("", self._check("GRAB_SWING_ENABLED", "拖拽时身体惯性摆动"))
@@ -1033,8 +1036,7 @@ class SettingsWindow(QWidget):
             elif isinstance(widget, QCheckBox):
                 widget.setChecked(bool(value))
             elif isinstance(widget, QComboBox):
-                idx = widget.findText(str(value))
-                widget.setCurrentIndex(max(idx, 0))
+                self._select_combo(widget, value)
             elif isinstance(widget, (QTextEdit, MarkdownEdit)):
                 widget.setPlainText(str(value))
         self._update_profile_ui()
@@ -1148,14 +1150,11 @@ class SettingsWindow(QWidget):
             self._msg("输入有误",
                       f"以下字段的数值无效，未能保存：\n{details}\n\n请按提示范围修改后再保存。")
             return
-        needs_restart_keys = []
         needs_rebuild_client = False
         needs_scheduler_update = False
 
         for key, value in values.items():
-            _, needs_restart = config.save(key, value)
-            if needs_restart:
-                needs_restart_keys.append(key)
+            config.save(key, value)
 
             meta = _KEY_META.get(key)
             if meta is None:
@@ -1187,13 +1186,22 @@ class SettingsWindow(QWidget):
         # LLM 客户端重建（在后台线程执行，避免阻塞 GUI）
         if needs_rebuild_client:
             self._rebuild_llm_client()
+        if "PET_SCALE" in values:
+            self._apply_pet_scale()
         self._update_profile_ui()
 
-        if needs_restart_keys:
-            self._msg("设置已保存", "已保存。部分设置须重启后生效。")
-        else:
-            self._msg("设置已保存", "所有设置已即时生效。")
+        self._msg("设置已保存", "已保存。部分设置须重启后生效。")
         self._take_snapshot()
+
+    def _apply_pet_scale(self):
+        """立即应用新挡位：窗口尺寸与当前动作帧一起刷新。"""
+        window = getattr(self.agent, "pet_window", None) if self.agent else None
+        if window is None:
+            return
+        try:
+            window.apply_scale()
+        except Exception as e:
+            logger.exception(f"[Settings] apply_scale failed: {e}")
 
 
     def _test_llm(self):

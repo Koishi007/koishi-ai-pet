@@ -353,6 +353,42 @@ class PetWindow(TransparentWindow):
             self.pet_actions.gravity.enable(True)
         self.pet_actions.idle()
 
+    def apply_scale(self):
+        """按当前挡位刷新窗口与当前动作，淡出淡入过渡。"""
+        size = config.PET_WIDTH
+        if self.width() == size and self.height() == size:
+            return
+        if not self.isVisible():
+            self._resize_window(size)
+            return
+        self.pet_actions.fade_out(150, callback=lambda: self._finish_scale(size))
+
+    def _finish_scale(self, size: int):
+        self._resize_window(size)
+        self.pet_actions.fade_in()
+
+    def _resize_window(self, size: int):
+        center = self.geometry().center()
+        if self._dock_anim is not None:
+            self._dock_anim.stop()
+            self._dock_anim = None
+        self.setFixedSize(size, size)
+        self.pet_anim.rebuild_frames()
+
+        screen = self.screen() or QApplication.primaryScreen()
+        geo = screen.availableGeometry() if screen is not None else None
+        if self._dock_side and geo is not None:
+            x = dock_x(self._dock_side, geo.left(), geo.right(), size)
+            y = self.y()
+        else:
+            x, y = center.x() - size // 2, center.y() - size // 2
+        if geo is not None:
+            x = min(max(x, geo.left()), geo.right() - size + 1)
+            y = min(max(y, geo.top()), geo.bottom() - size + 1)
+        self.move(x, y)
+        if self._dock_side:
+            self._finish_dock(self._dock_side)
+
     def _on_edge_hit(self, side: str):
         """甩飞撞到屏幕边缘：吸附。"""
         self.dock_to(side)

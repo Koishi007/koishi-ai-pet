@@ -251,6 +251,7 @@ system 动作表换成 `EDGE_ACTION_NAMES` 的八个贴边动作；调度器、�
 | `pet/config.py` | 配置项真源 `_KEY_META` 与 `Config` 单例，负责合并 `settings.json` 与生成 schema |
 | `pet/crash_reporter.py` | 崩溃报告、启动标记、原生崩溃（faulthandler）捕获 |
 | `pet/db.py` | 数据库路径与统一 SQLite 连接配置（WAL、busy_timeout） |
+| `pet/relaunch.py` | 托盘「重启」：按当前运行方式（源码 / 入口 exe / 打包）拉起新实例 |
 | `pet/self_update.py` | 启动时应用上一次更新遗留的 `update.*.new` 脚本 |
 | `pet/settings.py` | `settings.json` 的读写与跨平台路径、原子写入 |
 | `pet/single_instance.py` | 单实例锁（`QLockFile`） |

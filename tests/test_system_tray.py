@@ -49,6 +49,15 @@ def test_notify_dropped_without_tray_icon(monkeypatch):
     assert mgr.tray_icon is None
 
 
+def test_restart_failure_ignores_notify_switch(monkeypatch):
+    """重启失败属于退出期故障，通知总开关关闭也要提示。"""
+    mgr = _manager(monkeypatch, False)
+
+    mgr.report_restart_failure()
+
+    assert mgr.tray_icon.messages[0][0] == "重启失败"
+
+
 class _FakeBehavior:
     def __init__(self):
         self.cleared = 0

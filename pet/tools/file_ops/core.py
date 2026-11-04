@@ -1,6 +1,7 @@
 """文件操作工具：列目录、读写文本、读取图片，限桌面与文档目录。"""
 
 import base64
+import codecs
 import io
 import logging
 import os
@@ -50,6 +51,12 @@ def _encode_jpeg(image) -> str:
     return base64.b64encode(buf.getvalue()).decode("ascii")
 
 
+def _decode_prefix(raw: bytes) -> str:
+    """按 UTF-8 解码字节前缀，非法字节替换，末尾截断的残字丢弃。"""
+    decoder = codecs.getincrementaldecoder("utf-8")("replace")
+    return decoder.decode(raw, final=False)
+
+
 class FileOpsTool:
     def _check_path(self, path: str) -> str:
         # realpath 解析 symlink / junction：否则允许目录内的链接可指向外部造成逃逸
@@ -95,6 +102,8 @@ class FileOpsTool:
         }
 
     _MAX_OFFSET = 5000  # offset 上限，防止翻页耗尽轮次
+    _MAX_PAGE_CHARS = 5000  # 单页字符上限
+    _BYTES_PER_CHAR = 4  # UTF-8 单字符最大字节数
 
     def read_file(self, path: str, max_chars: int = 1000, offset: int = 0) -> dict:
         abs_path = self._check_path(path)
@@ -103,31 +112,37 @@ class FileOpsTool:
         if sniff(abs_path) == "image":
             # 图片整张读取，offset / max_chars 只用于文本分页
             return self._read_image(abs_path)
+        offset = max(0, int(offset))
         if offset >= self._MAX_OFFSET:
             return {"error": f"已读取至 offset={offset}，达到上限 {self._MAX_OFFSET}，不再翻页"}
+        max_chars = max(1, min(int(max_chars), self._MAX_PAGE_CHARS))
+        # 按字符定位：offset 是字符序号而非字节偏移，避免切断多字节字符
+        need_bytes = (offset + max_chars) * self._BYTES_PER_CHAR
         try:
-            with open(abs_path, "r", encoding="utf-8") as f:
-                f.seek(offset)
-                content = f.read(max_chars)
-            actual_offset = offset
-            has_next = len(content) >= max_chars
-            next_offset = actual_offset + len(content)
-            # 到达上限则标记无下一页
-            if next_offset >= self._MAX_OFFSET:
-                has_next = False
-            hint = ""
-            if has_next:
-                hint = f"还有更多内容，用 offset={next_offset} 继续读取"
-            elif next_offset >= self._MAX_OFFSET:
-                hint = f"已达读取上限（{self._MAX_OFFSET} 字符），不再翻页"
-            return {
-                "headline": (f"读取文件 {abs_path}（offset={actual_offset}，"
-                             f"{len(content)} 字符{'，还有更多' if has_next else ''}）"),
-                "body": content,
-                "hint": hint,
-            }
-        except Exception as e:
+            with open(abs_path, "rb") as f:
+                raw = f.read(need_bytes)
+                at_eof = not f.read(1)
+        except OSError as e:
             return {"error": str(e)}
+        text = _decode_prefix(raw)
+        content = text[offset:offset + max_chars]
+        next_offset = offset + len(content)
+        # 文件还有字节，或解码出的字符数超过本页末尾，说明后面还有内容
+        has_next = (not at_eof or len(text) > next_offset) and next_offset < self._MAX_OFFSET
+        if has_next:
+            hint = f"还有更多内容，用 offset={next_offset} 继续读取"
+        elif not content and offset > 0:
+            hint = "已到文件末尾"
+        elif next_offset >= self._MAX_OFFSET:
+            hint = f"已达读取上限（{self._MAX_OFFSET} 字符），不再翻页"
+        else:
+            hint = ""
+        return {
+            "headline": (f"读取文件 {abs_path}（offset={offset}，"
+                         f"{len(content)} 字符{'，还有更多' if has_next else ''}）"),
+            "body": content,
+            "hint": hint,
+        }
 
     def _read_image(self, abs_path: str) -> dict:
         """图片走视觉通道：解码、缩放后以 base64 附给模型，不参与文本分页。"""

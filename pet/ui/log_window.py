@@ -7,7 +7,7 @@ from PySide6.QtCore import Qt, Signal, QObject, QPoint
 from PySide6.QtGui import QFont, QTextCursor, QIcon, QPainter, QPainterPath, QColor, QPen
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
-    QTextEdit, QPushButton, QLabel, QComboBox,
+    QTextEdit, QPushButton, QLabel,
 )
 from pet.ui.styles import (
     ICON_PATH, TEXTEDIT_QSS, BUTTON_QSS, BUTTON_PRIMARY_QSS, BUTTON_DANGER_QSS, COMBOBOX_QSS, SCROLLBAR_QSS,
@@ -15,6 +15,7 @@ from pet.ui.styles import (
     TITLE_LABEL_QSS, WINDOW_RADIUS,
     make_minimize_button, make_close_button, ensure_taskbar_icon,
 )
+from pet.ui.widgets import NoWheelComboBox
 
 
 
@@ -154,7 +155,7 @@ class LogWindow(QWidget):
         toolbar = QHBoxLayout()
         toolbar.setContentsMargins(0, 0, 0, 0)
 
-        self._level_combo = QComboBox()
+        self._level_combo = NoWheelComboBox()
         self._level_combo.addItems(["DEBUG", "INFO", "WARNING", "ERROR"])
         self._level_combo.setCurrentText(relay.current_level_name())
         self._level_combo.setStyleSheet(COMBOBOX_QSS)
