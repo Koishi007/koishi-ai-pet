@@ -95,8 +95,8 @@ python scripts/gen_docs.py --check  # 只校验
 - **不跨对象访问私有成员**：需要别的类的能力时给它一个公开方法，或者把协作提到调用方。
   现存的例外列在 [docs/architecture.md](docs/architecture.md) §14，新代码不再新增
 - 新增配置项：加在 `pet/config.py` 的 `_KEY_META`（类型/默认值/说明/是否需重启/是否隐藏）。
-  要在设置界面可见，还得在 `pet/ui/settings_window.py` 对应页签加控件 - 页签归属是界面代码手写的，
-  和 `category` 不是一回事
+  要在设置界面可见，还得在 `pet/ui/settings_tabs.py` 的对应页签加控件，并把键补进
+  `pet/ui/settings_spec.py` 的 `TAB_SPECS` - 页签归属是手写的，和 `category` 不是一回事
 - 跨平台：三个平台都要能跑。平台相关代码放各自后端模块（如 `pet/brain/*_detector.py`）并保持同一接口
 - 安全边界：文件操作限制在桌面/文档目录，路径校验要防 symlink/junction 逃逸，工具参数按 spec 校验，
   日志与崩溃报告不得输出密钥

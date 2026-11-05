@@ -148,7 +148,13 @@
 | `pet/ui/pet_animations.py` | 桌宠帧动画模块 —— 基于 JSON 配置的帧序列播放。 | `PetAnimator` |
 | `pet/ui/pet_window.py` | 扁平圆角菜单基类 — Windows 下自绘圆角背景，macOS 走原生。 | `_FlatMenuBase` `StickyMenu` `_SpriteLabel` `PetWindow` |
 | `pet/ui/rps_panel.py` | 猜拳面板 — 继承 GamePanelBase，负责出拳展示与点击提交。 | `RpsPanel` |
-| `pet/ui/settings_window.py` | 设置界面 — 用户配置的图形界面。 | `_LLMTestWorker` `_EmbeddingTestWorker` `_MemoryMergeWorker` `_ModelsFetchWorker` `_VoiceTestWorker` `MarkdownEdit` |
+| `pet/ui/settings_actions.py` | 设置页的后台动作：连通性测试、模型列表、记忆汇总与热键录制 | `apply_pet_scale()` `SettingsActions` |
+| `pet/ui/settings_fields.py` | 设置页的控件工厂、表单模型与跨模块共享的控件引用 | `MarkdownEdit` `SettingsWidgets` `SettingsForm` |
+| `pet/ui/settings_hooks.py` | 设置页可选能力的注入点：装配层在启动时绑定真实实现 | `bind()` `make_embedding_client()` `invalidate_action_section()` |
+| `pet/ui/settings_spec.py` | 设置界面的纯数据：页签归属与单位换算 | `display_value()` `stored_value()` |
+| `pet/ui/settings_tabs.py` | 设置页的四个页签：只负责搭建控件并登记到 SettingsForm | `SettingsTabs` |
+| `pet/ui/settings_window.py` | 设置界面 — 用户配置的图形界面 | `SettingsWindow` |
+| `pet/ui/settings_workers.py` | 设置页的后台任务：QObject worker 与 QThread 登记 | `LLMTestWorker` `EmbeddingTestWorker` `MemoryMergeWorker` `ModelsFetchWorker` `VoiceTestWorker` `ProbeRegistry` |
 | `pet/ui/speech_bubble.py` | 桌宠对话气泡：同一时刻只讲一句，多出来的排队 | `SpeechBubble` |
 | `pet/ui/styles.py` | 界面样式库：米白扁平 QSS、终端暗色色板、字体回退链与窗口通用按钮。 | `bubble_column_y()` `make_title_button()` `make_minimize_button()` `make_close_button()` `ensure_taskbar_icon()` `terminal_source_color()` |
 | `pet/ui/swing.py` | 拖拽惯性钟摆：窗口加速度驱动贴图绕抓取点摆动，松手后自由衰减。 | `step_pendulum()` `SwingController` |
@@ -167,4 +173,4 @@
 | `pet/voice/voice_session.py` | 语音会话编排：麦克风采集 → 讯飞识别 | `VoiceSession` |
 | `pet/voice/xunfei_stt.py` | 讯飞语音听写 (iat) WebSocket API 封装 | `XunfeiSTT` |
 
-共 159 个模块。
+共 165 个模块。

@@ -64,46 +64,15 @@ def load_config_meta() -> dict:
 
 
 def load_settings_tabs() -> list[tuple[str, list[str]]]:
-    """设置界面页签 → 该页签按顺序列出的配置键（静态解析 settings_window.py）。
+    """设置界面页签 → 该页签按顺序列出的配置键（读零依赖数据模块）。
 
-    页签归属是界面代码手写的，和 _KEY_META 的 category 不是同一维度（例如
-    MEMORY_* 的 category 是 memory，却显示在「行为」页），所以只能从源码里读。
+    页签归属是手写的，和 _KEY_META 的 category 不是同一维度（例如
+    MEMORY_* 的 category 是 memory，却显示在「行为」页），统一声明在
+    pet/ui/settings_spec.py 的 TAB_SPECS 里，界面与文档共用一份。
     """
-    keys = set(load_config_meta())
-    tree = ast.parse(_read(pet_path("ui", "settings_window.py")))
-    node_types = {
-        node.name: node
-        for node in ast.walk(tree)
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-    }
+    from pet.ui.settings_spec import TAB_SPECS
 
-    tabs: list[tuple[str, list[str]]] = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
-        func = node.func
-        if not (isinstance(func, ast.Attribute) and func.attr == "addTab"):
-            continue
-        if len(node.args) < 2:
-            continue
-        builder, label = node.args[0], node.args[1]
-        if not (isinstance(builder, ast.Call) and isinstance(label, ast.Constant)):
-            continue
-        builder_name = getattr(builder.func, "attr", "")
-        if builder_name not in node_types:
-            continue
-        tabs.append((str(label.value), _collect_keys(node_types[builder_name], keys)))
-    return tabs
-
-
-def _collect_keys(node: ast.AST, known: set[str]) -> list[str]:
-    """按源码顺序收集函数体内出现的配置键字面量。"""
-    found: list[str] = []
-    for child in _walk_source_order(node):
-        if isinstance(child, ast.Constant) and isinstance(child.value, str) and child.value in known:
-            if child.value not in found:
-                found.append(child.value)
-    return found
+    return [(label, list(keys)) for label, keys in TAB_SPECS]
 
 
 def _walk_source_order(node: ast.AST):
@@ -535,9 +504,9 @@ def render_config(meta: dict, tabs: list[tuple[str, list[str]]]) -> str:
         "",
         "## 设置界面页签",
         "",
-        "页面归属由 `pet/ui/settings_window.py` 手写，和 `_KEY_META.category` **不是一回事**"
+        "页面归属由 `pet/ui/settings_spec.py` 的 `TAB_SPECS` 声明，和 `_KEY_META.category` **不是一回事**"
         "（例如 `MEMORY_*` 的 category 是 `memory`，却显示在「行为」页）。"
-        "需要改归属时改界面代码，然后重新生成本文档。",
+        "需要改归属时改 `TAB_SPECS`，然后重新生成本文档。",
         "",
     ]
 

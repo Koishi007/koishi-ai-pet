@@ -9,7 +9,7 @@
 
 ## 设置界面页签
 
-页面归属由 `pet/ui/settings_window.py` 手写，和 `_KEY_META.category` **不是一回事**（例如 `MEMORY_*` 的 category 是 `memory`，却显示在「行为」页）。需要改归属时改界面代码，然后重新生成本文档。
+页面归属由 `pet/ui/settings_spec.py` 的 `TAB_SPECS` 声明，和 `_KEY_META.category` **不是一回事**（例如 `MEMORY_*` 的 category 是 `memory`，却显示在「行为」页）。需要改归属时改 `TAB_SPECS`，然后重新生成本文档。
 
 ### 连接
 

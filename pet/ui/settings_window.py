@@ -1,30 +1,25 @@
-"""设置界面 — 用户配置的图形界面。"""
+"""设置界面 — 用户配置的图形界面"""
 
 from __future__ import annotations
 
 import logging
-import threading
-import logging
-from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
-    QLineEdit, QCheckBox, QComboBox, QTextEdit, QTabWidget,
-    QFormLayout, QGroupBox, QMessageBox, QScrollArea, QMenu, QApplication,
-)
-from PySide6.QtCore import Qt, QThread, Signal, QObject
-from PySide6.QtGui import QIcon, QFont, QPainter, QPainterPath, QPen, QColor, QIntValidator, QDoubleValidator
 
-from pet.brain.memory_merge import run_merge
-from pet.config import config, _KEY_META, PET_SCALE_STEPS
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen
+from PySide6.QtWidgets import (QApplication, QHBoxLayout, QLabel, QMessageBox,
+                               QPushButton, QTabWidget, QVBoxLayout, QWidget)
+
 from pet.auto_start import set_auto_start
-from pet.ui.styles import (
-    ICON_PATH, SETTING_ICON_PATH, SHOW_ICON_PATH, HIDE_ICON_PATH, PANEL_QSS, BUTTON_QSS, BUTTON_PRIMARY_QSS,
-    INPUT_QSS, INPUT_HIGHLIGHT_QSS, COMBOBOX_QSS, TEXTEDIT_QSS, CHECKBOX_QSS,
-    TAB_BAR_QSS, SCROLLBAR_QSS,
-    _COLOR_BG, _COLOR_BORDER_DARK, _COLOR_TEXT_TITLE,
-    _COLOR_TEXT_SEC, _COLOR_TEXT_MUTED, _COLOR_WARNING,
-    make_minimize_button, make_close_button, ensure_taskbar_icon,
-)
-from pet.ui.widgets import NoWheelComboBox
+from pet.config import _KEY_META, config
+from pet.ui.settings_actions import SettingsActions, apply_pet_scale
+from pet.ui.settings_fields import SettingsForm
+from pet.ui.settings_hooks import invalidate_action_section
+from pet.ui.settings_tabs import SettingsTabs
+from pet.ui.styles import (BUTTON_PRIMARY_QSS, BUTTON_QSS, CHECKBOX_QSS,
+                           COMBOBOX_QSS, INPUT_QSS, PANEL_QSS,
+                           SETTING_ICON_PATH, TAB_BAR_QSS, TEXTEDIT_QSS,
+                           _COLOR_BG, _COLOR_TEXT_TITLE, ensure_taskbar_icon,
+                           make_close_button, make_minimize_button)
 
 logger = logging.getLogger(__name__)
 
@@ -32,234 +27,8 @@ _W = 520
 _H = 720
 
 
-_UI_UNIT_SCALE = {"SCHEDULER_MID_MS": 1000}
-
-
-def _display_value(key: str, value):
-    """配置值 → 界面值。"""
-    scale = _UI_UNIT_SCALE.get(key)
-    if not scale or not isinstance(value, int):
-        return value
-    return value // scale
-
-
-def _stored_value(key: str, value):
-    """界面值 → 配置值。"""
-    scale = _UI_UNIT_SCALE.get(key)
-    return value * scale if scale else value
-
-
-class _LLMTestWorker(QObject):
-    """子线程执行 LLM 连通性测试。"""
-    finished = Signal(bool, str, float)  # 成功, 内容或错误, 耗时
-
-    def __init__(self, url: str, key: str, model: str, timeout: float = 30.0,
-                 thinking: bool = True):
-        super().__init__()
-        self._url = url
-        self._key = key
-        self._model = model
-        self._timeout = timeout
-        self._thinking = thinking
-
-    def run(self):
-        import time
-        start = time.time()
-        try:
-            from openai import OpenAI, BadRequestError
-            client = OpenAI(
-                api_key=self._key or "empty",
-                base_url=self._url or "",
-                timeout=self._timeout,
-            )
-            kwargs = {
-                "model": self._model,
-                "messages": [
-                    {"role": "system", "content": "你是调试助手。"},
-                    {"role": "user", "content": "请回复 'OK' 表示联通正常。"},
-                ],
-                "max_tokens": 50,
-                "extra_body": {
-                    "thinking": {"type": "enabled" if self._thinking else "disabled"}
-                },
-            }
-            degraded = False
-            try:
-                reply = client.chat.completions.create(**kwargs)
-            except BadRequestError:
-                # 服务商不支持 thinking 参数，移除后重试
-                kwargs.pop("extra_body", None)
-                reply = client.chat.completions.create(**kwargs)
-                degraded = True
-            elapsed = time.time() - start
-            content = reply.choices[0].message.content or "(空响应)"
-            if degraded:
-                content = "(服务商不支持思考模式参数，已自动降级) " + content
-            self.finished.emit(True, content, elapsed)
-        except Exception as e:
-            elapsed = time.time() - start
-            self.finished.emit(False, str(e), elapsed)
-
-
-class _EmbeddingTestWorker(QObject):
-    """子线程执行 Embedding 连通性测试。"""
-    finished = Signal(bool, str, float)  # 成功, 内容或错误, 耗时
-
-    def __init__(self, url, key, model, dim):
-        super().__init__()
-        self._url = url
-        self._key = key
-        self._model = model
-        self._dim = dim
-
-    def run(self):
-        import time
-        start = time.time()
-        try:
-            from pet.brain.embedding_client import EmbeddingClient
-            client = EmbeddingClient(self._url, self._key, self._model, self._dim)
-            vectors = client.embed("测试")
-            elapsed = time.time() - start
-            vec_count = len(vectors)
-            vec_dim = len(vectors[0]) if vectors else 0
-            self.finished.emit(True, f"向量维度: {vec_dim}, 响应正常 ({vec_count} 条)", elapsed)
-        except Exception as e:
-            elapsed = time.time() - start
-            self.finished.emit(False, str(e), elapsed)
-
-
-class _MemoryMergeWorker(QObject):
-    """子线程执行一次事件记忆汇总。"""
-    finished = Signal(int, str)  # 应用组数, 说明或错误（空串表示正常完成）
-
-    def __init__(self, store):
-        super().__init__()
-        self._store = store
-
-    def run(self):
-        try:
-            rows = self._store.list_merge_candidates()
-            if len(rows) < 2:
-                self.finished.emit(0, "可汇总的记忆不足 2 条，已跳过")
-                return
-            applied = run_merge(self._store)
-        except Exception as e:
-            self.finished.emit(0, f"汇总失败：{e}")
-            return
-        self.finished.emit(applied, "" if applied else
-                           "模型没有返回可应用的分组（请求失败或分组不足 2 条，详见日志）")
-
-
-class _ModelsFetchWorker(QObject):
-    """子线程获取模型列表。"""
-    finished = Signal(bool, list, str)  # 成功, 模型ID列表, 错误信息
-
-    def __init__(self, client, target: str = "primary"):
-        super().__init__()
-        self._client = client
-        # 本次请求对应的模型方案，随 worker 一起传递，
-        # 避免多线程回调时读取被后续请求覆盖的实例状态
-        self.target = target
-
-    def run(self):
-        try:
-            resp = self._client.models.list()
-            model_ids = [m.id for m in resp.data]
-            model_ids.sort()
-            self.finished.emit(True, model_ids, "")
-        except Exception as e:
-            self.finished.emit(False, [], str(e))
-
-
-class _VoiceTestWorker(QObject):
-    """子线程执行讯飞语音连接测试。"""
-    finished = Signal(bool)  # 成功
-
-    def __init__(self, app_id, api_key, api_secret):
-        super().__init__()
-        self._app_id = app_id
-        self._api_key = api_key
-        self._api_secret = api_secret
-
-    def run(self):
-        from pet.voice.xunfei_stt import XunfeiSTT
-        stt = XunfeiSTT()
-        ok = stt.test_connection(self._app_id, self._api_key, self._api_secret)
-        self.finished.emit(ok)
-
-
-class MarkdownEdit(QWidget):
-    """支持 Markdown 渲染的文本编辑器。点击按钮切换编辑/预览模式。"""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._raw_text = ""
-        self._editing = False
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(2)
-
-        # 工具栏
-        toolbar = QHBoxLayout()
-        toolbar.setContentsMargins(0, 0, 0, 0)
-        self._toggle_btn = QPushButton("编辑")
-        self._toggle_btn.setFixedWidth(72)
-        self._toggle_btn.setStyleSheet(BUTTON_PRIMARY_QSS)
-        self._toggle_btn.clicked.connect(self._toggle_mode)
-        toolbar.addWidget(self._toggle_btn)
-        toolbar.addStretch()
-        layout.addLayout(toolbar)
-
-        # 文本区域
-        self._edit = QTextEdit()
-        self._edit.setAcceptRichText(False)
-        self._edit.setReadOnly(True)
-        self._edit.setPlaceholderText("点击「编辑」按钮输入 Markdown")
-        layout.addWidget(self._edit)
-
-    def setPlainText(self, text: str):
-        """存储原始 Markdown 源码并按当前模式渲染。"""
-        self._raw_text = text or ""
-        if self._editing:
-            self._edit.setPlainText(self._raw_text)
-        else:
-            self._edit.document().setMarkdown(self._raw_text)
-
-    def toPlainText(self) -> str:
-        """始终返回原始 Markdown 源码。"""
-        if self._editing:
-            self._raw_text = self._edit.toPlainText()
-        return self._raw_text
-
-    def setMinimumHeight(self, h: int):
-        self._edit.setMinimumHeight(h)
-
-    def _toggle_mode(self):
-        """切换编辑/预览模式。"""
-        if self._editing:
-            self._raw_text = self._edit.toPlainText()
-            self._editing = False
-            self._edit.setReadOnly(True)
-            self._edit.document().setMarkdown(self._raw_text)
-            self._toggle_btn.setText("编辑")
-        else:
-            self._editing = True
-            self._edit.setReadOnly(False)
-            self._edit.setPlainText(self._raw_text)
-            self._toggle_btn.setText("预览")
-            self._edit.setFocus()
-
-    def focusOutEvent(self, event):
-        if self._editing:
-            self._raw_text = self._edit.toPlainText()
-        super().focusOutEvent(event)
-
-
 class SettingsWindow(QWidget):
     _instance: SettingsWindow | None = None
-
-    _key_captured = Signal(str)   # 热键捕获完成（跨线程 → 主线程）
 
     @classmethod
     def show_instance(cls, agent, parent=None):
@@ -270,7 +39,6 @@ class SettingsWindow(QWidget):
             except RuntimeError:
                 cls._instance = None
         if cls._instance is None:
-            # 强制顶层窗口，确保在 Windows 任务栏有独立图标
             cls._instance = cls(agent, parent=None)
         cls._instance.load_values()
         cls._instance.show()
@@ -279,33 +47,13 @@ class SettingsWindow(QWidget):
     def __init__(self, agent, parent=None):
         super().__init__(parent)
         self.agent = agent
-        self._llm_thread = None
-        self._llm_worker = None
-        self._models_thread = None
-        self._models_worker = None
-        self._mem_models_thread = None
-        self._mem_models_worker = None
-        self._voice_thread = None
-        self._voice_worker = None
-        self._embedding_thread = None
-        self._embedding_worker = None
-        self._merge_thread = None
-        self._merge_worker = None
-        self._merge_test_thread = None
-        self._merge_test_worker = None
-        self._capture_listener = None
-        self._fields = {}
-        self._snapshot = {}
-        self._label_cache: dict[str, str] | None = None
-        self._key_captured.connect(self._apply_captured_key)
+        self._drag_pos = None
 
         self.setObjectName("settingsWindow")
         self.setWindowTitle("设置")
-        # 可用高度可能不足 720（高缩放、小屏），尺寸按可用区收敛，超出内容由各页滚动区承载
         avail = QApplication.primaryScreen().availableGeometry()
         w = min(_W, max(360, avail.width() - 40))
         h = min(_H, max(320, avail.height() - 40))
-        # 下限可能高于可用区，尺寸再按可用区封顶
         w, h = min(w, avail.width()), min(h, avail.height())
         self.resize(w, h)
         self.setFixedSize(w, h)
@@ -321,7 +69,13 @@ class SettingsWindow(QWidget):
         except Exception:
             pass
 
+        self.form = SettingsForm(self)
+        self.tabs = SettingsTabs(self.form)
+        self.actions = SettingsActions(
+            self.form, self.tabs.widgets, self, agent,
+            self._msg, self.isVisible, self.tabs.update_profile_ui)
         self._setup_ui()
+        self.tabs.bind(self.actions)
         self.setStyleSheet(
             PANEL_QSS + BUTTON_QSS + BUTTON_PRIMARY_QSS +
             INPUT_QSS + COMBOBOX_QSS + TEXTEDIT_QSS + CHECKBOX_QSS +
@@ -332,53 +86,42 @@ class SettingsWindow(QWidget):
         super().showEvent(event)
         ensure_taskbar_icon(self)
 
-
     def _setup_ui(self):
         root = QVBoxLayout(self)
         root.setContentsMargins(6, 2, 6, 4)
         root.setSpacing(0)
 
-        # 标题栏
         title_bar = QWidget()
         title_bar.setFixedHeight(38)
         title_row = QHBoxLayout(title_bar)
         title_row.setContentsMargins(12, 0, 6, 0)
         title_row.setSpacing(6)
-
         try:
             icon_lbl = QLabel()
             icon_lbl.setPixmap(QIcon(SETTING_ICON_PATH).pixmap(18, 18))
             title_row.addWidget(icon_lbl)
         except Exception:
             pass
-
         title = QLabel("设置")
-        title.setStyleSheet(f"font-size:13px; color:{_COLOR_TEXT_TITLE}; font-weight:bold; background:transparent;")
+        title.setStyleSheet(
+            f"font-size:13px; color:{_COLOR_TEXT_TITLE}; font-weight:bold; background:transparent;")
         title_row.addWidget(title)
         title_row.addStretch()
         title_row.addWidget(make_minimize_button(self))
         title_row.addWidget(make_close_button(self))
         root.addWidget(title_bar)
 
-        # 标题栏拖拽
-        self._drag_pos = None
         title_bar.mousePressEvent = self._header_press
         title_bar.mouseMoveEvent = self._header_move
 
-        # 标签页控件
         self._tabs = QTabWidget()
         self._tabs.setDocumentMode(True)
         self._tabs.tabBar().setExpanding(True)
-        self._tabs.tabBar().setStyleSheet(f"""
-            QTabBar {{ background: {_COLOR_BG}; }}
-        """)
-        self._tabs.addTab(self._build_connection_tab(), "连接")
-        self._tabs.addTab(self._build_behavior_tab(), "行为")
-        self._tabs.addTab(self._build_personality_tab(), "提示词")
-        self._tabs.addTab(self._build_appearance_tab(), "通用")
+        self._tabs.tabBar().setStyleSheet(f"QTabBar {{ background: {_COLOR_BG}; }}")
+        for label, page in self.tabs.build():
+            self._tabs.addTab(page, label)
         root.addWidget(self._tabs, stretch=1)
 
-        # 底部操作栏
         bottom = QHBoxLayout()
         bottom.setContentsMargins(12, 4, 12, 8)
         bottom.addStretch()
@@ -388,11 +131,9 @@ class SettingsWindow(QWidget):
         bottom.addWidget(btn_save)
         root.addLayout(bottom)
 
-
     def _msg(self, title: str, text: str, *,
              icon: QMessageBox.Icon = QMessageBox.Icon.NoIcon,
              warning: bool = False):
-        """显示无图标的消息框。warning=True 时用 Warning 图标，否则 NoIcon。"""
         box = QMessageBox(self)
         box.setWindowTitle(title)
         box.setText(text)
@@ -400,833 +141,23 @@ class SettingsWindow(QWidget):
         box.addButton("确定", QMessageBox.ButtonRole.AcceptRole)
         box.exec()
 
-    # _fields: dict[str, QWidget] — key 是 Config 属性名
-
-    def _line(self, key: str, placeholder: str = "",
-              validator=None) -> QLineEdit:
-        """创建 QLineEdit 并注册到 _fields；placeholder 缺省取 _KEY_META。"""
-        edit = QLineEdit()
-        edit.setPlaceholderText(placeholder or _KEY_META.get(key, {}).get("placeholder", ""))
-        edit.setStyleSheet(INPUT_HIGHLIGHT_QSS)
-        if validator:
-            edit.setValidator(validator)
-        self._fields[key] = edit
-        return edit
-
-    def _secret_row(self, key: str, placeholder: str = "",
-                    stylesheet: str = INPUT_HIGHLIGHT_QSS) -> QHBoxLayout:
-        """带显示/隐藏按钮的密钥输入行，注册到 _fields。"""
-        row = QHBoxLayout()
-        edit = QLineEdit()
-        edit.setEchoMode(QLineEdit.EchoMode.Password)
-        edit.setPlaceholderText(placeholder)
-        edit.setStyleSheet(stylesheet)
-        self._fields[key] = edit
-        row.addWidget(edit)
-
-        toggle = QPushButton()
-        toggle.setIcon(QIcon(SHOW_ICON_PATH))
-        toggle.setFixedWidth(28)
-        toggle.setCheckable(True)
-        toggle.toggled.connect(
-            lambda checked: (
-                toggle.setIcon(QIcon(HIDE_ICON_PATH if checked else SHOW_ICON_PATH)),
-                edit.setEchoMode(
-                    QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password
-                )
-            )[:0]  # 抑制 lambda 返回 True
-        )
-        row.addWidget(toggle)
-        return row
-
-    def _check(self, key: str, label: str) -> QCheckBox:
-        """创建 QCheckBox 并注册到 _fields。"""
-        cb = QCheckBox(label)
-        self._fields[key] = cb
-        return cb
-
-    def _combo(self, key: str, items: list[str]) -> QComboBox:
-        """创建 QComboBox 并注册到 _fields。"""
-        cb = NoWheelComboBox()
-        cb.addItems(items)
-        cb.setStyleSheet(COMBOBOX_QSS)
-        self._fields[key] = cb
-        return cb
-
-    def _help_badge(self, tooltip: str) -> QLabel:
-        """「?」圆形标记：悬停显示说明与风险。"""
-        badge = QLabel("?")
-        badge.setFixedSize(16, 16)
-        badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        badge.setCursor(Qt.CursorShape.WhatsThisCursor)
-        badge.setStyleSheet(
-            f"QLabel {{ color:{_COLOR_TEXT_MUTED}; border:1px solid {_COLOR_BORDER_DARK};"
-            f" border-radius:8px; font-size:11px; }}"
-        )
-        badge.setToolTip(tooltip)
-        return badge
-
-    def _label_with_help(self, text: str, tooltip: str) -> QWidget:
-        """右对齐的表单标签，右侧紧跟「?」标记。"""
-        holder = QWidget()
-        row = QHBoxLayout(holder)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(4)
-        row.addStretch()
-        row.addWidget(QLabel(text))
-        row.addWidget(self._help_badge(tooltip))
-        return holder
-
-    @staticmethod
-    def _select_combo(widget: QComboBox, value) -> None:
-        """按值选中下拉项，找不到时保持第一项。"""
-        idx = widget.findText(str(value))
-        widget.setCurrentIndex(max(idx, 0))
-
-    def _text_area(self, key: str) -> MarkdownEdit:
-        """创建 MarkdownEdit 并注册到 _fields。"""
-        te = MarkdownEdit()
-        self._fields[key] = te
-        return te
-
-
-    def _build_connection_tab(self) -> QWidget:
-        w = QWidget()
-        layout = QVBoxLayout(w)
-        layout.setContentsMargins(0, 0, 0, 0)
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        scroll.setStyleSheet(f"QScrollArea {{ border: none; background: {_COLOR_BG}; }}" + SCROLLBAR_QSS)
-        scroll.viewport().setStyleSheet(f"background: {_COLOR_BG};")
-
-        content = QWidget()
-        inner = QVBoxLayout(content)
-        inner.setContentsMargins(8, 8, 8, 8)
-        inner.setSpacing(10)
-
-        form = QFormLayout()
-        form.setSpacing(8)
-
-        self._fields = {}
-
-        # 调用模式
-        self._brain_combo = NoWheelComboBox()
-        self._brain_combo.addItems(["local", "api", "ollama"])
-        self._fields["BRAIN"] = self._brain_combo
-        form.addRow("调用模式:", self._brain_combo)
-
-        self._url_edit = self._line("LLM_URL", "https://api.example.com/v1")
-        form.addRow("首选 API 地址:", self._url_edit)
-
-        self._ollama_url_edit = self._line("OLLAMA_BASE_URL", "http://localhost:11434/v1")
-        form.addRow("Ollama 地址:", self._ollama_url_edit)
-
-        # API 密钥 + 切换按钮
-        key_row = self._secret_row("LLM_KEY", "sk-...")
-        self._llm_key_edit = self._fields["LLM_KEY"]
-        self._key_toggle = key_row.itemAt(1).widget()  # 暴露给页面跳转用
-        form.addRow("首选 API Key:", key_row)
-
-        # 模型名称 + 获取按钮
-        model_row = QHBoxLayout()
-        self._model_edit = QLineEdit()
-        self._model_edit.setStyleSheet(INPUT_HIGHLIGHT_QSS)
-        self._fields["LLM_MODEL"] = self._model_edit
-        model_row.addWidget(self._model_edit)
-        self._btn_fetch_models = QPushButton("获取列表")
-        self._btn_fetch_models.setStyleSheet(BUTTON_PRIMARY_QSS)
-        self._btn_fetch_models.setFixedWidth(72)
-        self._btn_fetch_models.clicked.connect(lambda: self._fetch_models("primary"))
-        model_row.addWidget(self._btn_fetch_models)
-        form.addRow("首选模型名称:", model_row)
-
-        self._temperature_edit = self._line("LLM_TEMPERATURE", "0.7", QDoubleValidator(0, 2, 2))
-        self._temperature_edit.setMaxLength(4)
-        form.addRow("采样温度:", self._temperature_edit)
-
-        form.addRow("", self._check("LLM_TOOLS_ENABLED", "启用工具调用"))
-        hint = QLabel("模型不支持 tools 参数时请关闭此选项")
-        hint.setStyleSheet(f"color:{_COLOR_TEXT_MUTED}; font-size:11px;")
-        form.addRow("", hint)
-
-        self._tool_rounds_edit = self._line("LLM_TOOL_MAX_ROUNDS", "30", QIntValidator(10, 99))
-        form.addRow("工具调用最大轮次:", self._tool_rounds_edit)
-
-        self._cache_check = self._check("LLM_CACHE_PROMPT", "Prompt 缓存")
-        form.addRow("", self._cache_check)
-
-        self._thinking_check = self._check("LLM_THINKING_DISABLED", "关闭思考模式")
-        form.addRow("", self._thinking_check)
-        self._thinking_hint = QLabel("关闭可提升调用速度")
-        self._thinking_hint.setStyleSheet(f"color:{_COLOR_TEXT_MUTED}; font-size:11px;")
-        form.addRow("", self._thinking_hint)
-
-        inner.addLayout(form)
-
-        # —— 模型方案：首选 / 备选 快速切换 ——
-        switch_group = QGroupBox("模型方案")
-        switch_layout = QVBoxLayout(switch_group)
-        switch_layout.setSpacing(6)
-
-        switch_row = QHBoxLayout()
-        self._label_active_profile = QLabel("当前启用：首选模型")
-        self._label_active_profile.setStyleSheet(f"color:{_COLOR_TEXT_SEC}; font-size:11px;")
-        switch_row.addWidget(self._label_active_profile)
-        switch_row.addStretch()
-        self._btn_switch_profile = QPushButton("切换到备选模型")
-        self._btn_switch_profile.setStyleSheet(BUTTON_PRIMARY_QSS)
-        self._btn_switch_profile.clicked.connect(self._on_switch_profile)
-        switch_row.addWidget(self._btn_switch_profile)
-        switch_layout.addLayout(switch_row)
-
-        self._fallback_check = self._check(
-            "LLM_FALLBACK_ENABLED", "调用报错/超时重试时自动切换到备选模型")
-        switch_layout.addWidget(self._fallback_check)
-
-        fallback_hint = QLabel("备选方案的地址/Key/模型名留空时，自动沿用首选方案对应项")
-        fallback_hint.setWordWrap(True)
-        fallback_hint.setStyleSheet(f"color:{_COLOR_TEXT_MUTED}; font-size:11px;")
-        switch_layout.addWidget(fallback_hint)
-
-        alt_form = QFormLayout()
-        alt_form.setSpacing(8)
-
-        self._alt_url_edit = self._line("LLM_URL_ALT", "https://api.example.com/v1")
-        alt_form.addRow("备选 API 地址:", self._alt_url_edit)
-
-        alt_key_row = self._secret_row("LLM_KEY_ALT", "sk-...")
-        self._alt_key_edit = self._fields["LLM_KEY_ALT"]
-        self._alt_key_toggle = alt_key_row.itemAt(1).widget()
-        alt_form.addRow("备选 API Key:", alt_key_row)
-
-        alt_model_row = QHBoxLayout()
-        self._alt_model_edit = QLineEdit()
-        self._alt_model_edit.setStyleSheet(INPUT_HIGHLIGHT_QSS)
-        self._fields["LLM_MODEL_ALT"] = self._alt_model_edit
-        alt_model_row.addWidget(self._alt_model_edit)
-        self._btn_fetch_models_alt = QPushButton("获取列表")
-        self._btn_fetch_models_alt.setStyleSheet(BUTTON_PRIMARY_QSS)
-        self._btn_fetch_models_alt.setFixedWidth(72)
-        self._btn_fetch_models_alt.clicked.connect(lambda: self._fetch_models("alternative"))
-        alt_model_row.addWidget(self._btn_fetch_models_alt)
-        alt_form.addRow("备选模型名称:", alt_model_row)
-
-        switch_layout.addLayout(alt_form)
-        inner.addWidget(switch_group)
-
-        # 测试连接按钮
-        test_row = QHBoxLayout()
-        self._btn_test = QPushButton("测试连接")
-        self._btn_test.setStyleSheet(BUTTON_PRIMARY_QSS)
-        self._btn_test.clicked.connect(self._test_llm)
-        test_row.addWidget(self._btn_test)
-        self._label_test = QLabel("就绪")
-        self._label_test.setStyleSheet(f"color:{_COLOR_TEXT_SEC}; font-size:11px;")
-        test_row.addWidget(self._label_test)
-        test_row.addStretch()
-        inner.addLayout(test_row)
-
-        self._test_output = QTextEdit()
-        self._test_output.setReadOnly(True)
-        self._test_output.setMaximumHeight(60)
-        self._test_output.setFont(QFont("Consolas", 9))
-        self._test_output.setStyleSheet(TEXTEDIT_QSS + f"""
-            QTextEdit {{
-                background: {_COLOR_BG};
-            }}
-        """)
-        inner.addWidget(self._test_output)
-
-        # 模式切换联动
-        self._brain_combo.currentTextChanged.connect(self._on_mode_changed)
-
-        inner.addStretch()
-
-        scroll.setWidget(content)
-        layout.addWidget(scroll)
-        return w
-
-    def _on_mode_changed(self, mode: str):
-        """根据调用模式启用/禁用对应字段。"""
-        llm_fields = [self._url_edit, self._llm_key_edit, self._key_toggle,
-                      self._alt_url_edit, self._alt_key_edit, self._alt_key_toggle,
-                      self._cache_check]
-        ollama_fields = [self._ollama_url_edit]
-        common_fields = [self._model_edit, self._btn_fetch_models,
-                         self._alt_model_edit, self._btn_fetch_models_alt,
-                         self._btn_switch_profile, self._fallback_check,
-                         self._temperature_edit,
-                         self._tool_rounds_edit,
-                         self._thinking_check, self._thinking_hint,
-                         self._btn_test, self._label_test, self._test_output]
-
-        if mode == "local":
-            for w in llm_fields + ollama_fields + common_fields:
-                w.setEnabled(False)
-        elif mode == "ollama":
-            for w in llm_fields:
-                w.setEnabled(False)
-            for w in ollama_fields + common_fields:
-                w.setEnabled(True)
-        else:  # api模式
-            for w in ollama_fields:
-                w.setEnabled(False)
-            for w in llm_fields + common_fields:
-                w.setEnabled(True)
-        return w
-
-
-    def _update_profile_ui(self):
-        """刷新「当前启用方案」的按钮文案与状态标签。"""
-        active = getattr(config, "LLM_ACTIVE_PROFILE", "primary") or "primary"
-        if active == "alternative":
-            self._btn_switch_profile.setText("切换回首选模型")
-            model = config.LLM_MODEL_ALT or config.LLM_MODEL or "未配置"
-            self._label_active_profile.setText(f"当前启用：备选模型（{model}）")
-        else:
-            self._btn_switch_profile.setText("切换到备选模型")
-            model = config.LLM_MODEL or "未配置"
-            self._label_active_profile.setText(f"当前启用：首选模型（{model}）")
-
-    def _on_switch_profile(self):
-        """快速切换首选/备选模型方案，立即保存并重建客户端。"""
-        current = getattr(config, "LLM_ACTIVE_PROFILE", "primary") or "primary"
-        target = "alternative" if current == "primary" else "primary"
-        config.save("LLM_ACTIVE_PROFILE", target)
-        self._update_profile_ui()
-        self._rebuild_llm_client()
-        logger.info(f"[Settings] active LLM profile switched to {target}")
-
-    def _rebuild_llm_client(self):
-        """在后台线程重建 LLM 客户端，避免阻塞 GUI。"""
-        if not self.agent or not hasattr(self.agent, 'behavior'):
-            return
-
-        def _rebuild():
-            try:
-                self.agent.behavior.rebuild_client()
-            except Exception as e:
-                logger.exception(f"[Settings] rebuild_client failed: {e}")
-            logger.info("[Settings] rebuild_client complete")
-
-        t = threading.Thread(target=_rebuild, daemon=True, name="settings-rebuild")
-        t.start()
-
-    def _profile_form_values(self, profile: str) -> tuple[str, str, str]:
-        """按方案读取界面当前填写值 (key, url, model)，备选空项回退到首选。"""
-        primary = (self._llm_key_edit.text().strip(),
-                   self._url_edit.text().strip(),
-                   self._model_edit.text().strip())
-        if profile != "alternative":
-            return primary
-        alt = (self._alt_key_edit.text().strip(),
-               self._alt_url_edit.text().strip(),
-               self._alt_model_edit.text().strip())
-        if not any(alt):
-            return primary
-        return (alt[0] or primary[0], alt[1] or primary[1], alt[2] or primary[2])
-
-
-    def _build_behavior_tab(self) -> QWidget:
-        w = QWidget()
-        layout = QVBoxLayout(w)
-        layout.setContentsMargins(0, 0, 0, 0)
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        scroll.setStyleSheet(f"QScrollArea {{ border: none; background: {_COLOR_BG}; }}" + SCROLLBAR_QSS)
-        scroll.viewport().setStyleSheet(f"background: {_COLOR_BG};")
-
-        content = QWidget()
-        inner = QVBoxLayout(content)
-        inner.setContentsMargins(8, 8, 8, 8)
-        inner.setSpacing(10)
-
-        # 调度器
-        sched_group = QGroupBox("调度器")
-        sched_form = QFormLayout(sched_group)
-        sched_form.setSpacing(8)
-        sched_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-        sched_form.addRow("自主行动间隔(秒):", self._line("SCHEDULER_MID_MS", "300", QIntValidator(60, 3600)))
-        sched_form.addRow("", self._check("SCHEDULER_AUTO_START_MID", "默认开启自动行动"))
-        sched_form.addRow("每轮注入上下文数量上限:", self._line("CONTEXT_HISTORY_ENTRIES", "15", QIntValidator(1, 50)))
-        inner.addWidget(sched_group)
-
-        # 视觉
-        vision_group = QGroupBox("视觉")
-        vision_form = QFormLayout(vision_group)
-        vision_form.setSpacing(8)
-        vision_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-        vision_form.addRow("", self._check("VISION_ENABLED", "开启视觉理解（需要模型支持多模态）"))
-        vision_form.addRow("截图缩放比例(0.1~1.0):", self._line("VISION_SCALE", "0.7", QDoubleValidator(0.1, 1.0, 1)))
-        vision_form.addRow("截图编码格式:", self._combo("SCREENSHOT_FORMAT", ["jpeg", "png"]))
-        fmt_hint = QLabel("JPEG 体积更小，PNG 无损")
-        fmt_hint.setStyleSheet(f"color:{_COLOR_TEXT_MUTED}; font-size:11px;")
-        vision_form.addRow("", fmt_hint)
-        inner.addWidget(vision_group)
-
-        # 理智
-        sanity_group = QGroupBox("理智")
-        sanity_form = QFormLayout(sanity_group)
-        sanity_form.setSpacing(8)
-        sanity_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-        sanity_form.addRow("理智临界值:", self._line("SANITY_CRITICAL_THRESHOLD", "20", QIntValidator(0, 100)))
-        hint = QLabel("低于该值会导致异常行为")
-        hint.setStyleSheet(f"color:{_COLOR_TEXT_MUTED}; font-size:11px;")
-        sanity_form.addRow("", hint)
-        inner.addWidget(sanity_group)
-
-        memory_group = QGroupBox("记忆")
-        memory_layout = QVBoxLayout(memory_group)
-        memory_layout.setSpacing(8)
-
-        memory_enable = self._check("EMBEDDING_ENABLED", "启用向量记忆")
-        memory_layout.addWidget(memory_enable)
-
-        memory_form = QFormLayout()
-        memory_form.setSpacing(8)
-        memory_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-
-        memory_form.addRow("API 地址:", self._line("EMBEDDING_URL", "https://open.bigmodel.cn/api/paas/v4"))
-
-        # API 密钥 + 切换按钮
-        mem_key_row = self._secret_row("EMBEDDING_KEY")
-        memory_form.addRow("API Key:", mem_key_row)
-        mem_model_row = QHBoxLayout()
-        mem_model_edit = self._line("EMBEDDING_MODEL", "embedding-3")
-        mem_model_row.addWidget(mem_model_edit)
-        self._btn_fetch_mem_models = QPushButton("获取列表")
-        self._btn_fetch_mem_models.setStyleSheet(BUTTON_PRIMARY_QSS)
-        self._btn_fetch_mem_models.setFixedWidth(72)
-        self._btn_fetch_mem_models.clicked.connect(self._fetch_embedding_models)
-        mem_model_row.addWidget(self._btn_fetch_mem_models)
-        memory_form.addRow("模型名:", mem_model_row)
-        memory_form.addRow("向量维度:", self._line("EMBEDDING_DIM", "256", QIntValidator(64, 8192)))
-        memory_form.addRow("记忆最大容量:", self._line("MEMORY_MAX_CAPACITY", "200", QIntValidator(50, 1000)))
-        memory_form.addRow("记忆召回条数:", self._line("MEMORY_RECALL_COUNT", "15", QIntValidator(3, 30)))
-        memory_form.addRow("临时记忆过期(天):", self._line("MEMORY_L3_EXPIRE_DAYS", "3", QIntValidator(1, 30)))
-        memory_form.addRow("旧事注入条数:", self._line("MEMORY_EVENT_RECALL_COUNT", "1", QIntValidator(0, 5)))
-        memory_layout.addLayout(memory_form)
-
-        merge_head = QHBoxLayout()
-        merge_head.setSpacing(6)
-        merge_head.addWidget(self._check("MEMORY_EVENT_MERGE_ENABLED", "整点汇总事件记忆"))
-
-        merge_head.addWidget(self._help_badge(
-            "整点（或点下方「立即汇总」）把同主题的 event 与 conversation 记忆交给模型，合并成一条 event 汇总：\n"
-            "将散落的同一主题事件合并成一条，记忆召回内容更加完整。\n\n"
-            "风险：\n"
-            "· 被合并的原始记忆会被删除，只留汇总，不可撤销\n"
-            "· 汇总由模型生成，可能丢细节或概括偏差\n"
-            "· 每次调用都消耗模型 token；未单独填汇总模型时用当前对话模型"
-        ))
-        merge_head.addStretch()
-        memory_layout.addLayout(merge_head)
-
-        merge_form = QFormLayout()
-        merge_form.setSpacing(8)
-        merge_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-        merge_form.addRow("汇总模型 API 地址:", self._line("MEMORY_MERGE_URL"))
-        merge_form.addRow("汇总模型 API Key:", self._secret_row("MEMORY_MERGE_KEY"))
-        merge_form.addRow("汇总模型名:", self._line("MEMORY_MERGE_MODEL"))
-        memory_layout.addLayout(merge_form)
-
-        merge_row = QHBoxLayout()
-        merge_row.setSpacing(6)
-        self._btn_merge_now = QPushButton("立即汇总")
-        self._btn_merge_now.setStyleSheet(BUTTON_PRIMARY_QSS)
-        self._btn_merge_now.setFixedWidth(88)
-        self._btn_merge_now.clicked.connect(self._manual_merge)
-        merge_row.addWidget(self._btn_merge_now)
-        self._label_merge = QLabel("就绪")
-        self._label_merge.setStyleSheet(f"color:{_COLOR_TEXT_SEC}; font-size:11px;")
-        merge_row.addWidget(self._label_merge)
-        merge_row.addStretch()
-        memory_layout.addLayout(merge_row)
-
-        # 连接测试：汇总与向量并排，共用下方输出框
-        test_row = QHBoxLayout()
-        test_row.setSpacing(6)
-        self._btn_merge_test = QPushButton("测试汇总模型连接")
-        self._btn_merge_test.setStyleSheet(BUTTON_PRIMARY_QSS)
-        self._btn_merge_test.clicked.connect(self._test_merge_connection)
-        test_row.addWidget(self._btn_merge_test)
-        self._label_merge_test = QLabel("就绪")
-        self._label_merge_test.setStyleSheet(f"color:{_COLOR_TEXT_SEC}; font-size:11px;")
-        test_row.addWidget(self._label_merge_test)
-        self._btn_mem_test = QPushButton("测试向量模型连接")
-        self._btn_mem_test.setStyleSheet(BUTTON_PRIMARY_QSS)
-        self._btn_mem_test.clicked.connect(self._test_embedding)
-        test_row.addWidget(self._btn_mem_test)
-        self._label_mem_test = QLabel("就绪")
-        self._label_mem_test.setStyleSheet(f"color:{_COLOR_TEXT_SEC}; font-size:11px;")
-        test_row.addWidget(self._label_mem_test)
-        test_row.addStretch()
-        memory_layout.addLayout(test_row)
-
-        self._conn_test_output = QTextEdit()
-        self._conn_test_output.setReadOnly(True)
-        self._conn_test_output.setMaximumHeight(60)
-        self._conn_test_output.setFont(QFont("Consolas", 9))
-        self._conn_test_output.setStyleSheet(TEXTEDIT_QSS + f"""
-            QTextEdit {{
-                background: {_COLOR_BG};
-            }}
-        """)
-        memory_layout.addWidget(self._conn_test_output)
-
-        memory_hint = QLabel("修改向量记忆相关设置需重启后生效。")
-        memory_hint.setStyleSheet(f"color:{_COLOR_TEXT_MUTED}; font-size:11px;")
-        memory_hint.setWordWrap(True)
-        memory_layout.addWidget(memory_hint)
-
-        inner.addWidget(memory_group)
-
-        inner.addStretch()
-
-        scroll.setWidget(content)
-        layout.addWidget(scroll)
-        return w
-
-
-    def _build_appearance_tab(self) -> QWidget:
-        w = QWidget()
-        layout = QVBoxLayout(w)
-        layout.setContentsMargins(0, 0, 0, 0)
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        scroll.setStyleSheet(f"QScrollArea {{ border: none; background: {_COLOR_BG}; }}" + SCROLLBAR_QSS)
-        scroll.viewport().setStyleSheet(f"background: {_COLOR_BG};")
-
-        content = QWidget()
-        inner = QVBoxLayout(content)
-        inner.setContentsMargins(8, 8, 8, 8)
-
-        form = QFormLayout()
-        form.setSpacing(6)
-
-        form.addRow("宠物大小:", self._combo("PET_SCALE", list(PET_SCALE_STEPS)))
-        size_hint = QLabel("100%: 125px×125px")
-        size_hint.setStyleSheet(f"color:{_COLOR_TEXT_MUTED}; font-size:11px;")
-        form.addRow("", size_hint)
-        form.addRow("气泡最大宽度:", self._line("BUBBLE_MAX_WIDTH", "300", QIntValidator(100, 1000)))
-        form.addRow("气泡字号（需重启）:", self._line("BUBBLE_FONT_SIZE", "14", QIntValidator(8, 48)))
-        tools_edit = self._line("TOOLS_ENABLED", "*")
-        tools_edit.setPlaceholderText("* 表示全部，多个用逗号分隔")
-        form.addRow("启用工具（需重启）:", tools_edit)
-        form.addRow("", self._check("SHOW_TRAY", "显示托盘图标（需重启）"))
-        form.addRow("", self._check("NOTIFY_ENABLED", "允许发送通知"))
-        form.addRow("", self._check("AUTO_START_ON_BOOT", "开机自动启动"))
-        form.addRow("", self._check("GRAB_SWING_ENABLED", "拖拽时身体惯性摆动"))
-        form.addRow("", self._check("EDGE_DOCK_ENABLED", "开启贴边吸附（拖到屏幕边缘松手贴住）"))
-
-        inner.addLayout(form)
-
-        # 终端
-        terminal_group = QGroupBox("终端")
-        terminal_form = QFormLayout(terminal_group)
-        terminal_form.setSpacing(8)
-        terminal_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-        terminal_enable = self._check("TERMINAL_ENABLED", "允许恋恋执行命令（需重启）")
-        enable_row = QHBoxLayout()
-        enable_row.setSpacing(6)
-        enable_row.addWidget(terminal_enable)
-        enable_row.addWidget(self._help_badge(
-            "开启后恋恋获得终端工具，可执行系统命令；每条命令按「命令放行策略」判定，"
-            "且只能在工作目录根及其子目录内执行。\n"
-            "python、node、cmd、powershell 等解释器始终弹卡片询问。\n\n"
-            "风险：\n"
-            "· 命令由恋恋发起，提示注入可能让它执行你没预期的操作\n"
-            "· 允许写操作类程序会改动磁盘上的文件"
-        ))
-        enable_row.addStretch()
-        terminal_form.addRow("", enable_row)
-
-        terminal_mode = self._combo("TERMINAL_MODE", ["deny", "ask", "auto"])
-        terminal_form.addRow(self._label_with_help(
-            "命令放行策略:",
-            "控制恋恋发起的命令如何放行；终端里你自己输入的命令不受影响。\n"
-            "· deny：不允许执行任何命令\n"
-            "· ask：每条命令都弹确认卡片\n"
-            "· auto：清单里的命令直接执行，其余询问\n"
-            "解释器在 auto 档也询问；命中危险规则时同样转询问。\n\n"
-            "风险：\n"
-            "· auto 档不弹卡片就直接执行，免确认清单写得过宽会放大影响面"
-        ), terminal_mode)
-
-        terminal_allow = self._line("TERMINAL_ALLOW", "逗号分隔，如 git status, git log, dir *")
-        terminal_form.addRow(self._label_with_help(
-            "auto 档免确认命令:",
-            "auto 档里免确认的命令，默认已填常用只读命令，留空表示全部询问；ask 与 deny 档不读取。\n"
-            "格式为「程序名 + 参数前缀」，逗号分隔：git status 放行该子命令及其后续参数，"
-            "git * 放行任意子命令。\n"
-            "解释器写了也不生效：python、node、npm、powershell、cmd、bash、sh、wsl 等程序"
-            "不论怎么写进清单，auto 档仍弹卡片。\n\n"
-            "风险：\n"
-            "· 写操作命令会免确认直接改动文件\n"
-            "· 条目写得过宽（如 git *）会把 push、reset 这类写操作一并放开"
-        ), terminal_allow)
-
-        terminal_root = self._line("TERMINAL_SANDBOX_ROOT", "留空为桌面")
-        terminal_form.addRow(self._label_with_help(
-            "工作目录根:",
-            "用户与恋恋共用的工作目录根，也是终端打开时的初始目录；留空表示桌面。\n"
-            "终端里 cd 切换后，恋恋的默认工作目录跟着变，命令只能在该目录及其子目录里运行；"
-            "恋恋自己不能切换目录。\n\n"
-            "风险：\n"
-            "· 目录切到盘符根后，恋恋可读写范围随之扩大到该盘"
-        ), terminal_root)
-        inner.addWidget(terminal_group)
-
-        voice_group = QGroupBox("语音输入")
-        voice_layout = QVBoxLayout(voice_group)
-        voice_layout.setSpacing(8)
-
-        voice_enable = self._check("VOICE_INPUT_ENABLED", "启用语音输入")
-        voice_layout.addWidget(voice_enable)
-
-        voice_form = QFormLayout()
-        voice_form.setSpacing(8)
-        voice_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
-
-        # 热键：只读显示 + 录制按钮
-        hotkey_row = QHBoxLayout()
-        hotkey_row.setSpacing(6)
-        self._hotkey_display = QLineEdit()
-        self._hotkey_display.setReadOnly(True)
-        self._hotkey_display.setPlaceholderText("点击右侧按钮设置")
-        self._hotkey_display.setStyleSheet(INPUT_HIGHLIGHT_QSS)
-        self._fields["VOICE_HOTKEY"] = self._hotkey_display
-        hotkey_row.addWidget(self._hotkey_display)
-        self._capture_btn = QPushButton("录制")
-        self._capture_btn.setStyleSheet(BUTTON_PRIMARY_QSS)
-        self._capture_btn.clicked.connect(self._on_capture_hotkey)
-        hotkey_row.addWidget(self._capture_btn)
-        voice_form.addRow("热键:", hotkey_row)
-
-        voice_form.addRow("讯飞 APPID:", self._line("XF_APPID", ""))
-        voice_form.addRow("讯飞 API Key:", self._secret_row("XF_API_KEY"))
-        voice_form.addRow("讯飞 API Secret:", self._secret_row("XF_API_SECRET"))
-        voice_layout.addLayout(voice_form)
-
-        # 连接测试（与 LLM 测试同风格）
-        test_row = QHBoxLayout()
-        test_row.setSpacing(6)
-        self._voice_btn_test = QPushButton("测试连接")
-        self._voice_btn_test.setStyleSheet(BUTTON_PRIMARY_QSS)
-        self._voice_btn_test.clicked.connect(self._on_test_voice_connection)
-        test_row.addWidget(self._voice_btn_test)
-        self._voice_label_test = QLabel("就绪")
-        self._voice_label_test.setStyleSheet(f"color:{_COLOR_TEXT_SEC}; font-size:11px;")
-        test_row.addWidget(self._voice_label_test)
-        test_row.addStretch()
-        voice_layout.addLayout(test_row)
-
-        self._voice_test_output = QTextEdit()
-        self._voice_test_output.setReadOnly(True)
-        self._voice_test_output.setMaximumHeight(60)
-        self._voice_test_output.setFont(QFont("Consolas", 9))
-        self._voice_test_output.setStyleSheet(TEXTEDIT_QSS + f"""
-            QTextEdit {{
-                background: {_COLOR_BG};
-            }}
-        """)
-        voice_layout.addWidget(self._voice_test_output)
-
-        inner.addWidget(voice_group)
-
-        inner.addStretch()
-
-        scroll.setWidget(content)
-        layout.addWidget(scroll)
-        return w
-
-
-    def _build_personality_tab(self) -> QWidget:
-        w = QWidget()
-        layout = QVBoxLayout(w)
-        layout.setContentsMargins(0, 0, 0, 0)
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        scroll.setStyleSheet(f"QScrollArea {{ border: none; background: {_COLOR_BG}; }}" + SCROLLBAR_QSS)
-        scroll.viewport().setStyleSheet(f"background: {_COLOR_BG};")
-
-        content = QWidget()
-        content.setStyleSheet(f"background: {_COLOR_BG};")
-        form = QVBoxLayout(content)
-        form.setContentsMargins(8, 8, 8, 8)
-
-        form.addWidget(QLabel("宠物人格提示词"))
-        te = self._text_area("PET_PERSONALITY")
-        te.setMinimumHeight(240)
-        form.addWidget(te)
-
-        form.addWidget(QLabel("人格台词范例（每行一句，用于校准说话语感）"))
-        ex = self._text_area("PET_PERSONALITY_EXAMPLES")
-        ex.setMinimumHeight(120)
-        form.addWidget(ex)
-
-        sep = QLabel()
-        sep.setFixedHeight(8)
-        form.addWidget(sep)
-
-        form.addWidget(QLabel("交互提示词"))
-        for label, key in [("抓取", "INTERACT_GRABBED_PROMPT"),
-                           ("放下", "INTERACT_RELEASED_PROMPT"),
-                           ("窗口消失", "INTERACT_WINDOW_DISAPPEARED_PROMPT")]:
-            form.addWidget(QLabel(label))
-            ta = self._text_area(key)
-            ta.setMinimumHeight(240)
-            form.addWidget(ta)
-
-        scroll.setWidget(content)
-        layout.addWidget(scroll)
-
-        return w
-
-
     def load_values(self):
-        """从 config 读取当前值填充各控件，每次打开窗口时调用。"""
-        for key, widget in self._fields.items():
-            value = getattr(config, key, None)
-            if value is None:
-                continue
-            value = _display_value(key, value)
-            if isinstance(widget, QLineEdit):
-                if isinstance(value, list):
-                    widget.setText(",".join(value))
-                else:
-                    widget.setText(str(value))
-            elif isinstance(widget, QCheckBox):
-                widget.setChecked(bool(value))
-            elif isinstance(widget, QComboBox):
-                self._select_combo(widget, value)
-            elif isinstance(widget, (QTextEdit, MarkdownEdit)):
-                widget.setPlainText(str(value))
-        self._update_profile_ui()
-        self._take_snapshot()
-
-    def _take_snapshot(self):
-        """记录当前各控件的值，用于后续 dirty 检测。"""
-        self._snapshot = {}
-        for key, widget in self._fields.items():
-            if isinstance(widget, QLineEdit):
-                self._snapshot[key] = widget.text()
-            elif isinstance(widget, QCheckBox):
-                self._snapshot[key] = widget.isChecked()
-            elif isinstance(widget, QComboBox):
-                self._snapshot[key] = widget.currentText()
-            elif isinstance(widget, (QTextEdit, MarkdownEdit)):
-                self._snapshot[key] = widget.toPlainText()
-
-    def _is_dirty(self) -> bool:
-        """比较当前控件值与上次快照，判断是否有未保存的修改。"""
-        if not hasattr(self, '_snapshot'):
-            return False
-        for key, widget in self._fields.items():
-            if isinstance(widget, QLineEdit):
-                current = widget.text()
-            elif isinstance(widget, QCheckBox):
-                current = widget.isChecked()
-            elif isinstance(widget, QComboBox):
-                current = widget.currentText()
-            elif isinstance(widget, (QTextEdit, MarkdownEdit)):
-                current = widget.toPlainText()
-            else:
-                continue
-            if self._snapshot.get(key) != current:
-                return True
-        return False
-
-    def _collect_values(self) -> tuple[dict, list[str]]:
-        """从控件收集当前值，返回 (values, invalid_keys)。
-
-        invalid_keys 包含无法转换、或被输入校验器判定越界/留空的字段 key，
-        调用方应向用户提示这些字段未保存。
-        """
-        result = {}
-        invalid_keys = []
-        for key, widget in self._fields.items():
-            type_name = _KEY_META[key]["type"]
-            if isinstance(widget, QLineEdit):
-                # validator 只拦输入层
-                if not widget.hasAcceptableInput():
-                    invalid_keys.append(key)
-                    continue
-                raw = widget.text().strip()
-                if type_name == "int":
-                    try:
-                        result[key] = _stored_value(key, int(raw))
-                    except ValueError:
-                        invalid_keys.append(key)
-                        continue
-                elif type_name == "float":
-                    try:
-                        result[key] = float(raw)
-                    except ValueError:
-                        invalid_keys.append(key)
-                        continue
-                elif type_name == "str_list":
-                    if raw == "*":
-                        result[key] = ["*"]
-                    elif raw:
-                        result[key] = [s.strip() for s in raw.split(",") if s.strip()]
-                    else:
-                        result[key] = []
-                else:
-                    result[key] = raw
-            elif isinstance(widget, QCheckBox):
-                result[key] = widget.isChecked()
-            elif isinstance(widget, QComboBox):
-                result[key] = widget.currentText()
-            elif isinstance(widget, (QTextEdit, MarkdownEdit)):
-                result[key] = widget.toPlainText()
-        return result, invalid_keys
-
-    def _field_label(self, key: str) -> str:
-        """字段的界面标签：优先 QFormLayout 的 buddy，回退到配置描述。"""
-        if self._label_cache is None:
-            self._label_cache = {}
-            for label in self.findChildren(QLabel):
-                buddy = label.buddy()
-                if buddy is None:
-                    continue
-                for k, w in self._fields.items():
-                    if w is buddy:
-                        self._label_cache[k] = label.text().rstrip(":：")
-                        break
-        return self._label_cache.get(key) or _KEY_META.get(key, {}).get("description", key)
-
-    def _invalid_hint(self, key: str) -> str:
-        """无效字段的提示行：界面标签 + 输入框允许的范围。"""
-        label = self._field_label(key)
-        widget = self._fields.get(key)
-        validator = widget.validator() if isinstance(widget, QLineEdit) else None
-        if isinstance(validator, (QIntValidator, QDoubleValidator)):
-            return f"{label}（允许 {validator.bottom()}–{validator.top()}）"
-        return f"{label}（不能为空）"
+        """从 config 填充各控件，每次打开窗口时调用。"""
+        self.form.load(config)
+        self.tabs.update_profile_ui()
 
     def _on_save(self):
         """保存所有修改并即时生效。"""
-        values, invalid_keys = self._collect_values()
+        values, invalid_keys = self.form.collect()
         if invalid_keys:
-            details = "\n".join(f"· {self._invalid_hint(k)}" for k in invalid_keys)
+            details = "\n".join(f"· {self.form.invalid_hint(k)}" for k in invalid_keys)
             self._msg("输入有误",
                       f"以下字段的数值无效，未能保存：\n{details}\n\n请按提示范围修改后再保存。")
             return
         needs_rebuild_client = False
         needs_scheduler_update = False
-
         for key, value in values.items():
             config.save(key, value)
-
             meta = _KEY_META.get(key)
             if meta is None:
                 continue
@@ -1235,492 +166,32 @@ class SettingsWindow(QWidget):
             if meta["category"] == "behavior":
                 needs_scheduler_update = True
 
-        # 即时应用开机自启设置
         if "AUTO_START_ON_BOOT" in values:
             set_auto_start(values["AUTO_START_ON_BOOT"])
 
-        if needs_scheduler_update and self.agent and hasattr(self.agent, 'scheduler'):
+        if needs_scheduler_update and self.agent and hasattr(self.agent, "scheduler"):
             try:
                 self.agent.scheduler.update_config()
             except Exception as e:
                 logger.exception(f"[Settings] scheduler.update_config failed: {e}")
 
-        # 动作表的时长范围随调度配置变化，缓存必须显式失效；延迟 import 只为推迟
-        # pet.brain 的重依赖（会拉起 LLM 客户端栈）。
         if needs_scheduler_update:
             try:
-                from pet.brain.prompts import invalidate_action_section
                 invalidate_action_section()
             except Exception as e:
                 logger.exception(f"[Settings] invalidate_action_section failed: {e}")
 
-        # LLM 客户端重建（在后台线程执行，避免阻塞 GUI）
         if needs_rebuild_client:
-            self._rebuild_llm_client()
+            self.actions.rebuild_client()
         if "PET_SCALE" in values:
-            self._apply_pet_scale()
-        self._update_profile_ui()
-
+            apply_pet_scale(self.agent)
+        self.tabs.update_profile_ui()
         self._msg("设置已保存", "已保存。部分设置须重启后生效。")
-        self._take_snapshot()
-
-    def _apply_pet_scale(self):
-        """立即应用新挡位：窗口尺寸与当前动作帧一起刷新。"""
-        window = getattr(self.agent, "pet_window", None) if self.agent else None
-        if window is None:
-            return
-        try:
-            window.apply_scale()
-        except Exception as e:
-            logger.exception(f"[Settings] apply_scale failed: {e}")
-
-
-    def _test_llm(self):
-        """在子线程测试 LLM 连通性，使用界面当前填入的值。"""
-        if self._llm_thread is not None and self._llm_thread.isRunning():
-            return  # 上一次测试还在运行
-
-        brain_cfg = self._brain_combo.currentText()
-        if brain_cfg == "local":
-            self._test_output.clear()
-            self._test_output.append("⚠ 当前为 local 模式，无需测试连接")
-            self._label_test.setText("未配置")
-            return
-
-        # 从界面读取最新值（测试当前启用的方案）
-        profile = getattr(config, "LLM_ACTIVE_PROFILE", "primary") or "primary"
-        key, url, model = self._profile_form_values(profile)
-        if brain_cfg == "ollama":
-            url = self._fields["OLLAMA_BASE_URL"].text().strip()
-            key = "ollama"
-        profile_name = "备选" if profile == "alternative" else "首选"
-
-        if not model:
-            self._test_output.clear()
-            self._test_output.append("⚠ 请先填写模型名称")
-            self._label_test.setText("未配置")
-            return
-
-        timeout = float(config.LLM_TIMEOUT or 30)
-
-        self._test_output.clear()
-        self._test_output.append(f"测试中...（{profile_name}模型）")
-        self._btn_test.setEnabled(False)
-        self._label_test.setText("测试中...")
-
-        self._llm_thread = QThread()
-        self._llm_worker = _LLMTestWorker(
-            url, key, model, timeout,
-            thinking=not self._thinking_check.isChecked(),
-        )
-        self._llm_worker.moveToThread(self._llm_thread)
-        self._llm_thread.started.connect(self._llm_worker.run)
-        self._llm_worker.finished.connect(self._on_llm_test_result)
-        self._llm_worker.finished.connect(self._llm_thread.quit)
-        self._llm_thread.start()
-
-    def _on_llm_test_result(self, success: bool, content: str, elapsed: float):
-        self._test_output.clear()
-        if success:
-            self._test_output.append(f"✅ 连接成功 ({elapsed:.1f}s)")
-            self._test_output.append(f"响应: {content[:200]}")
-            self._label_test.setText("✅ 正常")
-        else:
-            self._test_output.append(f"❌ 连接失败 ({elapsed:.1f}s)")
-            self._test_output.append(f"错误: {content}")
-            self._label_test.setText("❌ 失败")
-        self._btn_test.setEnabled(True)
-
-
-    def _test_embedding(self):
-        """在子线程测试 Embedding 连通性。"""
-        if self._embedding_thread is not None and self._embedding_thread.isRunning():
-            return
-
-        url = self._fields["EMBEDDING_URL"].text().strip()
-        key = self._fields["EMBEDDING_KEY"].text().strip()
-        model = self._fields["EMBEDDING_MODEL"].text().strip()
-        dim_str = self._fields["EMBEDDING_DIM"].text().strip()
-        try:
-            dim = int(dim_str) if dim_str else 2048
-        except ValueError:
-            self._conn_test_output.clear()
-            self._conn_test_output.append("⚠ 向量维度格式无效")
-            return
-
-        if not url or not key or not model:
-            self._conn_test_output.clear()
-            self._conn_test_output.append("⚠ 请先填写 API 地址、Key 和模型名")
-            self._label_mem_test.setText("未配置")
-            return
-
-        self._conn_test_output.clear()
-        self._conn_test_output.append("测试中...")
-        self._btn_mem_test.setEnabled(False)
-        self._btn_merge_test.setEnabled(False)  # 两项测试共用输出框，一次只跑一个
-        self._label_mem_test.setText("测试中...")
-
-        self._embedding_thread = QThread()
-        self._embedding_worker = _EmbeddingTestWorker(url, key, model, dim)
-        self._embedding_worker.moveToThread(self._embedding_thread)
-        self._embedding_thread.started.connect(self._embedding_worker.run)
-        self._embedding_worker.finished.connect(self._on_embedding_test_result)
-        self._embedding_worker.finished.connect(self._embedding_thread.quit)
-        self._embedding_thread.start()
-
-    def _on_embedding_test_result(self, success: bool, content: str, elapsed: float):
-        self._conn_test_output.clear()
-        if success:
-            self._conn_test_output.append(f"✅ 连接成功 ({elapsed:.1f}s)")
-            self._conn_test_output.append(f"响应: {content[:200]}")
-            self._label_mem_test.setText("✅ 正常")
-        else:
-            self._conn_test_output.append(f"❌ 连接失败 ({elapsed:.1f}s)")
-            self._conn_test_output.append(f"错误: {content}")
-            self._label_mem_test.setText("❌ 失败")
-        self._btn_mem_test.setEnabled(True)
-        self._btn_merge_test.setEnabled(True)
-
-    def _test_merge_connection(self):
-        """在子线程测试汇总模型连接；三项留空时沿用当前启用方案。"""
-        if self._merge_test_thread is not None and self._merge_test_thread.isRunning():
-            return
-
-        url = self._fields["MEMORY_MERGE_URL"].text().strip()
-        key = self._fields["MEMORY_MERGE_KEY"].text().strip()
-        model = self._fields["MEMORY_MERGE_MODEL"].text().strip()
-        inherited = not (url and key and model)
-        if inherited:
-            brain_cfg = self._brain_combo.currentText()
-            if brain_cfg == "local":
-                self._conn_test_output.clear()
-                self._conn_test_output.append("⚠ 当前为 local 模式，且未填写汇总连接")
-                self._label_merge_test.setText("未配置")
-                return
-            profile = getattr(config, "LLM_ACTIVE_PROFILE", "primary") or "primary"
-            key, url, model = self._profile_form_values(profile)
-            if brain_cfg == "ollama":
-                url = self._fields["OLLAMA_BASE_URL"].text().strip()
-                key = "ollama"
-
-        if not (url and key and model):
-            self._conn_test_output.clear()
-            self._conn_test_output.append("⚠ 请填写汇总模型 API 地址、Key 和模型名，或先配置当前对话模型")
-            self._label_merge_test.setText("未配置")
-            return
-
-        timeout = float(config.LLM_TIMEOUT or 30)
-
-        self._conn_test_output.clear()
-        self._conn_test_output.append(
-            "测试中...（汇总连接未填齐，沿用当前启用方案）" if inherited else "测试中...")
-        self._btn_merge_test.setEnabled(False)
-        self._btn_mem_test.setEnabled(False)  # 两项测试共用输出框，一次只跑一个
-        self._label_merge_test.setText("测试中...")
-
-        self._merge_test_thread = QThread()
-        self._merge_test_worker = _LLMTestWorker(url, key, model, timeout, thinking=False)
-        self._merge_test_worker.moveToThread(self._merge_test_thread)
-        self._merge_test_thread.started.connect(self._merge_test_worker.run)
-        self._merge_test_worker.finished.connect(self._on_merge_test_result)
-        self._merge_test_worker.finished.connect(self._merge_test_thread.quit)
-        self._merge_test_thread.start()
-
-    def _on_merge_test_result(self, success: bool, content: str, elapsed: float):
-        self._conn_test_output.clear()
-        if success:
-            self._conn_test_output.append(f"✅ 连接成功 ({elapsed:.1f}s)")
-            self._conn_test_output.append(f"响应: {content[:200]}")
-            self._label_merge_test.setText("✅ 正常")
-        else:
-            self._conn_test_output.append(f"❌ 连接失败 ({elapsed:.1f}s)")
-            self._conn_test_output.append(f"错误: {content}")
-            self._label_merge_test.setText("❌ 失败")
-        self._btn_merge_test.setEnabled(True)
-        self._btn_mem_test.setEnabled(True)
-
-    def _manual_merge(self):
-        """手动汇总事件记忆：先确认风险，再在子线程执行。"""
-        if self._merge_thread is not None and self._merge_thread.isRunning():
-            logger.info("[Settings] 手动汇总忽略：上一轮仍在执行")
-            self._label_merge.setText("上一轮汇总仍在后台执行…")
-            return
-
-        store = getattr(self.agent, "memory_store", None)
-        if store is None:
-            logger.info("[Settings] 手动汇总中止：没有可用的记忆库")
-            self._msg("提示", "当前没有可用的记忆库。", warning=True)
-            return
-        try:
-            count = len(store.list_merge_candidates())
-        except Exception as e:
-            logger.info(f"[Settings] 手动汇总中止：读取候选失败 {e}")
-            self._msg("提示", f"读取记忆候选失败：{e}", warning=True)
-            return
-        if count < 2:
-            logger.info(f"[Settings] 手动汇总中止：候选仅 {count} 条")
-            self._msg("提示", f"当前可汇总的记忆只有 {count} 条，不足 2 条，无需汇总。")
-            return
-
-        reply = QMessageBox.question(
-            self, "确认汇总",
-            f"将把当前 {count} 条记忆（event 与 conversation）交给汇总模型，同主题的会被合并成一条 event 汇总。\n\n"
-            "· 被合并的原始记忆会被删除，只留汇总，不可撤销\n"
-            "· 判定为无需合并的独立记忆不受影响\n"
-            "· 汇总由模型生成，可能丢细节或概括偏差\n"
-            "· 本次调用消耗模型 token，用的是当前已保存的汇总配置\n\n"
-            "确定继续吗？",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
-            logger.info("[Settings] 手动汇总取消：用户未确认")
-            return
-
-        self._btn_merge_now.setEnabled(False)
-        self._label_merge.setText("汇总中…（后台执行，不必在设置页等待）")
-        logger.info(f"[Settings] 手动汇总开始：候选 {count} 条")
-        self._merge_thread = QThread()
-        self._merge_worker = _MemoryMergeWorker(store)
-        self._merge_worker.moveToThread(self._merge_thread)
-        self._merge_thread.started.connect(self._merge_worker.run)
-        self._merge_worker.finished.connect(self._on_merge_result)
-        self._merge_worker.finished.connect(self._merge_thread.quit)
-        self._merge_thread.finished.connect(self._release_merge_thread)
-        self._merge_thread.start()
-
-    def _release_merge_thread(self):
-        """汇总线程跑完自行退出"""
-        self._merge_thread = None
-        self._merge_worker = None
-
-    def _on_merge_result(self, applied: int, note: str):
-        self._btn_merge_now.setEnabled(True)
-        if applied:
-            self._label_merge.setText(f"完成 {applied} 组")
-        else:
-            self._label_merge.setText("未应用")
-        state = "已打开" if self.isVisible() else "已关闭"
-        logger.info(
-            f"[Settings] 手动汇总结束：应用 {applied} 组，{note or '正常'}（设置页{state}）")
-        if not self.isVisible():
-            return
-        if applied:
-            self._msg("汇总完成", f"已应用 {applied} 组，组内原始记忆已删除。")
-        else:
-            self._msg("汇总完成", f"没有写入任何分组。\n{note}" if note else "没有写入任何分组。")
-
-
-    def _on_capture_hotkey(self):
-        """点击"录制"按钮后，捕捉用户按下的下一个按键。再次点击取消录制。"""
-        from pynput import keyboard
-
-        logger = logging.getLogger(__name__)
-        if self._capture_listener and self._capture_listener.running:
-            logger.info("[Settings] capture cancelled by user")
-            self._capture_listener.stop()
-            self._capture_listener = None
-            self._capture_btn.setText("录制")
-            return
-        logger.info("[Settings] starting hotkey capture")
-        self._capture_btn.setText("录制中...")
-        self._capture_listener = keyboard.Listener(on_press=self._on_captured_key)
-        self._capture_listener.daemon = True
-        self._capture_listener.start()
-        logger.info(f"[Settings] listener running={self._capture_listener.running}")
-
-    def _on_captured_key(self, key):
-        logger = logging.getLogger(__name__)
-        logger.info(f"[Settings] captured key: {key!r}")
-        try:
-            key_name = key.char.lower() if hasattr(key, 'char') and key.char else key.name.lower()
-        except Exception as e:
-            logger.warning(f"[Settings] key name extraction failed: {e}")
-            key_name = str(key).lower().replace("key.", "")
-
-        logger.info(f"[Settings] key_name={key_name!r}, emitting _key_captured")
-        self._key_captured.emit(key_name)
-        try:
-            self._capture_listener.stop()
-        except Exception as e:
-            logger.warning(f"[Settings] listener stop failed: {e}")
-        self._capture_listener = None
-
-    def _apply_captured_key(self, key_name: str):
-        """主线程：填入捕获的热键并恢复按钮。"""
-        logging.getLogger(__name__).info(f"[Settings] apply captured: {key_name!r}")
-        self._hotkey_display.setText(key_name)
-        self._capture_btn.setText("录制")
-
-
-    def _on_test_voice_connection(self):
-        """从表单读取讯飞凭证并测试连接。"""
-        app_id = self._fields["XF_APPID"].text().strip() if "XF_APPID" in self._fields else ""
-        api_key = self._fields["XF_API_KEY"].text().strip() if "XF_API_KEY" in self._fields else ""
-        api_secret = self._fields["XF_API_SECRET"].text().strip() if "XF_API_SECRET" in self._fields else ""
-
-        if not app_id or not api_key or not api_secret:
-            self._voice_test_output.clear()
-            self._voice_test_output.append("⚠ 请先填写讯飞 APPID、API Key 和 API Secret。")
-            self._voice_label_test.setText("未配置")
-            return
-
-        if self._voice_thread and self._voice_thread.isRunning():
-            return
-
-        self._voice_test_output.clear()
-        self._voice_test_output.append("测试中...")
-        self._voice_btn_test.setEnabled(False)
-        self._voice_label_test.setText("测试中...")
-
-        self._voice_thread = QThread()
-        self._voice_worker = _VoiceTestWorker(app_id, api_key, api_secret)
-        self._voice_worker.moveToThread(self._voice_thread)
-        self._voice_thread.started.connect(self._voice_worker.run)
-        self._voice_worker.finished.connect(self._on_voice_test_result)
-        self._voice_worker.finished.connect(self._voice_thread.quit)
-        self._voice_thread.start()
-
-    def _on_voice_test_result(self, success: bool):
-        self._voice_test_output.clear()
-        if success:
-            self._voice_test_output.append("✅ 讯飞语音连接成功！")
-            self._voice_label_test.setText("✅ 正常")
-        else:
-            self._voice_test_output.append("❌ 连接失败，请检查凭证是否正确。")
-            self._voice_label_test.setText("❌ 失败")
-        self._voice_btn_test.setEnabled(True)
-
-
-    def _models_button(self, profile: str = "primary") -> QPushButton:
-        """返回指定方案取模型列表操作对应的按钮。"""
-        return self._btn_fetch_models_alt if profile == "alternative" else self._btn_fetch_models
-
-    def _set_model_value(self, profile: str, model_id: str):
-        """把选中的模型名写入对应方案的输入框。"""
-        edit = self._alt_model_edit if profile == "alternative" else self._model_edit
-        edit.setText(model_id)
-
-    def _fetch_models(self, profile: str = "primary"):
-        if self._models_thread and self._models_thread.isRunning():
-            return
-
-        brain = self._brain_combo.currentText()
-        if brain == "local":
-            self._msg("提示", "当前为 local 模式，无需远程模型。")
-            return
-
-        key, url, _model = self._profile_form_values(profile)
-        ollama_url = self._fields["OLLAMA_BASE_URL"].text().strip() if "OLLAMA_BASE_URL" in self._fields else ""
-
-        if brain == "ollama":
-            base_url = ollama_url or config.OLLAMA_BASE_URL
-            api_key = "ollama"
-        else:
-            base_url = url
-            api_key = key
-
-        if not base_url or (brain != "ollama" and not api_key):
-            self._msg("提示", "请先填写 API 地址和 Key。")
-            return
-
-        from openai import OpenAI
-        client = OpenAI(api_key=api_key, base_url=base_url, timeout=config.LLM_TIMEOUT)
-
-        btn = self._models_button(profile)
-        btn.setEnabled(False)
-        btn.setText("获取中…")
-
-        self._models_thread = QThread()
-        self._models_worker = _ModelsFetchWorker(client, profile)
-        self._models_worker.moveToThread(self._models_thread)
-        self._models_thread.started.connect(self._models_worker.run)
-        # 连接绑定方法（QObject 接收者），保证槽在 GUI 主线程执行；
-        # 方案名从 sender() 上读取，避免实例状态竞态
-        self._models_worker.finished.connect(self._on_models_fetched)
-        self._models_worker.finished.connect(self._models_thread.quit)
-        self._models_thread.start()
-
-    def _on_models_fetched(self, success: bool, model_ids: list, error_msg: str,
-                           target: str | None = None):
-        if target is None:
-            target = getattr(self.sender(), "target", None) or "primary"
-        btn = self._models_button(target)
-        btn.setEnabled(True)
-        btn.setText("获取列表")
-
-        if not success:
-            self._msg("获取失败", f"无法获取模型列表：\n{error_msg}")
-            return
-
-        if not model_ids:
-            self._msg("提示", "未找到可用模型。")
-            return
-
-        # 弹出菜单供选择
-        menu = QMenu(self)
-        for mid in model_ids:
-            action = menu.addAction(mid)
-            action.triggered.connect(
-                lambda checked=False, m=mid, t=target: self._set_model_value(t, m))
-
-        # 在按钮下方弹出
-        pos = btn.mapToGlobal(btn.rect().bottomLeft())
-        menu.exec(pos)
-
-
-    def _fetch_embedding_models(self):
-        if self._mem_models_thread and self._mem_models_thread.isRunning():
-            return
-
-        url = self._fields["EMBEDDING_URL"].text().strip()
-        key = self._fields["EMBEDDING_KEY"].text().strip()
-
-        if not url or not key:
-            self._msg("提示", "请先填写向量 API 地址和 Key。")
-            return
-
-        from openai import OpenAI
-        client = OpenAI(api_key=key, base_url=url, timeout=30.0)
-
-        self._btn_fetch_mem_models.setEnabled(False)
-        self._btn_fetch_mem_models.setText("获取中…")
-
-        self._mem_models_thread = QThread()
-        self._mem_models_worker = _ModelsFetchWorker(client)
-        self._mem_models_worker.moveToThread(self._mem_models_thread)
-        self._mem_models_thread.started.connect(self._mem_models_worker.run)
-        self._mem_models_worker.finished.connect(self._on_mem_models_fetched)
-        self._mem_models_worker.finished.connect(self._mem_models_thread.quit)
-        self._mem_models_thread.start()
-
-    def _on_mem_models_fetched(self, success: bool, model_ids: list, error_msg: str):
-        self._btn_fetch_mem_models.setEnabled(True)
-        self._btn_fetch_mem_models.setText("获取列表")
-
-        if not success:
-            self._msg("获取失败", f"无法获取模型列表：\n{error_msg}")
-            return
-
-        if not model_ids:
-            self._msg("提示", "未找到可用模型。")
-            return
-
-        menu = QMenu(self)
-        for mid in model_ids:
-            action = menu.addAction(mid)
-            action.triggered.connect(
-                lambda checked=False, m=mid: self._fields["EMBEDDING_MODEL"].setText(m)
-            )
-
-        pos = self._btn_fetch_mem_models.mapToGlobal(
-            self._btn_fetch_mem_models.rect().bottomLeft()
-        )
-        menu.exec(pos)
-
+        self.form.take_snapshot()
 
     def closeEvent(self, event):
         """关闭前检查未保存修改，清理后台线程。"""
-        if self._is_dirty():
+        if self.form.is_dirty():
             box = QMessageBox(self)
             box.setWindowTitle("未保存")
             box.setText("有修改尚未保存，是否保存？")
@@ -1731,36 +202,16 @@ class SettingsWindow(QWidget):
             box.setDefaultButton(btn_cancel)
             box.exec()
             clicked = box.clickedButton()
-
             if clicked == btn_save:
                 self._on_save()
-                # 如果保存失败（无效字段），取消关闭
-                if self._is_dirty():
+                if self.form.is_dirty():
                     event.ignore()
                     return
             elif clicked == btn_cancel:
                 event.ignore()
                 return
-
-        if self._llm_thread is not None and self._llm_thread.isRunning():
-            self._llm_thread.quit()
-            self._llm_thread.wait(2000)
-        if self._models_thread is not None and self._models_thread.isRunning():
-            self._models_thread.quit()
-            self._models_thread.wait(2000)
-        if self._mem_models_thread is not None and self._mem_models_thread.isRunning():
-            self._mem_models_thread.quit()
-            self._mem_models_thread.wait(2000)
-        if self._embedding_thread is not None and self._embedding_thread.isRunning():
-            self._embedding_thread.quit()
-            self._embedding_thread.wait(2000)
-        if self._merge_test_thread is not None and self._merge_test_thread.isRunning():
-            self._merge_test_thread.quit()
-            self._merge_test_thread.wait(2000)
-        if self._merge_thread is not None and self._merge_thread.isRunning():
-            self._merge_thread.quit()
+        self.actions.shutdown()
         super().closeEvent(event)
-
 
     def _header_press(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -1771,7 +222,6 @@ class SettingsWindow(QWidget):
             delta = event.globalPosition().toPoint() - self._drag_pos
             self.move(self.pos() + delta)
             self._drag_pos = event.globalPosition().toPoint()
-
 
     def paintEvent(self, event):
         painter = QPainter(self)

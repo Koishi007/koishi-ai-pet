@@ -345,7 +345,7 @@ system 动作表换成 `EDGE_ACTION_NAMES` 的八个贴边动作；调度器、�
 |---|---|---|
 | 加一个动作 | 放素材 `assets/actions/<name>/`，在 `pet/action/registry.py` 注册 | 带时长的动作要进 `_DURATION_ACTION_DEFS`；重生成 [reference/actions.md](reference/actions.md) |
 | 加一个粒子特效 | `pet/ui/particle.py` 的 `_SPAWNERS` 与 `_DEFAULT_Y` | 调试面板自动列出；重生成 [reference/effects.md](reference/effects.md) |
-| 加一个配置项 | `pet/config.py` 的 `_KEY_META` | 要在界面可见则同时改 `pet/ui/settings_window.py`；重生成 [reference/config.md](reference/config.md) |
+| 加一个配置项 | `pet/config.py` 的 `_KEY_META` | 要在界面可见则同时改 `pet/ui/settings_tabs.py` 并补 `TAB_SPECS`；重生成 [reference/config.md](reference/config.md) |
 | 改提示词 | `pet/brain/prompts.py`；运行时段落改 `pet/brain/context_builder.py` | 组合白名单；重生成 [reference/prompt-blocks.md](reference/prompt-blocks.md) |
 | 加一个工具 | `pet/tools/<name>/__init__.py` | 声明 `TOOL_NAME`/`TOOL_DESCRIPTION`/`register()`，可加 `TOOL_GROUP`；每个方法声明 `output` 输出契约（见 [tool-development.md](tool-development.md) §返回值与输出契约）；重生成 [reference/tools.md](reference/tools.md) |
 | 加一个文件动作 | `pet/tools/<name>/__init__.py` 的 `register()` 内 `add_file_action(...)` | 拖入文件时由文件气泡渲染成按钮，工具被禁用则不出现；契约见 [tool-development.md](tool-development.md) |

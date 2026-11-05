@@ -13,6 +13,7 @@ from PySide6.QtGui import QIcon
 from PySide6.QtCore import QObject, QTimer, Qt, Signal, Slot
 
 from pet.ui.log_window import LogRelay, LogWindowHandler
+from pet.ui import settings_hooks
 from pet.ui.styles import ICON_PATH
 from pet.ui.pet_window import PetWindow
 from pet.ui.system_tray import SystemTrayManager
@@ -23,7 +24,9 @@ from pet.ui.feed_bubble import FeedBubble
 from pet.ui.music_bubble import MusicBubble
 from pet.ui.file_bubble import FileBubble
 from pet.agent import PetAgent
-from pet.brain.prompts import interact_fed_prompt, interact_take_a_bite_prompt
+from pet.brain.embedding_client import EmbeddingClient
+from pet.brain.prompts import (interact_fed_prompt, interact_take_a_bite_prompt,
+                               invalidate_action_section)
 from pet.terminal.runner import get_runner
 from pet.tools import load_tools
 from pet.tools.context import TOOL_CTX
@@ -168,6 +171,7 @@ def _warn_already_running() -> None:
 
 
 def main():
+    settings_hooks.bind(EmbeddingClient, invalidate_action_section)
     logging.basicConfig(
         level=getattr(logging, config.LOG_LEVEL, logging.INFO),
         format="[%(name)s] %(message)s",

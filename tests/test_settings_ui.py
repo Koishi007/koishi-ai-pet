@@ -1,58 +1,56 @@
-"""设置页：单位换算与可见项覆盖。
+"""设置页：单位换算、可见项覆盖与表单控件。
 
 界面按秒输入、配置按毫秒存储；hidden=False 的配置项必须在页面上有入口，
-否则用户只能手写 settings.json。
+否则用户只能手写 settings.json。页签归属的真相在 TAB_SPECS。
 """
 
-import re
-from pathlib import Path
-from types import MethodType, SimpleNamespace
+from types import SimpleNamespace
 
 import pytest
 from PySide6.QtCore import QPoint, QPointF, Qt
 from PySide6.QtGui import QIntValidator, QWheelEvent
-from PySide6.QtWidgets import QApplication, QComboBox, QLineEdit
+from PySide6.QtWidgets import QApplication, QComboBox, QLineEdit, QWidget
 
-from pet.config import Config, _KEY_META
-from pet.ui import settings_window as sw
+from pet.config import PET_SCALE_STEPS, Config, _KEY_META
+from pet.ui.settings_actions import SettingsActions, apply_pet_scale
+from pet.ui.settings_fields import SettingsForm, SettingsWidgets
+from pet.ui.settings_spec import TAB_SPECS, display_value, stored_value
+from pet.ui.settings_tabs import SettingsTabs
+from pet.ui.settings_workers import ProbeRegistry
 
-_SRC = Path(sw.__file__).read_text(encoding="utf-8")
-# 循环注册的交互提示词不在调用字面量里
-_LOOP_KEYS = {"INTERACT_GRABBED_PROMPT", "INTERACT_RELEASED_PROMPT",
-              "INTERACT_WINDOW_DISAPPEARED_PROMPT"}
-
-
-def _registered_keys() -> set[str]:
-    keys = set(re.findall(r'_fields\[\s*"([A-Z_0-9]+)"\s*\]', _SRC))
-    keys |= set(re.findall(
-        r'self\._(?:line|check|combo|text_area|secret_row)\(\s*"([A-Z_0-9]+)"', _SRC))
-    return keys | _LOOP_KEYS
+TAB_KEYS = {key for _label, keys in TAB_SPECS for key in keys}
 
 
 def test_mid_interval_displays_seconds():
-    assert sw._display_value("SCHEDULER_MID_MS", 600000) == 600
+    assert display_value("SCHEDULER_MID_MS", 600000) == 600
 
 
 def test_mid_interval_stores_milliseconds():
-    assert sw._stored_value("SCHEDULER_MID_MS", 600) == 600000
+    assert stored_value("SCHEDULER_MID_MS", 600) == 600000
 
 
 def test_other_keys_keep_units():
-    assert sw._display_value("LLM_TIMEOUT", 20.0) == 20.0
-    assert sw._stored_value("LLM_TIMEOUT", 20.0) == 20.0
+    assert display_value("LLM_TIMEOUT", 20.0) == 20.0
+    assert stored_value("LLM_TIMEOUT", 20.0) == 20.0
 
 
 def test_visible_keys_have_controls():
-    """hidden=False 的项都能在页面上改；LLM_ACTIVE_PROFILE 由切换按钮负责。"""
+    """hidden=False 的项都在页签清单里；LLM_ACTIVE_PROFILE 由切换按钮负责。"""
     visible = {k for k, m in _KEY_META.items() if not m["hidden"]}
-    missing = visible - _registered_keys() - {"LLM_ACTIVE_PROFILE"}
-    assert missing == set(), f"设置页缺少控件：{sorted(missing)}"
+    assert visible - TAB_KEYS - {"LLM_ACTIVE_PROFILE"} == set()
+    assert TAB_KEYS <= set(_KEY_META)
+
+
+def test_tab_specs_match_registered_fields(qt_app):
+    """页签声明的键与实际注册到表单的控件一一对应。"""
+    form = SettingsForm()
+    SettingsTabs(form).build()
+    assert set(form.fields) == TAB_KEYS
 
 
 def test_combo_ignores_wheel(qt_app):
     """滚轮扫过下拉框时不能改选中项，事件留给外层滚动区。"""
-    fake = SimpleNamespace(_fields={})
-    combo = sw.SettingsWindow._combo(fake, "LLM_TOOL_ROLE_MODE", ["auto", "native"])
+    combo = SettingsForm().combo("LLM_TOOL_ROLE_MODE", ["auto", "native"])
     combo.setCurrentIndex(0)
     event = QWheelEvent(
         QPointF(5, 5), QPointF(5, 5), QPoint(0, 0), QPoint(0, 120),
@@ -70,24 +68,25 @@ class TestPetScale:
     """宠物大小只暴露挡位，宽高由挡位映射推导且恒为正方形。"""
 
     def test_steps_are_hardcoded(self):
-        assert list(sw.PET_SCALE_STEPS) == ["50%", "75%", "100%", "125%", "150%", "200%"]
+        assert list(PET_SCALE_STEPS) == ["50%", "75%", "100%", "125%", "150%", "200%"]
 
     def test_combo_collects_step_label(self, qt_app):
         combo = QComboBox()
-        combo.addItems(list(sw.PET_SCALE_STEPS))
+        combo.addItems(list(PET_SCALE_STEPS))
         combo.setCurrentIndex(3)
-        fake = SimpleNamespace(_fields={"PET_SCALE": combo})
+        form = SettingsForm()
+        form.fields["PET_SCALE"] = combo
 
-        values, invalid = sw.SettingsWindow._collect_values(fake)
+        values, invalid = form.collect()
 
         assert invalid == []
         assert values == {"PET_SCALE": "125%"}
 
     def test_combo_selects_step(self, qt_app):
         combo = QComboBox()
-        combo.addItems(list(sw.PET_SCALE_STEPS))
+        combo.addItems(list(PET_SCALE_STEPS))
 
-        sw.SettingsWindow._select_combo(combo, "125%")
+        SettingsForm.select_combo(combo, "125%")
         assert combo.currentText() == "125%"
 
     @pytest.fixture
@@ -123,10 +122,10 @@ class TestPetScale:
 
     def test_save_applies_scale_to_window(self, qt_app):
         calls = []
-        window = SimpleNamespace(apply_scale=lambda: calls.append(1))
-        fake = SimpleNamespace(agent=SimpleNamespace(pet_window=window))
+        agent = SimpleNamespace(pet_window=SimpleNamespace(
+            apply_scale=lambda: calls.append(1)))
 
-        sw.SettingsWindow._apply_pet_scale(fake)
+        apply_pet_scale(agent)
 
         assert calls == [1]
 
@@ -145,9 +144,9 @@ def qt_app():
 
 
 def _collect(edit: QLineEdit):
-    """只提供 _fields 的替身：_collect_values 不依赖其它实例状态。"""
-    fake = SimpleNamespace(_fields={"SCHEDULER_MID_MS": edit})
-    return sw.SettingsWindow._collect_values(fake)
+    form = SettingsForm()
+    form.fields["SCHEDULER_MID_MS"] = edit
+    return form.collect()
 
 
 def test_out_of_range_input_is_rejected(qt_app):
@@ -174,9 +173,10 @@ def test_valid_input_is_converted_to_ms(qt_app):
 
 
 def _hint_double(key: str, widget, labels: dict):
-    fake = SimpleNamespace(_fields={key: widget}, _label_cache=labels)
-    fake._field_label = MethodType(sw.SettingsWindow._field_label, fake)
-    return sw.SettingsWindow._invalid_hint(fake, key)
+    form = SettingsForm()
+    form.fields[key] = widget
+    form._label_cache = labels
+    return form.invalid_hint(key)
 
 
 def test_invalid_hint_uses_ui_label_and_range(qt_app):
@@ -192,3 +192,93 @@ def test_invalid_hint_falls_back_to_description(qt_app):
     hint = _hint_double("LLM_MODEL", QLineEdit(), {})
 
     assert hint == f"{_KEY_META['LLM_MODEL']['description']}（不能为空）"
+
+
+def test_probe_registry_shutdown_covers_every_group():
+    """关闭时每一组线程都要 quit/wait，语音组不再被漏掉。"""
+
+    class _Thread:
+        def __init__(self):
+            self.running = True
+            self.waited = []
+
+        def isRunning(self):
+            return self.running
+
+        def quit(self):
+            self.running = False
+
+        def wait(self, ms):
+            self.waited.append(ms)
+
+    registry = ProbeRegistry()
+    llm, voice = _Thread(), _Thread()
+    registry._entries["llm"] = (llm, object())
+    registry._entries["voice"] = (voice, object())
+
+    registry.shutdown()
+
+    assert llm.waited == [2000] and voice.waited == [2000]
+    assert registry._entries == {}
+
+
+def test_actions_shutdown_stops_hotkey_listener(qt_app):
+    class _Listener:
+        def __init__(self):
+            self.stopped = False
+
+        def stop(self):
+            self.stopped = True
+
+    widgets = SettingsWidgets()
+    actions = SettingsActions(
+        SettingsForm(), widgets, QWidget(), None,
+        lambda *args, **kwargs: None, lambda: False, lambda: None)
+    listener = _Listener()
+    widgets.capture_listener = listener
+
+    actions.shutdown()
+
+    assert listener.stopped
+    assert widgets.capture_listener is None
+
+
+def test_hooks_dispatch_to_injected_implementations(monkeypatch):
+    from pet.ui import settings_hooks
+
+    calls = []
+    monkeypatch.setattr(settings_hooks, "_embedding_factory",
+                        lambda *args: calls.append(("embed", args)) or object())
+    monkeypatch.setattr(settings_hooks, "_invalidate_action_section",
+                        lambda: calls.append(("invalidate",)))
+
+    settings_hooks.make_embedding_client("u", "k", "m", 256)
+    settings_hooks.invalidate_action_section()
+
+    assert calls == [("embed", ("u", "k", "m", 256)), ("invalidate",)]
+
+
+def test_embedding_worker_uses_injected_client(qt_app, monkeypatch):
+    from pet.ui import settings_hooks
+    from pet.ui.settings_workers import EmbeddingTestWorker
+
+    class _Client:
+        def embed(self, text):
+            return [[0.1, 0.2]]
+
+    created = []
+
+    def factory(url, key, model, dim):
+        created.append((url, key, model, dim))
+        return _Client()
+
+    monkeypatch.setattr(settings_hooks, "_embedding_factory", factory)
+    worker = EmbeddingTestWorker("u", "k", "m", 256)
+    results = []
+    worker.finished.connect(lambda ok, content, elapsed: results.append((ok, content)))
+
+    worker.run()
+
+    assert created == [("u", "k", "m", 256)]
+    assert len(results) == 1 and results[0][0] is True
+    assert "向量维度: 2" in results[0][1]

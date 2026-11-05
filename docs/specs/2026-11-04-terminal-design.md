@@ -777,7 +777,7 @@ method_timeout = TERMINAL_CONFIRM_TIMEOUT_S + TERMINAL_MAX_COMMAND_TIMEOUT_S + T
 | `pet/terminal/runner.py` | `TerminalRunner`：shell 开关检查、调用解析与策略、闸门、确认调用、`build_env()` 与截断调用、`method_timeout`、`list` 快照 |
 | `pet/tools/registry.py` | `_register_terminal_tools()` 注册 `run` 与 `list`；`TERMINAL_OUTPUT` / `TERMINAL_LIST_OUTPUT` 字面量；`_register_default_tools()` 按 `TERMINAL_ENABLED` 调用；`ToolCommand` 与 `add_command()` / `commands()` 供工具登记终端命令，`recall` 的 `:memory` 在此登记 |
 | `pet/config.py` | 十三个 `TERMINAL_*` 键，见 §10 |
-| `pet/ui/settings_window.py` | 通用页「终端」组：开关、档位下拉、额外命令单行文本、沙箱根文本框，各控件带 tooltip |
+| `pet/ui/settings_tabs.py` | 通用页「终端」组：开关、档位下拉、额外命令单行文本、沙箱根文本框，各控件带 tooltip |
 | `pet/brain/prompts.py` | `_TERMINAL_GUIDE` 段与注入条件 |
 | `pet/ui/styles.py` | 终端的 `TERMINAL_*` 色板、字体回退链、圆角与间距常量；与同文件米白 QSS 各自取值 |
 | `pet/ui/completion.py` | 补全纯逻辑：Shell 内建与可执行名、目录条目与隐藏规则、环境变量名、冒号命令名/别名/子命令/选项/枚举、公共前缀、引号与大小写策略 |

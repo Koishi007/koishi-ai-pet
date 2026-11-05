@@ -74,7 +74,7 @@
 | **调度器（Scheduler）** | 三档定时器：`fast`（默认 1s）、`mid`（默认 5min）、`slow`（默认 10min）；系统空闲时整体暂停 | `pet/agent/scheduler.py` |
 | **状态机（StateMachine）** | `IDLE` / `AUTONOMOUS` / `INTERACTING` 三状态，带合法迁移校验 | `pet/agent/state.py` |
 | **配置项真源** | `_KEY_META`：每一项的类型、默认值、分组、是否需重启、是否隐藏 | `pet/config.py` |
-| **设置页签** | 设置界面的「连接/行为/提示词/通用」四页，归属是界面代码手写的，与 `category` 不同 | `pet/ui/settings_window.py` |
+| **设置页签** | 设置界面的「连接/行为/提示词/通用」四页，归属由 `TAB_SPECS` 声明，与 `category` 不同 | `pet/ui/settings_spec.py`、`pet/ui/settings_tabs.py` |
 | **参考文档（reference）** | 由 `scripts/gen_docs.py` 从代码生成的文档，CI 校验是否漂移 | `docs/reference/` |
 | **单实例锁** | 防止重复启动的 `QLockFile`，与 `settings.json` 同目录 | `pet/single_instance.py` |
 | **启动标记 / 崩溃报告** | 运行状态标记与异常落盘，用于下次启动时判断上次是否异常退出 | `pet/crash_reporter.py` |
