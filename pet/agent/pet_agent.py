@@ -159,6 +159,37 @@ class PetAgent(QObject):
     def dock_side(self) -> str:
         return self._dock_side
 
+    def status_snapshot(self) -> dict:
+        """恋恋状态快照：状态机、当前动作、贴边、生理、心理与记忆条数。
+
+        只读，可从工具线程调用；窗口尚未装配或读取失败时动作按空处理。
+        """
+        state = self.state_machine.state
+        action = ""
+        window = self._pet_window
+        if window is not None:
+            try:
+                action = window.action_queue.current_action_name() or ""
+            except Exception:
+                action = ""
+        return {
+            "state": state.value,
+            "state_seconds": max(0, int(time.monotonic() - self.state_machine.state_since)),
+            "action": action,
+            "dock": self._dock_side,
+            "vitals": self.vitals.numeric_summary(),
+            "mood": self.mood.numeric_summary(),
+            "memories": self._memory_total(),
+        }
+
+    def _memory_total(self) -> int:
+        """长期记忆条数；查询失败按 0 处理。"""
+        try:
+            return int(self.memory_store.list_memories(page_size=1)[1])
+        except Exception:
+            logger.exception("[PetAgent] memory count failed")
+            return 0
+
     def _on_dock_changed(self, side):
         """贴边状态变化：同步提示词状态、禁用觅食工具，并中断在途调用"""
         side = side or ""

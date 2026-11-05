@@ -499,8 +499,7 @@ class TerminalWindow(QWidget):
                 self._insert_output_line(cursor, "stderr", line)
             self._insert_cwd_line(cursor, payload)
             self._insert_tail(cursor, payload.get("exit_code"),
-                              int(payload.get("duration_ms") or 0),
-                              local=bool(payload.get("local")))
+                              int(payload.get("duration_ms") or 0))
         cursor.insertText("\n")
         self._trim_blocks()
         if at_bottom:
@@ -549,13 +548,10 @@ class TerminalWindow(QWidget):
         fmt.setFont(terminal_mono_font(11))
         cursor.insertText(f"{prefix}{text}\n", fmt)
 
-    def _insert_tail(self, cursor, code, duration_ms: int, local: bool = False) -> None:
+    def _insert_tail(self, cursor, code, duration_ms: int) -> None:
         meta = QTextCharFormat()
         meta.setForeground(QColor(TERMINAL_MUTED))
         meta.setFont(terminal_mono_font(10))
-        if local:
-            cursor.insertText(f"  本地 · {duration_ms / 1000:.2f}s\n", meta)
-            return
         cursor.insertText("  exit ", meta)
         code_fmt = QTextCharFormat()
         success = code in (0, "0", None)
@@ -651,7 +647,6 @@ class TerminalWindow(QWidget):
             "source": "user",
             "command": str(payload.get("command") or ""),
             "cwd": self._cwd,
-            "local": True,
             "rejected": False,
             "exit_code": result.exit_code,
             "stdout": result.stdout,
@@ -727,10 +722,14 @@ class TerminalWindow(QWidget):
             ctx = CompletionContext(
                 cwd=self._cwd,
                 case_sensitive=os.name != "nt",
+                shell=self._shell_combo.currentText(),
                 path_commands=self._path_commands(),
                 local_commands=cli.command_names(),
                 local_subcommands=cli.subcommands(),
                 local_path_commands=cli.path_commands(),
+                local_aliases=cli.aliases(),
+                local_flags=cli.flags(),
+                local_values=cli.values(),
             )
             result = complete(self._input.text(), self._input.cursorPosition(), ctx)
             if not result.candidates:
@@ -755,9 +754,7 @@ class TerminalWindow(QWidget):
         self._replace_token(text)
         if self._completion is None:
             return
-        if append_space and (self._completion.append_space
-                             or text.endswith(os.sep)
-                             or self._completion.start == 0):
+        if append_space and not text.endswith(os.sep):
             self._input.setText(self._input.text() + " ")
 
     def _replace_token(self, text: str) -> None:

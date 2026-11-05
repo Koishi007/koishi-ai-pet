@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable
 
 PREFIX = ":"
@@ -46,3 +46,6 @@ class LocalCommand:
     words: tuple[str, ...] = ()
     paths: bool = False
     examples: tuple[str, ...] = ()
+    aliases: tuple[str, ...] = ()
+    flags: tuple[str, ...] = ()
+    values: dict[str, tuple[str, ...]] = field(default_factory=dict)

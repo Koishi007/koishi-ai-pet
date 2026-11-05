@@ -177,10 +177,10 @@ def set_dm_uid(text: str) -> dict:
     if not raw:
         return update_config({"dm_uid": 0})
     if not raw.isdigit():
-        raise ValueError("只能是数字")
+        raise ValueError("应为数字")
     uid = int(raw)
     if uid <= 0 or uid > 9_999_999_999:
-        raise ValueError("超出 UID 范围")
+        raise ValueError("超出范围")
     return update_config({"dm_uid": uid})
 
 
@@ -191,7 +191,7 @@ def set_interval_minutes(text: str) -> dict:
         return update_config(
             {"schedule_interval_minutes": _DEFAULTS["schedule_interval_minutes"]})
     if not raw.isdigit():
-        raise ValueError("只能填数字")
+        raise ValueError("应为数字")
     minutes = int(raw)
     if not _INTERVAL_MIN <= minutes <= _INTERVAL_MAX:
         raise ValueError(f"超出 {_INTERVAL_MIN}-{_INTERVAL_MAX} 分钟")

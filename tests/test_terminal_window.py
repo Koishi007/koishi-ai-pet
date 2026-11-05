@@ -173,6 +173,20 @@ class TestCompletionKeys:
         window._on_tab(True)
         assert window._input.text() == "zzq_a.txt"
 
+    def test_directory_keeps_separator_without_space(self, window, tmp_path):
+        (tmp_path / "zzq_dir").mkdir()
+        assert window._change_dir(str(tmp_path)) is True
+        window._input.setText("zzq")
+        window._on_tab()
+        assert window._input.text() == "zzq_dir" + os.sep
+
+    def test_file_completes_with_space(self, window, tmp_path):
+        (tmp_path / "zzq_file.txt").write_text("", encoding="utf-8")
+        assert window._change_dir(str(tmp_path)) is True
+        window._input.setText("zzq")
+        window._on_tab()
+        assert window._input.text() == "zzq_file.txt "
+
 
 class TestReopen:
 
@@ -372,7 +386,10 @@ class TestLocalCommand:
         window._submit()
         _wait_idle(window)
         assert runner.calls == []
-        assert ":help" in window._view.toPlainText()
+        text = window._view.toPlainText()
+        assert ":help" in text
+        assert "exit 0" in text
+        assert "本地 ·" not in text
         assert window._busy is False
 
     def test_unknown_command_skips_runner(self, window, runner):
@@ -380,7 +397,7 @@ class TestLocalCommand:
         window._submit()
         _wait_idle(window)
         assert runner.calls == []
-        assert window._view.toPlainText().strip()
+        assert "exit 2" in window._view.toPlainText()
 
     def test_clear_command_empties_view(self, window):
         window._append_run({"source": "user", "command": "echo hi", "cwd": "",

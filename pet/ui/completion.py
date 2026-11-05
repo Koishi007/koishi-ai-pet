@@ -8,6 +8,23 @@ from typing import Callable
 COMMAND_DIRS = frozenset({"cd", "chdir", "pushd"})
 COMMAND_FILES = frozenset({"type", "cat", "more", "less", "notepad"})
 
+# 首词里优先于可执行文件的 Shell 保留字与内建命令
+SHELL_WORDS_NT = (
+    "assoc", "break", "call", "cd", "chdir", "cls", "color", "copy", "date",
+    "del", "dir", "echo", "erase", "exit", "for", "ftype", "goto", "if", "md",
+    "mkdir", "mklink", "move", "path", "pause", "popd", "prompt", "pushd",
+    "rd", "ren", "rename", "rmdir", "set", "setlocal", "shift", "start",
+    "time", "title", "type", "ver", "verify", "vol",
+)
+SHELL_WORDS_POSIX = (
+    "alias", "bg", "break", "cd", "command", "continue", "declare", "echo",
+    "eval", "exec", "exit", "export", "false", "fg", "for", "function",
+    "getopts", "hash", "history", "if", "in", "jobs", "kill", "let", "local",
+    "printf", "pwd", "read", "readonly", "return", "set", "shift", "source",
+    "test", "then", "time", "times", "trap", "true", "type", "ulimit",
+    "umask", "unalias", "unset", "wait", "while",
+)
+
 # 本地命令前缀，与 pet/cli 的 PREFIX 同值
 LOCAL_PREFIX = ":"
 
@@ -17,12 +34,11 @@ _SEPARATORS = " \t"
 
 @dataclass(frozen=True)
 class Completion:
-    """一次补全的结果：替换起点、候选、公共前缀与是否补空格。"""
+    """一次补全的结果：替换起点、候选与公共前缀。"""
 
     start: int
     candidates: tuple[str, ...] = ()
     common_prefix: str = ""
-    append_space: bool = False
 
 
 @dataclass
@@ -30,16 +46,22 @@ class CompletionContext:
     """补全所需的上下文；list_dir 返回 [(名字, 是否目录)]。
 
     local_commands 是冒号命令名（不带前缀），local_subcommands 是命令名到子命令的映射，
-    local_path_commands 表示该命令的参数按系统程序名与路径补全。
+    local_path_commands 表示该命令的参数按系统程序名与路径补全；local_aliases 是别名到
+    命令名的映射，local_flags 是命令名到选项名，local_values 是命令名到「子命令 → 位置
+    参数候选」；shell 为空表示不从变量前缀补环境变量名。
     """
 
     cwd: str = ""
     case_sensitive: bool = False
+    shell: str = ""
     path_commands: tuple[str, ...] = ()
     list_dir: Callable[[str], list[tuple[str, bool]]] | None = None
     local_commands: tuple[str, ...] = ()
     local_subcommands: dict[str, tuple[str, ...]] = field(default_factory=dict)
     local_path_commands: tuple[str, ...] = ()
+    local_aliases: dict[str, str] = field(default_factory=dict)
+    local_flags: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    local_values: dict[str, dict[str, tuple[str, ...]]] = field(default_factory=dict)
 
 
 def complete(buffer: str, cursor: int, ctx: CompletionContext) -> Completion:
@@ -55,20 +77,19 @@ def complete(buffer: str, cursor: int, ctx: CompletionContext) -> Completion:
     replace_from = start + 1 if quoted else start
 
     first = first_word(text, start)
-    local = True
-    if not text[:start].strip() and inner.startswith(LOCAL_PREFIX):
+    args = text[:start].split()
+    if not args and inner.startswith(LOCAL_PREFIX):
         candidates = local_command_candidates(inner, ctx)
     elif first.startswith(LOCAL_PREFIX):
-        candidates = local_argument_candidates(inner, first, ctx)
-    elif not text[:start].strip() and not has_path_sep(inner):
-        local = False
+        candidates = local_argument_candidates(inner, first, args, ctx)
+    elif (environment := env_candidates(inner, ctx)) is not None:
+        candidates = environment
+    elif not args and not has_path_sep(inner):
         candidates = command_candidates(inner, ctx)
     else:
-        local = False
         candidates = argument_candidates(inner, first, ctx)
     candidates = tuple(candidates[:MAX_CANDIDATES])
-    return Completion(replace_from, candidates, common_prefix(candidates),
-                      append_space=local and bool(candidates))
+    return Completion(replace_from, candidates, common_prefix(candidates))
 
 
 def token_start(text: str, cursor: int) -> int:
@@ -90,19 +111,34 @@ def has_path_sep(token: str) -> bool:
 
 
 def local_command_candidates(prefix: str, ctx: CompletionContext) -> list[str]:
-    """冒号命令名候选：带冒号返回，保持命令表顺序，大小写不敏感。"""
+    """冒号命令名候选：带冒号返回，命令在前别名在后，大小写不敏感。"""
     head = prefix.lower()
-    return [LOCAL_PREFIX + name for name in ctx.local_commands
-            if (LOCAL_PREFIX + name).startswith(head)]
+    names = list(ctx.local_commands) + list(ctx.local_aliases)
+    return [LOCAL_PREFIX + name for name in names
+            if (LOCAL_PREFIX + name).lower().startswith(head)]
 
 
-def local_argument_candidates(token: str, first: str, ctx: CompletionContext) -> list[str]:
-    """冒号命令的参数候选：登记了子命令的补子命令，其余只有路径类命令补程序名与路径。"""
+def local_argument_candidates(token: str, first: str, args: list[str],
+                              ctx: CompletionContext) -> list[str]:
+    """冒号命令的参数候选：选项、子命令、子命令的位置参数，最后是路径类命令。"""
     name = first[len(LOCAL_PREFIX):].lower()
-    words = ctx.local_subcommands.get(name)
-    if words:
-        head = token.lower()
-        return [word for word in words if word.startswith(head)]
+    name = ctx.local_aliases.get(name, name)
+    head = token.lower()
+    if token.startswith("-"):
+        return [flag for flag in ctx.local_flags.get(name, ())
+                if flag.lower().startswith(head)]
+    if len(args) <= 1:
+        if name == "help":
+            return [command for command in ctx.local_commands
+                    if command.lower().startswith(head)]
+        words = ctx.local_subcommands.get(name, ())
+        if words:
+            return [word for word in words if word.lower().startswith(head)]
+    elif len(args) == 2:
+        sub = args[1].lower()
+        values = ctx.local_values.get(name, {}).get(sub, ())
+        if values:
+            return [value for value in values if value.lower().startswith(head)]
     if name not in ctx.local_path_commands:
         return []
     if has_path_sep(token):
@@ -110,16 +146,45 @@ def local_argument_candidates(token: str, first: str, ctx: CompletionContext) ->
     return command_candidates(token, ctx)
 
 
+def env_candidates(token: str, ctx: CompletionContext) -> list[str] | None:
+    """环境变量名候选：按当前 shell 的写法返回；不是变量前缀时返回 None。"""
+    shell = (ctx.shell or "").strip().lower()
+    if shell in ("bash", "sh") and token.startswith("$"):
+        return _env_names(token[1:], "$", "", ctx)
+    if shell == "pwsh" and token.lower().startswith("$env:"):
+        return _env_names(token[5:], "$env:", "", ctx)
+    if shell == "cmd" and token.startswith("%"):
+        return _env_names(token[1:], "%", "%", ctx)
+    return None
+
+
+def _env_names(prefix: str, head: str, tail: str, ctx: CompletionContext) -> list[str]:
+    """把环境变量名套上该 shell 的前后缀。"""
+    return [head + name + tail for name in sorted(os.environ)
+            if matches(name, prefix, ctx)]
+
+
+def shell_words() -> tuple[str, ...]:
+    """按平台返回首词优先的 Shell 保留字与内建命令。"""
+    return SHELL_WORDS_NT if os.name == "nt" else SHELL_WORDS_POSIX
+
+
 def command_candidates(prefix: str, ctx: CompletionContext) -> list[str]:
-    """首词候选：当前目录条目与 PATH 可执行名的并集。"""
-    results: list[str] = []
-    for name, is_dir in entries(ctx.cwd, ctx):
-        if matches(name, prefix, ctx):
-            results.append(name + os.sep if is_dir else name)
-    for name in ctx.path_commands:
-        if matches(name, prefix, ctx):
-            results.append(name)
+    """首词候选：Shell 保留字、PATH 可执行名、当前目录条目，按此优先级去重。"""
+    results = [name for name in shell_words() if matches(name, prefix, ctx)]
+    results.extend(name for name in ctx.path_commands if matches(name, prefix, ctx))
+    for name, is_dir in sorted(entries(ctx.cwd, ctx),
+                               key=lambda item: item[0] if ctx.case_sensitive
+                               else item[0].lower()):
+        if not visible_name(name, prefix) or not matches(name, prefix, ctx):
+            continue
+        results.append(name + os.sep if is_dir else name)
     return _dedupe(results, ctx)
+
+
+def visible_name(name: str, prefix: str) -> bool:
+    """点开头的条目只在已输入点时列出。"""
+    return not name.startswith(".") or prefix.startswith(".")
 
 
 def argument_candidates(token: str, first: str, ctx: CompletionContext) -> list[str]:
@@ -135,10 +200,10 @@ def argument_candidates(token: str, first: str, ctx: CompletionContext) -> list[
             continue
         if kind == "file" and is_dir:
             continue
-        if not matches(name, leaf, ctx):
+        if not visible_name(name, leaf) or not matches(name, leaf, ctx):
             continue
         results.append(head + name + (os.sep if is_dir else ""))
-    return _dedupe(results, ctx)
+    return sort_names(_dedupe(results, ctx), ctx)
 
 
 def split_token(token: str) -> tuple[str, str]:
@@ -217,6 +282,7 @@ def quote_candidate(text: str, quoted: bool = False) -> str:
 
 
 def _dedupe(results: list[str], ctx: CompletionContext) -> list[str]:
+    """按出现顺序去重，保留候选来源的优先级。"""
     unique = []
     seen = set()
     for item in results:
@@ -225,4 +291,9 @@ def _dedupe(results: list[str], ctx: CompletionContext) -> list[str]:
             continue
         seen.add(key)
         unique.append(item)
-    return sorted(unique, key=(None if ctx.case_sensitive else str.lower))
+    return unique
+
+
+def sort_names(names: list[str], ctx: CompletionContext) -> list[str]:
+    """按平台大小写策略排序。"""
+    return sorted(names, key=(None if ctx.case_sensitive else str.lower))

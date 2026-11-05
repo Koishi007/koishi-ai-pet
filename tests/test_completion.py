@@ -15,7 +15,8 @@ def tree(tmp_path):
     home = os.path.expanduser("~")
     return {
         root: [("Documents", True), ("data", True), ("notes.txt", False),
-               ("Program Files", True), ("alpha.txt", False), ("alt.txt", False)],
+               ("Program Files", True), ("alpha.txt", False), ("alt.txt", False),
+               (".secret.txt", False), (".git", True)],
         os.path.join(root, "Documents"): [("report.txt", False)],
         parent: [("sibling", True)],
         home: [("Documents", True)],
@@ -71,7 +72,7 @@ class TestArgument:
 class TestCommonPrefix:
 
     def test_shared_prefix(self, ctx):
-        result = complete("a", 1, ctx)
+        result = complete("al", 2, ctx)
         assert set(result.candidates) == {"alpha.txt", "alt.txt"}
         assert result.common_prefix == "al"
 
@@ -97,6 +98,57 @@ class TestCase:
     def test_posix_is_case_sensitive(self, ctx):
         ctx.case_sensitive = True
         assert complete("doc", 3, ctx).candidates == ()
+
+
+class TestHidden:
+    """点开头的条目默认不列出，已输入点时列出。"""
+
+    def test_hidden_entries_excluded_by_default(self, ctx):
+        assert ".secret.txt" not in complete("", 0, ctx).candidates
+        assert ".secret.txt" not in complete("type no", 7, ctx).candidates
+
+    def test_hidden_entries_listed_with_dot_prefix(self, ctx):
+        assert ".secret.txt" in complete(".", 1, ctx).candidates
+        assert ".secret.txt" in complete("type .s", 7, ctx).candidates
+
+
+class TestCommandPriority:
+    """首词按 Shell 内建、可执行名、目录条目的顺序去重。"""
+
+    def test_builtin_precedes_directory(self, tmp_path):
+        entries = [("cd", True)]
+        ctx = CompletionContext(cwd=str(tmp_path),
+                                list_dir=lambda path: entries)
+        names = complete("cd", 2, ctx).candidates
+        assert names.index("cd") < names.index("cd" + os.sep)
+
+    def test_builtin_precedes_executable(self, tmp_path):
+        ctx = CompletionContext(cwd=str(tmp_path), path_commands=("cdx",),
+                                list_dir=lambda path: [])
+        names = complete("cd", 2, ctx).candidates
+        assert names == ("cd", "cdx")
+
+
+class TestEnvironment:
+    """变量名候选跟随所选 shell 的写法。"""
+
+    def test_bash_variable_names(self, monkeypatch, ctx):
+        monkeypatch.setenv("ZZQ_TOKEN", "1")
+        ctx.shell = "bash"
+        assert complete("$ZZQ", 4, ctx).candidates == ("$ZZQ_TOKEN",)
+
+    def test_pwsh_env_prefix(self, monkeypatch, ctx):
+        monkeypatch.setenv("ZZQ_TOKEN", "1")
+        ctx.shell = "pwsh"
+        assert complete("$env:ZZQ", 9, ctx).candidates == ("$env:ZZQ_TOKEN",)
+
+    def test_cmd_percent(self, monkeypatch, ctx):
+        monkeypatch.setenv("ZZQ_TOKEN", "1")
+        ctx.shell = "cmd"
+        assert complete("%ZZQ", 5, ctx).candidates == ("%ZZQ_TOKEN%",)
+
+    def test_no_variables_without_shell(self, ctx):
+        assert complete("$ZZQ", 4, ctx).candidates == ()
 
 
 class TestPathBases:
@@ -142,6 +194,9 @@ def local_ctx(tmp_path, tree):
         local_commands=("help", "check", "timer", "todo", "memory"),
         local_subcommands={"timer": ("list", "cancel"), "memory": ("search",)},
         local_path_commands=("check",),
+        local_aliases={"tm": "timer"},
+        local_flags={"timer": ("--all",), "status": ("--json",)},
+        local_values={"todo": {"list": ("pending", "done", "all")}},
     )
 
 
@@ -149,19 +204,13 @@ class TestLocalCommand:
 
     def test_prefix_lists_command_names_only(self, local_ctx):
         result = complete(":", 1, local_ctx)
+        expected = tuple(":" + name for name in local_ctx.local_commands)
+        expected += tuple(":" + name for name in local_ctx.local_aliases)
         assert result.start == 0
-        assert result.candidates == tuple(":" + name for name in local_ctx.local_commands)
+        assert result.candidates == expected
 
-    def test_local_candidates_are_words(self, local_ctx):
-        """命令名与子命令是词，接受后补空格；路径类候选不补。"""
-        assert complete(":", 1, local_ctx).append_space is True
-        assert complete(":timer l", 8, local_ctx).append_space is True
-        assert complete("Doc", 3, local_ctx).append_space is False
-
-    def test_single_match_is_complete_word(self, local_ctx):
-        result = complete(":he", 3, local_ctx)
-        assert result.candidates == (":help",)
-        assert result.append_space is True
+    def test_single_match(self, local_ctx):
+        assert complete(":he", 3, local_ctx).candidates == (":help",)
 
     def test_name_match_ignores_case(self, local_ctx):
         assert complete(":HE", 3, local_ctx).candidates == (":help",)
@@ -171,17 +220,32 @@ class TestLocalCommand:
         assert "git" not in names
         assert "notes.txt" not in names
 
+    def test_alias_appears_in_candidates(self, local_ctx):
+        assert ":tm" in complete(":t", 2, local_ctx).candidates
+
     def test_subcommand_candidates(self, local_ctx):
         result = complete(":timer l", 8, local_ctx)
         assert result.start == 7
         assert result.candidates == ("list",)
-        assert result.append_space is True
 
     def test_subcommand_prefix_filters(self, local_ctx):
         assert complete(":timer c", 8, local_ctx).candidates == ("cancel",)
 
-    def test_command_without_arguments_has_no_candidates(self, local_ctx):
-        assert complete(":help x", 6, local_ctx).candidates == ()
+    def test_alias_resolves_subcommands(self, local_ctx):
+        assert complete(":tm l", 5, local_ctx).candidates == ("list",)
+
+    def test_flags_complete_after_dash(self, local_ctx):
+        assert complete(":timer --a", 10, local_ctx).candidates == ("--all",)
+        assert complete(":status --j", 11, local_ctx).candidates == ("--json",)
+
+    def test_values_complete_for_subcommand(self, local_ctx):
+        assert complete(":todo list ", 11, local_ctx).candidates == (
+            "pending", "done", "all")
+        assert complete(":todo list d", 12, local_ctx).candidates == ("done",)
+
+    def test_help_completes_command_names(self, local_ctx):
+        assert complete(":help ", 6, local_ctx).candidates == local_ctx.local_commands
+        assert complete(":help ti", 8, local_ctx).candidates == ("timer",)
 
     def test_check_completes_programs_and_entries(self, local_ctx):
         assert "git" in complete(":check gi", 9, local_ctx).candidates

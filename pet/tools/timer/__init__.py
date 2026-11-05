@@ -82,18 +82,18 @@ def _resolve_command(arg: str) -> tuple[str, dict]:
     """把 `:timer` 的参数翻成方法名与参数。"""
     parts = str(arg or "").split(None, 1)
     if not parts:
-        raise ValueError("缺少时长或子命令")
+        raise ValueError("缺少参数：时长或子命令")
     head = parts[0].lower()
     rest = parts[1].strip() if len(parts) > 1 else ""
     if head == "list":
         return "list", {}
     if head == "cancel":
         if not rest:
-            raise ValueError("缺少定时器 id")
+            raise ValueError("缺少参数：定时器 id")
         return "cancel", {"timer_id": rest}
     seconds = parse_duration(head)
     if seconds is None:
-        raise ValueError(f"看不懂时长「{head}」")
+        raise ValueError(f"时长格式无效：「{head}」，支持 90、10m、1h30m")
     return "set", {"duration": seconds, "label": rest or "时间到"}
 
 

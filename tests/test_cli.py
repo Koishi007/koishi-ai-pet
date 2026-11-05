@@ -6,13 +6,17 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from pet import cli as tc
 from pet.cli import catalog
+from pet.cli.format import key_values, sections
 from pet.config import config
 from pet.terminal import policy
 from pet.tools import knowledge, timer, todo
+from pet.tools.context import TOOL_CTX
 from pet.tools.executor import ToolResult
 from pet.tools.registry import TOOL_REGISTRY, ToolCommand
 
@@ -160,6 +164,29 @@ class TestHelpLayout:
         assert ":check python script.py" in text
 
 
+class TestSingleHelp:
+
+    def test_command_help_lists_group_usage_and_flags(self):
+        result = tc.run(":help status", "", None)
+        assert result.exit_code == tc.EXIT_OK
+        text = result.stdout
+        assert text.startswith(":status")
+        assert "分组: 恋恋" in text
+        assert ":status [--json]" in text
+
+    def test_command_help_accepts_alias_and_colon(self):
+        assert ":status" in tc.run(":help :status", "", None).stdout
+        assert tc.run(":? status", "", None).exit_code == tc.EXIT_OK
+
+    def test_alias_is_listed_in_its_own_help(self):
+        assert "别名: :?" in tc.run(":help ?", "", None).stdout
+
+    def test_unknown_command_is_usage_error(self):
+        result = tc.run(":help nope", "", None)
+        assert result.exit_code == tc.EXIT_USAGE
+        assert "未知命令" in result.stderr
+
+
 class TestDispatch:
 
     def test_unknown_command(self):
@@ -226,18 +253,63 @@ class TestCheck:
         assert tc.run(":check", str(env), None).exit_code == tc.EXIT_USAGE
 
 
+_PET_STATUS = {
+    "state": "idle",
+    "state_seconds": 12,
+    "action": "sleep",
+    "dock": "left",
+    "vitals": {"satiety": 72.4, "energy": 41.0, "hungry": False, "tired": True},
+    "mood": {"affection": 66.3, "joy": 58.1, "sanity": 84.2,
+             "aff_low": False, "joy_low": False, "sanity_low": False},
+    "memories": 128,
+}
+
+
 class TestSnapshot:
 
-    def test_status_reports_snapshot(self, env):
+    def test_status_reports_pet_state(self, env, monkeypatch):
+        monkeypatch.setattr(TOOL_CTX, "pet_status", lambda: _PET_STATUS)
         result = tc.run(":status", str(env), _StubRunner())
         assert result.exit_code == tc.EXIT_OK
-        assert "auto" in result.stdout
-        assert str(env) in result.stdout
+        text = result.stdout
+        for expected in ("空闲（idle）", "已持续: 12s", "sleep", "左侧",
+                         "饱食度: 72.4 / 100", "饥饿", "疲倦", "长期记忆: 128 条"):
+            assert expected in text
+
+    def test_status_without_agent(self, env, monkeypatch):
+        monkeypatch.setattr(TOOL_CTX, "pet_status", lambda: {})
+        result = tc.run(":status", str(env), None)
+        assert result.exit_code == tc.EXIT_TOOL
+        assert result.stderr
+
+    def test_status_json_flag(self, env, monkeypatch):
+        monkeypatch.setattr(TOOL_CTX, "pet_status", lambda: _PET_STATUS)
+        result = tc.run(":status --json", str(env), _StubRunner())
+        assert result.exit_code == tc.EXIT_OK
+        assert json.loads(result.stdout) == _PET_STATUS
+
+    def test_status_rejects_unknown_flag(self, env, monkeypatch):
+        monkeypatch.setattr(TOOL_CTX, "pet_status", lambda: _PET_STATUS)
+        result = tc.run(":status --nope", str(env), None)
+        assert result.exit_code == tc.EXIT_USAGE
+        assert "用法" in result.stderr
 
     def test_policy_lists_entries(self, env):
         result = tc.run(":policy", str(env), _StubRunner())
         assert "git status" in result.stdout
         assert "mytool *" in result.stdout
+
+
+class TestFormat:
+
+    def test_key_values_align_cjk_labels(self):
+        assert key_values([("状态", "a"), ("已持续", "b")]) == [
+            "状态:   a", "已持续: b"]
+
+    def test_sections_split_blocks(self):
+        lines = sections([("恋恋", [("状态", "idle")]),
+                          ("生理", [("精力", "41.0")])])
+        assert lines == ["恋恋", "  状态: idle", "", "生理", "  精力: 41.0"]
 
 
 class TestToolRouting:

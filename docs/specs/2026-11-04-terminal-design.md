@@ -483,14 +483,30 @@ handler 在工具线程中运行，界面在主线程，确认必须跨线程。
 
 ### §7.7 输入补全
 
-`Tab` 触发补全，候选来源按当前 token 的位置决定：
+`Tab` 触发补全，候选按 token 位置与首词分成三层：结构候选（命令、子命令、选项、枚举）、命名空间候选（环境变量）、文件系统候选。
 
-| 位置 | 候选 | 数据源 |
+首词（非 `:` 开头）：
+
+| 优先级 | 候选 | 数据源 |
 |---|---|---|
-| 首词且不含路径分隔符 | 当前目录条目与 `PATH` 可执行名的并集 | 目录读取、`os.environ["PATH"]` |
-| 其余 token，首词为目录类命令 | 当前目录的子目录 | `cd`、`chdir`、`pushd` 常量表 |
-| 其余 token，首词为文件类命令 | 当前目录的文件 | `type`、`cat`、`more`、`less`、`notepad` 常量表 |
-| 其余 token | 当前目录的全部条目 | 目录读取 |
+| 1 | Shell 保留字与内建命令 | `completion.py` 的 `SHELL_WORDS_NT` / `SHELL_WORDS_POSIX` |
+| 2 | `PATH` 可执行名 | `os.environ["PATH"]`，窗口缓存 60 秒 |
+| 3 | 当前目录条目 | 目录读取，目录带分隔符 |
+
+- 三层按顺序合并去重，同名保留优先级高的；目录与内建命令同名时内建命令在前。
+- 首词含路径分隔符时不查命令名，直接按路径补全。
+
+参数 token：
+
+| 首词与上下文 | 候选 |
+|---|---|
+| 目录类命令（`cd`、`chdir`、`pushd`） | 当前目录的子目录 |
+| 文件类命令（`type`、`cat`、`more`、`less`、`notepad`） | 当前目录的文件 |
+| 其余 Shell 命令 | 当前目录的条目 |
+| 已选 shell 且 token 以变量前缀开头 | 环境变量名：cmd `%NAME%`、pwsh `$env:NAME`、bash/sh `$NAME` |
+| `:` 命令的第一个参数 | 登记的 `words`；`help` 取全部命令名 |
+| `:` 命令的后续参数 | `values` 登记的该子命令候选，其次是 `paths` 命令的路径与程序名 |
+| `:` 命令的 `-` 开头 token | 登记的 `flags` |
 
 路径补全的解析规则：
 
@@ -502,32 +518,34 @@ handler 在工具线程中运行，界面在主线程，确认必须跨线程。
 | 其余 | 终端当前目录，不是子进程的 cwd |
 
 - 参数类型按首词决定：`cd`、`chdir`、`pushd` 只列目录；`type`、`cat`、`more`、`less`、`notepad` 只列文件；其余命令列文件与目录。常量表放在 `completion.py` 模块级。
-- 目录候选以当前平台的分隔符结尾（Windows `\`，POSIX `/`），补全后继续按 `Tab` 进入下一级。
+- 目录候选以当前平台的分隔符结尾（Windows `\`，POSIX `/`），接受后不补空格，继续按 `Tab` 进入下一级；文件候选接受后补一个空格。
+- 点开头的条目默认不列出，叶前缀以 `.` 开头时才列出。
 - 先按已输入前缀过滤，再截断到 500 条。
 
 几个典型输入：
 
 ```
 C:\Users\me> cd Doc␉           → cd Documents\
-C:\Users\me> cd ..\␉           → 列出 C:\Users\
+C:\Users\me> cd Documents\␉    → 列出 Documents 下的条目
 C:\Users\me\Documents> cd "Pro␉ → cd "Program Files"\
-C:\Users\me> type no␉          → type notes.txt
+C:\Users\me> type no␉          → type notes.txt␣
+C:\Users\me> cd .g␉            → cd .git\
 ```
 
 交互规则：
 
-- 唯一候选直接补全；命令与目录后补一个空格，文件不补。
+- 唯一候选直接补全；目录保留分隔符且不补空格，其余候选补一个空格。
 - 多候选时首次按 `Tab` 直接取第一个候选并就地替换 token，不显示候选行；继续按 `Tab` 在候选间循环，`Shift+Tab` 反向，`Esc` 退出循环但保留已输入内容。
 - 当前 token 已被引号包裹时保留引号，只替换内部内容；补全结果含空格时自动加双引号。
 - 大小写按平台：Windows 不敏感，`cd doc` 能补出 `Documents\`；POSIX 敏感。
 - 候选为空时不改变输入，状态栏提示「无匹配」一次。
 
-不做的部分：管道与重定向之后的命令补全、`/` 内建命令与工具方法名候选、环境变量值补全、`Ctrl+R` 历史搜索、`~user` 展开、glob 展开（`*.py`）、命令选项补全（`git --`）。`:` 开头的本地命令走单独的候选来源，见 §7.8。
+不做的部分：管道与重定向之后的命令补全、`/` 内建命令与工具方法名候选、环境变量值补全、`Ctrl+R` 历史搜索、`~user` 展开、SSH 主机名、glob 展开（`*.py`）、Shell 命令的选项补全（`git --`）。变量只补名字不补值；`:` 开头的本地命令走单独候选来源，见 §7.8。
 
 实现约束：
 
 - 补全逻辑放在 `pet/ui/completion.py`，纯函数 `complete(buffer, cursor, ctx) -> Completion`，`Completion(start, candidates, common_prefix)`，不依赖 Qt，可单独测试。
-- `ctx` 提供终端当前目录、平台大小写策略与 `PATH` 缓存；窗口只负责按键与写回输入框。
+- `ctx` 提供终端当前目录、大小写策略、所选 shell、`PATH` 缓存与 `:` 命令表（子命令、别名、选项、枚举值）；窗口只负责按键与写回输入框。
 - `PATH` 候选首次使用时扫描并缓存 60 秒；目录候选每次读取，先按前缀过滤再截断到 500 条。
 - 补全不使用 `QCompleter`，由窗口按 `Tab` 轮换候选。
 
@@ -536,18 +554,19 @@ C:\Users\me> type no␉          → type notes.txt
 冒号前缀的输入由窗口层处理，不启动子进程，也不进 LLM 工具层。窗口在 `cd` 与盘符切换之后、`_busy` 闸门之前分流：前缀命中即走本地命令，其余输入照旧交给系统 shell。
 
 - 命令来源分两层：`help`、`clear`、`status`、`policy`、`check` 是 `pet/cli` 的内建命令；`timer`、`todo`、`memory`、`knowledge` 由各工具在自己的 `register(registry)` 里登记，与文件气泡按钮、右键菜单项同一套做法。
-- 登记接口 `registry.add_command(tool_name, name=, group=, rows=, resolve=, words=, paths=, examples=)`：`rows` 是帮助里的 (用法, 说明) 行，子命令各占一行；`examples` 是帮助末尾的示例行；`resolve` 只把参数文本翻成 (方法名, 参数)，参数不合法抛 `ValueError`；`words` 与 `paths` 是补全提示。`pet/cli` 只聚合 `TOOL_REGISTRY.commands()`，不认具体工具。
+- 登记接口 `registry.add_command(tool_name, name=, group=, rows=, resolve=, words=, paths=, examples=, aliases=, flags=, values=)`：`rows` 是帮助里的 (用法, 说明) 行，子命令各占一行；`examples` 是帮助末尾的示例行；`resolve` 只把参数文本翻成 (方法名, 参数)，参数不合法抛 `ValueError`；`words` 是第一个参数的候选，`values` 是「子命令 → 位置参数候选」，`flags` 是选项名，`paths` 表示按程序名与路径补全，`aliases` 是命令别名。`pet/cli` 只聚合 `TOOL_REGISTRY.commands()`，不认具体工具。
 - 工具命令一律构造 `ToolCall` 交给 `ToolExecutor.execute_one()`，不直接调用工具内部实现。工具被关闭时它的命令随之消失（`commands()` 按 `is_enabled` 过滤），返回码 1 提示去设置里启用。
 - 返回码：成功 0；工具未注册或执行失败 1（正文写 stderr）；未知命令与非法用法 2。
 - 本地命令与 shell 命令共用 `_busy` 闸门，本地命令在独立线程执行。知识库与记忆检索要等 embedding，期间输入按「上一条命令还在执行」处理，避免流式分块与本地回显交错。
-- 回显块尾标「本地 · 0.02s」，不写 exit：没有进程可退出。
+- 回显块尾与 shell 命令同形：`exit <code> · 0.02s`，退出码取 `LocalResult.exit_code`（0 成功、1 工具失败、2 用法错误），不额外标注命令来自本地。
+- 命令输出统一为 `键: 值` 两列：键按终端显示宽度（全角字符按两列）补空格，值起点对齐；分块输出用空行分隔，块标题单独成行且不带冒号；空值写 `-`；说明行以 `# ` 开头，与数据行之间空一行。
 
 | 分组 | 用法 | 来源 | 作用 | 工具方法 |
 |---|---|---|---|---|
-| 通用 | `:help` | cli | 列出本地命令 | 无 |
+| 通用 | `:help [command]` | cli | 列出全部命令；带参数时只显示该命令的分组、别名、用法与示例 | 无 |
 | 通用 | `:clear` | cli | 清屏 | 无 |
-| 状态与策略 | `:status` | cli | 档位、平台、沙箱根、当前目录、免确认条数、shell 模式开关 | `TerminalRunner.list()` |
-| 状态与策略 | `:policy` | cli | 免确认清单逐条列出并标注未安装项、解释器名单、危险类别 | `TerminalRunner.list()` |
+| 恋恋 | `:status [--json]` | cli | 恋恋的状态机、当前动作、贴边、生理、心理与长期记忆条数；`--json` 输出快照 JSON | `TOOL_CTX.pet_status()` |
+| 状态与策略 | `:policy` | cli | 免确认清单逐条列出并标注未安装项、沙箱根、解释器名单、危险类别、shell 模式开关 | `TerminalRunner.list()` |
 | 状态与策略 | `:check <command>` | cli | 以 `source="model"` 试算 `policy.check()`，输出判定码、档位、原因、命中的危险类别与解析到的程序 | 无 |
 | 计时与待办 | `:timer <duration> [message]` | timer | 设定倒计时，时长接受 `90`、`90s`、`10m`、`1h30m` | `timer__set` |
 | 计时与待办 | `:timer list` | timer | 列出未到期的倒计时，每行带 id | `timer__list` |
@@ -559,20 +578,24 @@ C:\Users\me> type no␉          → type notes.txt
 
 `:check` 只读：不执行命令、不改任何状态，用于排查免确认清单、解释器与危险规则为什么给出某个判定。
 
+`:status` 只读终端无关的恋恋状态：状态机（中文名与英文码）、已持续时长、当前动作、贴边、饱食度、精力、饥饿与疲倦、好感度、愉悦度、理智、长期记忆条数。快照经 `TOOL_CTX.pet_status()` 向 agent 取，未绑定或采集失败时退出码 1，不显示半份数据；`--json` 输出同一份快照的 JSON。
+
 `:help` 排版：
 
-- 段落依次为标题与一行说明、`用法`、`命令`、`示例`，段间空一行。
-- 分组顺序由 `GROUP_ORDER` 决定（通用、状态与策略、计时与待办、检索），工具声明的新分组排在后面；组内按登记顺序，组间空一行，组名单独占一行。
+- 段落依次为标题 `终端命令` 与一行说明、`用法`、`命令`、`示例`，段间空一行。
+- 分组顺序由 `GROUP_ORDER` 决定（通用、恋恋、状态与策略、计时与待办、检索），工具声明的新分组排在后面；组内按登记顺序，组间空一行，组名单独占一行。
 - `命令` 段落两列：用法列按最长用法补空格，说明列起点一致，两列间是两个空格，不用冒号连接。
 - `示例` 段落按分组顺序列出各命令登记的 `examples`，命令未登记就没有对应示例。
 - 占位符统一为尖括号英文形式，字面子命令保持原样，两类不混用。
 - 用法错误只回一行，内容为该命令在 `rows` 里的全部用法，用 ` | ` 连接。
+- `:help <command>` 只显示该命令：首行 `:命令`，缩进两列的 `分组` 与 `别名`（有别名时），随后 `用法` 逐行列出用法与说明，`示例` 逐行列出示例；未知命令回一行用法错误。`:help` 的别名是 `:?`。
 
 补全规则：
 
-- 首词以 `:` 开头时候选只来自命令表，带冒号返回，按登记顺序，不混入 PATH 程序名与目录条目；比较不区分大小写。
-- 首词是已登记命令时，第二个 token 按命令登记时给的 `words` 补子命令；带 `paths` 的命令补 PATH 程序名与当前目录条目；其余命令不补参数。
-- 补全结果需要补空格时，由 `Completion.append_space` 标记为词，窗口只在唯一候选被接受时补一个空格；多候选轮换期间不补。
+- 首词以 `:` 开头时，候选只来自命令表：命令名在前、别名在后，带冒号返回，比较不区分大小写，不混入 PATH 程序名与目录条目。
+- 第一个参数按 `words` 补子命令，`help` 补全部命令名；后续参数按 `values` 补该子命令的候选；`-` 开头的 token 按 `flags` 补选项。
+- 带 `paths` 的命令补 PATH 程序名与当前目录条目；其余命令不补参数。
+- 唯一候选被接受后，目录保留分隔符不补空格，其余候选补一个空格；多候选轮换期间不补。
 
 不做的部分：任意工具通用直调入口、写配置、退出与重启。通用直调会把「用户亲手输入」变成越权通道，写配置绕过设置页的类型校验与重启提示。
 
@@ -753,11 +776,12 @@ method_timeout = TERMINAL_CONFIRM_TIMEOUT_S + TERMINAL_MAX_COMMAND_TIMEOUT_S + T
 | `pet/ui/settings_window.py` | 通用页「终端」组：开关、档位下拉、额外命令单行文本、沙箱根文本框，各控件带 tooltip |
 | `pet/brain/prompts.py` | `_TERMINAL_GUIDE` 段与注入条件 |
 | `pet/ui/styles.py` | 终端的 `TERMINAL_*` 色板、字体回退链、圆角与间距常量；与同文件米白 QSS 各自取值 |
-| `pet/ui/completion.py` | 补全纯逻辑：目录条目、`PATH` 可执行名、冒号命令名与子命令、公共前缀、引号与大小写策略 |
+| `pet/ui/completion.py` | 补全纯逻辑：Shell 内建与可执行名、目录条目与隐藏规则、环境变量名、冒号命令名/别名/子命令/选项/枚举、公共前缀、引号与大小写策略 |
 | `pet/ui/terminal_window.py` | 终端窗口、来源配色、缓冲、输入执行、命令历史、自动滚动与状态栏、工作目录状态与 `cd` 拦截、补全交互、本地命令分流 |
 | `pet/cli/types.py` | `LocalResult` / `LocalContext` / `LocalCommand` 与返回码、前缀常量；不依赖任何 pet 模块 |
+| `pet/cli/format.py` | 输出排版：`key_values()` 按显示宽度对齐两列、`sections()` 分组、`note()` 说明行；纯函数，不依赖 Qt |
 | `pet/cli/catalog.py` | 内建命令表、`commands()` 聚合注册表、帮助排版、补全数据与用法拼装；`TOOL_REGISTRY` 只在这一处取 |
-| `pet/cli/builtins.py` | 内建命令实现：`help` 之外的 `check` / `status` / `policy` / `clear` |
+| `pet/cli/builtins.py` | 内建命令实现：`help` 之外的 `check` / `status` / `policy` / `clear`；`:status` 经 `TOOL_CTX.pet_status()` 取恋恋快照 |
 | `pet/cli/dispatch.py` | `is_local()`、`run()`：命中 handler 走内建，否则翻译参数后经 `ToolExecutor` 调用 `tool__method` |
 | `pet/cli/__init__.py` | 只 re-export 公共 API 并声明 `__all__` |
 | `pet/ui/confirm_card.py` | 确认卡片：队列展示、倒计时进度条、危险与可写目录提示、按钮与快捷键；`card_position()` 纯函数 |
@@ -834,11 +858,11 @@ python scripts/gen_docs.py --check
 
 `tests/test_terminal_window.py` 覆盖来源前缀与配色分组、5000 块上限、历史去重与上下键取值、多行粘贴截断、自动滚动跟随、用户输入不经确认且以 shell 模式提交、首次打开用主目录、恢复 `last_cwd`、目录失效回退、`cd` 拦截、隐藏后重新显示保留内容、冒号命令的 Tab 补全与轮换。用例用桩替换执行核心，不真的调用命令。
 
-`tests/test_cli.py` 覆盖前缀判定、内建命令分发与三种返回码、帮助的逐行用法与分组顺序、说明列对齐、示例随命令出现与消失、`:check` 判定随档位与免确认清单变化、`:status` 与 `:policy` 的快照字段，以及工具命令经 `ToolExecutor` 发出的方法名与参数；工具方法缺失与注册表查询异常都落到返回码 1，另有一条用例证明新工具登记的命令无需改 cli 即可分发与进帮助。用例用桩注册表替换全局注册表，不碰真实工具与数据库。
+`tests/test_cli.py` 覆盖前缀判定、内建命令分发与三种返回码、帮助的逐行用法与分组顺序、说明列对齐、示例随命令出现与消失、单命令帮助与别名、`:check` 判定随档位与免确认清单变化、`:status`（含 `--json`）与 `:policy` 的快照字段，以及工具命令经 `ToolExecutor` 发出的方法名与参数；工具方法缺失与注册表查询异常都落到返回码 1，另有一条用例证明新工具登记的命令无需改 cli 即可分发与进帮助。用例用桩注册表替换全局注册表，不碰真实工具与数据库。
 
 `tests/test_tool_commands.py` 覆盖 `timer` / `todo` / `knowledge` 各自 `register_commands()` 产出的分组、用法行、补全候选与参数翻译，含非法输入抛 `ValueError` 的用例；另覆盖注册表的聚合：`recall` 的 `:memory` 已登记、工具关闭后命令消失、重名命令只留第一条、未注册工具直接拒绝。
 
-`tests/test_confirm_card.py` 覆盖 `card_position()` 的四种分支（上方足够、上方不足转下方、恋恋在屏幕外落右下角、结果夹进可用区），以及标题序号、`Esc` 拒绝、危险模式下 `Enter` 不触发允许、关闭等同拒绝。`tests/test_completion.py` 覆盖：首词候选、`PATH` 与目录合并、目录类与文件类命令的候选过滤、公共前缀计算、唯一候选直接补全、引号保留与含空格时自动加引号、Windows 与 POSIX 的大小写差异、`~` 与 `..` 的基准解析、绝对路径、大目录先过滤后截断到 500 条、冒号命令名与子命令候选、命令名不区分大小写、`check` 的参数补程序名与目录条目。
+`tests/test_confirm_card.py` 覆盖 `card_position()` 的四种分支（上方足够、上方不足转下方、恋恋在屏幕外落右下角、结果夹进可用区），以及标题序号、`Esc` 拒绝、危险模式下 `Enter` 不触发允许、关闭等同拒绝。`tests/test_completion.py` 覆盖：首词候选、Shell 内建与可执行名、目录的优先级、`PATH` 与目录合并、目录类与文件类命令的候选过滤、隐藏条目的显示条件、公共前缀计算、引号保留与含空格时自动加引号、Windows 与 POSIX 的大小写差异、`~` 与 `..` 的基准解析、绝对路径、大目录先过滤后截断到 500 条、冒号命令名与子命令候选、命令名不区分大小写、别名解析子命令、`flags` 与 `values` 候选、三种 shell 的环境变量名、`help` 的命令名候选、`check` 的参数补程序名与目录条目。
 
 手动检查清单：
 
@@ -865,10 +889,11 @@ python scripts/gen_docs.py --check
 21. 设置页修改额外命令与沙箱根后不重启即生效；切换 `TERMINAL_ENABLED` 后需重启；
 22. 在终端输入 `dir | findstr py` 与 `echo %PATH%`，管道与变量展开生效；把 `git status` 写进额外命令后，`auto` 档下它直接执行；
 23. 状态栏没有档位下拉；输入框内显示 `C:\Users\...>`，文字紧接提示；用 `cd` 切换目录后提示更新且不回显提示行。
-24. 输入 `:help` 列出全部本地命令，块尾显示「本地 · 0.0xs」且没有 exit；输入 `:nope` 只写一行错误，不启动子进程。
+24. 输入 `:help` 列出全部命令，块尾与 shell 命令同形显示 `exit 0 · 0.0xs`；输入 `:nope` 只写一行错误（`exit 2`），不启动子进程。
 25. 把 `git status` 写进额外命令后，`:check git status` 显示直接执行，`:check python script.py` 显示弹卡片询问，`:check rm -rf /` 显示命中危险类别。
 26. `:timer 10m 泡面` 到点提醒，`:timer list` 能看到该条；`:todo add 买牛奶` 后 `:todo list` 可见，面板里同样可见。
-27. 输入 `:he` 按 `Tab` 补成 `:help `；输入 `:` 按 `Tab` 依次轮换命令名；`:timer ` 后按 `Tab` 出 `list` 与 `cancel`；`:check gi` 补出 `git`。
+27. 输入 `:he` 按 `Tab` 补成 `:help `；输入 `:` 按 `Tab` 依次轮换命令名与别名；`:timer ` 后按 `Tab` 出 `list` 与 `cancel`；`:todo list ` 出 `pending`、`done`、`all`；`:status --` 出 `--json`；`:help ` 列出命令名；`cd Doc` 补成目录并保留分隔符，文件补全后带一个空格；`$PA`（bash/sh）或 `%PA`（cmd）补环境变量名；`:check gi` 补出 `git`。
+28. `:status` 显示恋恋的状态、已持续、动作、贴边、四项数值与长期记忆条数；应用未完成初始化时只回一行错误（`exit 1`），不显示半份数据。
 
 ## §13 风险与约束
 

@@ -116,7 +116,7 @@ def _resolve_command(arg: str) -> tuple[str, dict]:
     """把 `:knowledge` 的参数翻成方法名与参数。"""
     parts = str(arg or "").split(None, 1)
     if len(parts) < 2 or parts[0].lower() != "search":
-        raise ValueError("缺少检索关键词")
+        raise ValueError("缺少参数：检索关键词")
     return "search", {"query": parts[1].strip(), "limit": 3}
 
 

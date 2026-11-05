@@ -392,7 +392,7 @@ Expected: 全部 PASS。
 ## Task 7: 终端本地命令
 
 **Files:**
-- Create: `pet/cli/`（`__init__.py` 只导出公共 API，实现分在 `types.py` / `catalog.py` / `builtins.py` / `dispatch.py`）、`tests/test_cli.py`、`tests/test_tool_commands.py`
+- Create: `pet/cli/`（`__init__.py` 只导出公共 API，实现分在 `types.py` / `catalog.py` / `builtins.py` / `dispatch.py` / `format.py`）、`tests/test_cli.py`、`tests/test_tool_commands.py`
 - Modify: `pet/tools/registry.py`（`ToolCommand`、`add_command()`、`commands()`，`recall` 的 `:memory` 登记）
 - Modify: `pet/tools/timer/__init__.py`、`pet/tools/todo/__init__.py`、`pet/tools/knowledge/__init__.py`（`register_commands()` 与参数翻译，`parse_duration()` 移到 timer）
 - Modify: `pet/ui/terminal_window.py`（`local_finished` 信号、`_submit` 分流、本地回显块、补全上下文）
@@ -402,20 +402,20 @@ Expected: 全部 PASS。
 - Modify: `docs/architecture.md`（§9 补 `pet/cli/`、§11 加「终端命令由工具自己登记」）
 
 **Interfaces:**
-- Consumes: `pet.terminal.core.parse_command()`、`pet.terminal.policy.check()`、`pet.terminal.runner.TerminalRunner.list()`、`pet.tools.executor.ToolExecutor.execute_one()`、`pet.tools.registry.TOOL_REGISTRY.commands()`。
+- Consumes: `pet.terminal.core.parse_command()`、`pet.terminal.policy.check()`、`pet.terminal.runner.TerminalRunner.list()`、`pet.tools.context.TOOL_CTX.pet_status()`、`pet.tools.executor.ToolExecutor.execute_one()`、`pet.tools.registry.TOOL_REGISTRY.commands()`。
 - Produces: `is_local(text)`、`run(text, cwd, runner) -> LocalResult`、`commands()`、`command_names()`、`subcommands()`、`path_commands()`；注册表侧 `ToolCommand`、`ToolRegistry.add_command()`、`ToolRegistry.commands()`。
 
 - [x] **Step 1: 写失败测试**
 
-`tests/test_cli.py` 覆盖前缀判定、命令分发与三种返回码、`:check` 判定随档位与免确认清单变化、`:status` 与 `:policy` 的快照字段、时长解析、工具调用经 `ToolExecutor` 发出的方法名与参数、工具未注册与 handler 报错。注册表查询与执行器用桩替换。
+`tests/test_cli.py` 覆盖前缀判定、命令分发与三种返回码、`:check` 判定随档位与免确认清单变化、`:status` 的恋恋状态快照与 `:policy` 的策略快照、键值排版、时长解析、工具调用经 `ToolExecutor` 发出的方法名与参数、工具未注册与 handler 报错。注册表查询、agent 快照与执行器用桩替换。
 
 - [x] **Step 2: 实现命令模块与登记接口**
 
-冒号前缀只由窗口层处理。`pet/cli` 只定义内建命令（`help` / `clear` / `status` / `policy` / `check`），其余命令从 `TOOL_REGISTRY.commands()` 聚合：工具在 `register()` 里用 `add_command()` 声明用法、分组、参数翻译、补全候选与示例，与文件气泡按钮、右键菜单项同一模式。工具命令一律构造 `ToolCall` 交给 `ToolExecutor.execute_one()`，不直接调工具内部实现；`:check` 以 `source="model"` 调用 `policy.check()`，只读。内建命令表是模块级字面量，处理函数只登记不调用（ARCH009）。
+冒号前缀只由窗口层处理。`pet/cli` 只定义内建命令（`help` / `clear` / `status` / `policy` / `check`），其余命令从 `TOOL_REGISTRY.commands()` 聚合：工具在 `register()` 里用 `add_command()` 声明用法、分组、参数翻译、补全候选与示例，与文件气泡按钮、右键菜单项同一模式。工具命令一律构造 `ToolCall` 交给 `ToolExecutor.execute_one()`，不直接调工具内部实现；`:check` 以 `source="model"` 调用 `policy.check()`，只读；`:status` 经 `TOOL_CTX.pet_status()` 读 agent 快照，失败只回一行错误。内建命令表是模块级字面量，处理函数只登记不调用（ARCH009）。
 
 - [x] **Step 3: 接入终端窗口**
 
-`_submit()` 在 `cd` 与盘符切换之后、`_busy` 闸门之前分流本地命令；本地命令在独立线程执行并经 `local_finished` 回主线程渲染，与流式块共用同一把闸门。回显块带 `local` 标记，块尾写「本地 · 0.0xs」，不写 exit。
+`_submit()` 在 `cd` 与盘符切换之后、`_busy` 闸门之前分流本地命令；本地命令在独立线程执行并经 `local_finished` 回主线程渲染，与流式块共用同一把闸门。回显块尾与 shell 命令同形，写 `exit <code> · 0.0xs`，不标注命令来自本地。
 
 - [x] **Step 4: 接补全**
 

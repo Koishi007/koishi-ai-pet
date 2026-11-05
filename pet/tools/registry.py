@@ -43,7 +43,8 @@ class ToolCommand:
 
     rows 是帮助里逐行展示的 (用法, 说明)，子命令各占一行；examples 是帮助末尾的
     示例行；resolve 把命令后的参数文本翻成 (方法名, 参数)，参数不合法时抛 ValueError，
-    由调用方转成用法提示；words 是第一个参数的候选，paths 表示参数按程序名与路径补全。
+    由调用方转成用法提示；    words 是第一个参数的候选，values 是「子命令 → 位置参数候选」，flags 是选项名，
+    paths 表示参数按程序名与路径补全，aliases 是命令别名。
     """
 
     name: str
@@ -53,6 +54,9 @@ class ToolCommand:
     words: tuple[str, ...] = ()
     paths: bool = False
     examples: tuple[str, ...] = ()
+    aliases: tuple[str, ...] = ()
+    flags: tuple[str, ...] = ()
+    values: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
 
 _SEARCH_SPLIT = re.compile(r"[\s,，、;；/|+&]+")
@@ -188,7 +192,7 @@ def _resolve_memory_command(arg: str) -> tuple[str, dict]:
     """把 `:memory search <keyword>` 翻成 recall__search 的参数。"""
     parts = str(arg or "").split(None, 1)
     if len(parts) < 2 or parts[0].lower() != "search":
-        raise ValueError("缺少检索关键词")
+        raise ValueError("缺少参数：检索关键词")
     return "search", {"query": parts[1].strip(), "limit": 5}
 
 
@@ -263,7 +267,10 @@ class ToolRegistry:
                     resolve: Callable[[str], tuple[str, dict]],
                     words: tuple[str, ...] = (),
                     paths: bool = False,
-                    examples: tuple[str, ...] = ()) -> None:
+                    examples: tuple[str, ...] = (),
+                    aliases: tuple[str, ...] = (),
+                    flags: tuple[str, ...] = (),
+                    values: dict[str, tuple[str, ...]] = None) -> None:
         """注册一条终端命令，由终端窗口按冒号前缀分发。
 
         命令不直接调工具内部实现：resolve 只把参数文本翻成方法名与参数，
@@ -276,7 +283,8 @@ class ToolRegistry:
             return
         self._commands[name] = (tool_name, ToolCommand(
             name=name, group=group, rows=rows, resolve=resolve,
-            words=tuple(words), paths=bool(paths), examples=tuple(examples)))
+            words=tuple(words), paths=bool(paths), examples=tuple(examples),
+            aliases=tuple(aliases), flags=tuple(flags), values=dict(values or {})))
         logger.info(f"[ToolRegistry] terminal command added: {name} ({tool_name})")
 
     def commands(self) -> list[tuple[str, "ToolCommand"]]:

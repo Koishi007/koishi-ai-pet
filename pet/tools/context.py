@@ -99,6 +99,16 @@ class ToolContext:
         state = getattr(self._agent.state_machine, "state", None)
         return getattr(state, "name", "") == "IDLE"
 
+    def pet_status(self) -> dict:
+        """恋恋状态快照；未绑定或采集失败时返回空字典。"""
+        if not self._check_agent():
+            return {}
+        try:
+            return self._agent.status_snapshot()
+        except Exception:
+            logger.exception("[ToolContext] status snapshot failed")
+            return {}
+
     def note_event(self, kind: str, text: str = ""):
         """工具侧上报事件，进入桌宠的「最近发生了什么」章节。
 

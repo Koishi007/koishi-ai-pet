@@ -77,6 +77,7 @@ class TestTodoCommand:
     def test_rows_and_words(self, command):
         assert command.name == "todo"
         assert command.words == ("add", "list")
+        assert command.values == {"list": ("pending", "done", "all")}
         assert command.examples and command.examples[0].startswith(":todo ")
 
     @pytest.mark.parametrize("text,expected", [

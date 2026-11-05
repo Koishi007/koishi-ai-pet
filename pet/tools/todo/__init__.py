@@ -120,7 +120,7 @@ def _resolve_command(arg: str) -> tuple[str, dict]:
         return "list", {"status": status}
     if head == "add":
         if not rest:
-            raise ValueError("缺少待办标题")
+            raise ValueError("缺少参数：待办标题")
         return "add", {"title": rest}
     raise ValueError(f"未知子命令「{head}」")
 
@@ -135,6 +135,7 @@ def register_commands(registry):
               (":todo list [status]", "列出待办，status 可选 pending、done、all")),
         resolve=_resolve_command,
         words=("add", "list"),
+        values={"list": ("pending", "done", "all")},
         examples=(":todo add 写周报",),
     )
 

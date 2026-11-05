@@ -216,7 +216,7 @@ system 动作表换成 `EDGE_ACTION_NAMES` 的八个贴边动作；调度器、�
 | `pet/file_intake/` | 拖入文件的纯逻辑：类型嗅探、解码链、截断与额度、图片闸门与缩放、拒绝名单、目录摘要 | `sniff.py`、`text.py`、`image.py` |
 | `pet/tools/` | 工具层：注册表（含终端命令登记）、执行器、上下文、输出契约、加载器，以及各工具子包 | `registry.py`、`executor.py`、`context.py`、`output.py` |
 | `pet/terminal/` | 终端能力：命令解析与内建路由、执行核心、策略与沙箱、两个入口共用的 `TerminalRunner`，不依赖 Qt | `core.py`、`policy.py`、`runner.py`、`confirm.py` |
-| `pet/cli/` | 终端本地命令：冒号前缀分发、内建命令与帮助排版；工具命令来自注册表登记，不写死具体工具，不依赖 Qt | `__init__.py`、`catalog.py`、`dispatch.py`、`builtins.py`、`types.py` |
+| `pet/cli/` | 终端本地命令：冒号前缀分发、内建命令、输出排版与帮助；工具命令来自注册表登记，不写死具体工具，不依赖 Qt | `__init__.py`、`catalog.py`、`dispatch.py`、`builtins.py`、`format.py`、`types.py` |
 | `pet/ui/` | 界面层：宠物窗口、各类气泡、表情、粒子、拖拽惯性钟摆、贴边几何、设置/调试/记忆面板、托盘、终端窗口与命令确认卡片 | `pet_window.py`、`particle.py`、`swing.py`、`edge_dock.py`、`settings_window.py`、`terminal_window.py`、`confirm_card.py` |
 | `pet/food/` | 觅食：需求驱动的地面食物生成与食用 | `food.py` |
 | `pet/game/` | 小游戏：猜数字、猜拳、井字棋、二十问、猜高低 | `gamebase.py` 与各游戏 |
