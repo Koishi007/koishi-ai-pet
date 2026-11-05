@@ -87,7 +87,7 @@
 | `pet/terminal/confirm.py` | 确认请求的数据结构：执行层与界面层共用，不依赖 Qt。 | `ConfirmRequest` |
 | `pet/terminal/core.py` | 命令执行核心：解析、内建命令路由、进程树终止、解码与截断。 | `Parsed` `RunResult` `parse_command()` `shell_argv()` `shell_choices()` `quotes_paired()` |
 | `pet/terminal/events.py` | 终端编排层 → 界面层的事件协议 | `_ValueEnum` `EventKind` `Phase` `CommandSource` `Decision` `TerminalEvent` |
-| `pet/terminal/policy.py` | 终端命令策略：档位、免确认命令、危险模式、程序解析与沙箱目录。 | `Verdict` `desktop_dir()` `sandbox_root()` `effective_root()` `parse_allow_entry()` `program_key()` |
+| `pet/terminal/policy.py` | 终端命令策略：档位、免确认命令、危险模式、程序解析与工作目录根。 | `Verdict` `desktop_dir()` `sandbox_root()` `effective_root()` `parse_allow_entry()` `program_key()` |
 | `pet/terminal/runner.py` | TerminalRunner：模型命令与用户终端共用的执行编排 | `failure()` `Prepared` `TerminalRunner` `platform_name()` `get_runner()` |
 | `pet/tools/__init__.py` | 工具加载器 — 自动发现 + 自动安装依赖 + 配置选择性加载。 | `load_tools()` |
 | `pet/tools/bilibili/__init__.py` | bili 工具 — 刷 B 站：搜索、读字幕、点赞投币评论、给主人发私信。 | `register()` |

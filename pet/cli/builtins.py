@@ -17,7 +17,7 @@ _REASON_TEXT = {
     "terminal_disabled": "档位为 deny，模型命令一律拒绝",
     "bad_command": "程序在本机找不到",
     "untrusted_program": "程序文件在可写目录内，按不可信处理",
-    "cwd_denied": "工作目录在沙箱根之外",
+    "cwd_denied": "工作目录在工作目录根之外",
 }
 
 _DECISION_TEXT = {"allow": "直接执行", "ask": "弹卡片询问", "deny": "拒绝执行"}
@@ -26,7 +26,7 @@ _DOCK_TEXT = {"left": "左侧", "right": "右侧"}
 
 _CHECK_NOTE = "只描述模型发起的调用，你在终端里自己输入的命令不受策略约束"
 _POLICY_NOTE = ("auto 档下，解释器与命中危险类别的命令都转确认；"
-                "「沙箱」只约束初始工作目录，不是系统级隔离，子进程仍拥有当前用户权限")
+                "工作目录根只约束初始工作目录，不是系统级隔离，子进程仍拥有当前用户权限")
 
 
 def _duration(seconds: int) -> str:
@@ -113,7 +113,7 @@ def policy_snapshot(ctx: LocalContext, arg: str) -> LocalResult:
     allowed = snapshot.get("allowed") or []
     lines = key_values([
         ("档位", str(snapshot.get("mode") or "")),
-        ("沙箱根", str(snapshot.get("sandbox_root") or "")),
+        ("工作目录根", str(snapshot.get("sandbox_root") or "")),
         ("免确认", f"{len(allowed)} 条"),
         ("解释器", "、".join(snapshot.get("interpreters") or [])),
         ("危险类别", "、".join(snapshot.get("deny_categories") or [])),
