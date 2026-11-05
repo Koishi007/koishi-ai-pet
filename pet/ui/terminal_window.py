@@ -149,9 +149,8 @@ class TerminalWindow(QWidget):
         self._control = _WindowControl(self)
         self.quit_requested.connect(self._on_quit_requested)
         self.restart_requested.connect(self._on_restart_requested)
-        self._runner.set_terminal_sink(self.run_event.emit)
         self._cwd = resolve_initial_cwd()
-        self._runner.set_cwd_source(lambda: self._cwd)
+        self._bind_runner()
         self._busy = False
         self._started_at = 0.0
         self._follow = True
@@ -252,8 +251,13 @@ class TerminalWindow(QWidget):
         self._breath_timer.setInterval(_BREATH_MS)
         self._breath_timer.timeout.connect(self._toggle_breath)
 
+    def _bind_runner(self) -> None:
+        """注册终端回显与共享目录；重复调用无副作用。"""
+        self._runner.set_terminal_sink(self.run_event.emit)
+        self._runner.set_cwd_source(lambda: self._cwd)
+
     def closeEvent(self, event):
-        """窗口销毁时注销 runner 回调；模型命令仍可独立执行。"""
+        """窗口关闭时注销 runner 回调；模型命令仍可独立执行。"""
         try:
             self._runner.set_terminal_sink(None)
             self._runner.set_cwd_source(None)
@@ -264,6 +268,8 @@ class TerminalWindow(QWidget):
     def showEvent(self, event):
         super().showEvent(event)
         ensure_taskbar_icon(self)
+        # 真关闭会注销回调，重新显示时把回显与共享目录接回来
+        self._bind_runner()
         self._input.setFocus()
 
     def paintEvent(self, event):

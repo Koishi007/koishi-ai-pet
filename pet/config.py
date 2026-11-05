@@ -138,7 +138,7 @@ _KEY_META = {
     "TERMINAL_ENABLED":             {"type": "bool",     "default": True,           "category": "behavior", "needs_restart": True,  "hidden": False, "description": "允许模型执行命令"},
     "TERMINAL_MODE":                {"type": "str",      "default": "ask",          "category": "behavior", "needs_restart": False, "hidden": False, "description": "终端命令放行策略", "enum": ["deny", "ask", "auto"]},
     "TERMINAL_ALLOW":         {"type": "str_list", "default": list(_TERMINAL_DEFAULT_ALLOW), "category": "behavior", "needs_restart": False, "hidden": False, "description": "auto 档免确认的命令，逗号分隔，空为全部询问"},
-    "TERMINAL_SANDBOX_ROOT":        {"type": "str",      "default": "",             "category": "behavior", "needs_restart": False, "hidden": False, "description": "用户与模型共用的工作目录根，留空为桌面"},
+    "TERMINAL_SANDBOX_ROOT":        {"type": "str",      "default": "",             "category": "behavior", "needs_restart": False, "hidden": False, "description": "默认工作目录根：终端初始目录，模型默认跟随终端当前目录，留空为桌面"},
     "TERMINAL_DENY_PATTERNS":       {"type": "str_list", "default": [],             "category": "behavior", "needs_restart": False, "hidden": True,  "description": "危险命令正则，空为内置清单"},
     "TERMINAL_ALLOW_SHELL":    {"type": "bool",     "default": False,          "category": "behavior", "needs_restart": False, "hidden": True,  "description": "允许整条命令交给系统 shell"},
     "TERMINAL_ENV_ALLOW":           {"type": "str_list", "default": [],             "category": "behavior", "needs_restart": False, "hidden": True,  "description": "额外透传的环境变量名"},

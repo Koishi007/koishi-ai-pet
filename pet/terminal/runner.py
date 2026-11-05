@@ -25,9 +25,9 @@ TRUNCATED_SUFFIX = "，输出已截断"
 _HINTS = {
     "terminal_disabled": "不要重试，工具已被用户关闭",
     "denied_by_user": "不要重复提交同一条命令；需要时先说明想做什么，等用户同意",
-    "bad_command": "重新给出一条完整命令；不确定本机有哪些程序时先调用 terminal__list",
+    "bad_command": "重新给出一条完整命令；换目录用 cwd 参数而不是 cd；不确定本机有哪些程序时先调用 terminal__list",
     "untrusted_program": "用 terminal__list 查看可信程序，不要换路径绕过",
-    "cwd_denied": "换用允许的目录",
+    "cwd_denied": "换用工作目录根及其子目录内的路径",
     "command_timeout": "命令已终止，不要原样重试",
     "busy": "前面的命令还在跑，不要立即重试",
     "kill_failed": "进程可能仍在运行，不要重试",
@@ -177,7 +177,7 @@ class TerminalRunner:
         lines = [
             "免确认命令：" + (" | ".join(chips) if chips else "无"),
             "解释器一律询问：" + "、".join(policy.INTERPRETERS),
-            f"沙箱根：{data['sandbox_root']}",
+            f"工作目录根：{data['sandbox_root']}",
         ]
         return {
             "headline": f"当前档位 {data['mode']}，免确认命令 {len(chips)} 条",

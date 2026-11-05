@@ -76,7 +76,7 @@ def desktop_dir() -> str:
 
 
 def sandbox_root() -> str:
-    """模型命令的工作目录根；配置留空时取桌面。"""
+    """终端初始目录与模型根的默认值；配置留空时取桌面。"""
     configured = (config.TERMINAL_SANDBOX_ROOT or "").strip()
     if not configured:
         return os.path.abspath(desktop_dir())
@@ -84,19 +84,18 @@ def sandbox_root() -> str:
 
 
 def effective_root(shared: str = "") -> str:
-    """模型命令实际使用的根：终端当前目录只有在配置沙箱根内才生效。
+    """模型命令实际使用的根：终端当前目录优先，缺失或无效时回落到配置根。
 
-    用户在终端里 `cd` 到 `C:\\` 不该把模型的允许根一起扩大。这里只收窄路径
-    范围，不是 OS 级沙箱：子进程仍持有当前用户的全部权限，且只约束初始 cwd。
+    用户在终端里 cd 到的目录会成为模型的工作目录根，这是用户主动交出的范围；
+    配置里的根只决定终端初始目录与没有窗口时的默认值。这里只约束初始 cwd 与
+    相对路径解析，不是 OS 级隔离：子进程仍持有当前用户的全部权限。
     """
     root = sandbox_root()
     candidate = (shared or "").strip()
     if not candidate:
         return root
     candidate = os.path.realpath(os.path.expanduser(candidate))
-    if not os.path.isdir(candidate):
-        return root
-    return candidate if is_writable_path(candidate, [root], sys.platform) else root
+    return candidate if os.path.isdir(candidate) else root
 
 
 def parse_allow_entry(text) -> tuple[str, list[str]]:
@@ -311,7 +310,7 @@ def check(source: str, argv: list[str], builtin: str, command: str,
           cwd: str = "", shell: str = "", root: str = "") -> Verdict:
     """按档位判定一条命令；source="user" 首步放行。
 
-    root 是终端窗口的当前目录，经 effective_root 收窄后才生效；返回的
+    root 是终端窗口的当前目录，经 effective_root 解析成模型工作目录根；返回的
     Verdict.abs_cwd 是本次判定唯一的工作目录，Runner 不再重复解析。
     shell 非空表示整条命令交给系统 shell，此时跳过程序解析，auto 档一律询问。
     """

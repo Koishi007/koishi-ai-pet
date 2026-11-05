@@ -144,11 +144,11 @@ TERMINAL_LIST_OUTPUT = {
     "properties": {
         "headline": _HEADLINE,
         "body": {"type": "string", "x-role": "body",
-                 "description": "允许命令、解释器与沙箱根，每行一项"},
+                 "description": "允许命令、解释器与工作目录根，每行一项"},
         "platform": {"type": "string", "x-role": "data",
                      "description": "Windows / Linux / macOS"},
         "sandbox_root": {"type": "string", "x-role": "data",
-                         "description": "模型命令允许的工作目录上限"},
+                         "description": "模型命令的工作目录根，cwd 只能落在它及其子目录"},
         "allowed": {"type": "array", "x-role": "data",
                     "description": "默认命令与额外命令的「程序 + 参数」，附 installed 标记"},
         "interpreters": {"type": "array", "x-role": "data",
@@ -598,6 +598,7 @@ class ToolRegistry:
             method_name="run",
             description=(
                 "执行一条系统命令并返回退出码与输出。"
+                "每条命令都是独立进程，没有 cd，换目录用 cwd 参数。"
                 "一次只发一条命令，拿到结果后再决定下一条；按当前档位决定是否需要用户确认"
                 "（ask 档逐条询问，auto 档命中免确认清单可直接执行），"
                 "被拒绝或返回 busy 时不要重试。"
@@ -615,7 +616,8 @@ class ToolRegistry:
                     "type": "str",
                     "required": False,
                     "default": "",
-                    "description": "工作目录，留空为沙箱根",
+                    "description": ("工作目录；留空用默认工作目录根，换目录就传它，不要执行 cd。"
+                                    "可传绝对路径或相对默认根的路径，超出根范围返回 cwd_denied"),
                 },
                 "timeout": {
                     "type": "int",
@@ -629,6 +631,7 @@ class ToolRegistry:
                     "default": "",
                     "description": "交给系统 shell 执行，留空表示按参数列表拆分",
                     "enum": SHELL_ARG_VALUES,
+                    "available": lambda: bool(config.TERMINAL_ALLOW_SHELL),
                 },
             },
             timeout=runner.method_timeout,
@@ -638,7 +641,7 @@ class ToolRegistry:
             tool_name="terminal",
             method_name="list",
             description=(
-                "查询本机终端命令策略：平台、沙箱根、允许命令与安装情况、"
+                "查询本机终端命令策略：平台、工作目录根、允许命令与安装情况、"
                 "一律转询问的解释器、危险模式覆盖的类别。"
                 "不确定某条命令是否允许时先调用它。"
             ),
@@ -930,6 +933,10 @@ class ToolRegistry:
                 properties = {}
                 required = []
                 for arg_name, spec in method.args.items():
+                    # available 为假时不下发该参数：模型看不到就不会去尝试
+                    available = spec.get("available")
+                    if available is not None and not available():
+                        continue
                     py_type = spec.get("type", "str")
                     json_type = self._TYPE_TO_JSON_SCHEMA.get(py_type, "string")
                     prop = {

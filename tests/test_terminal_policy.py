@@ -206,6 +206,16 @@ class TestCwd:
         assert verdict.decision == "deny"
         assert verdict.reason == "cwd_denied"
 
+    def test_effective_root_follows_shared_cwd(self, sandbox, tmp_path):
+        outside = tmp_path / "elsewhere"
+        outside.mkdir()
+        assert os.path.normcase(policy.effective_root(str(outside))) == \
+               os.path.normcase(os.path.realpath(str(outside)))
+
+    def test_effective_root_falls_back_when_missing(self, sandbox, tmp_path):
+        assert os.path.normcase(policy.effective_root(str(tmp_path / "missing"))) == \
+               os.path.normcase(str(sandbox))
+
 
 class TestHijack:
 

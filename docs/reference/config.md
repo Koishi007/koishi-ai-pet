@@ -81,7 +81,7 @@
 | `TERMINAL_ENABLED` | bool | true | 是 | 允许模型执行命令 |
 | `TERMINAL_MODE` | str | `"ask"` |  | 终端命令放行策略（可选：deny / ask / auto） |
 | `TERMINAL_ALLOW` | str_list | ["dir *", "ls *", "where *", "whoami *", "hostname *", "git status", "git log", "git rev-parse", "git describe"] |  | auto 档免确认的命令，逗号分隔，空为全部询问 |
-| `TERMINAL_SANDBOX_ROOT` | str | `""` |  | 用户与模型共用的工作目录根，留空为桌面 |
+| `TERMINAL_SANDBOX_ROOT` | str | `""` |  | 默认工作目录根：终端初始目录，模型默认跟随终端当前目录，留空为桌面 |
 | `VOICE_INPUT_ENABLED` | bool | false |  | 启用语音输入 |
 | `VOICE_HOTKEY` | str | `"F8"` |  | 语音输入全局热键 |
 | `XF_APPID` | str | `""` |  | 讯飞语音听写 APPID |

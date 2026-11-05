@@ -320,6 +320,15 @@ class TestCwd:
         assert window._change_dir(str(target)) is True
         assert window._runner.shared_cwd() == str(target)
 
+    def test_reopen_rebinds_cwd_after_close(self, window, runner, tmp_path):
+        target = tmp_path / "sub"
+        target.mkdir()
+        assert window._change_dir(str(target)) is True
+        window.close()
+        assert runner.shared_cwd() == ""
+        window.show()
+        assert runner.shared_cwd() == str(target)
+
     def test_cwd_prompt_is_inside_input(self, window):
         assert window._input.prompt_text() == ti.cwd_prompt(window._cwd)
         assert window._input.prompt_text().endswith(">")

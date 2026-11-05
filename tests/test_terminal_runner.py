@@ -160,6 +160,26 @@ class TestSharedCwd:
         out = runner.run(command="echo hi", cwd="..")
         assert out["code"] == "cwd_denied"
 
+    def test_shared_cwd_outside_root_runs_there(self, sandbox, monkeypatch, tmp_path):
+        monkeypatch.setattr(config, "TERMINAL_MODE", "ask")
+        outside = tmp_path / "elsewhere"
+        outside.mkdir()
+        runner = TerminalRunner()
+        runner.set_confirm(lambda request: True)
+        runner.set_cwd_source(lambda: str(outside))
+        captured = {}
+
+        def _fake_run(argv, cwd="", timeout_s=30, env=None, max_capture_bytes=131072,
+                      on_output=None, on_start=None):
+            captured["cwd"] = cwd
+            return core.RunResult(exit_code=0, stdout="ok\n")
+
+        monkeypatch.setattr(runner_module.core, "run", _fake_run)
+        out = runner.run(command="echo hi", cwd="")
+        assert out["exit_code"] == 0
+        assert os.path.normcase(captured["cwd"]) == \
+               os.path.normcase(os.path.realpath(str(outside)))
+
 
 class TestResult:
 
@@ -395,7 +415,7 @@ class TestEventProtocol:
 
 
 class TestRefactorContracts:
-    """P1：快照纯数据、根范围收窄、shutdown 注销回调。"""
+    """P1：快照纯数据、根范围跟随终端目录、shutdown 注销回调。"""
 
     def test_snapshot_has_no_presentation_fields(self, sandbox):
         data = TerminalRunner().snapshot()
@@ -404,13 +424,13 @@ class TestRefactorContracts:
                              "interpreters", "deny_categories", "shell_mode", "mode"}
         assert "headline" in TerminalRunner().list()
 
-    def test_shared_cwd_outside_root_does_not_expand_root(self, sandbox, tmp_path):
+    def test_shared_cwd_outside_root_becomes_model_root(self, sandbox, tmp_path):
         outside = tmp_path / "elsewhere"
         outside.mkdir()
         runner = TerminalRunner()
         runner.set_cwd_source(lambda: str(outside))
         assert os.path.normcase(runner.snapshot()["sandbox_root"]) == \
-               os.path.normcase(str(sandbox))
+               os.path.normcase(os.path.realpath(str(outside)))
 
     def test_shutdown_terminates_active_pid_and_unregisters(self, sandbox, monkeypatch):
         runner = TerminalRunner()

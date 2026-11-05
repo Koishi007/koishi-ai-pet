@@ -467,8 +467,8 @@ class SettingsTabs:
 
         terminal_root = f.line("TERMINAL_SANDBOX_ROOT", "留空为桌面")
         terminal_form.addRow(f.label_with_help(
-            "工作目录根:",
-            "用户与恋恋共用的工作目录根，也是终端打开时的初始目录；留空表示桌面。\n"
+            "默认工作目录根:",
+            "默认工作目录根，也是终端打开时的初始目录；留空表示桌面。\n"
             "终端里 cd 切换后，恋恋的默认工作目录跟着变，命令只能在该目录及其子目录里运行；"
             "恋恋自己不能切换目录。\n\n"
             "风险：\n"
