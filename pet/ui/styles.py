@@ -1,9 +1,10 @@
-"""QSS 样式库 —— 扁平化圆角风格。"""
+"""界面样式库：米白扁平 QSS、终端暗色色板、字体回退链与窗口通用按钮。"""
 
 import ctypes
 import os
 import sys
 
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QPushButton
 
 
@@ -512,3 +513,65 @@ def ensure_taskbar_icon(window):
         ctypes.windll.user32.SetWindowLongPtrW(hwnd, GWL_EXSTYLE, exstyle | WS_EX_APPWINDOW)
     except Exception:
         pass
+
+
+# 终端与确认卡片暗色色板，取值与上方米白配色互不共用
+
+TERMINAL_BG = "#17191a"
+TERMINAL_PANEL = "#1f2224"
+TERMINAL_CODE_BG = "#101213"
+TERMINAL_BORDER = "#2f3437"
+TERMINAL_HOVER = "#262a2c"
+
+TERMINAL_TEXT = "#e8e5de"
+TERMINAL_STDOUT = "#c9c6bf"
+TERMINAL_STDERR = "#e08b86"
+TERMINAL_MUTED = "#8a9195"
+TERMINAL_MUTED_LIGHT = "#a8adaf"
+
+TERMINAL_ACCENT = "#5fbfa8"
+TERMINAL_ACCENT_DIM = "#3f7f72"
+TERMINAL_ACCENT_TEXT = "#0f1413"
+TERMINAL_USER = "#d9a441"
+TERMINAL_DANGER = "#d9534f"
+TERMINAL_IDLE = "#4a4f52"
+
+TERMINAL_MONO_FONTS = ("JetBrains Mono", "Cascadia Mono", "Consolas", "Menlo",
+                    "DejaVu Sans Mono", "Noto Sans Mono")
+TERMINAL_UI_FONTS = ("Segoe UI", "PingFang SC", "Microsoft YaHei UI", "Noto Sans CJK SC")
+
+TERMINAL_SOURCE_LABEL_USER = "[用户] $"
+TERMINAL_SOURCE_LABEL_MODEL = "[恋恋] $"
+
+TERMINAL_WINDOW_RADIUS = 8
+TERMINAL_CONTROL_RADIUS = 6
+TERMINAL_CARD_RADIUS = 10
+TERMINAL_BLOCK_GAP = 14
+
+
+def terminal_source_color(source: str) -> str:
+    """来源色：用户琥珀，恋恋青绿。"""
+    return TERMINAL_USER if source == "user" else TERMINAL_ACCENT
+
+
+def terminal_source_label(source: str) -> str:
+    """来源标记文本。"""
+    return TERMINAL_SOURCE_LABEL_USER if source == "user" else TERMINAL_SOURCE_LABEL_MODEL
+
+
+def terminal_mono_font(size: int = 12, bold: bool = False) -> QFont:
+    """等宽字体，按回退链取第一个可用项。"""
+    font = QFont()
+    font.setFamilies(list(TERMINAL_MONO_FONTS))
+    font.setPointSize(size)
+    font.setBold(bold)
+    return font
+
+
+def terminal_ui_font(size: int = 12, bold: bool = False) -> QFont:
+    """界面字体，按回退链取第一个可用项。"""
+    font = QFont()
+    font.setFamilies(list(TERMINAL_UI_FONTS))
+    font.setPointSize(size)
+    font.setBold(bold)
+    return font

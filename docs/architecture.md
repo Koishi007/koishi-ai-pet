@@ -214,8 +214,10 @@ system 动作表换成 `EDGE_ACTION_NAMES` 的八个贴边动作；调度器、�
 | `pet/action/` | 动作系统：动作定义与注册、帧动画播放队列、重力与站立、动作产出 | `registry.py`、`action.py`、`action_queue.py`、`gravity.py` |
 | `pet/pulse/` | 数值引擎：生理（饱食/精力）与心理（好感/愉悦/理智），含衰减、阈值与落库 | `vitals.py`、`mood.py` |
 | `pet/file_intake/` | 拖入文件的纯逻辑：类型嗅探、解码链、截断与额度、图片闸门与缩放、拒绝名单、目录摘要 | `sniff.py`、`text.py`、`image.py` |
-| `pet/tools/` | 工具层：注册表、执行器、上下文、输出契约、加载器，以及各工具子包 | `registry.py`、`executor.py`、`context.py`、`output.py` |
-| `pet/ui/` | 界面层：宠物窗口、各类气泡、表情、粒子、拖拽惯性钟摆、贴边几何、设置/调试/记忆面板、托盘 | `pet_window.py`、`particle.py`、`swing.py`、`edge_dock.py`、`settings_window.py` |
+| `pet/tools/` | 工具层：注册表（含终端命令登记）、执行器、上下文、输出契约、加载器，以及各工具子包 | `registry.py`、`executor.py`、`context.py`、`output.py` |
+| `pet/terminal/` | 终端能力：命令解析与内建路由、执行核心、策略与沙箱、两个入口共用的 `TerminalRunner`，不依赖 Qt | `core.py`、`policy.py`、`runner.py`、`confirm.py` |
+| `pet/cli/` | 终端本地命令：冒号前缀分发、内建命令、输出排版与帮助；工具命令来自注册表登记，不写死具体工具，不依赖 Qt | `__init__.py`、`catalog.py`、`dispatch.py`、`builtins.py`、`format.py`、`types.py` |
+| `pet/ui/` | 界面层：宠物窗口、各类气泡、表情、粒子、拖拽惯性钟摆、贴边几何、设置/调试/记忆面板、托盘、终端窗口与命令确认卡片 | `pet_window.py`、`particle.py`、`swing.py`、`edge_dock.py`、`settings_window.py`、`terminal_window.py`、`confirm_card.py` |
 | `pet/food/` | 觅食：需求驱动的地面食物生成与食用 | `food.py` |
 | `pet/game/` | 小游戏：猜数字、猜拳、井字棋、二十问、猜高低 | `gamebase.py` 与各游戏 |
 | `pet/voice/` | 语音输入：热键、麦克风采集、讯飞听写 | `voice_session.py` |
@@ -309,6 +311,9 @@ system 动作表换成 `EDGE_ACTION_NAMES` 的八个贴边动作；调度器、�
     没有理由就不要延迟，写了就在旁边注明原因。
 16. **贴边只改活动范围**：`EDGE_ACTION_NAMES` 是贴边可用动作的唯一真源；贴边时 system 动作表只列这八个，
     `PetActions` 把同名动作映射到 `*_edge`，入队处丢弃表外动作；状态机与调度节奏不变，气泡与粒子保留。
+17. **终端命令由工具自己登记**：`:timer`、`:todo`、`:knowledge` 这类命令在工具的 `register(registry)` 里
+    用 `add_command()` 声明，`pet/cli` 只聚合 `TOOL_REGISTRY.commands()`，不写死任何工具命令；
+    命令只翻译参数，实际调用仍走 `ToolExecutor`。加工具不需要改 `pet/cli`。
 
 ### ARCH 规则清单
 

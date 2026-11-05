@@ -112,6 +112,26 @@ def _ingest_files(files) -> dict:
     return {"ok": True, "summary": f"已收进知识库 {len(added)} 份"}
 
 
+def _resolve_command(arg: str) -> tuple[str, dict]:
+    """把 `:knowledge` 的参数翻成方法名与参数。"""
+    parts = str(arg or "").split(None, 1)
+    if len(parts) < 2 or parts[0].lower() != "search":
+        raise ValueError("缺少参数：检索关键词")
+    return "search", {"query": parts[1].strip(), "limit": 3}
+
+
+def register_commands(registry):
+    """注册终端的 `:knowledge` 命令：只翻译参数，实际调用走通用执行器。"""
+    registry.add_command(
+        TOOL_NAME,
+        name="knowledge",
+        rows=((":knowledge search <keyword>", "检索知识库"),),
+        resolve=_resolve_command,
+        words=("search",),
+        examples=(":knowledge search 部署步骤",),
+    )
+
+
 def register(registry):
     global _instance
     try:
@@ -155,5 +175,6 @@ def register(registry):
 
     registry.add_file_action(TOOL_NAME, "ingest", "收进知识库", _ingest_files, accepts="text")
 
+    register_commands(registry)
 
     logger.info("[knowledge] tool registered")

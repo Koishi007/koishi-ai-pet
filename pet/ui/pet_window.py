@@ -204,6 +204,8 @@ class PetWindow(TransparentWindow):
         self._agent = None
         self._debug_window = None
         self._log_window = None
+        self._terminal_window = None
+        self._confirm_card = None
         self._chat_history_window = None
         self._memory_window = None
         self._log_relay = None
@@ -263,8 +265,9 @@ class PetWindow(TransparentWindow):
         self._emotion_bubble = emotion_bubble
 
     def set_agent(self, agent):
-        """注入 PetAgent 引用，供右键菜单使用。"""
+        """注入 PetAgent 引用，供右键菜单与确认卡片使用。"""
         self._agent = agent
+        agent.confirm_requested.connect(self._show_confirm_card)
 
     @property
     def agent(self):
@@ -715,6 +718,11 @@ class PetWindow(TransparentWindow):
             log_action.triggered.connect(self._show_log_window)
             menu.addAction(log_action)
 
+            # 终端窗口
+            terminal_action = QAction("终端")
+            terminal_action.triggered.connect(self._show_terminal_window)
+            menu.addAction(terminal_action)
+
             # 对话历史窗口
             history_action = QAction("对话历史")
             history_action.triggered.connect(self._show_chat_history)
@@ -823,6 +831,29 @@ class PetWindow(TransparentWindow):
         self._log_window.show()
         self._log_window.activateWindow()
         self._log_window.raise_()
+
+    def _show_terminal_window(self):
+        if self._terminal_window is None:
+            from pet.ui.terminal_window import TerminalWindow
+            self._terminal_window = TerminalWindow(
+                quit_fn=getattr(self, "quit_fn", None),
+                restart_fn=getattr(self, "restart_fn", None))
+        self._terminal_window.show()
+        self._terminal_window.activateWindow()
+        self._terminal_window.raise_()
+
+    def _show_confirm_card(self, request):
+        """展示一条命令确认请求；卡片是单例，队列推进时只更新内容。"""
+        if self._confirm_card is None:
+            from pet.ui.confirm_card import ConfirmCard
+            card = ConfirmCard()
+            card.set_pet_rect_provider(self.frameGeometry)
+            if self._agent is not None:
+                card.set_advance(self._agent.next_confirm)
+                card.set_reject_all(
+                    lambda: self._agent.reject_pending_confirms("deny all"))
+            self._confirm_card = card
+        self._confirm_card.show_request(request)
 
     def _show_chat_history(self):
         if self._chat_history_window is None:
