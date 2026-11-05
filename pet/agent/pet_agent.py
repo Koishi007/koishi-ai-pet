@@ -17,7 +17,6 @@ from pet.brain.memory import get_memory_store
 from pet.brain.conversation_store import ConversationStore
 from pet.action.registry import default_duration, has_duration
 from pet.tools.registry import TOOL_REGISTRY
-from pet.tools.context import TOOL_CTX
 from pet.game.gamebase import GAME
 from pet.pulse.vitals import Vitals
 from pet.pulse.mood import Mood
@@ -625,13 +624,13 @@ class PetAgent(QObject):
             pending = list(self._confirm_queue)
             self._confirm_queue.clear()
             self._confirm_showing = False
+        # 队列只有这一份：卡片展示中的请求也在队列头，统一在这里置为拒绝
         for request in pending:
             request.result = False
             request.event.set()
-        count = TOOL_CTX.reject_pending_confirms(reason)
         if pending:
             logger.info(f"[PetAgent] 拒绝 {len(pending)} 条未决确认：{reason}")
-        return max(count, len(pending))
+        return len(pending)
 
     def _renumber_confirms(self) -> None:
         total = len(self._confirm_queue)

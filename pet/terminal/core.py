@@ -148,10 +148,11 @@ def display_argv(argv: list[str]) -> str:
 
 def run(argv: list[str], cwd: str = "", timeout_s: float = 30,
         env: dict | None = None, max_capture_bytes: int = 131072,
-        on_output=None) -> RunResult:
+        on_output=None, on_start=None) -> RunResult:
     """执行一条命令，捕获两路输出；超时终止整个进程树。
 
-    on_output(stream, text) 在运行中按整行回传，stream 取 stdout / stderr。
+    on_output(stream, text) 按整行回传，text 一定以换行结尾，界面不必再拼行；
+    on_start(pid) 在子进程创建后立即回传，供编排层在退出时终止孤儿进程。
     """
     started = time.monotonic()
     kwargs: dict = {}
@@ -168,6 +169,11 @@ def run(argv: list[str], cwd: str = "", timeout_s: float = 30,
     except OSError as exc:
         return RunResult(duration_ms=_elapsed_ms(started),
                          error=f"无法启动命令：{exc}", code="bad_command")
+    if on_start is not None:
+        try:
+            on_start(proc.pid)
+        except Exception:
+            logger.exception("[TerminalCore] 进程登记失败")
 
     captured = {"stdout": bytearray(), "stderr": bytearray()}
     truncated = False
@@ -212,7 +218,8 @@ def run(argv: list[str], cwd: str = "", timeout_s: float = 30,
             except OSError:
                 pass
             if pending:
-                _emit(key, decode_bytes(bytes(pending)))
+                # 末尾没有换行的内容也补成整行，界面层只做 splitlines
+                _emit(key, decode_bytes(bytes(pending)) + "\n")
 
     readers = [
         threading.Thread(target=_reader, args=(proc.stdout, "stdout"), daemon=True),

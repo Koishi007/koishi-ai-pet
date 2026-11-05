@@ -2,12 +2,14 @@
 
 import os
 import sys
+import threading
 
 import pytest
 
 from pet.config import config
 from pet.terminal import core, policy
 from pet.terminal import runner as runner_module
+from pet.terminal.events import EventKind, Phase
 from pet.terminal.runner import TerminalRunner
 from pet.tools.registry import ToolRegistry
 
@@ -141,7 +143,7 @@ class TestSharedCwd:
         captured = {}
 
         def _fake_run(argv, cwd="", timeout_s=30, env=None, max_capture_bytes=131072,
-                      on_output=None):
+                      on_output=None, on_start=None):
             captured["cwd"] = cwd
             return core.RunResult(exit_code=0, stdout="ok\n")
 
@@ -180,7 +182,7 @@ class TestResult:
         captured = {}
 
         def _fake_run(argv, cwd="", timeout_s=30, env=None, max_capture_bytes=131072,
-                      on_output=None):
+                      on_output=None, on_start=None):
             captured["argv"] = list(argv)
             return core.RunResult(exit_code=0, stdout="")
 
@@ -237,7 +239,7 @@ class TestShellMode:
         captured = {}
 
         def _fake_run(argv, cwd="", timeout_s=30, env=None, max_capture_bytes=131072,
-                      on_output=None):
+                      on_output=None, on_start=None):
             captured["argv"] = list(argv)
             return core.RunResult(exit_code=0, stdout="hi\n")
 
@@ -247,6 +249,7 @@ class TestShellMode:
         assert captured["argv"][0] in ("cmd", "sh", "powershell", "bash")
         assert captured["argv"][-1] == "echo hi"
 
+
     def test_switch_on_routes_model_command(self, sandbox, monkeypatch):
         monkeypatch.setattr(config, "TERMINAL_ALLOW_SHELL", True)
         monkeypatch.setattr(config, "TERMINAL_MODE", "ask")
@@ -255,7 +258,7 @@ class TestShellMode:
         captured = {}
 
         def _fake_run(argv, cwd="", timeout_s=30, env=None, max_capture_bytes=131072,
-                      on_output=None):
+                      on_output=None, on_start=None):
             captured["argv"] = list(argv)
             return core.RunResult(exit_code=0, stdout="hi\n")
 
@@ -264,3 +267,164 @@ class TestShellMode:
         assert "error" not in out
         assert captured["argv"][-1] == "echo hi"
         assert captured["argv"][0] in ("cmd", "sh", "powershell", "bash")
+
+
+class _EventLog:
+    """线程安全的事件记录器，可等待某个序列条件成立。"""
+
+    def __init__(self):
+        self._items: list = []
+        self._cv = threading.Condition()
+
+    def __call__(self, event) -> None:
+        with self._cv:
+            self._items.append(event)
+            self._cv.notify_all()
+
+    def wait_for(self, predicate, timeout: float = 3.0) -> bool:
+        with self._cv:
+            return self._cv.wait_for(lambda: predicate(list(self._items)), timeout)
+
+    def snapshot(self) -> list:
+        with self._cv:
+            return list(self._items)
+
+
+class TestEventProtocol:
+    """P0：每条命令的终态事件在闸门内闭合，且整条链路带同一个 run_id。"""
+
+    @staticmethod
+    def _runner_with_log():
+        runner = TerminalRunner()
+        log = _EventLog()
+        runner.set_terminal_sink(log)
+        return runner, log
+
+    def test_previous_end_precedes_next_start(self, sandbox, monkeypatch):
+        """A 尚未 end 时 B 绝不能 start；B 的 start 必须排在 A 的 end 之后。"""
+        runner, log = self._runner_with_log()
+        entered = threading.Event()
+        release = threading.Event()
+
+        def blocked_run(*args, **kwargs):
+            entered.set()
+            assert release.wait(3), "A 未被放行"
+            return core.RunResult(exit_code=0, stdout="ok\n")
+
+        monkeypatch.setattr(runner_module.core, "run", blocked_run)
+        results: list[dict] = []
+        first = threading.Thread(
+            target=lambda: results.append(runner.run_user(command="echo a")),
+            daemon=True)
+        first.start()
+        assert entered.wait(3)
+        assert log.wait_for(
+            lambda items: any(p.kind is EventKind.START for p in items))
+
+        second = threading.Thread(
+            target=lambda: results.append(runner.run_user(command="echo b")),
+            daemon=True)
+        second.start()
+        assert log.wait_for(
+            lambda items: sum(1 for p in items if p.phase is Phase.WAITING) >= 2)
+        assert sum(1 for p in log.snapshot() if p.kind is EventKind.START) == 1
+
+        release.set()
+        first.join(3)
+        second.join(3)
+        assert not first.is_alive() and not second.is_alive()
+        assert len(results) == 2 and all("error" not in r for r in results)
+
+        items = log.snapshot()
+        assert all(p.run_id for p in items)
+        a_id = next(p.run_id for p in items if p.kind is EventKind.START)
+        b_id = next(p.run_id for p in items
+                    if p.kind is EventKind.START and p.run_id != a_id)
+        a_end = next(i for i, p in enumerate(items)
+                     if p.kind is EventKind.END and p.run_id == a_id)
+        b_start = next(i for i, p in enumerate(items)
+                       if p.kind is EventKind.START and p.run_id == b_id)
+        assert a_end < b_start
+        for run_id in (a_id, b_id):
+            assert sum(1 for p in items
+                       if p.kind is EventKind.END and p.run_id == run_id) == 1
+            assert sum(1 for p in items if p.kind is EventKind.PHASE
+                       and p.phase is Phase.IDLE and p.run_id == run_id) == 1
+
+    def test_busy_releases_phase(self, sandbox, monkeypatch):
+        """busy 路径必须补 idle；模型命令没有窗口侧 _on_run_finished 兜底。"""
+        monkeypatch.setattr(config, "TERMINAL_QUEUE_WAIT_S", 0)
+        runner, log = self._runner_with_log()
+        runner.lock.acquire()
+        try:
+            out = runner.run_user(command="echo hi")
+        finally:
+            runner.lock.release()
+        assert out["code"] == "busy"
+        items = log.snapshot()
+        assert [p.phase for p in items if p.kind is EventKind.PHASE] == [
+            Phase.WAITING, Phase.IDLE]
+        assert all(p.run_id for p in items)
+        assert not any(p.kind is EventKind.START for p in items)
+        ends = [p for p in items if p.kind is EventKind.END]
+        assert len(ends) == 1
+        assert ends[0].rejected is True
+        assert ends[0].run_id == items[0].run_id
+
+    def test_core_exception_still_closes_block(self, sandbox, monkeypatch):
+        """core.run 抛异常时仍要发 end（闭合块）与 idle，并释放闸门。"""
+        runner, log = self._runner_with_log()
+
+        def boom(*args, **kwargs):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(runner_module.core, "run", boom)
+        out = runner.run_user(command="echo hi")
+        assert out["code"] == "internal_error"
+        items = log.snapshot()
+        run_id = next(p.run_id for p in items if p.kind is EventKind.START)
+        ends = [p for p in items if p.kind is EventKind.END]
+        assert len(ends) == 1
+        assert ends[0].run_id == run_id
+        assert ends[0].rejected is True
+        assert "boom" in ends[0].error
+        assert items[-1].kind is EventKind.PHASE and items[-1].phase is Phase.IDLE
+        assert items[-1].run_id == run_id
+        assert runner.lock.acquire(blocking=False)
+        runner.lock.release()
+
+
+class TestRefactorContracts:
+    """P1：快照纯数据、根范围收窄、shutdown 注销回调。"""
+
+    def test_snapshot_has_no_presentation_fields(self, sandbox):
+        data = TerminalRunner().snapshot()
+        assert "headline" not in data and "body" not in data
+        assert set(data) == {"platform", "sandbox_root", "allowed",
+                             "interpreters", "deny_categories", "shell_mode", "mode"}
+        assert "headline" in TerminalRunner().list()
+
+    def test_shared_cwd_outside_root_does_not_expand_root(self, sandbox, tmp_path):
+        outside = tmp_path / "elsewhere"
+        outside.mkdir()
+        runner = TerminalRunner()
+        runner.set_cwd_source(lambda: str(outside))
+        assert os.path.normcase(runner.snapshot()["sandbox_root"]) == \
+               os.path.normcase(str(sandbox))
+
+    def test_shutdown_terminates_active_pid_and_unregisters(self, sandbox, monkeypatch):
+        runner = TerminalRunner()
+        sink = lambda event: None
+        runner.set_terminal_sink(sink)
+        runner.set_cwd_source(lambda: str(sandbox))
+        runner.set_confirm(lambda request: True)
+        runner._track_pid(4242)
+        calls = []
+        monkeypatch.setattr(runner_module.core, "terminate_tree",
+                            lambda pid: (calls.append(pid) or (True, "")))
+        assert runner.shutdown() == 1
+        assert calls == [4242]
+        assert runner._terminal_sink is None
+        assert runner._cwd_source is None
+        assert runner._confirm is None
+        assert runner._active_pid is None

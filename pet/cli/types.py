@@ -1,7 +1,4 @@
-"""终端本地命令的数据类型与返回码。
-
-不依赖任何 pet 模块：工具与界面只依赖这里，避免为了一个类型去导入整包。
-"""
+"""终端本地命令的数据类型与返回码"""
 
 from __future__ import annotations
 
@@ -27,10 +24,11 @@ class LocalResult:
 
 @dataclass(frozen=True)
 class LocalContext:
-    """本地命令的运行环境：终端当前目录与共用的 TerminalRunner。"""
+    """本地命令的运行环境：终端当前目录、共用的 TerminalRunner 与应用控制"""
 
     cwd: str
     runner: object
+    control: object | None = None
 
 
 @dataclass(frozen=True)

@@ -8,6 +8,7 @@ import sys
 from dataclasses import dataclass
 
 from pet.config import config
+from pet.terminal.events import Decision
 
 logger = logging.getLogger(__name__)
 
@@ -45,13 +46,22 @@ CUSTOM_CATEGORY = "自定义"
 
 @dataclass(frozen=True)
 class Verdict:
-    """一条命令的策略结论。decision 取 allow / ask / deny。"""
+    """一条命令的策略结论。decision 取 allow / ask / deny。
 
-    decision: str
+    abs_cwd 是本次判定解析出的绝对工作目录，交给 Runner 直接执行，
+    避免 Runner 再算一遍 sandbox_cwd 产生两份可能不一致的真相。
+    """
+
+    decision: Decision
     reason: str = ""
     matched: tuple[str, ...] = ()
     resolved: str = ""
     untrusted: bool = False
+    abs_cwd: str = ""
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.decision, Decision):
+            object.__setattr__(self, "decision", Decision(self.decision))
 
 
 def desktop_dir() -> str:
@@ -71,6 +81,22 @@ def sandbox_root() -> str:
     if not configured:
         return os.path.abspath(desktop_dir())
     return os.path.abspath(os.path.expanduser(configured))
+
+
+def effective_root(shared: str = "") -> str:
+    """模型命令实际使用的根：终端当前目录只有在配置沙箱根内才生效。
+
+    用户在终端里 `cd` 到 `C:\\` 不该把模型的允许根一起扩大。这里只收窄路径
+    范围，不是 OS 级沙箱：子进程仍持有当前用户的全部权限，且只约束初始 cwd。
+    """
+    root = sandbox_root()
+    candidate = (shared or "").strip()
+    if not candidate:
+        return root
+    candidate = os.path.realpath(os.path.expanduser(candidate))
+    if not os.path.isdir(candidate):
+        return root
+    return candidate if is_writable_path(candidate, [root], sys.platform) else root
 
 
 def parse_allow_entry(text) -> tuple[str, list[str]]:
@@ -285,39 +311,44 @@ def check(source: str, argv: list[str], builtin: str, command: str,
           cwd: str = "", shell: str = "", root: str = "") -> Verdict:
     """按档位判定一条命令；source="user" 首步放行。
 
-    root 为空时取配置的沙箱根；终端窗口打开时传入它的当前目录。
+    root 是终端窗口的当前目录，经 effective_root 收窄后才生效；返回的
+    Verdict.abs_cwd 是本次判定唯一的工作目录，Runner 不再重复解析。
     shell 非空表示整条命令交给系统 shell，此时跳过程序解析，auto 档一律询问。
     """
     mode = (config.TERMINAL_MODE or "ask").strip().lower()
     shell_mode = bool(shell)
     program = program_key(argv[0]) if argv else ""
-    if source == "user":
-        return Verdict("allow", "", (), argv[0] if argv else "")
-    if mode == "deny":
-        return Verdict("deny", "terminal_disabled")
-
-    root = root or sandbox_root()
+    root = effective_root(root)
     abs_cwd, cwd_err = sandbox_cwd(cwd, root, source)
+    if source == "user":
+        return Verdict(Decision.ALLOW, resolved=argv[0] if argv else "",
+                       abs_cwd=abs_cwd)
+    if mode == "deny":
+        return Verdict(Decision.DENY, "terminal_disabled", abs_cwd=abs_cwd)
+
     resolved = argv[0] if argv else ""
     untrusted = False
     if not builtin and not shell_mode:
         resolved, err = resolve_program(argv[0] if argv else "", abs_cwd)
         if err:
-            return Verdict("deny", err)
+            return Verdict(Decision.DENY, err, (), resolved,
+                           abs_cwd=abs_cwd)
         if is_writable_path(resolved, [root, abs_cwd], sys.platform):
             untrusted = True
             if mode == "auto":
-                return Verdict("deny", "untrusted_program", (), resolved, True)
+                return Verdict(Decision.DENY, "untrusted_program", (),
+                               resolved, True, abs_cwd)
     if cwd_err:
-        return Verdict("deny", cwd_err, (), resolved, untrusted)
+        return Verdict(Decision.DENY, cwd_err, (), resolved, untrusted,
+                       abs_cwd=abs_cwd)
 
     matched = tuple(match_deny_patterns(command))
     if mode == "auto":
         # 危险模式、解释器、整条 shell 命令一律转询问
         if matched or shell_mode:
-            return Verdict("ask", "", matched, resolved, untrusted)
+            return Verdict(Decision.ASK, "", matched, resolved, untrusted, abs_cwd)
         if not builtin and program in INTERPRETERS:
-            return Verdict("ask", "", matched, resolved, untrusted)
+            return Verdict(Decision.ASK, "", matched, resolved, untrusted, abs_cwd)
         if allows(program, list(argv[1:])):
-            return Verdict("allow", "", matched, resolved, untrusted)
-    return Verdict("ask", "", matched, resolved, untrusted)
+            return Verdict(Decision.ALLOW, "", matched, resolved, untrusted, abs_cwd)
+    return Verdict(Decision.ASK, "", matched, resolved, untrusted, abs_cwd)

@@ -38,9 +38,8 @@ class _StubRegistry:
 class _StubRunner:
     """策略快照桩：不探测安装情况，也不碰真实目录。"""
 
-    def list(self) -> dict:
+    def snapshot(self) -> dict:
         return {
-            "headline": "当前档位 auto，免确认命令 1 条",
             "platform": "Windows",
             "sandbox_root": "/sandbox",
             "allowed": [{"command": "git status", "installed": True},
@@ -50,6 +49,21 @@ class _StubRunner:
             "shell_mode": False,
             "mode": "auto",
         }
+
+
+class _StubControl:
+    """应用控制桩：记录 quit / restart 调用。"""
+
+    def __init__(self):
+        self.calls: list[str] = []
+
+    def quit(self) -> bool:
+        self.calls.append("quit")
+        return True
+
+    def restart(self) -> bool:
+        self.calls.append("restart")
+        return True
 
 
 def _collect(module) -> list[tuple[str, ToolCommand]]:
@@ -207,6 +221,31 @@ class TestDispatch:
 
     def test_tool_command_needs_registration(self):
         assert tc.run(":timer 10m", "", None).exit_code == tc.EXIT_USAGE
+
+
+class TestAppControl:
+
+    def test_quit_calls_control(self):
+        control = _StubControl()
+        result = tc.run(":quit", "", None, control)
+        assert result.exit_code == tc.EXIT_OK
+        assert control.calls == ["quit"]
+
+    def test_restart_calls_control(self):
+        control = _StubControl()
+        result = tc.run(":restart", "", None, control)
+        assert result.exit_code == tc.EXIT_OK
+        assert control.calls == ["restart"]
+
+    def test_arguments_are_usage_error(self):
+        control = _StubControl()
+        assert tc.run(":quit now", "", None, control).exit_code == tc.EXIT_USAGE
+        assert control.calls == []
+
+    def test_without_control_is_tool_error(self):
+        result = tc.run(":quit", "", None)
+        assert result.exit_code == tc.EXIT_TOOL
+        assert result.stderr
 
 
 class TestPluggable:

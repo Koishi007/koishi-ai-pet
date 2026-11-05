@@ -17,7 +17,7 @@ def is_local(text: str) -> bool:
     return str(text or "").lstrip().startswith(PREFIX)
 
 
-def run(text: str, cwd: str, runner) -> LocalResult:
+def run(text: str, cwd: str, runner, control=None) -> LocalResult:
     """执行一条本地命令；未知命令与非法用法都返回 EXIT_USAGE。"""
     body = str(text or "").strip()[len(PREFIX):].strip()
     name, _, arg = body.partition(" ")
@@ -30,7 +30,8 @@ def run(text: str, cwd: str, runner) -> LocalResult:
     try:
         if command.handler is None:
             return _run_tool(command, arg.strip())
-        return command.handler(LocalContext(cwd=cwd, runner=runner), arg.strip())
+        context = LocalContext(cwd=cwd, runner=runner, control=control)
+        return command.handler(context, arg.strip())
     except Exception as exc:
         logger.exception("[TerminalCommand] %s 执行异常", name)
         return LocalResult(stderr=f"命令执行失败：{exc}", exit_code=EXIT_TOOL)

@@ -53,11 +53,12 @@
 | `pet/brain/win_detector.py` | Win32 窗口枚举 | `is_window_alive()` `get_window_rect()` `is_window_occluded()` `get_visible_windows()` |
 | `pet/brain/window_detector.py` | 窗口枚举 — 根据平台分发到 Win32 / Quartz / X11 后端 |  |
 | `pet/cli/__init__.py` | 终端本地命令：冒号前缀的分发、帮助与补全数据。 |  |
-| `pet/cli/builtins.py` | 终端内建命令：帮助、清屏、策略快照、判定试算与恋恋状态。 | `check()` `status()` `policy_snapshot()` `clear()` |
-| `pet/cli/catalog.py` | 命令目录：内建命令表 + 工具登记的命令，供分发、帮助与补全使用。 | `commands()` `command_names()` `subcommands()` `path_commands()` `aliases()` `flags()` |
+| `pet/cli/builtins.py` | 终端内建命令：帮助、清屏、策略快照、判定试算与状态。 | `check()` `status()` `policy_snapshot()` `quit_app()` `restart_app()` `clear()` |
+| `pet/cli/catalog.py` | 命令目录：内建命令表 + 工具登记的命令，供分发、帮助与补全使用 | `commands()` `command_names()` `subcommands()` `path_commands()` `aliases()` `flags()` |
 | `pet/cli/dispatch.py` | 命令分发：冒号前缀判定，以及内建与工具命令的两条执行路径。 | `is_local()` `run()` |
 | `pet/cli/format.py` | CLI 输出排版：键值对齐、分组分隔与说明行。 | `display_width()` `key_values()` `sections()` `note()` |
-| `pet/cli/types.py` | 终端本地命令的数据类型与返回码。 | `LocalResult` `LocalContext` `LocalCommand` |
+| `pet/cli/table.py` | 内建命令的纯数据表与用法文本 | `usage()` |
+| `pet/cli/types.py` | 终端本地命令的数据类型与返回码 | `LocalResult` `LocalContext` `LocalCommand` |
 | `pet/config.py` | 配置系统：`_KEY_META` 是所有配置项的唯一真源，`settings.json` 存用户覆盖（路径见 `pet/settings.py`）。 | `Config` |
 | `pet/crash_reporter.py` | 崩溃信息收集与持久化 | `CrashReporter` `get_guard()` `install()` `mark_started()` `clear_marker()` |
 | `pet/db.py` | 数据库路径管理 — 集中管理 pet.db 路径与统一连接配置。 | `get_db_path()` `get_conn()` |
@@ -85,8 +86,9 @@
 | `pet/terminal/__init__.py` | 终端能力：命令解析、策略、执行核心与 Runner，不依赖 Qt。 |  |
 | `pet/terminal/confirm.py` | 确认请求的数据结构：执行层与界面层共用，不依赖 Qt。 | `ConfirmRequest` |
 | `pet/terminal/core.py` | 命令执行核心：解析、内建命令路由、进程树终止、解码与截断。 | `Parsed` `RunResult` `parse_command()` `shell_argv()` `shell_choices()` `quotes_paired()` |
-| `pet/terminal/policy.py` | 终端命令策略：档位、免确认命令、危险模式、程序解析与沙箱目录。 | `Verdict` `desktop_dir()` `sandbox_root()` `parse_allow_entry()` `program_key()` `extra_allow()` |
-| `pet/terminal/runner.py` | TerminalRunner：模型命令与用户终端共用的执行编排。 | `failure()` `TerminalRunner` `platform_name()` `get_runner()` |
+| `pet/terminal/events.py` | 终端编排层 → 界面层的事件协议 | `_ValueEnum` `EventKind` `Phase` `CommandSource` `Decision` `TerminalEvent` |
+| `pet/terminal/policy.py` | 终端命令策略：档位、免确认命令、危险模式、程序解析与沙箱目录。 | `Verdict` `desktop_dir()` `sandbox_root()` `effective_root()` `parse_allow_entry()` `program_key()` |
+| `pet/terminal/runner.py` | TerminalRunner：模型命令与用户终端共用的执行编排 | `failure()` `Prepared` `TerminalRunner` `platform_name()` `get_runner()` |
 | `pet/tools/__init__.py` | 工具加载器 — 自动发现 + 自动安装依赖 + 配置选择性加载。 | `load_tools()` |
 | `pet/tools/bilibili/__init__.py` | bili 工具 — 刷 B 站：搜索、读字幕、点赞投币评论、给主人发私信。 | `register()` |
 | `pet/tools/bilibili/core.py` | B 站接口客户端：wbi 签名、请求、解析、写操作。 | `credential_path()` `invalid_mark_path()` `mark_credential_invalid()` `clear_credential_invalid()` `credential_invalid()` `is_bvid()` |
@@ -151,7 +153,9 @@
 | `pet/ui/styles.py` | 界面样式库：米白扁平 QSS、终端暗色色板、字体回退链与窗口通用按钮。 | `bubble_column_y()` `make_title_button()` `make_minimize_button()` `make_close_button()` `ensure_taskbar_icon()` `terminal_source_color()` |
 | `pet/ui/swing.py` | 拖拽惯性钟摆：窗口加速度驱动贴图绕抓取点摆动，松手后自由衰减。 | `step_pendulum()` `SwingController` |
 | `pet/ui/system_tray.py` | （模块未提供 docstring） | `SystemTrayManager` |
-| `pet/ui/terminal_window.py` | 终端窗口：只读回显、输入行、来源标记、命令历史与补全交互。 | `resolve_initial_cwd()` `cd_target()` `drive_target()` `push_history()` `elide_cwd()` `cwd_prompt()` |
+| `pet/ui/terminal_input.py` | 终端输入：输入行控件、历史轮换、Tab 补全与 PATH 扫描 | `push_history()` `elide_cwd()` `cwd_prompt()` `InputLine` `InputController` |
+| `pet/ui/terminal_view.py` | 终端回显视图：只读文档、块渲染与按 run_id 归属的事件状态机 | `same_path()` `TerminalView` |
+| `pet/ui/terminal_window.py` | 终端窗口：装配回显视图、输入控制器、状态点与执行线程的信号桥。 | `resolve_initial_cwd()` `cd_target()` `drive_target()` `_WindowControl` `_Combo` `TerminalWindow` |
 | `pet/ui/tic_tac_toe_panel.py` | 井字棋棋盘面板 — 继承 GamePanelBase，负责棋盘渲染与点击落子。 | `TicTacToePanel` |
 | `pet/ui/twenty_questions_panel.py` | 二十问面板 — 桌宠提问猜东西，用户在面板点击"是/否/不确定"作答， | `TwentyQuestionsPanel` |
 | `pet/ui/widgets.py` | 通用控件。 | `NoWheelComboBox` |
@@ -163,4 +167,4 @@
 | `pet/voice/voice_session.py` | 语音会话编排：麦克风采集 → 讯飞识别 | `VoiceSession` |
 | `pet/voice/xunfei_stt.py` | 讯飞语音听写 (iat) WebSocket API 封装 | `XunfeiSTT` |
 
-共 155 个模块。
+共 159 个模块。

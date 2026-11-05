@@ -600,7 +600,8 @@ class ToolRegistry:
             method_name="run",
             description=(
                 "执行一条系统命令并返回退出码与输出。"
-                "一次只发一条命令，拿到结果后再决定下一条；每次执行都需要用户确认，"
+                "一次只发一条命令，拿到结果后再决定下一条；按当前档位决定是否需要用户确认"
+                "（ask 档逐条询问，auto 档命中免确认清单可直接执行），"
                 "被拒绝或返回 busy 时不要重试。"
                 "有专用工具可做同一件事时优先用专用工具。"
                 "不确定本机允许哪些命令时先调用 terminal__list。"
@@ -655,11 +656,7 @@ class ToolRegistry:
 
     @staticmethod
     def _normalize_date(value: str, name: str) -> tuple[str, str]:
-        """把日期参数规范化为 YYYY-MM-DD，返回 (值, 错误信息)。
-
-        strptime 会接受 '2025-8-1' 这类非补零写法，但 SQL 端要求定长格式，
-        不回写为标准形态会出现「校验通过却查不到任何记录」的静默失败。
-        """
+        """把日期参数规范化为 YYYY-MM-DD"""
         value = (value or "").strip()
         if not value:
             return "", ""

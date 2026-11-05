@@ -20,7 +20,6 @@ def _clean_sink():
     TOOL_CTX.set_confirm_sink(None)
     yield
     TOOL_CTX.set_confirm_sink(None)
-    TOOL_CTX.reject_pending_confirms("test cleanup")
 
 
 def _request(timeout_s: float = 5.0) -> ConfirmRequest:
@@ -49,16 +48,28 @@ class TestConfirm:
         assert time.monotonic() - started >= 0.15
 
     def test_reject_pending_confirms_unblocks_waiter(self):
-        TOOL_CTX.set_confirm_sink(lambda request: None)
+        """队列只由 agent 持有：批量拒绝也只走 agent 一处。"""
+        agent = _AgentStub()
+        TOOL_CTX.set_confirm_sink(agent.request_confirm)
         outcome = {}
         thread = threading.Thread(
             target=lambda: outcome.setdefault("allowed", TOOL_CTX.confirm(_request(30))))
         thread.start()
-        time.sleep(0.05)
-        assert TOOL_CTX.reject_pending_confirms("interrupt") == 1
+        for _ in range(100):
+            if agent.confirm_requested.emitted:
+                break
+            time.sleep(0.01)
+        assert agent.confirm_requested.emitted, "确认请求没有进入队列"
+        assert agent.reject_pending_confirms("interrupt") == 1
         thread.join(2)
         assert thread.is_alive() is False
         assert outcome["allowed"] is False
+
+    def test_context_holds_no_confirm_queue(self):
+        source = _CONTEXT_FILE.read_text(encoding="utf-8-sig")
+        assert "_pending_confirms" not in source
+        assert "_confirm_lock" not in source
+        assert "reject_pending_confirms" not in source
 
     def test_sink_exception_is_denial(self):
         def _boom(request):

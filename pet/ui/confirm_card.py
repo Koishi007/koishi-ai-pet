@@ -230,6 +230,8 @@ class ConfirmCard(QWidget):
         parts.append(f"超时 {int(request.timeout_s)}s")
         if request.builtin:
             parts.append(f"内建 {request.builtin}")
+        if request.shell_mode:
+            parts.append(f"整条交给 shell（{request.shell_mode}）")
         return " · ".join(parts)
 
     def _apply_hint(self, request) -> None:
@@ -237,6 +239,8 @@ class ConfirmCard(QWidget):
             text, color = "命中危险规则：" + "、".join(request.matched_patterns), TERMINAL_DANGER
         elif request.untrusted:
             text, color = "程序来自可写目录", TERMINAL_USER
+        elif getattr(request, "shell_mode", ""):
+            text, color = "整条命令交给 shell，不做程序解析", TERMINAL_USER
         else:
             text, color = "", TERMINAL_MUTED
         self._hint.setText(text)

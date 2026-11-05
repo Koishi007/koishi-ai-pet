@@ -835,7 +835,9 @@ class PetWindow(TransparentWindow):
     def _show_terminal_window(self):
         if self._terminal_window is None:
             from pet.ui.terminal_window import TerminalWindow
-            self._terminal_window = TerminalWindow()
+            self._terminal_window = TerminalWindow(
+                quit_fn=getattr(self, "quit_fn", None),
+                restart_fn=getattr(self, "restart_fn", None))
         self._terminal_window.show()
         self._terminal_window.activateWindow()
         self._terminal_window.raise_()

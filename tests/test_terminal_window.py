@@ -13,10 +13,41 @@ from PySide6.QtWidgets import QApplication
 from pet.cli import catalog
 from pet.tools import knowledge, timer, todo
 from pet.tools.registry import TOOL_REGISTRY, ToolCommand
+from pet.terminal.events import (CommandSource, Phase, TerminalEvent,
+                                 as_source)
 from pet.ui import terminal_window as tw
 from pet.ui.styles import (TERMINAL_ACCENT, TERMINAL_DANGER, TERMINAL_IDLE,
                            TERMINAL_SOURCE_LABEL_MODEL, TERMINAL_SOURCE_LABEL_USER,
                            TERMINAL_USER, terminal_source_color, terminal_source_label)
+
+
+def _emit(window, payload: dict) -> None:
+    """测试里的旧式 dict 载荷 → 类型化事件，再走窗口的真实入口。"""
+    source = as_source(payload.get("source") or "model")
+    run_id = str(payload.get("run_id") or "")
+    kind = payload.get("kind")
+    if kind == "phase":
+        event = TerminalEvent.phase_event(
+            run_id, source, Phase(str(payload.get("phase") or "idle")))
+    elif kind == "start":
+        event = TerminalEvent.started(
+            run_id, source, str(payload.get("command") or ""),
+            tuple(payload.get("argv") or ()), str(payload.get("cwd") or ""))
+    elif kind == "chunk":
+        event = TerminalEvent.chunk(
+            run_id, source, str(payload.get("stream") or "stdout"),
+            str(payload.get("text") or ""))
+    else:
+        event = TerminalEvent.finished(
+            run_id, source, str(payload.get("command") or ""),
+            tuple(payload.get("argv") or ()), str(payload.get("cwd") or ""),
+            rejected=bool(payload.get("rejected")),
+            exit_code=payload.get("exit_code"),
+            stdout=str(payload.get("stdout") or ""),
+            stderr=str(payload.get("stderr") or ""),
+            duration_ms=int(payload.get("duration_ms") or 0),
+            error=str(payload.get("error") or ""))
+    getattr(window, "_append_run")(event)
 
 
 @pytest.fixture(scope="module")
@@ -51,10 +82,10 @@ class _StubRunner:
         self.calls.append({"command": command, "cwd": cwd, "timeout": timeout,
                            "shell": shell, "source": source})
         if self.sink is not None:
-            self.sink({"source": source, "command": command, "argv": [command],
-                       "cwd": cwd, "rejected": False, "exit_code": 0,
-                       "stdout": "ok\n", "stderr": "", "duration_ms": 5,
-                       "error": ""})
+            self.sink(TerminalEvent.finished(
+                f"stub-{len(self.calls)}", as_source(source), command,
+                (command,), cwd, rejected=False, exit_code=0,
+                stdout="ok\n", stderr="", duration_ms=5))
         return {"headline": "ok", "body": "ok", "exit_code": 0}
 
 
@@ -80,7 +111,7 @@ class TestSourceMarkers:
         assert terminal_source_color("user") != terminal_source_color("model")
 
     def test_block_shows_source_marker(self, window):
-        window._append_run({"source": "model", "command": "git status",
+        _emit(window, {"source": "model", "command": "git status",
                             "argv": ["git", "status"], "cwd": "", "rejected": False,
                             "exit_code": 0, "stdout": "clean\n", "stderr": "",
                             "duration_ms": 12, "error": ""})
@@ -91,36 +122,35 @@ class TestSourceMarkers:
 
     def test_cwd_line_only_for_model_outside_sandbox(self, window, tmp_path, monkeypatch):
         monkeypatch.setattr(tw.policy, "sandbox_root", lambda: str(tmp_path))
-        window._append_run({"source": "model", "command": "pwd", "cwd": str(tmp_path),
+        _emit(window, {"source": "model", "command": "pwd", "cwd": str(tmp_path),
                             "rejected": False, "exit_code": 0, "stdout": "",
                             "stderr": "", "duration_ms": 1, "error": ""})
         assert "cwd:" not in window._view.toPlainText()
-        window._append_run({"source": "model", "command": "pwd",
+        _emit(window, {"source": "model", "command": "pwd",
                             "cwd": str(tmp_path / "sub"), "rejected": False,
                             "exit_code": 0, "stdout": "", "stderr": "",
                             "duration_ms": 1, "error": ""})
         assert "cwd:" in window._view.toPlainText()
 
     def test_user_command_has_no_cwd_line(self, window, tmp_path):
-        window._append_run({"source": "user", "command": "pwd", "cwd": str(tmp_path),
+        _emit(window, {"source": "user", "command": "pwd", "cwd": str(tmp_path),
                             "rejected": False, "exit_code": 0, "stdout": "",
                             "stderr": "", "duration_ms": 1, "error": ""})
         assert "cwd:" not in window._view.toPlainText()
 
     def test_rejected_block_is_marked(self, window):
-        window._append_run({"source": "model", "command": "rm -rf /",
+        _emit(window, {"source": "model", "command": "rm -rf /",
                             "argv": ["rm", "-rf", "/"], "cwd": "", "rejected": True,
                             "exit_code": None, "stdout": "", "stderr": "",
                             "duration_ms": 0, "error": "denied_by_user"})
         assert tw.REJECTED_TEXT in window._view.toPlainText()
 
     def test_streaming_appends_one_block(self, window):
-        window._append_run({"kind": "start", "source": "model",
+        _emit(window, {"kind": "start", "source": "model",
                             "command": "ping", "argv": ["ping"], "cwd": ""})
-        window._append_run({"kind": "chunk", "stream": "stdout", "text": "line1\nline"})
-        window._append_run({"kind": "chunk", "stream": "stdout", "text": "2\n"})
-        window._append_run({"kind": "chunk", "stream": "stderr", "text": "warn\n"})
-        window._append_run({"kind": "end", "source": "model", "command": "ping",
+        _emit(window, {"kind": "chunk", "stream": "stdout", "text": "line1\nline2\n"})
+        _emit(window, {"kind": "chunk", "stream": "stderr", "text": "warn\n"})
+        _emit(window, {"kind": "end", "source": "model", "command": "ping",
                             "argv": ["ping"], "cwd": "", "rejected": False,
                             "exit_code": 0, "stdout": "", "stderr": "",
                             "duration_ms": 8, "error": ""})
@@ -131,13 +161,13 @@ class TestSourceMarkers:
         assert "exit 0" in text
 
     def test_phase_updates_status_dot(self, window):
-        window._append_run({"kind": "phase", "phase": "waiting"})
+        _emit(window, {"kind": "phase", "phase": "waiting"})
         assert TERMINAL_USER in window._dot.styleSheet()
-        window._append_run({"kind": "phase", "phase": "running"})
+        _emit(window, {"kind": "phase", "phase": "running"})
         assert TERMINAL_ACCENT in window._dot.styleSheet()
-        window._append_run({"kind": "phase", "phase": "error"})
+        _emit(window, {"kind": "phase", "phase": "error"})
         assert TERMINAL_DANGER in window._dot.styleSheet()
-        window._append_run({"kind": "phase", "phase": "idle"})
+        _emit(window, {"kind": "phase", "phase": "idle"})
         assert TERMINAL_IDLE in window._dot.styleSheet()
 
 
@@ -149,7 +179,7 @@ class TestBuffer:
         for index in range(5050):
             cursor.insertText(f"line {index}\n")
         window._trim_blocks()
-        assert window._view.document().blockCount() <= tw._MAX_BLOCKS
+        assert window._view.document().blockCount() <= tw._MAX_LINES
 
 
 class TestCompletionKeys:
@@ -191,7 +221,7 @@ class TestCompletionKeys:
 class TestReopen:
 
     def test_hide_and_show_keeps_output(self, window):
-        window._append_run({"source": "user", "command": "echo kept",
+        _emit(window, {"source": "user", "command": "echo kept",
                             "cwd": "", "rejected": False, "exit_code": 0,
                             "stdout": "kept\n", "stderr": "", "duration_ms": 1,
                             "error": ""})
@@ -338,7 +368,7 @@ class TestCwd:
 class TestClear:
 
     def test_clear_empties_view(self, window):
-        window._append_run({"source": "user", "command": "echo hi", "cwd": "",
+        _emit(window, {"source": "user", "command": "echo hi", "cwd": "",
                             "rejected": False, "exit_code": 0, "stdout": "hi\n",
                             "stderr": "", "duration_ms": 1, "error": ""})
         window.clear()
@@ -400,7 +430,7 @@ class TestLocalCommand:
         assert "exit 2" in window._view.toPlainText()
 
     def test_clear_command_empties_view(self, window):
-        window._append_run({"source": "user", "command": "echo hi", "cwd": "",
+        _emit(window, {"source": "user", "command": "echo hi", "cwd": "",
                             "rejected": False, "exit_code": 0, "stdout": "hi\n",
                             "stderr": "", "duration_ms": 1, "error": ""})
         window._input.setText(":clear")
@@ -413,6 +443,29 @@ class TestLocalCommand:
         window._submit()
         _wait_idle(window)
         assert [call["command"] for call in runner.calls] == ["dir"]
+
+    def test_quit_command_runs_callback(self, window):
+        calls = []
+        window._quit_fn = lambda: calls.append("quit")
+        window._input.setText(":quit")
+        window._submit()
+        _wait_idle(window)
+        assert calls == ["quit"]
+
+    def test_restart_command_runs_callback(self, window):
+        calls = []
+        window._restart_fn = lambda: calls.append("restart")
+        window._input.setText(":restart")
+        window._submit()
+        _wait_idle(window)
+        assert calls == ["restart"]
+
+    def test_quit_without_callback_reports_error(self, window):
+        window._quit_fn = None
+        window._input.setText(":quit")
+        window._submit()
+        _wait_idle(window)
+        assert "无法退出" in window._view.toPlainText()
 
     def test_tab_completes_command_name(self, window):
         window._input.setText(":he")
@@ -440,3 +493,63 @@ class TestLocalCommand:
         window._input.setCursorPosition(len(window._input.text()))
         window._on_tab()
         assert window._input.text() == ":help zzz"
+
+
+class TestRunIdIsolation:
+    """P0：事件按 run_id 归属，交错命令不得串块或覆盖状态。"""
+
+    @staticmethod
+    def _start(window, run_id):
+        _emit(window, {"kind": "start", "run_id": run_id,
+                            "source": "model", "command": f"cmd-{run_id}",
+                            "argv": ["cmd"], "cwd": ""})
+
+    @staticmethod
+    def _end(window, run_id, **extra):
+        payload = {"kind": "end", "run_id": run_id, "source": "model",
+                   "command": f"cmd-{run_id}", "argv": ["cmd"], "cwd": "",
+                   "rejected": False, "exit_code": 0, "stdout": "",
+                   "stderr": "", "duration_ms": 8, "error": ""}
+        payload.update(extra)
+        _emit(window, payload)
+
+    def test_foreign_end_does_not_close_active_block(self, window):
+        self._start(window, "A")
+        _emit(window, {"kind": "chunk", "run_id": "A",
+                            "stream": "stdout", "text": "before\n"})
+        self._end(window, "B", rejected=True, exit_code=None,
+                  error="用户拒绝了这条命令")
+        assert window._view.block_open is True
+        _emit(window, {"kind": "chunk", "run_id": "A",
+                            "stream": "stdout", "text": "after\n"})
+        self._end(window, "A")
+        text = window._view.toPlainText()
+        assert "before" in text and "after" in text
+        assert text.count("exit 0") == 1
+        assert tw.REJECTED_TEXT in text
+        assert text.index("exit 0") < text.index(tw.REJECTED_TEXT)
+        assert window._view.block_open is False
+        assert window._view.active_run_id is None
+        assert window._view.deferred_blocks == []
+
+    def test_foreign_phase_does_not_override_running_state(self, window):
+        self._start(window, "A")
+        _emit(window, {"kind": "phase", "phase": "running", "run_id": "A"})
+        assert window._phase == "running"
+        _emit(window, {"kind": "phase", "phase": "waiting", "run_id": "B"})
+        _emit(window, {"kind": "phase", "phase": "idle", "run_id": "B"})
+        assert window._phase == "running"
+        assert TERMINAL_ACCENT in window._dot.styleSheet()
+        self._end(window, "A")
+        _emit(window, {"kind": "phase", "phase": "idle", "run_id": "A"})
+        assert window._phase == "idle"
+        window._breath_timer.stop()
+
+    def test_stale_chunk_is_dropped(self, window):
+        self._start(window, "A")
+        self._end(window, "A")
+        self._start(window, "B")
+        _emit(window, {"kind": "chunk", "run_id": "A",
+                            "stream": "stdout", "text": "late\n"})
+        self._end(window, "B")
+        assert "late" not in window._view.toPlainText()

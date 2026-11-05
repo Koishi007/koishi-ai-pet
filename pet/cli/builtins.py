@@ -1,4 +1,4 @@
-"""终端内建命令：帮助、清屏、策略快照、判定试算与恋恋状态。"""
+"""终端内建命令：帮助、清屏、策略快照、判定试算与状态。"""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from pet.terminal import core, policy
 from pet.tools.context import TOOL_CTX
 
 from .format import key_values, note, sections
+from .table import usage
 from .types import EXIT_TOOL, EXIT_USAGE, LocalContext, LocalResult
 
 # 策略拒绝原因码的解释：回答「这条命令为什么没过」，与工具失败文案不共用
@@ -24,7 +25,8 @@ _STATE_TEXT = {"idle": "空闲", "autonomous": "自主活动", "interacting": "�
 _DOCK_TEXT = {"left": "左侧", "right": "右侧"}
 
 _CHECK_NOTE = "只描述模型发起的调用，你在终端里自己输入的命令不受策略约束"
-_POLICY_NOTE = "auto 档下，解释器与命中危险类别的命令都转确认"
+_POLICY_NOTE = ("auto 档下，解释器与命中危险类别的命令都转确认；"
+                "「沙箱」只约束初始工作目录，不是系统级隔离，子进程仍拥有当前用户权限")
 
 
 def _duration(seconds: int) -> str:
@@ -45,17 +47,14 @@ def check(ctx: LocalContext, arg: str) -> LocalResult:
     """按模型身份试算一条命令的策略判定。"""
     command = (arg or "").strip()
     if not command:
-        # 用法文本由 catalog 依命令表拼，导入期拉进来会与 catalog 成环
-        from .catalog import usage
-
         return usage("check")
     parsed, err = core.parse_command(command, "")
     if err:
         return LocalResult(stderr=f"无法解析：{command}", exit_code=EXIT_USAGE)
     verdict = policy.check("model", parsed.argv, parsed.builtin, command, ctx.cwd)
+    decision = verdict.decision.value
     rows = [
-        ("判定", f"{_DECISION_TEXT.get(verdict.decision, verdict.decision)}"
-                 f"（{verdict.decision}）"),
+        ("判定", f"{_DECISION_TEXT.get(decision, decision)}（{decision}）"),
         ("档位", config.TERMINAL_MODE),
     ]
     if verdict.reason:
@@ -75,9 +74,6 @@ def status(ctx: LocalContext, arg: str) -> LocalResult:
     """恋恋的状态、生理、心理与记忆。"""
     flag = (arg or "").strip()
     if flag and flag != "--json":
-        # 用法文本由 catalog 依命令表拼，导入期拉进来会与 catalog 成环
-        from .catalog import usage
-
         return usage("status", f"未知参数「{flag}」")
     snapshot = TOOL_CTX.pet_status()
     if not snapshot:
@@ -113,7 +109,7 @@ def status(ctx: LocalContext, arg: str) -> LocalResult:
 
 def policy_snapshot(ctx: LocalContext, arg: str) -> LocalResult:
     """免确认清单、解释器名单与危险类别。"""
-    snapshot = ctx.runner.list()
+    snapshot = ctx.runner.snapshot()
     allowed = snapshot.get("allowed") or []
     lines = key_values([
         ("档位", str(snapshot.get("mode") or "")),
@@ -132,6 +128,26 @@ def policy_snapshot(ctx: LocalContext, arg: str) -> LocalResult:
         lines.append("  （空，每条命令都需要确认）")
     lines.extend(["", note(_POLICY_NOTE)])
     return LocalResult("\n".join(lines))
+
+
+def quit_app(ctx: LocalContext, arg: str) -> LocalResult:
+    """退出应用。"""
+    if (arg or "").strip():
+        return usage("quit", f"未知参数「{arg.strip()}」")
+    if ctx.control is None or not ctx.control.quit():
+        return LocalResult(stderr="无法退出：终端没拿到应用控制",
+                           exit_code=EXIT_TOOL)
+    return LocalResult("正在退出…")
+
+
+def restart_app(ctx: LocalContext, arg: str) -> LocalResult:
+    """重启应用。"""
+    if (arg or "").strip():
+        return usage("restart", f"未知参数「{arg.strip()}」")
+    if ctx.control is None or not ctx.control.restart():
+        return LocalResult(stderr="无法重启：终端没拿到应用控制",
+                           exit_code=EXIT_TOOL)
+    return LocalResult("正在重启…")
 
 
 def clear(ctx: LocalContext, arg: str) -> LocalResult:

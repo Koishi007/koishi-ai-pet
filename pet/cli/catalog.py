@@ -1,30 +1,29 @@
-"""命令目录：内建命令表 + 工具登记的命令，供分发、帮助与补全使用。
-
-工具的命令由工具在 `register(registry)` 里用 `registry.add_command()` 登记，
-这里只聚合 `TOOL_REGISTRY.commands()`，不认具体工具。
-"""
+"""命令目录：内建命令表 + 工具登记的命令，供分发、帮助与补全使用"""
 
 from __future__ import annotations
 
 from pet.tools.registry import TOOL_REGISTRY
 
-from .builtins import check, clear, policy_snapshot, status
+from .builtins import (check, clear, policy_snapshot, quit_app, restart_app,
+                       status)
 from .format import key_values
-from .types import EXIT_USAGE, PREFIX, LocalCommand, LocalContext, LocalResult
+from .table import (BUILTIN_SPECS, GROUP_ORDER as TABLE_GROUP_ORDER,
+                    usage as table_usage)
+from .types import PREFIX, LocalCommand, LocalContext, LocalResult
 
-# 帮助里的分组顺序；工具声明的新分组排在后面，按名称排序
-GROUP_ORDER = ("通用", "恋恋", "状态与策略", "计时与待办", "检索")
+# 兼容旧引用；分组顺序的真相在 table 里
+GROUP_ORDER = TABLE_GROUP_ORDER
 
 
 def commands() -> tuple[LocalCommand, ...]:
     """内建命令在前，工具注册的命令按注册顺序在后。"""
     entries = [LocalCommand(
         name=item["name"], group=item["group"], rows=item["rows"],
-        handler=item["handler"], paths=bool(item.get("paths")),
+        handler=_HANDLERS[item["name"]], paths=bool(item.get("paths")),
         examples=tuple(item.get("examples", ())),
         aliases=tuple(item.get("aliases", ())),
         flags=tuple(item.get("flags", ())),
-        values=dict(item.get("values", {}))) for item in _BUILTIN]
+        values=dict(item.get("values", {}))) for item in BUILTIN_SPECS]
     for tool, command in TOOL_REGISTRY.commands():
         entries.append(LocalCommand(
             name=command.name, group=command.group, rows=command.rows,
@@ -81,12 +80,8 @@ def find(name: str) -> LocalCommand | None:
 
 
 def usage(name: str, detail: str = "") -> LocalResult:
-    """该命令的用法错误提示，用法取自命令表。"""
-    command = find(name)
-    usages = (" | ".join(usage_text for usage_text, _summary in command.rows)
-              if command else f"{PREFIX}{name}")
-    text = f"{detail}，用法：{usages}" if detail else f"用法：{usages}"
-    return LocalResult(stderr=text, exit_code=EXIT_USAGE)
+    """该命令的用法错误提示，用法取自命令表（含工具登记的命令）。"""
+    return table_usage(name, detail, find(name))
 
 
 def _help(ctx: LocalContext, arg: str) -> LocalResult:
@@ -150,21 +145,13 @@ def _groups(entries: tuple[LocalCommand, ...]) -> list[str]:
     return known + sorted(present - set(GROUP_ORDER))
 
 
-# 内建命令：帮助、清屏、策略快照、判定试算与恋恋状态。处理函数在导入期只登记不调用
-_BUILTIN = (
-    {"name": "help", "group": "通用",
-     "rows": ((":help [command]", "列出全部命令，或查看单个命令的用法"),),
-     "handler": _help, "aliases": ("?",)},
-    {"name": "clear", "group": "通用",
-     "rows": ((":clear", "清屏"),), "handler": clear},
-    {"name": "status", "group": "恋恋",
-     "rows": ((":status [--json]", "显示恋恋的状态、生理、心理与记忆"),),
-     "handler": status, "flags": ("--json",)},
-    {"name": "policy", "group": "状态与策略",
-     "rows": ((":policy", "显示免确认清单、解释器配置和危险命令类别"),),
-     "handler": policy_snapshot},
-    {"name": "check", "group": "状态与策略",
-     "rows": ((":check <command>", "以当前模型身份预演命令判定"),),
-     "handler": check, "paths": True,
-     "examples": (":check python script.py",)},
-)
+# 内建命令的处理函数按名字绑定；纯数据表在 table.BUILTIN_SPECS
+_HANDLERS = {
+    "help": _help,
+    "clear": clear,
+    "quit": quit_app,
+    "restart": restart_app,
+    "status": status,
+    "policy": policy_snapshot,
+    "check": check,
+}

@@ -1,53 +1,52 @@
-"""终端窗口：只读回显、输入行、来源标记、命令历史与补全交互。"""
+"""终端窗口：装配回显视图、输入控制器、状态点与执行线程的信号桥。
+
+文档块渲染在 pet/ui/terminal_view.py，输入交互在 pet/ui/terminal_input.py；
+这里只保留布局、状态点、提交分发与跨线程信号。
+"""
+
+from __future__ import annotations
 
 import logging
 import os
 import re
 import threading
 import time
-from collections import deque
+import uuid
 
-from PySide6.QtCore import QPoint, QRect, Qt, QTimer, Signal
-from PySide6.QtGui import (QColor, QIcon, QPainter, QPainterPath, QPen,
-                           QTextCharFormat, QTextCursor)
-from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit,
-                               QPushButton, QTextEdit, QVBoxLayout, QWidget)
+from PySide6.QtCore import QPoint, Qt, QTimer, Signal, Slot
+from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen
+from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPushButton, QVBoxLayout,
+                               QWidget)
 
 from pet import cli
 from pet.terminal import core, policy
+from pet.terminal.events import (CommandSource, EventKind, Phase,
+                                 TerminalEvent)
 from pet.terminal.runner import get_runner
-from pet.ui.completion import (Completion, CompletionContext, complete,
-                               quote_candidate)
-from pet.ui.styles import (ICON_PATH, TERMINAL_ACCENT, TERMINAL_ACCENT_DIM, TERMINAL_BG,
-                           TERMINAL_BORDER, TERMINAL_CONTROL_RADIUS, TERMINAL_DANGER,
-                           TERMINAL_HOVER, TERMINAL_IDLE, TERMINAL_MUTED,
-                           TERMINAL_MUTED_LIGHT, TERMINAL_PANEL, TERMINAL_STDERR,
-                           TERMINAL_STDOUT, TERMINAL_TEXT, TERMINAL_USER,
-                           TERMINAL_WINDOW_RADIUS, ensure_taskbar_icon,
-                           terminal_mono_font, terminal_source_color,
-                           terminal_source_label, terminal_ui_font)
+from pet.ui.styles import (ICON_PATH, TERMINAL_ACCENT, TERMINAL_ACCENT_DIM,
+                           TERMINAL_BG, TERMINAL_BORDER, TERMINAL_CONTROL_RADIUS,
+                           TERMINAL_DANGER, TERMINAL_HOVER, TERMINAL_IDLE,
+                           TERMINAL_MUTED, TERMINAL_MUTED_LIGHT, TERMINAL_PANEL,
+                           TERMINAL_TEXT, TERMINAL_USER, TERMINAL_WINDOW_RADIUS,
+                           ensure_taskbar_icon, terminal_mono_font,
+                           terminal_ui_font)
+from pet.ui.terminal_input import (CWD_LABEL_MAX as _CWD_LABEL_MAX,
+                                   HISTORY_MAX as _HISTORY_MAX,
+                                   PATH_CACHE_S as _PATH_CACHE_S,
+                                   PROMPT_INSET as _PROMPT_INSET,
+                                   InputController, InputLine, cwd_prompt,
+                                   elide_cwd, push_history)
+from pet.ui.terminal_view import (MAX_LINES as _MAX_LINES, REJECTED_TEXT,
+                                  TerminalView, same_path as _same_path)
 from pet.ui.widgets import NoWheelComboBox
 
 logger = logging.getLogger(__name__)
 
-_MAX_BLOCKS = 5000
-_HISTORY_MAX = 100
-_PATH_CACHE_S = 60.0
-_CWD_LABEL_MAX = 40
-_PROMPT_INSET = 12
 _BREATH_MS = 600
 
-REJECTED_TEXT = "已拒绝"
 PASTE_TRUNCATED_NOTICE = "已忽略后续行"
 BUSY_NOTICE = "上一条命令还在执行"
 PHASE_TEXT = {"waiting": "等待执行", "running": "运行中"}
-
-
-def _same_path(left: str, right: str) -> bool:
-    if not left or not right:
-        return False
-    return (os.path.normcase(os.path.abspath(left))
-            == os.path.normcase(os.path.abspath(right)))
 
 
 def _title_button(glyph: str, on_click) -> QPushButton:
@@ -101,133 +100,70 @@ def drive_target(text: str) -> str | None:
     return None
 
 
-def push_history(history: deque, text: str) -> None:
-    """历史去重：与上一条相同则不重复入栈。"""
-    value = (text or "").strip()
-    if not value:
-        return
-    if history and history[-1] == value:
-        return
-    history.append(value)
+class _WindowControl:
+    """终端命令到应用控制的桥：只发信号，实际动作回主线程执行。"""
+
+    def __init__(self, window: "TerminalWindow"):
+        self._window = window
+
+    def quit(self) -> bool:
+        return self._window.request_quit()
+
+    def restart(self) -> bool:
+        return self._window.request_restart()
 
 
-def elide_cwd(path: str, limit: int = _CWD_LABEL_MAX) -> str:
-    """超长目录中间省略为 C:\\Users\\...\\project。"""
-    text = str(path or "")
-    if len(text) <= limit:
-        return text
-    keep = (limit - 3) // 2
-    return f"{text[:keep]}...{text[-keep:]}"
+class _Combo(QWidget):
+    """状态栏用的小下拉框，无滚轮响应。"""
 
-
-def cwd_prompt(path: str) -> str:
-    """输入行左侧的目录提示，形如 C:\\Users\\tqzth>。"""
-    return f"{elide_cwd(path)}>"
-
-
-class _InputLine(QLineEdit):
-    """输入行：回车提交、上下翻历史、Tab 补全、多行粘贴只取首行。"""
-
-    submitted = Signal()
-    tab_pressed = Signal(bool)
-    history_prev = Signal()
-    history_next = Signal()
-    clear_requested = Signal()
-    paste_truncated = Signal()
-
-    def __init__(self, parent=None):
+    def __init__(self, items: list[str], parent=None):
         super().__init__(parent)
-        self._prompt = ""
+        self._combo = NoWheelComboBox(self)
+        self._combo.addItems(items)
+        self.currentTextChanged = self._combo.currentTextChanged
+        self._combo.setFont(terminal_mono_font(10))
+        self._combo.setStyleSheet(
+            f"QComboBox {{ color:{TERMINAL_MUTED_LIGHT}; background:{TERMINAL_PANEL};"
+            f" border:1px solid {TERMINAL_BORDER}; border-radius:{TERMINAL_CONTROL_RADIUS}px;"
+            f" padding:2px 6px; }}"
+            f"QComboBox::drop-down {{ border:none; width:12px; }}"
+            f"QComboBox QAbstractItemView {{ background:{TERMINAL_PANEL}; color:{TERMINAL_TEXT};"
+            f" border:1px solid {TERMINAL_BORDER}; }}"
+        )
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self._combo)
 
-    def set_prompt(self, text: str) -> None:
-        """输入框内左侧的目录提示；文字紧接提示之后开始。"""
-        self._prompt = str(text or "")
-        self.setTextMargins(self._prompt_width() + 2, 0, 0, 0)
-        self.update()
-
-    def prompt_text(self) -> str:
-        return self._prompt
-
-    def _prompt_width(self) -> int:
-        if not self._prompt:
-            return 0
-        return self.fontMetrics().horizontalAdvance(self._prompt)
-
-    def paintEvent(self, event):
-        super().paintEvent(event)
-        if not self._prompt:
-            return
-        painter = QPainter(self)
-        painter.setFont(self.font())
-        painter.setPen(QColor(TERMINAL_TEXT if self.isEnabled() else TERMINAL_MUTED))
-        rect = QRect(self.contentsRect().left() + _PROMPT_INSET, 0,
-                     self._prompt_width(), self.height())
-        painter.drawText(rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-                         self._prompt)
-
-    def insertFromMimeData(self, source):
-        text = source.text() if source is not None else ""
-        if "\n" in text or "\r" in text:
-            first = text.replace("\r\n", "\n").replace("\r", "\n").split("\n", 1)[0]
-            self.insert(first)
-            self.paste_truncated.emit()
-            return
-        super().insertFromMimeData(source)
-
-    def focusNextPrevChild(self, next: bool) -> bool:
-        """Tab 与 Shift+Tab 交给补全，不做焦点切换。"""
-        return False
-
-    def keyPressEvent(self, event):
-        key = event.key()
-        if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-            self.submitted.emit()
-            return
-        if key == Qt.Key.Key_Escape:
-            self.clear()
-            return
-        if key == Qt.Key.Key_Up:
-            self.history_prev.emit()
-            return
-        if key == Qt.Key.Key_Down:
-            self.history_next.emit()
-            return
-        if key == Qt.Key.Key_Tab:
-            self.tab_pressed.emit(bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier))
-            return
-        if key == Qt.Key.Key_L and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
-            self.clear_requested.emit()
-            return
-        super().keyPressEvent(event)
+    def currentText(self) -> str:
+        return self._combo.currentText()
 
 
 class TerminalWindow(QWidget):
     """终端窗口：用户输入直接执行，模型执行的命令同步回显。"""
 
-    run_event = Signal(dict)
+    run_event = Signal(object)
     run_finished = Signal(object)
     local_finished = Signal(object)
+    quit_requested = Signal()
+    restart_requested = Signal()
 
-    def __init__(self, runner=None, parent=None):
+    def __init__(self, runner=None, quit_fn=None, restart_fn=None, parent=None):
         super().__init__(parent)
         self._runner = runner if runner is not None else get_runner()
+        self._quit_fn = quit_fn
+        self._restart_fn = restart_fn
+        self._control = _WindowControl(self)
+        self.quit_requested.connect(self._on_quit_requested)
+        self.restart_requested.connect(self._on_restart_requested)
         self._runner.set_terminal_sink(self.run_event.emit)
         self._cwd = resolve_initial_cwd()
         self._runner.set_cwd_source(lambda: self._cwd)
-        self._history: deque[str] = deque(maxlen=_HISTORY_MAX)
-        self._history_index: int | None = None
-        self._draft = ""
         self._busy = False
-        self._follow = True
         self._started_at = 0.0
-        self._completion: Completion | None = None
-        self._cycle_index = 0
-        self._quoted = False
-        self._block_open = False
-        self._pending_lines = {"stdout": "", "stderr": ""}
+        self._follow = True
+        self._phase = Phase.IDLE.value
         self._breath_on = False
-        self._phase = "idle"
-        self._path_cache: tuple[float, tuple[str, ...]] = (0.0, ())
+        self._drag_origin: QPoint | None = None
 
         self.setWindowTitle("终端")
         self.setMinimumSize(520, 360)
@@ -270,23 +206,9 @@ class TerminalWindow(QWidget):
         status_row.addWidget(_title_button("✕", self.hide))
         status_bar.mousePressEvent = self._drag_press
         status_bar.mouseMoveEvent = self._drag_move
-        self._drag_origin: QPoint | None = None
 
-        self._view = QTextEdit()
-        self._view.setObjectName("TerminalView")
-        self._view.setReadOnly(True)
-        self._view.setUndoRedoEnabled(False)
-        self._view.setFrameShape(QFrame.Shape.NoFrame)
-        self._view.setFont(terminal_mono_font(11))
-        self._view.setStyleSheet(
-            f"QTextEdit {{ background:{TERMINAL_BG}; color:{TERMINAL_STDOUT}; border:none; }}"
-            f"QScrollBar:vertical {{ background:{TERMINAL_BG}; width:8px; }}"
-            f"QScrollBar::handle:vertical {{ background:{TERMINAL_BORDER}; border-radius:4px; }}"
-            f"QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height:0; }}"
-        )
-        self._view.verticalScrollBar().valueChanged.connect(self._on_scroll)
-
-        self._input = _InputLine()
+        self._view = TerminalView(cwd_provider=lambda: self._cwd)
+        self._input = InputLine()
         self._input.setFont(terminal_mono_font(11))
         self._input.setFrame(False)
         self._input.setStyleSheet(
@@ -302,6 +224,9 @@ class TerminalWindow(QWidget):
         self._input.clear_requested.connect(self.clear)
         self._input.paste_truncated.connect(
             lambda: self._set_status(PASTE_TRUNCATED_NOTICE))
+        self._input_controller = InputController(
+            self._input, lambda: self._cwd,
+            lambda: self._shell_combo.currentText(), self._set_status)
 
         self._status = QLabel("")
         self._status.setFont(terminal_ui_font(11))
@@ -333,7 +258,14 @@ class TerminalWindow(QWidget):
         self._breath_timer.setInterval(_BREATH_MS)
         self._breath_timer.timeout.connect(self._toggle_breath)
 
-        self._update_placeholder()
+    def closeEvent(self, event):
+        """窗口销毁时注销 runner 回调；模型命令仍可独立执行。"""
+        try:
+            self._runner.set_terminal_sink(None)
+            self._runner.set_cwd_source(None)
+        except Exception:
+            logger.exception("[Terminal] 注销 runner 回调失败")
+        super().closeEvent(event)
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -370,18 +302,18 @@ class TerminalWindow(QWidget):
     def _set_phase(self, phase: str) -> None:
         """状态点四态：空闲、等待闸门、运行中（呼吸）、出错。"""
         self._phase = phase
-        if phase == "waiting":
+        if phase == Phase.WAITING.value:
             self._breath_timer.stop()
             self._set_dot(TERMINAL_USER)
             if not self._busy:
                 self._set_status(PHASE_TEXT["waiting"], TERMINAL_USER)
-        elif phase == "running":
+        elif phase == Phase.RUNNING.value:
             self._breath_on = True
             self._set_dot(TERMINAL_ACCENT)
             self._breath_timer.start()
             if not self._busy:
                 self._set_status(PHASE_TEXT["running"])
-        elif phase == "error":
+        elif phase == Phase.ERROR.value:
             self._breath_timer.stop()
             self._set_dot(TERMINAL_DANGER)
         else:
@@ -393,6 +325,57 @@ class TerminalWindow(QWidget):
     def _set_status(self, text: str, color: str = TERMINAL_MUTED) -> None:
         self._status.setText(text)
         self._status.setStyleSheet(f"color:{color};")
+
+    def _append_run(self, event: TerminalEvent) -> None:
+        if event.kind is EventKind.PHASE:
+            active = self._view.active_run_id
+            # 交错命令的阶段事件不得覆盖当前运行的状态点与计时
+            if event.run_id and active and event.run_id != active:
+                return
+            self._set_phase(event.phase.value if event.phase else Phase.IDLE.value)
+            return
+        self._view.append_run(event)
+
+    def _trim_blocks(self) -> None:
+        """兼容入口：真正的裁剪按行数在 TerminalView 里。"""
+        self._view.trim_lines()
+
+    @property
+    def _history(self):
+        return self._input_controller.history
+
+    def _history_prev(self) -> None:
+        self._input_controller.history_prev()
+
+    def _history_next(self) -> None:
+        self._input_controller.history_next()
+
+    def _on_tab(self, reverse: bool = False) -> None:
+        self._input_controller.on_tab(reverse)
+
+    def _reset_completion(self) -> None:
+        self._input_controller.reset_completion()
+
+    def _path_commands(self) -> tuple[str, ...]:
+        return self._input_controller.path_commands()
+
+    def _submit(self) -> None:
+        text = self._input.text().strip()
+        if not text:
+            return
+        self._input_controller.record(text)
+        self._input.clear()
+        target = cd_target(text) or drive_target(text)
+        if target is not None:
+            self._change_dir(target)
+            return
+        if self._busy:
+            self._set_status(BUSY_NOTICE, TERMINAL_USER)
+            return
+        if cli.is_local(text):
+            self._start_local(text)
+            return
+        self._start_run(text)
 
     def _change_dir(self, target: str) -> bool:
         expanded = os.path.expanduser(str(target or "").strip().strip('"'))
@@ -409,255 +392,10 @@ class TerminalWindow(QWidget):
         self._input.setToolTip(path)
         return True
 
-    def _append_run(self, payload: dict) -> None:
-        """执行线程的事件入口：阶段、开始、输出分块、结束与整块回显。"""
-        kind = str(payload.get("kind") or "")
-        if kind == "phase":
-            self._set_phase(str(payload.get("phase") or ""))
-        elif kind == "start":
-            self._begin_block(payload)
-        elif kind == "chunk":
-            self._append_chunk(payload)
-        elif kind == "end":
-            self._end_block(payload)
-        else:
-            self._render_block(payload)
-
-    def _begin_block(self, payload: dict) -> None:
-        """先落命令行，运行中的输出逐块追加到同一块。"""
-        self._pending_lines = {"stdout": "", "stderr": ""}
-        at_bottom = self._at_bottom()
-        cursor = QTextCursor(self._view.document())
-        cursor.movePosition(QTextCursor.MoveOperation.End)
-        self._insert_header(cursor, payload)
-        self._block_open = True
-        self._trim_blocks()
-        if at_bottom:
-            self._scroll_to_bottom()
-
-    def _append_chunk(self, payload: dict) -> None:
-        if not self._block_open:
-            return
-        stream = str(payload.get("stream") or "stdout")
-        if stream not in self._pending_lines:
-            stream = "stdout"
-        text = self._pending_lines[stream] + str(payload.get("text") or "")
-        cut = text.rfind("\n")
-        if cut < 0:
-            self._pending_lines[stream] = text
-            return
-        complete, rest = text[:cut + 1], text[cut + 1:]
-        self._pending_lines[stream] = rest
-        at_bottom = self._at_bottom()
-        cursor = QTextCursor(self._view.document())
-        cursor.movePosition(QTextCursor.MoveOperation.End)
-        for line in complete.splitlines():
-            self._insert_output_line(cursor, stream, line)
-        self._trim_blocks()
-        if at_bottom:
-            self._scroll_to_bottom()
-
-    def _end_block(self, payload: dict) -> None:
-        if not self._block_open:
-            self._render_block(payload)
-            return
-        at_bottom = self._at_bottom()
-        cursor = QTextCursor(self._view.document())
-        cursor.movePosition(QTextCursor.MoveOperation.End)
-        for stream in ("stdout", "stderr"):
-            rest = self._pending_lines.get(stream, "")
-            if rest:
-                self._insert_output_line(cursor, stream, rest)
-        self._pending_lines = {"stdout": "", "stderr": ""}
-        if payload.get("rejected"):
-            reason = str(payload.get("error") or "")
-            self._insert_line(cursor, self._rejected_text(reason), TERMINAL_MUTED)
-        else:
-            self._insert_cwd_line(cursor, payload)
-            self._insert_tail(cursor, payload.get("exit_code"),
-                              int(payload.get("duration_ms") or 0))
-        cursor.insertText("\n")
-        self._block_open = False
-        self._trim_blocks()
-        if at_bottom:
-            self._scroll_to_bottom()
-
-    def _render_block(self, payload: dict) -> None:
-        """整块回显：历史回填与未产生 start 事件的拒绝。"""
-        rejected = bool(payload.get("rejected"))
-        at_bottom = self._at_bottom()
-        cursor = QTextCursor(self._view.document())
-        cursor.movePosition(QTextCursor.MoveOperation.End)
-        self._insert_header(cursor, payload, muted=rejected)
-        if rejected:
-            reason = str(payload.get("error") or "")
-            self._insert_line(cursor, self._rejected_text(reason), TERMINAL_MUTED)
-        else:
-            for line in str(payload.get("stdout") or "").splitlines():
-                self._insert_output_line(cursor, "stdout", line)
-            for line in str(payload.get("stderr") or "").splitlines():
-                self._insert_output_line(cursor, "stderr", line)
-            self._insert_cwd_line(cursor, payload)
-            self._insert_tail(cursor, payload.get("exit_code"),
-                              int(payload.get("duration_ms") or 0))
-        cursor.insertText("\n")
-        self._trim_blocks()
-        if at_bottom:
-            self._scroll_to_bottom()
-
-    @staticmethod
-    def _rejected_text(reason: str) -> str:
-        return f"{reason} · {REJECTED_TEXT}" if reason else REJECTED_TEXT
-
-    def _insert_header(self, cursor, payload: dict, muted: bool = False) -> None:
-        source = str(payload.get("source") or "user")
-        command = str(payload.get("command") or core.display_argv(payload.get("argv") or []))
-        header = QTextCharFormat()
-        color = TERMINAL_MUTED if muted else terminal_source_color(source)
-        header.setForeground(QColor(color))
-        header.setFont(terminal_mono_font(11, bold=True))
-        cursor.insertText(f"▍{terminal_source_label(source)} ", header)
-        body_fmt = QTextCharFormat()
-        body_fmt.setForeground(QColor(TERMINAL_MUTED if muted else TERMINAL_TEXT))
-        body_fmt.setFont(terminal_mono_font(11))
-        cursor.insertText(command + "\n", body_fmt)
-
-    def _insert_cwd_line(self, cursor, payload: dict) -> None:
-        """模型命令的工作目录与沙箱根不同时补一行 cwd；状态栏已显示用户命令的目录。"""
-        if str(payload.get("source") or "user") == "user":
-            return
-        target = str(payload.get("cwd") or "")
-        if _same_path(target, self._cwd):
-            return
-        if target:
-            self._insert_line(cursor, f"cwd: {target}", TERMINAL_MUTED, prefix="  ")
-
-    def _insert_output_line(self, cursor, stream: str, line: str) -> None:
-        if stream == "stderr":
-            marker = QTextCharFormat()
-            marker.setForeground(QColor(TERMINAL_STDERR))
-            marker.setFont(terminal_mono_font(11))
-            cursor.insertText("  stderr ", marker)
-            self._insert_line(cursor, line, TERMINAL_STDOUT, prefix="")
-            return
-        self._insert_line(cursor, line, TERMINAL_STDOUT)
-
-    def _insert_line(self, cursor, text: str, color: str, prefix: str = "  ") -> None:
-        fmt = QTextCharFormat()
-        fmt.setForeground(QColor(color))
-        fmt.setFont(terminal_mono_font(11))
-        cursor.insertText(f"{prefix}{text}\n", fmt)
-
-    def _insert_tail(self, cursor, code, duration_ms: int) -> None:
-        meta = QTextCharFormat()
-        meta.setForeground(QColor(TERMINAL_MUTED))
-        meta.setFont(terminal_mono_font(10))
-        cursor.insertText("  exit ", meta)
-        code_fmt = QTextCharFormat()
-        success = code in (0, "0", None)
-        code_fmt.setForeground(QColor(TERMINAL_MUTED if success else TERMINAL_DANGER))
-        code_fmt.setFont(terminal_mono_font(10))
-        cursor.insertText("?" if code is None else str(code), code_fmt)
-        cursor.insertText(f" · {duration_ms / 1000:.2f}s\n", meta)
-
-    def _at_bottom(self) -> bool:
-        bar = self._view.verticalScrollBar()
-        return bar.value() >= bar.maximum() - 2
-
-    def _on_scroll(self, value: int) -> None:
-        bar = self._view.verticalScrollBar()
-        self._follow = value >= bar.maximum() - 2
-
-    def _scroll_to_bottom(self) -> None:
-        bar = self._view.verticalScrollBar()
-        bar.setValue(bar.maximum())
-        self._follow = True
-
-    def _trim_blocks(self) -> None:
-        """超出上限时从头部整块删除，保留最近 _MAX_BLOCKS 块。"""
-        document = self._view.document()
-        total = document.blockCount()
-        if total <= _MAX_BLOCKS:
-            return
-        excess = total - _MAX_BLOCKS
-        cursor = QTextCursor(document)
-        cursor.movePosition(QTextCursor.MoveOperation.Start)
-        cursor.movePosition(QTextCursor.MoveOperation.NextBlock,
-                            QTextCursor.MoveMode.KeepAnchor, excess)
-        cursor.removeSelectedText()
-
-    def _submit(self) -> None:
-        text = self._input.text().strip()
-        if not text:
-            return
-        push_history(self._history, text)
-        self._history_index = None
-        self._draft = ""
-        self._input.clear()
-        self._reset_completion()
-        target = cd_target(text) or drive_target(text)
-        if target is not None:
-            self._change_dir(target)
-            return
-        if self._busy:
-            self._set_status(BUSY_NOTICE, TERMINAL_USER)
-            return
-        if cli.is_local(text):
-            self._start_local(text)
-            return
-        self._start_run(text)
-
-    def _start_local(self, text: str) -> None:
-        """本地命令在独立线程执行：知识库与记忆检索要等 embedding。"""
-        self._busy = True
-        self._started_at = time.monotonic()
-        self._set_phase("running")
-        self._elapsed_timer.start()
-        self._input.setEnabled(False)
-        threading.Thread(target=self._local_worker, args=(text, self._cwd),
-                         daemon=True).start()
-
-    def _local_worker(self, text: str, cwd: str) -> None:
-        try:
-            result = cli.run(text, cwd, self._runner)
-        except Exception as exc:
-            logger.exception("[Terminal] 本地命令异常")
-            result = cli.LocalResult(
-                stderr=f"命令执行失败：{exc}", exit_code=cli.EXIT_TOOL)
-        self.local_finished.emit({"command": text, "result": result})
-
-    def _on_local_finished(self, payload) -> None:
-        self._busy = False
-        self._elapsed_timer.stop()
-        self._input.setEnabled(True)
-        self._input.setFocus()
-        result = payload.get("result")
-        if result is None:
-            return
-        if result.exit_code:
-            self._set_phase("error")
-            QTimer.singleShot(1200, lambda: self._set_phase("idle"))
-        else:
-            self._set_phase("idle")
-        self._set_status("")
-        if result.clear:
-            self.clear()
-            return
-        self._render_block({
-            "source": "user",
-            "command": str(payload.get("command") or ""),
-            "cwd": self._cwd,
-            "rejected": False,
-            "exit_code": result.exit_code,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
-            "duration_ms": int((time.monotonic() - self._started_at) * 1000),
-        })
-
     def _start_run(self, text: str) -> None:
         self._busy = True
         self._started_at = time.monotonic()
-        self._set_phase("waiting")
+        self._set_phase(Phase.WAITING.value)
         self._elapsed_timer.start()
         self._set_status(PHASE_TEXT["waiting"], TERMINAL_USER)
         self._input.setEnabled(False)
@@ -682,11 +420,11 @@ class TerminalWindow(QWidget):
         self._input.setFocus()
         error = outcome.get("error") if isinstance(outcome, dict) else ""
         if error:
-            self._set_phase("error")
+            self._set_phase(Phase.ERROR.value)
             self._set_status(str(error), TERMINAL_DANGER)
-            QTimer.singleShot(1200, lambda: self._set_phase("idle"))
+            QTimer.singleShot(1200, lambda: self._set_phase(Phase.IDLE.value))
         else:
-            self._set_phase("idle")
+            self._set_phase(Phase.IDLE.value)
             self._set_status("")
 
     def _tick_elapsed(self) -> None:
@@ -696,143 +434,80 @@ class TerminalWindow(QWidget):
         label = PHASE_TEXT.get(self._phase, PHASE_TEXT["running"])
         self._set_status(f"{label} {elapsed:.1f}s")
 
-    def _history_prev(self) -> None:
-        if not self._history:
-            return
-        if self._history_index is None:
-            self._draft = self._input.text()
-            self._history_index = len(self._history) - 1
-        elif self._history_index > 0:
-            self._history_index -= 1
-        self._input.setText(self._history[self._history_index])
+    def _start_local(self, text: str) -> None:
+        """本地命令在独立线程执行：知识库与记忆检索要等 embedding。"""
+        self._busy = True
+        self._started_at = time.monotonic()
+        self._set_phase(Phase.RUNNING.value)
+        self._elapsed_timer.start()
+        self._input.setEnabled(False)
+        threading.Thread(target=self._local_worker, args=(text, self._cwd),
+                         daemon=True).start()
 
-    def _history_next(self) -> None:
-        if self._history_index is None:
-            return
-        if self._history_index < len(self._history) - 1:
-            self._history_index += 1
-            self._input.setText(self._history[self._history_index])
-            return
-        self._history_index = None
-        self._input.setText(self._draft)
+    def _local_worker(self, text: str, cwd: str) -> None:
+        try:
+            result = cli.run(text, cwd, self._runner, self._control)
+        except Exception as exc:
+            logger.exception("[Terminal] 本地命令异常")
+            result = cli.LocalResult(
+                stderr=f"命令执行失败：{exc}", exit_code=cli.EXIT_TOOL)
+        self.local_finished.emit({"command": text, "result": result})
 
-    def _on_tab(self, reverse: bool = False) -> None:
-        """Tab 直接轮换候选：首次取第一个，之后逐个循环；Shift+Tab 反向。"""
-        if self._completion is None:
-            ctx = CompletionContext(
-                cwd=self._cwd,
-                case_sensitive=os.name != "nt",
-                shell=self._shell_combo.currentText(),
-                path_commands=self._path_commands(),
-                local_commands=cli.command_names(),
-                local_subcommands=cli.subcommands(),
-                local_path_commands=cli.path_commands(),
-                local_aliases=cli.aliases(),
-                local_flags=cli.flags(),
-                local_values=cli.values(),
-            )
-            result = complete(self._input.text(), self._input.cursorPosition(), ctx)
-            if not result.candidates:
-                self._set_status("无匹配")
-                return
-            self._completion = result
-            self._cycle_index = 0
-            line = self._input.text()
-            self._quoted = result.start > 0 and line[result.start - 1] == '"'
-            self._apply_candidate(result.candidates[0],
-                                  append_space=len(result.candidates) == 1)
-            if len(result.candidates) == 1:
-                self._reset_completion()
+    def _on_local_finished(self, payload) -> None:
+        self._busy = False
+        self._elapsed_timer.stop()
+        self._input.setEnabled(True)
+        self._input.setFocus()
+        result = payload.get("result")
+        if result is None:
             return
-        step = -1 if reverse else 1
-        self._cycle_index = (self._cycle_index + step) % len(self._completion.candidates)
-        self._apply_candidate(self._completion.candidates[self._cycle_index],
-                              append_space=False)
-
-    def _apply_candidate(self, candidate: str, append_space: bool) -> None:
-        text = quote_candidate(candidate, quoted=self._quoted)
-        self._replace_token(text)
-        if self._completion is None:
+        if result.exit_code:
+            self._set_phase(Phase.ERROR.value)
+            QTimer.singleShot(1200, lambda: self._set_phase(Phase.IDLE.value))
+        else:
+            self._set_phase(Phase.IDLE.value)
+        self._set_status("")
+        if result.clear:
+            self.clear()
             return
-        if append_space and not text.endswith(os.sep):
-            self._input.setText(self._input.text() + " ")
+        # 本地结果也走事件协议：独立 run_id 保证不会关掉正在输出的命令块
+        event = TerminalEvent.finished(
+            f"local-{uuid.uuid4().hex}", CommandSource.USER,
+            str(payload.get("command") or ""),
+            (str(payload.get("command") or ""),), self._cwd,
+            rejected=False, exit_code=result.exit_code,
+            stdout=result.stdout, stderr=result.stderr,
+            duration_ms=int((time.monotonic() - self._started_at) * 1000))
+        self._append_run(event)
 
-    def _replace_token(self, text: str) -> None:
-        if self._completion is None:
-            return
-        line = self._input.text()
-        start = min(self._completion.start, len(line))
-        cursor = max(self._input.cursorPosition(), start)
-        self._input.setText(line[:start] + text + line[cursor:])
-        self._input.setCursorPosition(start + len(text))
+    def request_quit(self) -> bool:
+        """请求退出应用；可从任意线程调用，返回是否已提交。"""
+        if self._quit_fn is None:
+            return False
+        self.quit_requested.emit()
+        return True
 
-    def _reset_completion(self) -> None:
-        self._completion = None
-        self._cycle_index = 0
-        self._quoted = False
+    def request_restart(self) -> bool:
+        """请求重启应用；可从任意线程调用，返回是否已提交。"""
+        if self._restart_fn is None:
+            return False
+        self.restart_requested.emit()
+        return True
 
-    def _path_commands(self) -> tuple[str, ...]:
-        now = time.monotonic()
-        cached_at, cached = self._path_cache
-        if cached and now - cached_at < _PATH_CACHE_S:
-            return cached
-        names: set[str] = set()
-        for directory in (os.environ.get("PATH") or "").split(os.pathsep):
-            if not directory:
-                continue
-            try:
-                with os.scandir(directory) as items:
-                    for item in items:
-                        try:
-                            if not item.is_file():
-                                continue
-                        except OSError:
-                            continue
-                        stem, ext = os.path.splitext(item.name)
-                        if os.name == "nt":
-                            if ext.lower() in (".exe", ".bat", ".cmd", ".com"):
-                                names.add(stem)
-                        else:
-                            names.add(item.name)
-            except OSError:
-                continue
-        result = tuple(sorted(names))
-        self._path_cache = (now, result)
-        return result
+    @Slot()
+    def _on_quit_requested(self) -> None:
+        if self._quit_fn is not None:
+            self._quit_fn()
+
+    @Slot()
+    def _on_restart_requested(self) -> None:
+        if self._restart_fn is not None:
+            self._restart_fn()
 
     def clear(self) -> None:
         """清空回显区。"""
-        self._view.clear()
+        self._view.clear_view()
         self._reset_completion()
-        self._update_placeholder()
 
     def _update_placeholder(self) -> None:
-        self._view.setPlaceholderText("输入命令后回车执行\n↑ ↓ 翻历史 · Ctrl+L 清屏")
-
-
-class _Combo(QWidget):
-    """状态栏用的小下拉框，无滚轮响应。"""
-
-    def __init__(self, items: list[str], parent=None):
-        super().__init__(parent)
-        self._combo = NoWheelComboBox(self)
-        self._combo.addItems(items)
-        self.currentTextChanged = self._combo.currentTextChanged
-        self._combo.setFont(terminal_mono_font(10))
-        self._combo.setStyleSheet(
-            f"QComboBox {{ color:{TERMINAL_MUTED_LIGHT}; background:{TERMINAL_PANEL};"
-            f" border:1px solid {TERMINAL_BORDER}; border-radius:{TERMINAL_CONTROL_RADIUS}px;"
-            f" padding:2px 6px; }}"
-            f"QComboBox::drop-down {{ border:none; width:12px; }}"
-            f"QComboBox QAbstractItemView {{ background:{TERMINAL_PANEL}; color:{TERMINAL_TEXT};"
-            f" border:1px solid {TERMINAL_BORDER}; }}"
-        )
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self._combo)
-
-    def currentText(self) -> str:
-        return self._combo.currentText()
-
-    def setCurrentText(self, text: str) -> None:
-        self._combo.setCurrentText(text)
+        self._view.set_placeholder()

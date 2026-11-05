@@ -1,4 +1,4 @@
-"""TerminalRunner：模型命令与用户终端共用的执行编排。"""
+"""TerminalRunner：模型命令与用户终端共用的执行编排"""
 
 from __future__ import annotations
 
@@ -8,10 +8,14 @@ import shutil
 import sys
 import threading
 import time
+import uuid
+from dataclasses import dataclass
 
 from pet.config import config
 from pet.terminal import core, policy
 from pet.terminal.confirm import ConfirmRequest
+from pet.terminal.events import (CommandSource, Phase, TerminalEvent,
+                                 as_source)
 
 logger = logging.getLogger(__name__)
 
@@ -55,10 +59,25 @@ def failure(code: str, message: str = "") -> dict:
     }
 
 
+@dataclass(frozen=True)
+class Prepared:
+    """prepare() 的唯一产物：判定、执行参数与展示信息在这里定稿。"""
+
+    run_id: str
+    source: CommandSource
+    command: str
+    argv: tuple[str, ...]
+    cwd: str
+    timeout_s: float
+    verdict: policy.Verdict
+
+
 class TerminalRunner:
 
     def __init__(self):
         self.lock = threading.Lock()
+        self._proc_lock = threading.Lock()
+        self._active_pid: int | None = None
         self._installed_cache: dict[str, tuple[float, bool]] = {}
         self._terminal_sink = None
         self._confirm = None
@@ -85,6 +104,25 @@ class TerminalRunner:
     def set_cwd_source(self, provider) -> None:
         """注册共享工作目录来源（终端窗口当前目录）；传 None 注销。"""
         self._cwd_source = provider
+
+    def shutdown(self) -> int:
+        """应用退出：终止仍在运行的子进程并注销全部回调。
+
+        返回被终止的进程数。子进程只在超时路径自动终止，正常退出时若不处理
+        会随应用一起变成孤儿进程。
+        """
+        with self._proc_lock:
+            pid, self._active_pid = self._active_pid, None
+        terminated = 0
+        if pid:
+            ok, message = core.terminate_tree(pid)
+            terminated = int(ok)
+            if not ok:
+                logger.warning("[TerminalRunner] 终止活跃子进程失败：%s", message)
+        self.set_terminal_sink(None)
+        self.set_cwd_source(None)
+        self.set_confirm(None)
+        return terminated
 
     def shared_cwd(self) -> str:
         """终端窗口的当前目录；没有窗口时返回空串。"""
@@ -114,60 +152,68 @@ class TerminalRunner:
             logger.exception("[TerminalRunner] 未预期异常")
             return failure("internal_error", f"命令执行失败：{exc}")
 
-    def list(self) -> dict:
-        """当前策略快照：平台、沙箱根、免确认命令、解释器与危险类别。"""
+    def snapshot(self) -> dict:
+        """纯数据策略快照：不含任何面向 LLM 或终端的排版字段。"""
         entries = policy.allowed_entries()
-        root = self.shared_cwd() or policy.sandbox_root()
-        allowed = []
-        chips = []
-        for program, pattern in entries:
-            command = " ".join([program] + list(pattern))
-            allowed.append({"command": command, "installed": self._installed(program)})
-            chips.append(command)
-        mode = (config.TERMINAL_MODE or "ask").strip().lower()
-        lines = [
-            "免确认命令：" + (" | ".join(chips) if chips else "无"),
-            "解释器一律询问：" + "、".join(policy.INTERPRETERS),
-            f"沙箱根：{root}",
+        root = policy.effective_root(self.shared_cwd())
+        allowed = [
+            {"command": " ".join([program] + list(pattern)),
+             "installed": self._installed(program)}
+            for program, pattern in entries
         ]
         return {
-            "headline": f"当前档位 {mode}，免确认命令 {len(entries)} 条",
-            "body": "\n".join(lines),
             "platform": platform_name(),
             "sandbox_root": root,
             "allowed": allowed,
             "interpreters": list(policy.INTERPRETERS),
             "deny_categories": policy.deny_categories(),
             "shell_mode": bool(config.TERMINAL_ALLOW_SHELL),
-            "mode": mode,
+            "mode": (config.TERMINAL_MODE or "ask").strip().lower(),
         }
 
-    def _run(self, source: str, command: str, cwd: str, timeout, shell: str) -> dict:
+    def list(self) -> dict:
+        """terminal__list 的 LLM 投影：headline / body + 原始快照字段。"""
+        data = self.snapshot()
+        chips = [item["command"] for item in data["allowed"]]
+        lines = [
+            "免确认命令：" + (" | ".join(chips) if chips else "无"),
+            "解释器一律询问：" + "、".join(policy.INTERPRETERS),
+            f"沙箱根：{data['sandbox_root']}",
+        ]
+        return {
+            "headline": f"当前档位 {data['mode']}，免确认命令 {len(chips)} 条",
+            "body": "\n".join(lines),
+            **data,
+        }
+
+    # ------------------------------------------------------------------
+    # prepare → gate → execute → report
+    # ------------------------------------------------------------------
+
+    def prepare(self, run_id: str, source: CommandSource, command: str,
+                cwd: str, timeout, shell: str) -> Prepared | dict:
+        """校验、策略、确认与执行参数定稿；失败时已发出终态事件并返回 failure。"""
         text = str(command or "").strip()
-        if source != "user":
+        if source is not CommandSource.USER:
             if not config.TERMINAL_ENABLED:
-                return self._reject(source, text, "terminal_disabled")
+                return self._reject(source, text, "terminal_disabled", run_id=run_id)
             if shell and not config.TERMINAL_ALLOW_SHELL:
-                return self._reject(source, text, "shell_mode_disabled")
+                return self._reject(source, text, "shell_mode_disabled", run_id=run_id)
 
         parsed, err = core.parse_command(text, shell)
         if err:
-            return self._reject(source, text, err)
+            return self._reject(source, text, err, parsed.argv, run_id)
 
-        default_s = (config.TERMINAL_MAX_COMMAND_TIMEOUT_S if source == "user"
+        default_s = (config.TERMINAL_MAX_COMMAND_TIMEOUT_S
+                     if source is CommandSource.USER
                      else config.TERMINAL_COMMAND_TIMEOUT_S)
         timeout_s = policy.clamp_timeout(timeout, default_s)
 
-        shared = self.shared_cwd() if source != "user" else ""
-        verdict = policy.check(source, parsed.argv, parsed.builtin, text,
+        shared = self.shared_cwd() if source is not CommandSource.USER else ""
+        verdict = policy.check(source.value, parsed.argv, parsed.builtin, text,
                                cwd=cwd, shell=shell, root=shared)
         if verdict.decision == "deny":
-            return self._reject(source, text, verdict.reason, parsed)
-
-        work_cwd, cwd_err = policy.sandbox_cwd(
-            cwd, shared or policy.sandbox_root(), source)
-        if cwd_err:
-            return self._reject(source, text, cwd_err, parsed)
+            return self._reject(source, text, verdict.reason, parsed.argv, run_id)
 
         # 非内建、非 shell 模式执行判定解析出的绝对路径
         exec_argv = list(parsed.routed or parsed.argv)
@@ -180,101 +226,136 @@ class TerminalRunner:
                 argv=list(parsed.argv),
                 builtin=parsed.builtin,
                 routed=list(exec_argv),
-                cwd=work_cwd,
+                cwd=verdict.abs_cwd,
                 shell_mode=shell,
                 timeout_s=float(config.TERMINAL_CONFIRM_TIMEOUT_S),
-                source=source,
+                source=source.value,
                 matched_patterns=list(verdict.matched),
                 untrusted=verdict.untrusted,
             )
             confirm = self._confirm
             allowed = bool(confirm(request)) if confirm is not None else False
             if not allowed:
-                self._notify_terminal({
-                    "kind": "end", "source": source, "command": text,
-                    "argv": exec_argv, "cwd": work_cwd, "rejected": True,
-                    "exit_code": None, "stdout": "", "stderr": "",
-                    "duration_ms": 0, "error": _MESSAGES["denied_by_user"],
-                })
+                self._notify_terminal(TerminalEvent.finished(
+                    run_id, source, text, exec_argv, verdict.abs_cwd,
+                    rejected=True, error=_MESSAGES["denied_by_user"]))
                 return failure("denied_by_user")
 
-        self._notify_terminal({"kind": "phase", "phase": "waiting", "source": source})
-        wait_s = max(0.0, float(config.TERMINAL_QUEUE_WAIT_S))
-        if not self.lock.acquire(timeout=wait_s):
-            return self._reject(source, text, "busy", parsed)
+        return Prepared(run_id=run_id, source=source, command=text,
+                        argv=tuple(exec_argv), cwd=verdict.abs_cwd,
+                        timeout_s=timeout_s, verdict=verdict)
 
-        try:
-            self._notify_terminal({"kind": "phase", "phase": "running", "source": source})
-            self._notify_terminal({
-                "kind": "start", "source": source, "command": text,
-                "argv": exec_argv, "cwd": work_cwd,
-            })
-            result = core.run(
-                exec_argv, work_cwd, timeout_s,
-                policy.build_env(), int(config.TERMINAL_MAX_CAPTURE_BYTES),
-                on_output=self._output_relay(source),
-            )
-        finally:
-            self.lock.release()
-            self._notify_terminal({"kind": "phase", "phase": "idle", "source": source})
+    def execute(self, prepared: Prepared) -> core.RunResult:
+        """只负责调用执行核心，并登记活跃 pid 供 shutdown() 收尾。"""
+        return core.run(
+            list(prepared.argv), prepared.cwd, prepared.timeout_s,
+            policy.build_env(), int(config.TERMINAL_MAX_CAPTURE_BYTES),
+            on_output=self._output_relay(prepared.source, prepared.run_id),
+            on_start=self._track_pid,
+        )
 
+    def report(self, prepared: Prepared,
+               result: core.RunResult) -> tuple[TerminalEvent, dict]:
+        """把执行结果投影成终态事件与工具返回值；不发送、不碰闸门。"""
+        base = (prepared.run_id, prepared.source, prepared.command,
+                prepared.argv, prepared.cwd)
+        end_event = TerminalEvent.finished(
+            *base, rejected=False, exit_code=result.exit_code,
+            stdout=result.stdout, stderr=result.stderr,
+            duration_ms=result.duration_ms,
+            error=result.error if result.code else "")
         if result.code:
-            self._notify_terminal({
-                "kind": "end", "source": source, "command": text, "argv": exec_argv,
-                "cwd": work_cwd, "rejected": False, "exit_code": result.exit_code,
-                "stdout": result.stdout, "stderr": result.stderr,
-                "duration_ms": result.duration_ms, "error": result.error,
-            })
-            return failure(result.code, result.error)
-
+            return end_event, failure(result.code, result.error)
         body, char_truncated = core.truncate_streams(
             result.stdout, result.stderr, int(config.TERMINAL_MAX_OUTPUT_CHARS))
         truncated = bool(char_truncated or result.truncated)
-        self._notify_terminal({
-            "kind": "end", "source": source, "command": text, "argv": exec_argv,
-            "cwd": work_cwd, "rejected": False, "exit_code": result.exit_code,
-            "stdout": result.stdout, "stderr": result.stderr,
-            "duration_ms": result.duration_ms, "error": "",
-        })
         headline = f"退出码 {result.exit_code}，输出 {core.count_lines(body)} 行"
         if truncated:
             headline += TRUNCATED_SUFFIX
-        return {
+        return end_event, {
             "headline": headline,
             "body": body,
             "exit_code": int(result.exit_code),
             "hint": "",
         }
 
-    def _reject(self, source: str, command: str, code: str,
-                parsed: "core.Parsed | None" = None) -> dict:
+    def _run(self, source: str, command: str, cwd: str, timeout, shell: str) -> dict:
+        src = as_source(source)
+        run_id = uuid.uuid4().hex
+        prepared = self.prepare(run_id, src, command, cwd, timeout, shell)
+        if isinstance(prepared, dict):
+            return prepared
+
+        self._notify_terminal(
+            TerminalEvent.phase_event(run_id, src, Phase.WAITING))
+        wait_s = max(0.0, float(config.TERMINAL_QUEUE_WAIT_S))
+        if not self.lock.acquire(timeout=wait_s):
+            # 模型命令没有窗口侧 _on_run_finished 兜底，busy 必须自己复位状态点
+            self._notify_terminal(
+                TerminalEvent.phase_event(run_id, src, Phase.IDLE))
+            return self._reject(src, prepared.command, "busy", prepared.argv, run_id)
+
+        # 终态事件一律在闸门内发出，避免下一条命令的 start 抢在本条 end 之前；
+        # 无论成功、业务失败还是异常，都恰好发一个 end 和一个 idle。
+        end_event = TerminalEvent.finished(
+            run_id, src, prepared.command, prepared.argv, prepared.cwd,
+            rejected=True, error=_MESSAGES["internal_error"])
+        outcome = failure("internal_error")
+        try:
+            self._notify_terminal(
+                TerminalEvent.phase_event(run_id, src, Phase.RUNNING))
+            self._notify_terminal(TerminalEvent.started(
+                run_id, src, prepared.command, prepared.argv, prepared.cwd))
+            end_event, outcome = self.report(prepared, self.execute(prepared))
+        except Exception as exc:
+            logger.exception("[TerminalRunner] 执行阶段异常")
+            message = f"命令执行失败：{exc}"
+            end_event = TerminalEvent.finished(
+                run_id, src, prepared.command, prepared.argv, prepared.cwd,
+                rejected=True, error=message)
+            outcome = failure("internal_error", message)
+        finally:
+            self._notify_terminal(end_event)
+            self._notify_terminal(
+                TerminalEvent.phase_event(run_id, src, Phase.IDLE))
+            self._clear_pid()
+            self.lock.release()
+        return outcome
+
+    def _reject(self, source: CommandSource, command: str, code: str,
+                argv=(), run_id: str = "") -> dict:
         logger.info("[TerminalRunner] %s 拒绝：%s", source, code)
-        argv = list(parsed.argv) if parsed is not None and parsed.argv else [command]
-        self._notify_terminal({
-            "kind": "end", "source": source, "command": command,
-            "argv": argv, "cwd": "", "rejected": True, "exit_code": None,
-            "stdout": "", "stderr": "", "duration_ms": 0,
-            "error": _MESSAGES.get(code, code),
-        })
+        self._notify_terminal(TerminalEvent.finished(
+            run_id or uuid.uuid4().hex, source, command,
+            argv or (command,), "", rejected=True,
+            error=_MESSAGES.get(code, code)))
         return failure(code)
 
-    def _output_relay(self, source: str):
+    def _output_relay(self, source: CommandSource, run_id: str):
         """运行中按行回传给终端；没有终端窗口时不回传。"""
         if self._terminal_sink is None:
             return None
 
         def relay(stream: str, text: str) -> None:
-            self._notify_terminal({"kind": "chunk", "source": source,
-                                   "stream": stream, "text": text})
+            self._notify_terminal(
+                TerminalEvent.chunk(run_id, source, stream, text))
 
         return relay
 
-    def _notify_terminal(self, payload: dict) -> None:
+    def _track_pid(self, pid: int) -> None:
+        with self._proc_lock:
+            self._active_pid = int(pid)
+
+    def _clear_pid(self) -> None:
+        with self._proc_lock:
+            self._active_pid = None
+
+    def _notify_terminal(self, event: TerminalEvent) -> None:
         sink = self._terminal_sink
         if sink is None:
             return
         try:
-            sink(payload)
+            sink(event)
         except Exception:
             logger.exception("[TerminalRunner] 终端回显失败")
 
