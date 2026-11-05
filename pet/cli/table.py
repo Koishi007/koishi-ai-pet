@@ -4,9 +4,6 @@ from __future__ import annotations
 
 from .types import EXIT_USAGE, PREFIX, LocalResult
 
-# 帮助里的分组顺序；工具声明的新分组排在后面，按名称排序
-GROUP_ORDER = ("通用", "恋恋", "状态与策略", "计时与待办", "检索")
-
 # 处理函数不在这里登记：catalog 按 name 绑定 handler，避免表里出现函数引用
 BUILTIN_SPECS = (
     {"name": "help", "group": "通用",

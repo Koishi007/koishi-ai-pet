@@ -7,16 +7,15 @@ from pet.tools.registry import TOOL_REGISTRY
 from .builtins import (check, clear, policy_snapshot, quit_app, restart_app,
                        status)
 from .format import key_values
-from .table import (BUILTIN_SPECS, GROUP_ORDER as TABLE_GROUP_ORDER,
-                    usage as table_usage)
+from .table import BUILTIN_SPECS, usage as table_usage
 from .types import PREFIX, LocalCommand, LocalContext, LocalResult
 
-# 兼容旧引用；分组顺序的真相在 table 里
-GROUP_ORDER = TABLE_GROUP_ORDER
+TOOL_GROUP = "工具"
+GROUP_ORDER = ("通用", "恋恋", "状态与策略", TOOL_GROUP)
 
 
 def commands() -> tuple[LocalCommand, ...]:
-    """内建命令在前，工具注册的命令按注册顺序在后。"""
+    """内建命令在前，工具注册的命令统一归入工具分组、按注册顺序在后。"""
     entries = [LocalCommand(
         name=item["name"], group=item["group"], rows=item["rows"],
         handler=_HANDLERS[item["name"]], paths=bool(item.get("paths")),
@@ -26,7 +25,7 @@ def commands() -> tuple[LocalCommand, ...]:
         values=dict(item.get("values", {}))) for item in BUILTIN_SPECS]
     for tool, command in TOOL_REGISTRY.commands():
         entries.append(LocalCommand(
-            name=command.name, group=command.group, rows=command.rows,
+            name=command.name, group=TOOL_GROUP, rows=command.rows,
             tool=tool, resolve=command.resolve, words=command.words,
             paths=command.paths, examples=command.examples,
             aliases=command.aliases, flags=command.flags, values=command.values))
@@ -139,10 +138,9 @@ def _command_help(name: str) -> LocalResult:
 
 
 def _groups(entries: tuple[LocalCommand, ...]) -> list[str]:
-    """帮助里的分组顺序：登记过的分组按序在前，其余按名称排在后面。"""
+    """帮助里的分组顺序完全由内建常量决定；组内按登记顺序。"""
     present = {command.group for command in entries}
-    known = [group for group in GROUP_ORDER if group in present]
-    return known + sorted(present - set(GROUP_ORDER))
+    return [group for group in GROUP_ORDER if group in present]
 
 
 # 内建命令的处理函数按名字绑定；纯数据表在 table.BUILTIN_SPECS

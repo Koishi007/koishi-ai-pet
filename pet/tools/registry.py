@@ -48,7 +48,6 @@ class ToolCommand:
     """
 
     name: str
-    group: str
     rows: tuple[tuple[str, str], ...]
     resolve: Callable[[str], tuple[str, dict]]
     words: tuple[str, ...] = ()
@@ -262,7 +261,7 @@ class ToolRegistry:
                 actions.extend(tool.file_actions)
         return actions
 
-    def add_command(self, tool_name: str, *, name: str, group: str,
+    def add_command(self, tool_name: str, *, name: str,
                     rows: tuple[tuple[str, str], ...],
                     resolve: Callable[[str], tuple[str, dict]],
                     words: tuple[str, ...] = (),
@@ -282,7 +281,7 @@ class ToolRegistry:
             logger.warning(f"[ToolRegistry] 终端命令重名，忽略：{name}")
             return
         self._commands[name] = (tool_name, ToolCommand(
-            name=name, group=group, rows=rows, resolve=resolve,
+            name=name, rows=rows, resolve=resolve,
             words=tuple(words), paths=bool(paths), examples=tuple(examples),
             aliases=tuple(aliases), flags=tuple(flags), values=dict(values or {})))
         logger.info(f"[ToolRegistry] terminal command added: {name} ({tool_name})")
@@ -582,7 +581,6 @@ class ToolRegistry:
         self.add_command(
             "recall",
             name="memory",
-            group="检索",
             rows=((":memory search <keyword>", "按关键词检索长期记忆"),),
             resolve=_resolve_memory_command,
             words=("search",),

@@ -30,14 +30,8 @@ from pet.ui.styles import (ICON_PATH, TERMINAL_ACCENT, TERMINAL_ACCENT_DIM,
                            TERMINAL_TEXT, TERMINAL_USER, TERMINAL_WINDOW_RADIUS,
                            ensure_taskbar_icon, terminal_mono_font,
                            terminal_ui_font)
-from pet.ui.terminal_input import (CWD_LABEL_MAX as _CWD_LABEL_MAX,
-                                   HISTORY_MAX as _HISTORY_MAX,
-                                   PATH_CACHE_S as _PATH_CACHE_S,
-                                   PROMPT_INSET as _PROMPT_INSET,
-                                   InputController, InputLine, cwd_prompt,
-                                   elide_cwd, push_history)
-from pet.ui.terminal_view import (MAX_LINES as _MAX_LINES, REJECTED_TEXT,
-                                  TerminalView, same_path as _same_path)
+from pet.ui.terminal_input import InputController, InputLine, cwd_prompt
+from pet.ui.terminal_view import TerminalView
 from pet.ui.widgets import NoWheelComboBox
 
 logger = logging.getLogger(__name__)
@@ -335,14 +329,6 @@ class TerminalWindow(QWidget):
             self._set_phase(event.phase.value if event.phase else Phase.IDLE.value)
             return
         self._view.append_run(event)
-
-    def _trim_blocks(self) -> None:
-        """兼容入口：真正的裁剪按行数在 TerminalView 里。"""
-        self._view.trim_lines()
-
-    @property
-    def _history(self):
-        return self._input_controller.history
 
     def _history_prev(self) -> None:
         self._input_controller.history_prev()

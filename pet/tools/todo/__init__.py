@@ -130,7 +130,6 @@ def register_commands(registry):
     registry.add_command(
         TOOL_NAME,
         name="todo",
-        group="计时与待办",
         rows=((":todo add <title>", "添加待办"),
               (":todo list [status]", "列出待办，status 可选 pending、done、all")),
         resolve=_resolve_command,

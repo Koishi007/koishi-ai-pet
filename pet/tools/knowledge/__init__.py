@@ -125,7 +125,6 @@ def register_commands(registry):
     registry.add_command(
         TOOL_NAME,
         name="knowledge",
-        group="检索",
         rows=((":knowledge search <keyword>", "检索知识库"),),
         resolve=_resolve_command,
         words=("search",),

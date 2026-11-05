@@ -148,7 +148,6 @@ def register_commands(registry):
     registry.add_command(
         TOOL_NAME,
         name="timer",
-        group="计时与待办",
         rows=((":timer <duration> [message]", "设定倒计时，duration 支持 90、10m、1h30m"),
               (":timer list", "列出未到期的倒计时"),
               (":timer cancel <id>", "取消倒计时，id 见 :timer list")),

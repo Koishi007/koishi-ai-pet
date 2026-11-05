@@ -14,8 +14,7 @@ from dataclasses import dataclass
 from pet.config import config
 from pet.terminal import core, policy
 from pet.terminal.confirm import ConfirmRequest
-from pet.terminal.events import (CommandSource, Phase, TerminalEvent,
-                                 as_source)
+from pet.terminal.events import CommandSource, Phase, TerminalEvent
 
 logger = logging.getLogger(__name__)
 
@@ -186,10 +185,6 @@ class TerminalRunner:
             **data,
         }
 
-    # ------------------------------------------------------------------
-    # prepare → gate → execute → report
-    # ------------------------------------------------------------------
-
     def prepare(self, run_id: str, source: CommandSource, command: str,
                 cwd: str, timeout, shell: str) -> Prepared | dict:
         """校验、策略、确认与执行参数定稿；失败时已发出终态事件并返回 failure。"""
@@ -202,7 +197,7 @@ class TerminalRunner:
 
         parsed, err = core.parse_command(text, shell)
         if err:
-            return self._reject(source, text, err, parsed.argv, run_id)
+                return self._reject(source, text, err, parsed.argv, run_id=run_id)
 
         default_s = (config.TERMINAL_MAX_COMMAND_TIMEOUT_S
                      if source is CommandSource.USER
@@ -213,7 +208,8 @@ class TerminalRunner:
         verdict = policy.check(source.value, parsed.argv, parsed.builtin, text,
                                cwd=cwd, shell=shell, root=shared)
         if verdict.decision == "deny":
-            return self._reject(source, text, verdict.reason, parsed.argv, run_id)
+            return self._reject(source, text, verdict.reason, parsed.argv,
+                                run_id=run_id)
 
         # 非内建、非 shell 模式执行判定解析出的绝对路径
         exec_argv = list(parsed.routed or parsed.argv)
@@ -280,7 +276,7 @@ class TerminalRunner:
         }
 
     def _run(self, source: str, command: str, cwd: str, timeout, shell: str) -> dict:
-        src = as_source(source)
+        src = CommandSource(source)
         run_id = uuid.uuid4().hex
         prepared = self.prepare(run_id, src, command, cwd, timeout, shell)
         if isinstance(prepared, dict):
@@ -293,7 +289,8 @@ class TerminalRunner:
             # 模型命令没有窗口侧 _on_run_finished 兜底，busy 必须自己复位状态点
             self._notify_terminal(
                 TerminalEvent.phase_event(run_id, src, Phase.IDLE))
-            return self._reject(src, prepared.command, "busy", prepared.argv, run_id)
+            return self._reject(src, prepared.command, "busy", prepared.argv,
+                                run_id=run_id)
 
         # 终态事件一律在闸门内发出，避免下一条命令的 start 抢在本条 end 之前；
         # 无论成功、业务失败还是异常，都恰好发一个 end 和一个 idle。
@@ -323,11 +320,10 @@ class TerminalRunner:
         return outcome
 
     def _reject(self, source: CommandSource, command: str, code: str,
-                argv=(), run_id: str = "") -> dict:
+                argv=(), *, run_id: str) -> dict:
         logger.info("[TerminalRunner] %s 拒绝：%s", source, code)
         self._notify_terminal(TerminalEvent.finished(
-            run_id or uuid.uuid4().hex, source, command,
-            argv or (command,), "", rejected=True,
+            run_id, source, command, argv or (command,), "", rejected=True,
             error=_MESSAGES.get(code, code)))
         return failure(code)
 

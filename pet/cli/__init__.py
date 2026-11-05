@@ -6,14 +6,15 @@
 
 from __future__ import annotations
 
-from .catalog import (GROUP_ORDER, aliases, command_names, commands, flags,
-                      path_commands, subcommands, values)
+from .catalog import (GROUP_ORDER, TOOL_GROUP, aliases, command_names,
+                      commands, flags, path_commands, subcommands, values)
 from .dispatch import is_local, run
 from .types import (EXIT_OK, EXIT_TOOL, EXIT_USAGE, PREFIX, LocalCommand,
                     LocalContext, LocalResult)
 
 __all__ = [
     "GROUP_ORDER",
+    "TOOL_GROUP",
     "PREFIX",
     "EXIT_OK",
     "EXIT_TOOL",

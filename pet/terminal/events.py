@@ -93,8 +93,3 @@ class TerminalEvent:
                    command=command, argv=tuple(argv), cwd=cwd,
                    rejected=rejected, exit_code=exit_code, stdout=stdout,
                    stderr=stderr, duration_ms=duration_ms, error=error)
-
-
-def as_source(value) -> CommandSource:
-    """把历史上传下来的 str / Enum 统一成 CommandSource。"""
-    return value if isinstance(value, CommandSource) else CommandSource(str(value))

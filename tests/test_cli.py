@@ -144,17 +144,24 @@ class TestHelpLayout:
                 columns.add(line.index(summary))
         assert len(columns) == 1
 
-    def test_usage_section_follows_group_order(self, tool_commands):
+    def test_usage_section_follows_registration_order(self, tool_commands):
         text = tc.run(":help", "", None).stdout
         usage = text.split("用法\n", 1)[1].split("\n\n命令", 1)[0].splitlines()
         assert usage.index(":todo list [status]") < usage.index(":memory search <keyword>")
 
     def test_help_prints_groups_in_order(self, tool_commands):
-        text = tc.run(":help", "", None).stdout
-        present = [group for group in tc.GROUP_ORDER if group in text]
-        positions = [text.index(group) for group in present]
+        lines = tc.run(":help", "", None).stdout.splitlines()
+        present = [group for group in tc.GROUP_ORDER if group in lines]
+        positions = [lines.index(group) for group in present]
         assert positions == sorted(positions)
-        assert {"通用", "状态与策略", "计时与待办", "检索"} <= set(present)
+        assert {"通用", "状态与策略", tc.TOOL_GROUP} <= set(present)
+
+    def test_all_tool_commands_share_one_group_in_registration_order(self, tool_commands):
+        commands = tc.commands()
+        assert all(command.group in tc.GROUP_ORDER for command in commands)
+        assert [command.name for command in commands
+                if command.group == tc.TOOL_GROUP] == [
+                    "timer", "todo", "knowledge", "memory"]
 
     def test_tool_rows_appear_after_registration(self, tool_commands):
         text = tc.run(":help", "", None).stdout
@@ -252,7 +259,7 @@ class TestPluggable:
 
     def test_new_tool_command_needs_no_cli_change(self, env, monkeypatch, tool_calls):
         """任何工具登记的命令都能被分发、进帮助，不需要改 cli。"""
-        demo = ToolCommand(name="demo", group="实验",
+        demo = ToolCommand(name="demo",
                            rows=((":demo run", "演示命令"),),
                            resolve=lambda arg: ("run", {}))
         monkeypatch.setattr(catalog, "TOOL_REGISTRY", _StubRegistry([("demo", demo)],
@@ -264,7 +271,8 @@ class TestPluggable:
         assert [call.name for call in tool_calls] == ["demo__run"]
         text = tc.run(":help", "", None).stdout
         assert ":demo run" in text
-        assert text.index("通用") < text.index("实验")
+        lines = text.splitlines()
+        assert lines.index("通用") < lines.index(tc.TOOL_GROUP)
 
 
 class TestCheck:

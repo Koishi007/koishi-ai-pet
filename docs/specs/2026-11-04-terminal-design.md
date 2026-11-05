@@ -555,7 +555,7 @@ C:\Users\me> cd .g␉            → cd .git\
 冒号前缀的输入由窗口层处理，不启动子进程，也不进 LLM 工具层。窗口在 `cd` 与盘符切换之后、`_busy` 闸门之前分流：前缀命中即走本地命令，其余输入照旧交给系统 shell。
 
 - 命令来源分两层：`help`、`clear`、`status`、`policy`、`check` 是 `pet/cli` 的内建命令；`timer`、`todo`、`memory`、`knowledge` 由各工具在自己的 `register(registry)` 里登记，与文件气泡按钮、右键菜单项同一套做法。
-- 登记接口 `registry.add_command(tool_name, name=, group=, rows=, resolve=, words=, paths=, examples=, aliases=, flags=, values=)`：`rows` 是帮助里的 (用法, 说明) 行，子命令各占一行；`examples` 是帮助末尾的示例行；`resolve` 只把参数文本翻成 (方法名, 参数)，参数不合法抛 `ValueError`；`words` 是第一个参数的候选，`values` 是「子命令 → 位置参数候选」，`flags` 是选项名，`paths` 表示按程序名与路径补全，`aliases` 是命令别名。`pet/cli` 只聚合 `TOOL_REGISTRY.commands()`，不认具体工具。
+- 登记接口 `registry.add_command(tool_name, name=, rows=, resolve=, words=, paths=, examples=, aliases=, flags=, values=)`：`rows` 是帮助里的 (用法, 说明) 行，子命令各占一行；`examples` 是帮助末尾的示例行；`resolve` 只把参数文本翻成 (方法名, 参数)，参数不合法抛 `ValueError`；`words` 是第一个参数的候选，`values` 是「子命令 → 位置参数候选」，`flags` 是选项名，`paths` 表示按程序名与路径补全，`aliases` 是命令别名。工具不声明分组，`pet/cli` 把它们统一归入 `TOOL_GROUP`，组内按注册顺序排列；`pet/cli` 只聚合 `TOOL_REGISTRY.commands()`，不认具体工具。
 - 工具命令一律构造 `ToolCall` 交给 `ToolExecutor.execute_one()`，不直接调用工具内部实现。工具被关闭时它的命令随之消失（`commands()` 按 `is_enabled` 过滤），返回码 1 提示去设置里启用。
 - 返回码：成功 0；工具未注册或执行失败 1（正文写 stderr）；未知命令与非法用法 2。
 - 本地命令与 shell 命令共用 `_busy` 闸门，本地命令在独立线程执行。知识库与记忆检索要等 embedding，期间输入按「上一条命令还在执行」处理，避免流式分块与本地回显交错。
@@ -570,15 +570,15 @@ C:\Users\me> cd .g␉            → cd .git\
 | 通用 | `:quit` | cli | 退出应用，动作回到主线程执行 | 无 |
 | 通用 | `:restart` | cli | 重启应用，退出收尾时拉起新实例 | 无 |
 | 恋恋 | `:status [--json]` | cli | 恋恋的状态机、当前动作、贴边、生理、心理与长期记忆条数；`--json` 输出快照 JSON | `TOOL_CTX.pet_status()` |
-| 状态与策略 | `:policy` | cli | 免确认清单逐条列出并标注未安装项、沙箱根、解释器名单、危险类别、shell 模式开关 | `TerminalRunner.list()` |
+| 状态与策略 | `:policy` | cli | 免确认清单逐条列出并标注未安装项、沙箱根、解释器名单、危险类别、shell 模式开关 | `TerminalRunner.snapshot()` |
 | 状态与策略 | `:check <command>` | cli | 以 `source="model"` 试算 `policy.check()`，输出判定码、档位、原因、命中的危险类别与解析到的程序 | 无 |
-| 计时与待办 | `:timer <duration> [message]` | timer | 设定倒计时，时长接受 `90`、`90s`、`10m`、`1h30m` | `timer__set` |
-| 计时与待办 | `:timer list` | timer | 列出未到期的倒计时，每行带 id | `timer__list` |
-| 计时与待办 | `:timer cancel <id>` | timer | 取消指定倒计时 | `timer__cancel` |
-| 计时与待办 | `:todo add <title>` | todo | 添加待办 | `todo__add` |
-| 计时与待办 | `:todo list [status]` | todo | 列出待办，`status` 取 `pending`、`done`、`all`，默认 pending | `todo__list` |
-| 检索 | `:memory search <keyword>` | recall | 检索长期记忆 | `recall__search` |
-| 检索 | `:knowledge search <keyword>` | knowledge | 检索知识库 | `knowledge__search` |
+| 工具 | `:timer <duration> [message]` | timer | 设定倒计时，时长接受 `90`、`90s`、`10m`、`1h30m` | `timer__set` |
+| 工具 | `:timer list` | timer | 列出未到期的倒计时，每行带 id | `timer__list` |
+| 工具 | `:timer cancel <id>` | timer | 取消指定倒计时 | `timer__cancel` |
+| 工具 | `:todo add <title>` | todo | 添加待办 | `todo__add` |
+| 工具 | `:todo list [status]` | todo | 列出待办，`status` 取 `pending`、`done`、`all`，默认 pending | `todo__list` |
+| 工具 | `:memory search <keyword>` | recall | 检索长期记忆 | `recall__search` |
+| 工具 | `:knowledge search <keyword>` | knowledge | 检索知识库 | `knowledge__search` |
 
 `:check` 只读：不执行命令、不改任何状态，用于排查免确认清单、解释器与危险规则为什么给出某个判定。
 
@@ -587,7 +587,7 @@ C:\Users\me> cd .g␉            → cd .git\
 `:help` 排版：
 
 - 段落依次为标题 `终端命令` 与一行说明、`用法`、`命令`、`示例`，段间空一行。
-- 分组顺序由 `GROUP_ORDER` 决定（通用、恋恋、状态与策略、计时与待办、检索），工具声明的新分组排在后面；组内按登记顺序，组间空一行，组名单独占一行。
+- 分组顺序由 `GROUP_ORDER` 决定（通用、恋恋、状态与策略、工具）：前三个是内建命令分组，最后一个 `TOOL_GROUP` 收纳全部工具登记的命令，工具不声明分组；组内按注册顺序，组间空一行，组名单独占一行。
 - `命令` 段落两列：用法列按最长用法补空格，说明列起点一致，两列间是两个空格，不用冒号连接。
 - `示例` 段落按分组顺序列出各命令登记的 `examples`，命令未登记就没有对应示例。
 - 占位符统一为尖括号英文形式，字面子命令保持原样，两类不混用。
@@ -864,7 +864,7 @@ python scripts/gen_docs.py --check
 
 `tests/test_cli.py` 覆盖前缀判定、内建命令分发与三种返回码、帮助的逐行用法与分组顺序、说明列对齐、示例随命令出现与消失、单命令帮助与别名、`:check` 判定随档位与免确认清单变化、`:status`（含 `--json`）与 `:policy` 的快照字段、`:quit` / `:restart` 经应用控制执行，以及工具命令经 `ToolExecutor` 发出的方法名与参数；工具方法缺失与注册表查询异常都落到返回码 1，另有一条用例证明新工具登记的命令无需改 cli 即可分发与进帮助。用例用桩注册表替换全局注册表，不碰真实工具与数据库。
 
-`tests/test_tool_commands.py` 覆盖 `timer` / `todo` / `knowledge` 各自 `register_commands()` 产出的分组、用法行、补全候选与参数翻译，含非法输入抛 `ValueError` 的用例；另覆盖注册表的聚合：`recall` 的 `:memory` 已登记、工具关闭后命令消失、重名命令只留第一条、未注册工具直接拒绝。
+`tests/test_tool_commands.py` 覆盖 `timer` / `todo` / `knowledge` 各自 `register_commands()` 产出的用法行、补全候选与参数翻译，含非法输入抛 `ValueError` 的用例；另覆盖注册表的聚合：`recall` 的 `:memory` 已登记、工具关闭后命令消失、重名命令只留第一条、未注册工具直接拒绝。
 
 `tests/test_confirm_card.py` 覆盖 `card_position()` 的四种分支（上方足够、上方不足转下方、恋恋在屏幕外落右下角、结果夹进可用区），以及标题序号、`Esc` 拒绝、危险模式下 `Enter` 不触发允许、关闭等同拒绝。`tests/test_completion.py` 覆盖：首词候选、Shell 内建与可执行名、目录的优先级、`PATH` 与目录合并、目录类与文件类命令的候选过滤、隐藏条目的显示条件、公共前缀计算、引号保留与含空格时自动加引号、Windows 与 POSIX 的大小写差异、`~` 与 `..` 的基准解析、绝对路径、大目录先过滤后截断到 500 条、冒号命令名与子命令候选、命令名不区分大小写、别名解析子命令、`flags` 与 `values` 候选、三种 shell 的环境变量名、`help` 的命令名候选、`check` 的参数补程序名与目录条目。
 

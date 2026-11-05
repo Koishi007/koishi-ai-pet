@@ -35,7 +35,6 @@ class TestTimerCommand:
 
     def test_rows_and_words(self, command):
         assert command.name == "timer"
-        assert command.group
         assert len(command.rows) == 3
         assert command.words == ("list", "cancel")
         assert command.paths is False
@@ -132,7 +131,7 @@ class TestRegistryAggregation:
 
     def test_duplicate_command_name_is_ignored(self):
         registry = ToolRegistry()
-        registry.add_command("recall", name="memory", group="检索",
+        registry.add_command("recall", name="memory",
                              rows=((":memory", "重复登记"),),
                              resolve=lambda arg: ("search", {"query": arg}))
         names = [command.name for _tool, command in registry.commands()]
@@ -140,6 +139,6 @@ class TestRegistryAggregation:
 
     def test_unknown_tool_is_rejected(self):
         with pytest.raises(KeyError):
-            ToolRegistry().add_command("nope", name="nope", group="通用",
+            ToolRegistry().add_command("nope", name="nope",
                                        rows=((":nope", "没有这个工具"),),
                                        resolve=lambda arg: ("x", {}))
