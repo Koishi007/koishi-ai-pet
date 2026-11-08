@@ -1,8 +1,8 @@
-"""确认卡片：位置分支、标题序号、快捷键与危险态。"""
+"""确认卡片：位置分支、标题序号、快捷键、拖动与危险态。"""
 
 import pytest
-from PySide6.QtCore import QEvent, QRect, QSize, Qt
-from PySide6.QtGui import QKeyEvent
+from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, QSize, Qt
+from PySide6.QtGui import QGuiApplication, QKeyEvent, QMouseEvent
 from PySide6.QtWidgets import QApplication
 
 from pet.terminal.confirm import ConfirmRequest
@@ -36,26 +36,48 @@ def _key(key) -> QKeyEvent:
 class TestPosition:
 
     screen = QRect(0, 0, 1920, 1080)
+    card = QSize(420, 180)
 
-    def test_above_pet(self):
+    def test_side_of_pet(self):
         pet = QRect(800, 500, 200, 200)
-        point = card_position(pet, self.screen, QSize(420, 180))
-        assert point.x() == pet.center().x() - 210
+        point = card_position(pet, self.screen, self.card)
+        assert point == QPoint(pet.right() + 1 + 8, pet.center().y() - 90)
+
+    def test_wider_side_wins(self):
+        pet = QRect(1500, 500, 200, 200)
+        point = card_position(pet, self.screen, self.card)
+        assert point == QPoint(pet.left() - 8 - 420, pet.center().y() - 90)
+
+    def test_below_when_no_room_on_side(self):
+        pet = QRect(360, 100, 1200, 200)
+        point = card_position(pet, self.screen, self.card)
+        assert point.y() == pet.bottom() + 1 + 8
+
+    def test_above_when_no_room_below(self):
+        pet = QRect(360, 900, 1200, 180)
+        point = card_position(pet, self.screen, self.card)
         assert point.y() == pet.top() - 8 - 180
 
-    def test_below_when_no_room_above(self):
-        pet = QRect(800, 100, 200, 200)
-        point = card_position(pet, self.screen, QSize(420, 180))
-        assert point.y() == pet.bottom() + 8
-
     def test_offscreen_pet_falls_to_corner(self):
-        point = card_position(QRect(3000, 3000, 200, 200), self.screen, QSize(420, 180))
+        point = card_position(QRect(3000, 3000, 200, 200), self.screen, self.card)
         assert point.x() == 1920 - 1 - 24 - 420
         assert point.y() == 1080 - 1 - 24 - 180
 
-    def test_clamped_into_screen(self):
-        point = card_position(QRect(0, 500, 10, 10), self.screen, QSize(420, 180))
-        assert point.x() == 0
+    def test_docked_left_pet_puts_card_on_right(self):
+        pet = QRect(0, 500, 10, 10)
+        point = card_position(pet, self.screen, self.card)
+        assert point.x() == pet.right() + 1 + 8
+        assert point.y() == pet.center().y() - 90
+
+    def test_docked_right_pet_puts_card_on_left(self):
+        pet = QRect(1910, 500, 10, 10)
+        point = card_position(pet, self.screen, self.card)
+        assert point.x() == pet.left() - 8 - 420
+
+    def test_card_stays_inside_screen(self):
+        pet = QRect(0, 0, 10, 10)
+        point = card_position(pet, self.screen, self.card)
+        assert self.screen.contains(QRect(point, self.card))
 
 
 class TestCard:
@@ -119,3 +141,63 @@ class TestCard:
         card._deny_all()
         assert request.result is False
         assert calls == [True]
+
+
+class TestDrag:
+    """卡片可拖动；每条请求重新定位到恋恋侧面。"""
+
+    @staticmethod
+    def _press(point: QPoint) -> QMouseEvent:
+        return QMouseEvent(
+            QEvent.Type.MouseButtonPress, QPointF(10, 10), QPointF(point),
+            Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier)
+
+    @staticmethod
+    def _move(point: QPoint) -> QMouseEvent:
+        return QMouseEvent(
+            QEvent.Type.MouseMove, QPointF(10, 10), QPointF(point),
+            Qt.MouseButton.NoButton, Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier)
+
+    @staticmethod
+    def _release(point: QPoint) -> QMouseEvent:
+        return QMouseEvent(
+            QEvent.Type.MouseButtonRelease, QPointF(10, 10), QPointF(point),
+            Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.NoModifier)
+
+    def _drag_to(self, card: ConfirmCard, target: QPoint) -> None:
+        origin = card.frameGeometry().topLeft() + QPoint(10, 10)
+        card.mousePressEvent(self._press(origin))
+        card.mouseMoveEvent(self._move(origin + target - card.pos()))
+        card.mouseReleaseEvent(self._release(origin + target - card.pos()))
+
+    def test_drag_moves_card(self, qt_app):
+        card = ConfirmCard()
+        card.set_pet_rect_provider(lambda: QRect(100, 100, 200, 200))
+        card.show_request(_request())
+        area = QGuiApplication.primaryScreen().availableGeometry()
+        target = QPoint(area.left() + 10, area.top() + 10)
+        self._drag_to(card, target)
+        assert card.pos() == target
+        card.hide()
+
+    def test_next_request_ignores_previous_position(self, qt_app):
+        card = ConfirmCard()
+        card.set_pet_rect_provider(lambda: QRect(100, 100, 200, 200))
+        card.show_request(_request())
+        expected = card.pos()
+        area = QGuiApplication.primaryScreen().availableGeometry()
+        self._drag_to(card, QPoint(area.left() + 10, area.top() + 10))
+        card.show_request(_request())
+        assert card.pos() == expected
+        card.hide()
+
+    def test_card_width_is_bounded(self, qt_app):
+        card = ConfirmCard()
+        long_argv = ["echo", "x" * 400]
+        card.show_request(_request(command=" ".join(long_argv),
+                                   argv=long_argv, routed=long_argv))
+        assert card.width() <= confirm_card.CARD_MAX_WIDTH
+        card.hide()

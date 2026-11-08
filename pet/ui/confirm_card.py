@@ -19,6 +19,8 @@ logger = logging.getLogger(__name__)
 _GAP = 8
 _MARGIN = 24
 _AMBER_SECONDS = 10
+# 卡片宽度上限，避免超长命令把窗口撑出屏幕
+CARD_MAX_WIDTH = 560
 
 ALLOW_TEXT = "允许"
 ALLOW_DANGER_TEXT = "仍要执行"
@@ -31,7 +33,7 @@ def _clamp(value: int, low: int, high: int) -> int:
 
 
 def card_position(pet_rect: QRect, screen_rect: QRect, card_size: QSize) -> QPoint:
-    """卡片位置：优先恋恋上方，其次下方，恋恋不可见时落屏幕右下角，最后夹进可用区。"""
+    """卡片位置：优先恋恋左右侧面，其次下方，再次上方，恋恋不可见时放置在屏幕右下角。"""
     width = max(0, card_size.width())
     height = max(0, card_size.height())
     right = screen_rect.right() - width
@@ -40,14 +42,22 @@ def card_position(pet_rect: QRect, screen_rect: QRect, card_size: QSize) -> QPoi
         return QPoint(_clamp(screen_rect.right() - _MARGIN - width, screen_rect.left(), right),
                       _clamp(screen_rect.bottom() - _MARGIN - height, screen_rect.top(), bottom))
 
-    x = pet_rect.center().x() - width // 2
-    y = pet_rect.top() - _GAP - height
-    if y < screen_rect.top():
-        y = pet_rect.bottom() + _GAP
-        if y + height > screen_rect.bottom():
-            y = pet_rect.top() - _GAP - height
-    return QPoint(_clamp(x, screen_rect.left(), right),
-                  _clamp(y, screen_rect.top(), bottom))
+    left_room = pet_rect.left() - screen_rect.left() - _GAP
+    right_room = screen_rect.right() - pet_rect.right() - _GAP
+    if max(left_room, right_room) >= width:
+        x = (pet_rect.left() - _GAP - width if left_room >= right_room
+             else pet_rect.right() + 1 + _GAP)
+        y = _clamp(pet_rect.center().y() - height // 2, screen_rect.top(), bottom)
+        return QPoint(_clamp(x, screen_rect.left(), right), y)
+
+    x = _clamp(pet_rect.center().x() - width // 2, screen_rect.left(), right)
+    below = pet_rect.bottom() + 1 + _GAP
+    if below <= bottom:
+        return QPoint(x, below)
+    above = pet_rect.top() - _GAP - height
+    if above >= screen_rect.top():
+        return QPoint(x, above)
+    return QPoint(x, bottom)
 
 
 class _CountdownBar(QWidget):
@@ -84,6 +94,7 @@ class ConfirmCard(QWidget):
         self._pet_rect_fn = None
         self._danger = False
         self._remaining = 0
+        self._drag_offset: QPoint | None = None
 
         self.setWindowTitle("命令确认")
         self.setWindowFlags(
@@ -93,6 +104,7 @@ class ConfirmCard(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setMinimumWidth(420)
+        self.setMaximumWidth(CARD_MAX_WIDTH)
         try:
             self.setWindowIcon(QIcon(ICON_PATH))
         except Exception:
@@ -300,6 +312,26 @@ class ConfirmCard(QWidget):
         if advance and self._next_fn is not None:
             self._next_fn()
 
+    def mousePressEvent(self, event):
+        """卡片任意非按钮区域都可拖动。"""
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_offset = (event.globalPosition().toPoint()
+                                 - self.frameGeometry().topLeft())
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._drag_offset is not None and event.buttons() & Qt.MouseButton.LeftButton:
+            self.move(event.globalPosition().toPoint() - self._drag_offset)
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self._drag_offset = None
+        super().mouseReleaseEvent(event)
+
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape:
             self._deny()
@@ -315,6 +347,7 @@ class ConfirmCard(QWidget):
         event.accept()
 
     def _reposition(self) -> None:
+        """每条请求都按恋恋当前位置重算"""
         provider = self._pet_rect_fn
         try:
             pet_rect = provider() if provider is not None else QRect()
@@ -325,7 +358,8 @@ class ConfirmCard(QWidget):
                 screen = QGuiApplication.primaryScreen()
             if screen is None:
                 return
-            self.move(card_position(pet_rect, screen.availableGeometry(), self.sizeHint()))
+            self.adjustSize()
+            self.move(card_position(pet_rect, screen.availableGeometry(), self.size()))
         except Exception:
             logger.debug("[ConfirmCard] 定位失败，沿用系统位置", exc_info=True)
 
