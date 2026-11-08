@@ -150,7 +150,6 @@ class TerminalWindow(QWidget):
         self.quit_requested.connect(self._on_quit_requested)
         self.restart_requested.connect(self._on_restart_requested)
         self._cwd = resolve_initial_cwd()
-        self._bind_runner()
         self._busy = False
         self._started_at = 0.0
         self._follow = True
@@ -243,6 +242,8 @@ class TerminalWindow(QWidget):
         self.run_event.connect(self._append_run)
         self.run_finished.connect(self._on_run_finished)
         self.local_finished.connect(self._on_local_finished)
+        # 视图与槽就绪后再注册，窗口缺位期间的事件在这里补发
+        self._bind_runner()
 
         self._elapsed_timer = QTimer(self)
         self._elapsed_timer.setInterval(500)

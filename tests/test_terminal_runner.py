@@ -9,7 +9,7 @@ import pytest
 from pet.config import config
 from pet.terminal import core, policy
 from pet.terminal import runner as runner_module
-from pet.terminal.events import EventKind, Phase
+from pet.terminal.events import CommandSource, EventKind, Phase, TerminalEvent
 from pet.terminal.runner import TerminalRunner
 from pet.tools.registry import ToolRegistry
 
@@ -448,3 +448,57 @@ class TestRefactorContracts:
         assert runner._cwd_source is None
         assert runner._confirm is None
         assert runner._active_pid is None
+
+
+class TestBacklog:
+    """终端窗口未打开时的事件进缓冲，注册 sink 后按序补发。"""
+
+    @staticmethod
+    def _end(run_id: str, stdout: str = "hi\n") -> TerminalEvent:
+        return TerminalEvent.finished(
+            run_id, CommandSource.MODEL, "echo hi", ("echo", "hi"), "",
+            exit_code=0, stdout=stdout, duration_ms=1)
+
+    def test_registration_replays_buffered_events(self, sandbox):
+        runner = TerminalRunner()
+        runner._notify_terminal(self._end("r1"))
+        runner._notify_terminal(self._end("r2"))
+        received = []
+        runner.set_terminal_sink(received.append)
+        assert [event.run_id for event in received] == ["r1", "r2"]
+
+    def test_replay_clears_buffer(self, sandbox):
+        runner = TerminalRunner()
+        runner._notify_terminal(self._end("r1"))
+        runner.set_terminal_sink(lambda event: None)
+        received = []
+        runner.set_terminal_sink(received.append)
+        assert received == []
+
+    def test_phase_events_are_not_buffered(self, sandbox):
+        runner = TerminalRunner()
+        runner._notify_terminal(
+            TerminalEvent.phase_event("r1", CommandSource.MODEL, Phase.RUNNING))
+        received = []
+        runner.set_terminal_sink(received.append)
+        assert received == []
+
+    def test_buffer_drops_oldest_beyond_limit(self, sandbox):
+        runner = TerminalRunner()
+        total = runner_module.BACKLOG_LIMIT + 5
+        for index in range(total):
+            runner._notify_terminal(self._end(f"r{index}"))
+        received = []
+        runner.set_terminal_sink(received.append)
+        assert len(received) == runner_module.BACKLOG_LIMIT
+        assert received[0].run_id == f"r{total - runner_module.BACKLOG_LIMIT}"
+        assert received[-1].run_id == f"r{total - 1}"
+
+    def test_events_after_unregister_are_buffered(self, sandbox):
+        runner = TerminalRunner()
+        runner.set_terminal_sink(lambda event: None)
+        runner.set_terminal_sink(None)
+        runner._notify_terminal(self._end("r1"))
+        received = []
+        runner.set_terminal_sink(received.append)
+        assert [event.run_id for event in received] == ["r1"]

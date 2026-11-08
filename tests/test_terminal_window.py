@@ -208,6 +208,21 @@ class TestReopen:
         window.show()
         assert "kept" in window._view.toPlainText()
 
+    def test_events_before_window_exists_are_shown(self, qt_app, tmp_path, monkeypatch):
+        """窗口从未创建时执行的命令，创建后要能补看到回显。"""
+        from pet.terminal.runner import TerminalRunner
+
+        monkeypatch.setattr(tw.policy, "sandbox_root", lambda: str(tmp_path))
+        runner = TerminalRunner()
+        runner._notify_terminal(_finished(
+            "echo early", run_id="early", argv=("echo",), stdout="early\n",
+            duration_ms=1))
+        win = tw.TerminalWindow(runner=runner)
+        try:
+            assert "early" in win._view.toPlainText()
+        finally:
+            win.close()
+
 
 class TestHistory:
 

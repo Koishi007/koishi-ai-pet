@@ -14,13 +14,16 @@ from dataclasses import dataclass
 from pet.config import config
 from pet.terminal import core, policy
 from pet.terminal.confirm import ConfirmRequest
-from pet.terminal.events import CommandSource, Phase, TerminalEvent
+from pet.terminal.events import CommandSource, EventKind, Phase, TerminalEvent
 
 logger = logging.getLogger(__name__)
 
 # 程序安装情况的探测缓存时长
 _WHICH_TTL_S = 60
 TRUNCATED_SUFFIX = "，输出已截断"
+
+# 终端窗口未打开时保留的回显事件条数，超出丢弃最旧的
+BACKLOG_LIMIT = 50
 
 _HINTS = {
     "terminal_disabled": "不要重试，工具已被用户关闭",
@@ -79,6 +82,8 @@ class TerminalRunner:
         self._active_pid: int | None = None
         self._installed_cache: dict[str, tuple[float, bool]] = {}
         self._terminal_sink = None
+        self._backlog: list[TerminalEvent] = []
+        self._backlog_lock = threading.Lock()
         self._confirm = None
         self._cwd_source = None
 
@@ -93,8 +98,18 @@ class TerminalRunner:
         )
 
     def set_terminal_sink(self, sink) -> None:
-        """注册终端窗口的回显回调；传 None 注销。"""
-        self._terminal_sink = sink
+        """注册终端窗口的回显回调；传 None 注销。注册时补发窗口缺位期间的事件。"""
+        # 切换与取缓冲放在同一临界区，补发与实时事件不会乱序
+        with self._backlog_lock:
+            pending, self._backlog = self._backlog, []
+            self._terminal_sink = sink
+        if sink is None:
+            return
+        for event in pending:
+            try:
+                sink(event)
+            except Exception:
+                logger.exception("[TerminalRunner] 终端回显失败")
 
     def set_confirm(self, confirm_fn) -> None:
         """注册确认函数（形如 TOOL_CTX.confirm）；未注册时模型命令一律拒绝。"""
@@ -347,9 +362,15 @@ class TerminalRunner:
             self._active_pid = None
 
     def _notify_terminal(self, event: TerminalEvent) -> None:
-        sink = self._terminal_sink
-        if sink is None:
-            return
+        with self._backlog_lock:
+            sink = self._terminal_sink
+            if sink is None:
+                # 阶段事件只表达实时状态，窗口打开后补发没有意义
+                if event.kind is not EventKind.PHASE:
+                    self._backlog.append(event)
+                    if len(self._backlog) > BACKLOG_LIMIT:
+                        del self._backlog[:-BACKLOG_LIMIT]
+                return
         try:
             sink(event)
         except Exception:
