@@ -70,6 +70,8 @@ class PetAgent(QObject):
     notify_requested   = Signal(str, str, int)  # title, message, duration_ms
     game_board_requested = Signal(str, object)  # (game_name, board_payload)
     tool_interact_requested = Signal(dict)  # 工具线程请求的即时交互（kwargs），转回主线程执行
+    confirm_requested = Signal(object)  # 需要展示的确认请求（ConfirmRequest），同一时刻只有一条
+    confirm_cleared   = Signal(object)  # 队列清空或请求被撤销，参数是卡片上那条（可能为 None）
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -101,6 +103,9 @@ class PetAgent(QObject):
         self._retired: list[tuple[QThread, BrainWorker]] = []  # 被抢占且仍在运行的旧脑线程
         self._call_token: object | None = None  # 当前调用的令牌；派发时新建，中断或被顶替即失效
         self._last_interact_ms: dict[str, int] = {}
+        self._confirm_queue: list = []  # 待展示的确认请求，按到达顺序排队
+        self._confirm_current = None  # 已经交给卡片、正在展示的请求
+        self._confirm_lock = threading.Lock()  # 工具线程入队与主线程推进共用一把锁
         self.state_machine.state_changed.connect(self._on_state_changed)
         self.tool_interact_requested.connect(self._trigger_tool_interact)
 
@@ -153,6 +158,37 @@ class PetAgent(QObject):
     @property
     def dock_side(self) -> str:
         return self._dock_side
+
+    def status_snapshot(self) -> dict:
+        """恋恋状态快照：状态机、当前动作、贴边、生理、心理与记忆条数。
+
+        只读，可从工具线程调用；窗口尚未装配或读取失败时动作按空处理。
+        """
+        state = self.state_machine.state
+        action = ""
+        window = self._pet_window
+        if window is not None:
+            try:
+                action = window.action_queue.current_action_name() or ""
+            except Exception:
+                action = ""
+        return {
+            "state": state.value,
+            "state_seconds": max(0, int(time.monotonic() - self.state_machine.state_since)),
+            "action": action,
+            "dock": self._dock_side,
+            "vitals": self.vitals.numeric_summary(),
+            "mood": self.mood.numeric_summary(),
+            "memories": self._memory_total(),
+        }
+
+    def _memory_total(self) -> int:
+        """长期记忆条数；查询失败按 0 处理。"""
+        try:
+            return int(self.memory_store.list_memories(page_size=1)[1])
+        except Exception:
+            logger.exception("[PetAgent] memory count failed")
+            return 0
 
     def _on_dock_changed(self, side):
         """贴边状态变化：同步提示词状态、禁用觅食工具，并中断在途调用"""
@@ -554,6 +590,7 @@ class PetAgent(QObject):
         ts = datetime.now().strftime("%H:%M:%S")
         thread, worker = self._thread, self._worker
         self._request_cancel()  # 不等待：令牌失效 + 请求线程退出，线程交给 _retire 回收
+        self.reject_pending_confirms(reason)
         self._retire(thread, worker)
         self._thread = None
         self._worker = None
@@ -562,6 +599,89 @@ class PetAgent(QObject):
         self.behavior.reset_active_tool_groups()
         logger.info(f"[{ts}] [PetAgent] current call interrupted by {reason}")
         return True
+
+    def request_confirm(self, request) -> None:
+        """确认请求入队；没有展示中的卡片时通知界面。"""
+        if request is None:
+            return
+        # 等待方超时后靠它把自己的请求撤下来，队列不必知道等待方是谁
+        request.withdraw = lambda: self.withdraw_confirm(request)
+        with self._confirm_lock:
+            self._confirm_queue.append(request)
+            self._renumber_confirms()
+            emit = self._confirm_current is None
+        if emit:
+            self._emit_next_confirm()
+
+    def next_confirm(self, request=None) -> None:
+        """当前卡片已结束：省略 request 时移除正在展示的那条，给了就按对象身份移除。"""
+        with self._confirm_lock:
+            target = self._confirm_current if request is None else request
+            index = self._queue_index(target)
+            if 0 <= index < len(self._confirm_queue):
+                self._confirm_queue.pop(index)
+                self._renumber_confirms()
+        self._emit_next_confirm()
+
+    def withdraw_confirm(self, request) -> bool:
+        """撤销一条还没有结论的请求：按拒绝落地并移出队列，返回它是否在队列里。"""
+        with self._confirm_lock:
+            index = self._queue_index(request)
+            if index < 0:
+                return False
+            self._confirm_queue.pop(index)
+            self._renumber_confirms()
+        # 置为拒绝：迟到的展示信号会因此跳过它，等待方也不会再等
+        request.result = False
+        request.event.set()
+        self._emit_next_confirm()
+        return True
+
+    def reject_pending_confirms(self, reason: str = "") -> int:
+        """拒绝队列中的全部请求并清空队列，返回受影响的条数。"""
+        with self._confirm_lock:
+            pending = list(self._confirm_queue)
+            current = self._confirm_current
+            self._confirm_queue.clear()
+            self._confirm_current = None
+        # 队列只有这一份：卡片展示中的请求也在队列头，统一在这里置为拒绝
+        for request in pending:
+            request.result = False
+            request.event.set()
+            request.shown.set()  # 没轮到展示就被拒绝，等待方不必再等排队宽限
+        if pending:
+            logger.info(f"[PetAgent] 拒绝 {len(pending)} 条未决确认：{reason}")
+            self.confirm_cleared.emit(current)
+        return len(pending)
+
+    def _queue_index(self, request) -> int:
+        """按对象身份找下标：dataclass 的字段相等不参与队列判定。"""
+        for index, item in enumerate(self._confirm_queue):
+            if item is request:
+                return index
+        return -1
+
+    def _renumber_confirms(self) -> None:
+        total = len(self._confirm_queue)
+        for index, item in enumerate(self._confirm_queue, start=1):
+            item.sequence = index
+            item.total = total
+
+    def _emit_next_confirm(self) -> None:
+        """把队首交给界面；已经在展示同一条时不重复发信号。"""
+        with self._confirm_lock:
+            request = self._confirm_queue[0] if self._confirm_queue else None
+            previous = self._confirm_current
+            self._confirm_current = request
+        if request is None:
+            if previous is not None:
+                self.confirm_cleared.emit(previous)
+            return
+        if request is previous:
+            return
+        request.shown_at = time.monotonic()
+        request.shown.set()
+        self.confirm_requested.emit(request)
 
     def _cancel_running_thread(self, ts: str = ""):
         """协作式取消当前脑线程：请求取消并短窗口等待退出"""
@@ -598,6 +718,8 @@ class PetAgent(QObject):
         old_worker = self._worker
         self._cancel_running_thread(ts)
         self._retire(old_thread, old_worker)
+        # 旧调用的未决确认跟着作废：允许了也只会执行一条模型永远看不到结果的命令
+        self.reject_pending_confirms("superseded")
         token = object()
         self._call_token = token  # 令牌在派发时固定，管线与回调都以它判定是否仍属当前调用
         self._set_llm_loading(True)  # 开始 LLM 加载粒子

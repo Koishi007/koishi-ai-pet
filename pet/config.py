@@ -17,6 +17,13 @@ PET_SCALE_STEPS = {"50%": 0.5, "75%": 0.75, "100%": 1.0,
                    "125%": 1.25, "150%": 1.5, "200%": 2.0}
 
 
+# auto 档默认免确认的只读命令；设置页可改，留空即全部询问
+_TERMINAL_DEFAULT_ALLOW = [
+    "dir *", "ls *", "where *", "whoami *", "hostname *",
+    "git status", "git log", "git rev-parse", "git describe",
+]
+
+
 # key: 包含 type, default, category, needs_restart, hidden, description[, enum, placeholder, minimum, maximum] 键的字典
 # type: "str", "int", "float", "bool", "str_list"
 # category: "connection", "behavior", "appearance", "personality"
@@ -128,6 +135,19 @@ _KEY_META = {
     "CONTEXT_HALF_LIFE_S":       {"type": "int",      "default": 1800,           "category": "behavior", "needs_restart": False, "hidden": True,  "description": "上下文评分半衰期(秒)"},
     "CONTEXT_TOKEN_BUDGET":      {"type": "int",      "default": 8192,           "category": "behavior", "needs_restart": False, "hidden": True,  "description": "上下文token预算上限"},
 
+    "TERMINAL_ENABLED":             {"type": "bool",     "default": True,           "category": "behavior", "needs_restart": True,  "hidden": False, "description": "允许模型执行命令"},
+    "TERMINAL_MODE":                {"type": "str",      "default": "ask",          "category": "behavior", "needs_restart": False, "hidden": False, "description": "终端命令放行策略", "enum": ["deny", "ask", "auto"]},
+    "TERMINAL_ALLOW":         {"type": "str_list", "default": list(_TERMINAL_DEFAULT_ALLOW), "category": "behavior", "needs_restart": False, "hidden": False, "description": "auto 档免确认的命令，逗号分隔，空为全部询问"},
+    "TERMINAL_SANDBOX_ROOT":        {"type": "str",      "default": "",             "category": "behavior", "needs_restart": False, "hidden": False, "description": "默认工作目录根：终端初始目录，模型默认跟随终端当前目录，留空为桌面"},
+    "TERMINAL_DENY_PATTERNS":       {"type": "str_list", "default": [],             "category": "behavior", "needs_restart": False, "hidden": True,  "description": "危险命令正则，空为内置清单"},
+    "TERMINAL_ALLOW_SHELL":    {"type": "bool",     "default": False,          "category": "behavior", "needs_restart": False, "hidden": True,  "description": "允许整条命令交给系统 shell"},
+    "TERMINAL_ENV_ALLOW":           {"type": "str_list", "default": [],             "category": "behavior", "needs_restart": False, "hidden": True,  "description": "额外透传的环境变量名"},
+    "TERMINAL_COMMAND_TIMEOUT_S":   {"type": "int",      "default": 30,             "category": "behavior", "needs_restart": True,  "hidden": True,  "description": "单条命令默认超时秒数"},
+    "TERMINAL_MAX_COMMAND_TIMEOUT_S": {"type": "int",    "default": 120,            "category": "behavior", "needs_restart": True,  "hidden": True,  "description": "模型可传的命令超时上限"},
+    "TERMINAL_CONFIRM_TIMEOUT_S":   {"type": "int",      "default": 60,             "category": "behavior", "needs_restart": True,  "hidden": True,  "description": "确认卡片倒计时秒数"},
+    "TERMINAL_QUEUE_WAIT_S":        {"type": "int",      "default": 10,             "category": "behavior", "needs_restart": True,  "hidden": True,  "description": "执行闸门等待上限"},
+    "TERMINAL_MAX_CAPTURE_BYTES":   {"type": "int",      "default": 131072,         "category": "behavior", "needs_restart": False, "hidden": True,  "description": "每流捕获字节上限"},
+    "TERMINAL_MAX_OUTPUT_CHARS":    {"type": "int",      "default": 4000,           "category": "behavior", "needs_restart": False, "hidden": True,  "description": "进入模型的输出上限，两流合计"},
     "FOOD_ENABLED":              {"type": "bool",     "default": True,           "category": "behavior", "needs_restart": True,  "hidden": True, "description": "觅食总开关（桌宠自主生成食物并吃掉），修改后需重启生效"},
     "FOOD_TTL_SECONDS":          {"type": "int",      "default": 300,            "category": "behavior", "needs_restart": False, "hidden": True, "description": "觅食食物存活秒数，超时未吃自动消失"},
     "ATTENTION_THRESHOLDS":      {"type": "str_list", "default": ["10", "20", "30"], "category": "behavior", "needs_restart": False, "hidden": True, "description": "连续未互动轮次阈值，达到后向桌宠注入求关注提示（如10/20/30轮）"},

@@ -17,6 +17,7 @@ class ToolContext:
         self._pending_callbacks: list[Callable] = []
         self._model_aside_pending = 0
         self._speech_lock = threading.Lock()
+        self._confirm_sink: Callable | None = None
 
     def bind(self, agent):
         self._agent = agent
@@ -96,6 +97,16 @@ class ToolContext:
         state = getattr(self._agent.state_machine, "state", None)
         return getattr(state, "name", "") == "IDLE"
 
+    def pet_status(self) -> dict:
+        """恋恋状态快照；未绑定或采集失败时返回空字典。"""
+        if not self._check_agent():
+            return {}
+        try:
+            return self._agent.status_snapshot()
+        except Exception:
+            logger.exception("[ToolContext] status snapshot failed")
+            return {}
+
     def note_event(self, kind: str, text: str = ""):
         """工具侧上报事件，进入桌宠的「最近发生了什么」章节。
 
@@ -156,6 +167,42 @@ class ToolContext:
             callback()
         else:
             self._pending_callbacks.append(callback)
+
+    def set_confirm_sink(self, sink: Callable | None):
+        """注册确认接收者；传 None 注销。"""
+        self._confirm_sink = sink
+
+    def confirm(self, request: "ConfirmRequest") -> bool:
+        """转发确认请求并等结果；排队不计入卡片倒计时，超时就把请求撤回来。"""
+        sink = self._confirm_sink
+        if sink is None:
+            logger.warning("[ToolContext] 确认接收者未注册，按拒绝处理")
+            return False
+        countdown = max(0.0, float(request.timeout_s))
+        try:
+            sink(request)
+            if not request.shown.wait(countdown + max(0.0, float(request.queue_grace_s))):
+                self._withdraw(request)
+                return False
+            if request.event.wait(countdown):
+                return bool(request.result)
+            self._withdraw(request)
+            return False
+        except Exception:
+            logger.exception("[ToolContext] 确认调用异常，按拒绝处理")
+            self._withdraw(request)
+            return False
+
+    @staticmethod
+    def _withdraw(request) -> None:
+        """请求已经没人等：通知队列丢掉它。"""
+        withdraw = getattr(request, "withdraw", None)
+        if withdraw is None:
+            return
+        try:
+            withdraw()
+        except Exception:
+            logger.warning("[ToolContext] 撤销确认请求失败", exc_info=True)
 
     def db_path(self) -> str:
         """返回数据库路径，供工具使用。"""

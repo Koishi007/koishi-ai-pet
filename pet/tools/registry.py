@@ -1,12 +1,14 @@
-﻿"""工具注册表 — 自动发现、注册、描述可用工具。"""
+﻿"""工具注册表 — 自动发现、注册、描述可用工具，并聚合工具登记的终端命令。"""
 
 import logging
+import os
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Callable, Any, Optional
 
 from pet.config import config
+from pet.terminal.runner import get_runner
 from pet.tools.context import TOOL_CTX
 from pet.tools.output import PAGINATION_SCHEMA, ToolOutputDefinition
 
@@ -33,6 +35,27 @@ class ToolDef:
     group: str = "default"
     meta: bool = False  # 元工具：系统内置，不可禁用、不出现在工具管理列表
     side_effect: bool = False  # 是否对外产生副作用（点赞、写文件等），用于崩溃窗口判定
+
+
+@dataclass(frozen=True)
+class ToolCommand:
+    """工具注册的终端命令。
+
+    rows 是帮助里逐行展示的 (用法, 说明)，子命令各占一行；examples 是帮助末尾的
+    示例行；resolve 把命令后的参数文本翻成 (方法名, 参数)，参数不合法时抛 ValueError，
+    由调用方转成用法提示；    words 是第一个参数的候选，values 是「子命令 → 位置参数候选」，flags 是选项名，
+    paths 表示参数按程序名与路径补全，aliases 是命令别名。
+    """
+
+    name: str
+    rows: tuple[tuple[str, str], ...]
+    resolve: Callable[[str], tuple[str, dict]]
+    words: tuple[str, ...] = ()
+    paths: bool = False
+    examples: tuple[str, ...] = ()
+    aliases: tuple[str, ...] = ()
+    flags: tuple[str, ...] = ()
+    values: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
 
 _SEARCH_SPLIT = re.compile(r"[\s,，、;；/|+&]+")
@@ -101,6 +124,47 @@ RECALL_OUTPUT = {
     },
 }
 
+TERMINAL_OUTPUT = {
+    "type": "object",
+    "required": ["headline"],
+    "properties": {
+        "headline": _HEADLINE,
+        "body": {"type": "string", "x-role": "body",
+                 "description": "标准输出与标准错误，已截断"},
+        "exit_code": {"type": "integer", "x-role": "data",
+                      "description": "退出码，非零表示命令自己报错"},
+        "hint": {"type": "string", "x-role": "hint",
+                 "description": "下一步该传什么参数"},
+    },
+}
+
+TERMINAL_LIST_OUTPUT = {
+    "type": "object",
+    "required": ["headline", "body"],
+    "properties": {
+        "headline": _HEADLINE,
+        "body": {"type": "string", "x-role": "body",
+                 "description": "允许命令、解释器与工作目录根，每行一项"},
+        "platform": {"type": "string", "x-role": "data",
+                     "description": "Windows / Linux / macOS"},
+        "sandbox_root": {"type": "string", "x-role": "data",
+                         "description": "模型命令的工作目录根，cwd 只能落在它及其子目录"},
+        "allowed": {"type": "array", "x-role": "data",
+                    "description": "默认命令与额外命令的「程序 + 参数」，附 installed 标记"},
+        "interpreters": {"type": "array", "x-role": "data",
+                         "description": "一律转询问的解释器名单"},
+        "deny_categories": {"type": "array", "x-role": "data",
+                            "description": "危险模式覆盖的类别名"},
+        "shell_mode": {"type": "boolean", "x-role": "data",
+                       "description": "TERMINAL_ALLOW_SHELL 是否开启"},
+        "mode": {"type": "string", "x-role": "data",
+                 "description": "当前档位"},
+    },
+}
+
+# shell 参数的可选值按平台生成，POSIX 上不出现 pwsh / cmd
+SHELL_ARG_VALUES = ["", "pwsh", "cmd"] if os.name == "nt" else ["", "sh", "bash"]
+
 
 def _search_normalize(text: str) -> str:
     """搜索归一化：小写并去掉全部空白。"""
@@ -123,11 +187,20 @@ def _tool_search_text(tool: "ToolDef") -> str:
     return _search_normalize(" ".join(parts))
 
 
+def _resolve_memory_command(arg: str) -> tuple[str, dict]:
+    """把 `:memory search <keyword>` 翻成 recall__search 的参数。"""
+    parts = str(arg or "").split(None, 1)
+    if len(parts) < 2 or parts[0].lower() != "search":
+        raise ValueError("缺少参数：检索关键词")
+    return "search", {"query": parts[1].strip(), "limit": 5}
+
+
 class ToolRegistry:
 
     def __init__(self):
         self._tools: dict[str, ToolDef] = {}
         self._disabled: set[str] = set()
+        self._commands: dict[str, tuple[str, ToolCommand]] = {}
         self._register_default_tools()
 
     def register(self, tool_name: str, description: str, group: str = None,
@@ -187,6 +260,36 @@ class ToolRegistry:
             if tool.file_actions and self.is_enabled(tool.name):
                 actions.extend(tool.file_actions)
         return actions
+
+    def add_command(self, tool_name: str, *, name: str,
+                    rows: tuple[tuple[str, str], ...],
+                    resolve: Callable[[str], tuple[str, dict]],
+                    words: tuple[str, ...] = (),
+                    paths: bool = False,
+                    examples: tuple[str, ...] = (),
+                    aliases: tuple[str, ...] = (),
+                    flags: tuple[str, ...] = (),
+                    values: dict[str, tuple[str, ...]] = None) -> None:
+        """注册一条终端命令，由终端窗口按冒号前缀分发。
+
+        命令不直接调工具内部实现：resolve 只把参数文本翻成方法名与参数，
+        实际调用走 ToolExecutor。工具被关闭时命令不再出现。
+        """
+        if tool_name not in self._tools:
+            raise KeyError(f"未注册的工具：{tool_name}")
+        if name in self._commands:
+            logger.warning(f"[ToolRegistry] 终端命令重名，忽略：{name}")
+            return
+        self._commands[name] = (tool_name, ToolCommand(
+            name=name, rows=rows, resolve=resolve,
+            words=tuple(words), paths=bool(paths), examples=tuple(examples),
+            aliases=tuple(aliases), flags=tuple(flags), values=dict(values or {})))
+        logger.info(f"[ToolRegistry] terminal command added: {name} ({tool_name})")
+
+    def commands(self) -> list[tuple[str, "ToolCommand"]]:
+        """已启用工具注册的终端命令，按注册顺序。"""
+        return [(tool, command) for tool, command in self._commands.values()
+                if self.is_enabled(tool)]
 
     def get_tool(self, tool_name: str) -> "ToolDef | None":
         """按名称取工具定义，未注册返回 None。"""
@@ -287,6 +390,9 @@ class ToolRegistry:
         self._register_game_tools()
         # 记忆检索元工具
         self._register_recall_tools()
+        # 终端工具
+        if config.TERMINAL_ENABLED:
+            self._register_terminal_tools()
 
     def _register_food_tools(self):
         """注册觅食工具（FOOD_ENABLED=True 时调用）。"""
@@ -472,6 +578,77 @@ class ToolRegistry:
             },
             output=ToolOutputDefinition(schema=RECALL_OUTPUT),
         )
+        self.add_command(
+            "recall",
+            name="memory",
+            rows=((":memory search <keyword>", "按关键词检索长期记忆"),),
+            resolve=_resolve_memory_command,
+            words=("search",),
+            examples=(":memory search 项目名",),
+        )
+
+    def _register_terminal_tools(self):
+        """注册终端元工具（TERMINAL_ENABLED=True 时调用）。"""
+        runner = get_runner()
+        runner.set_confirm(TOOL_CTX.confirm)
+        self.register("terminal", "终端命令执行：运行系统命令并返回退出码与输出",
+                      group="default", meta=True, side_effect=True)
+        self.add_method(
+            tool_name="terminal",
+            method_name="run",
+            description=(
+                "执行一条系统命令并返回退出码与输出。"
+                "每条命令都是独立进程，没有 cd，换目录用 cwd 参数。"
+                "一次只发一条命令，拿到结果后再决定下一条；按当前档位决定是否需要用户确认"
+                "（ask 档逐条询问，auto 档命中免确认清单可直接执行），"
+                "被拒绝或返回 busy 时不要重试。"
+                "有专用工具可做同一件事时优先用专用工具。"
+                "不确定本机允许哪些命令时先调用 terminal__list。"
+            ),
+            handler=runner.run,
+            args={
+                "command": {
+                    "type": "str",
+                    "required": True,
+                    "description": "要执行的命令；shell 为空时按参数列表拆分",
+                },
+                "cwd": {
+                    "type": "str",
+                    "required": False,
+                    "default": "",
+                    "description": ("工作目录；留空用默认工作目录根，换目录就传它，不要执行 cd。"
+                                    "可传绝对路径或相对默认根的路径，超出根范围返回 cwd_denied"),
+                },
+                "timeout": {
+                    "type": "int",
+                    "required": False,
+                    "default": 30,
+                    "description": "命令超时秒数，0 表示取默认值",
+                },
+                "shell": {
+                    "type": "str",
+                    "required": False,
+                    "default": "",
+                    "description": "交给系统 shell 执行，留空表示按参数列表拆分",
+                    "enum": SHELL_ARG_VALUES,
+                    "available": lambda: bool(config.TERMINAL_ALLOW_SHELL),
+                },
+            },
+            timeout=runner.method_timeout,
+            output=ToolOutputDefinition(schema=TERMINAL_OUTPUT),
+        )
+        self.add_method(
+            tool_name="terminal",
+            method_name="list",
+            description=(
+                "查询本机终端命令策略：平台、工作目录根、允许命令与安装情况、"
+                "一律转询问的解释器、危险模式覆盖的类别。"
+                "不确定某条命令是否允许时先调用它。"
+            ),
+            handler=runner.list,
+            args={},
+            output=ToolOutputDefinition(schema=TERMINAL_LIST_OUTPUT),
+        )
 
     @staticmethod
     def _empty_recall(msg: str) -> dict:
@@ -480,11 +657,7 @@ class ToolRegistry:
 
     @staticmethod
     def _normalize_date(value: str, name: str) -> tuple[str, str]:
-        """把日期参数规范化为 YYYY-MM-DD，返回 (值, 错误信息)。
-
-        strptime 会接受 '2025-8-1' 这类非补零写法，但 SQL 端要求定长格式，
-        不回写为标准形态会出现「校验通过却查不到任何记录」的静默失败。
-        """
+        """把日期参数规范化为 YYYY-MM-DD"""
         value = (value or "").strip()
         if not value:
             return "", ""
@@ -760,6 +933,10 @@ class ToolRegistry:
                 properties = {}
                 required = []
                 for arg_name, spec in method.args.items():
+                    # available 为假时不下发该参数：模型看不到就不会去尝试
+                    available = spec.get("available")
+                    if available is not None and not available():
+                        continue
                     py_type = spec.get("type", "str")
                     json_type = self._TYPE_TO_JSON_SCHEMA.get(py_type, "string")
                     prop = {

@@ -9,7 +9,7 @@
 
 ## 设置界面页签
 
-页面归属由 `pet/ui/settings_window.py` 手写，和 `_KEY_META.category` **不是一回事**（例如 `MEMORY_*` 的 category 是 `memory`，却显示在「行为」页）。需要改归属时改界面代码，然后重新生成本文档。
+页面归属由 `pet/ui/settings_spec.py` 的 `TAB_SPECS` 声明，和 `_KEY_META.category` **不是一回事**（例如 `MEMORY_*` 的 category 是 `memory`，却显示在「行为」页）。需要改归属时改 `TAB_SPECS`，然后重新生成本文档。
 
 ### 连接
 
@@ -78,6 +78,10 @@
 | `AUTO_START_ON_BOOT` | bool | false |  | 开机自动启动 |
 | `GRAB_SWING_ENABLED` | bool | true |  | 拖拽时身体惯性摆动开关 |
 | `EDGE_DOCK_ENABLED` | bool | true |  | 贴边吸附总开关（拖拽松手或甩飞撞边时贴住屏幕左右边缘） |
+| `TERMINAL_ENABLED` | bool | true | 是 | 允许模型执行命令 |
+| `TERMINAL_MODE` | str | `"ask"` |  | 终端命令放行策略（可选：deny / ask / auto） |
+| `TERMINAL_ALLOW` | str_list | ["dir *", "ls *", "where *", "whoami *", "hostname *", "git status", "git log", "git rev-parse", "git describe"] |  | auto 档免确认的命令，逗号分隔，空为全部询问 |
+| `TERMINAL_SANDBOX_ROOT` | str | `""` |  | 默认工作目录根：终端初始目录，模型默认跟随终端当前目录，留空为桌面 |
 | `VOICE_INPUT_ENABLED` | bool | false |  | 启用语音输入 |
 | `VOICE_HOTKEY` | str | `"F8"` |  | 语音输入全局热键 |
 | `XF_APPID` | str | `""` |  | 讯飞语音听写 APPID |
@@ -135,6 +139,15 @@
 | `SCHEDULER_FAST_MS` | int | 1000 | 是 |  | fast_tick 间隔(毫秒) |
 | `SCHEDULER_IDLE_TIMEOUT_MS` | int | 900000 | 是 |  | 空闲超时(毫秒)，超过后进入休眠 |
 | `SCHEDULER_SLOW_MS` | int | 600000 | 是 |  | slow_tick 间隔(毫秒) |
+| `TERMINAL_ALLOW_SHELL` | bool | false | 是 |  | 允许整条命令交给系统 shell |
+| `TERMINAL_COMMAND_TIMEOUT_S` | int | 30 | 是 | 是 | 单条命令默认超时秒数 |
+| `TERMINAL_CONFIRM_TIMEOUT_S` | int | 60 | 是 | 是 | 确认卡片倒计时秒数 |
+| `TERMINAL_DENY_PATTERNS` | str_list | [] | 是 |  | 危险命令正则，空为内置清单 |
+| `TERMINAL_ENV_ALLOW` | str_list | [] | 是 |  | 额外透传的环境变量名 |
+| `TERMINAL_MAX_CAPTURE_BYTES` | int | 131072 | 是 |  | 每流捕获字节上限 |
+| `TERMINAL_MAX_COMMAND_TIMEOUT_S` | int | 120 | 是 | 是 | 模型可传的命令超时上限 |
+| `TERMINAL_MAX_OUTPUT_CHARS` | int | 4000 | 是 |  | 进入模型的输出上限，两流合计 |
+| `TERMINAL_QUEUE_WAIT_S` | int | 10 | 是 | 是 | 执行闸门等待上限 |
 | `UNCONSCIOUS_IDLE_SECONDS` | int | 60 | 是 |  | 连续待机秒数，超过后自动播放无意识化动作 |
 
 ### category = `connection`
@@ -172,4 +185,4 @@
 - `hidden`：`true` 表示不在界面显示，只能直接编辑 `settings.json`
 - `enum` / `minimum` / `maximum`：取值约束，会写进 `settings-schema.json`
 
-共 109 项（其中 55 项未在界面列出）。
+共 122 项（其中 64 项未在界面列出）。

@@ -13,6 +13,7 @@ from PySide6.QtGui import QIcon
 from PySide6.QtCore import QObject, QTimer, Qt, Signal, Slot
 
 from pet.ui.log_window import LogRelay, LogWindowHandler
+from pet.ui import settings_hooks
 from pet.ui.styles import ICON_PATH
 from pet.ui.pet_window import PetWindow
 from pet.ui.system_tray import SystemTrayManager
@@ -23,7 +24,10 @@ from pet.ui.feed_bubble import FeedBubble
 from pet.ui.music_bubble import MusicBubble
 from pet.ui.file_bubble import FileBubble
 from pet.agent import PetAgent
-from pet.brain.prompts import interact_fed_prompt, interact_take_a_bite_prompt
+from pet.brain.embedding_client import EmbeddingClient
+from pet.brain.prompts import (interact_fed_prompt, interact_take_a_bite_prompt,
+                               invalidate_action_section)
+from pet.terminal.runner import get_runner
 from pet.tools import load_tools
 from pet.tools.context import TOOL_CTX
 from pet.tools.registry import TOOL_REGISTRY
@@ -167,6 +171,7 @@ def _warn_already_running() -> None:
 
 
 def main():
+    settings_hooks.bind(EmbeddingClient, invalidate_action_section)
     logging.basicConfig(
         level=getattr(logging, config.LOG_LEVEL, logging.INFO),
         format="[%(name)s] %(message)s",
@@ -260,6 +265,7 @@ def main():
 
     agent = PetAgent()
     TOOL_CTX.bind(agent)
+    TOOL_CTX.set_confirm_sink(agent.request_confirm)
     window = PetWindow()
     window.set_agent(agent)
     window.set_app(app)
@@ -505,6 +511,13 @@ def main():
         except Exception as e:
             logger.warning(f"shutdown: context save failed: {e}")
 
+        # 退出前先清空未决确认并注销接收者，再关闭顶层窗口：
+        # 残留的工具线程此时再来确认，直接按拒绝返回，不会去接已被销毁的卡片
+        try:
+            agent.reject_pending_confirms("quit")
+            TOOL_CTX.set_confirm_sink(None)
+        except Exception as e:
+            logger.warning(f"shutdown: pending confirm cleanup failed: {e}")
         _close_all_windows()
 
         try:
@@ -527,7 +540,16 @@ def main():
         _do_quit()
 
     def _shutdown():
-        """aboutToQuit 回调：轻量善后。"""
+        """aboutToQuit 回调：终止活跃子进程、拒绝未决确认、注销全部回调。"""
+        try:
+            agent.reject_pending_confirms("app exit")
+            TOOL_CTX.set_confirm_sink(None)
+        except Exception as e:
+            logger.warning(f"shutdown: confirm cleanup failed: {e}")
+        try:
+            get_runner().shutdown()
+        except Exception as e:
+            logger.warning(f"shutdown: runner cleanup failed: {e}")
         logging.getLogger().removeHandler(_log_handler)
         # 正常退出：清除启动标记，避免下次启动误报异常退出
         get_guard().clear_marker()
@@ -537,6 +559,7 @@ def main():
 
     # 将退出/重启函数注入到需要的地方
     window.quit_fn = _do_quit
+    window.restart_fn = _do_restart
     tray.quit_fn = _do_quit
     tray.restart_fn = _do_restart
 

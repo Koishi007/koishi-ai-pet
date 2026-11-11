@@ -28,7 +28,7 @@ class Vitals(QObject):
 
     # (饱食度增量, 精力增量)：负值为消耗，正值为恢复
     ACTION_VITALS_DELTA: dict[str, tuple[float, float]] = {
-        "sleep":        (-0.003, +0.05),
+        "sleep":        (-0.003, +0.15),
         "sit":          (-0.003, 0),
         "thinking":     (-0.003, -0.005),
         "look_around":  (-0.003, -0.005),
