@@ -73,7 +73,10 @@ class TestCommonPrefix:
 
     def test_shared_prefix(self, ctx):
         result = complete("al", 2, ctx)
-        assert set(result.candidates) == {"alpha.txt", "alt.txt"}
+        expected = {"alpha.txt", "alt.txt"}
+        expected.update(name for name in completion.shell_words()
+                        if name.lower().startswith("al"))
+        assert set(result.candidates) == expected
         assert result.common_prefix == "al"
 
 

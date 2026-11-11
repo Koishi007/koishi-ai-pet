@@ -121,6 +121,8 @@ class TestBuiltin:
     def test_cmd_command_is_treated_as_interpreter(self, sandbox, monkeypatch):
         monkeypatch.setattr(config, "TERMINAL_MODE", "auto")
         monkeypatch.setattr(config, "TERMINAL_ALLOW", ["cmd *"])
+        monkeypatch.setattr(policy.shutil, "which",
+                            lambda name: f"/opt/system/{name}" if name == "cmd" else None)
         verdict = policy.check("model", ["cmd", "/c", "dir"], "", "cmd /c dir")
         assert verdict.decision == "ask"
 
