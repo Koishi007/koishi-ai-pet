@@ -94,7 +94,7 @@ class TerminalRunner:
             2 * int(config.TERMINAL_CONFIRM_TIMEOUT_S)
             + int(config.TERMINAL_MAX_COMMAND_TIMEOUT_S)
             + 2 * int(config.TERMINAL_QUEUE_WAIT_S)
-            + core.KILL_WAIT_S + core.OUTPUT_JOIN_S + 3
+            + 2 * core.KILL_WAIT_S + 2 * core.OUTPUT_JOIN_S + 3
         )
 
     def set_terminal_sink(self, sink) -> None:
@@ -243,6 +243,7 @@ class TerminalRunner:
                 queue_grace_s=float(config.TERMINAL_QUEUE_WAIT_S),
                 source=source.value,
                 matched_patterns=list(verdict.matched),
+                reason=verdict.reason,
                 untrusted=verdict.untrusted,
             )
             confirm = self._confirm

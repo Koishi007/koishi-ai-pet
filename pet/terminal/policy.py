@@ -44,10 +44,9 @@ WRITE_FLAGS = {"git": ("--output",), "sort": ("/o",)}
 CMD_META = re.compile(r'[&|<>^%!()"\n\r]')
 
 # 系统程序目录：工作目录根覆盖到系统盘时，其中的程序不按可写目录降级。
-# 不收 SYSTEMROOT 整棵树——C:\Windows\Temp 这类子目录普通用户可写。
+# 只收默认 ACL 下普通用户写不进去的目录，POSIX 侧再按实际权限过滤。
 _WIN_SYSTEM_DIRS = ("system32", "SysWOW64",
                     os.path.join("system32", "WindowsPowerShell", "v1.0"))
-_WIN_SYSTEM_DIR_KEYS = ("PROGRAMFILES", "PROGRAMFILES(X86)", "PROGRAMW6432")
 _POSIX_SYSTEM_DIRS = ("/bin", "/sbin", "/usr/bin", "/usr/sbin",
                       "/usr/local/bin", "/usr/local/sbin", "/opt/homebrew/bin")
 
@@ -289,13 +288,12 @@ def is_writable_path(path: str, roots, platform: str = "") -> bool:
 
 
 def system_dirs() -> tuple[str, ...]:
-    """可信的系统程序目录；只返回本机真实存在的目录。"""
+    """可信的系统程序目录：真实存在、且当前用户写不进去的那些。"""
     if os.name == "nt":
         environ = {str(key).upper(): value for key, value in os.environ.items()}
-        candidates = [environ.get(key, "") for key in _WIN_SYSTEM_DIR_KEYS]
         root = environ.get("SYSTEMROOT", "")
-        if root:
-            candidates.extend(os.path.join(root, name) for name in _WIN_SYSTEM_DIRS)
+        candidates = ([os.path.join(root, name) for name in _WIN_SYSTEM_DIRS]
+                      if root else [])
     else:
         candidates = list(_POSIX_SYSTEM_DIRS)
     found: list[str] = []
@@ -303,9 +301,19 @@ def system_dirs() -> tuple[str, ...]:
         if not path:
             continue
         resolved = os.path.realpath(path)
-        if os.path.isdir(resolved) and resolved not in found:
-            found.append(resolved)
+        if not os.path.isdir(resolved) or resolved in found:
+            continue
+        if user_writable(resolved):
+            continue
+        found.append(resolved)
     return tuple(found)
+
+
+def user_writable(path: str) -> bool:
+    """当前用户能否往这个目录里写文件；Windows 的 os.access 读不到 ACL，只认目录白名单。"""
+    if os.name == "nt":
+        return False
+    return os.access(path, os.W_OK)
 
 
 def is_system_program(path: str) -> bool:
@@ -410,16 +418,18 @@ def check(source: str, argv: list[str], builtin: str, command: str,
                        abs_cwd=abs_cwd)
 
     matched = tuple(match_deny_patterns(command))
+    # 经 cmd 执行的命令带元字符会拼出第二条命令，两个档位都要标出来
+    cmd_meta = runs_via_cmd(builtin, resolved) \
+        and any(CMD_META.search(str(arg)) for arg in argv)
     if mode == "auto":
         # 危险模式、解释器、整条 shell 命令一律转询问
         if matched or shell_mode:
             return Verdict(Decision.ASK, "", matched, resolved, untrusted, abs_cwd)
-        # 经 cmd 执行的命令带元字符会拼出第二条命令，不能按免确认放行
-        if runs_via_cmd(builtin, resolved) \
-                and any(CMD_META.search(str(arg)) for arg in argv):
+        if cmd_meta:
             return Verdict(Decision.ASK, "cmd_meta", matched, resolved, untrusted, abs_cwd)
         if not builtin and program in INTERPRETERS:
             return Verdict(Decision.ASK, "", matched, resolved, untrusted, abs_cwd)
         if allows(program, list(argv[1:])):
             return Verdict(Decision.ALLOW, "", matched, resolved, untrusted, abs_cwd)
-    return Verdict(Decision.ASK, "", matched, resolved, untrusted, abs_cwd)
+    return Verdict(Decision.ASK, "cmd_meta" if cmd_meta else "", matched, resolved,
+                   untrusted, abs_cwd)

@@ -119,8 +119,8 @@ class TestConfirm:
         names = {field.name for field in dataclasses.fields(ConfirmRequest)}
         assert {"argv", "builtin", "routed", "command", "cwd", "shell_mode",
                 "timeout_s", "queue_grace_s", "source", "matched_patterns",
-                "untrusted", "sequence", "total", "event", "shown", "withdraw",
-                "result"} <= names
+                "reason", "untrusted", "sequence", "total", "event", "shown",
+                "withdraw", "result"} <= names
 
     def test_context_has_no_agent_dependency(self):
         tree = ast.parse(_CONTEXT_FILE.read_text(encoding="utf-8-sig"))
@@ -238,6 +238,7 @@ class TestAgentQueue:
 
         assert agent._confirm_queue == []
         assert agent._confirm_current is None
+        assert only.event.is_set() and only.result is False
         assert len(agent.confirm_cleared.emitted) == 1
 
     def test_no_cleared_while_queue_has_requests(self):

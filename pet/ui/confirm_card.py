@@ -181,6 +181,8 @@ class ConfirmCard(QWidget):
 
         self._allow_btn = QPushButton(ALLOW_TEXT)
         self._allow_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        # 只认鼠标：键盘激活会绕过 keyPressEvent 里的回车限制
+        self._allow_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self._allow_btn.setFont(terminal_ui_font(12, bold=True))
         self._allow_btn.clicked.connect(self._allow)
 
@@ -261,8 +263,10 @@ class ConfirmCard(QWidget):
             text, color = "命中危险规则：" + "、".join(request.matched_patterns), TERMINAL_DANGER
         elif request.untrusted:
             text, color = "程序来自可写目录", TERMINAL_USER
-        elif getattr(request, "shell_mode", ""):
+        elif request.shell_mode:
             text, color = "整条命令交给 shell，不做程序解析", TERMINAL_USER
+        elif request.reason == "cmd_meta":
+            text, color = "参数含 shell 元字符，可能执行第二条命令", TERMINAL_USER
         else:
             text, color = "", TERMINAL_MUTED
         self._hint.setText(text)
@@ -363,11 +367,13 @@ class ConfirmCard(QWidget):
         super().keyPressEvent(event)
 
     def _enter_allows(self) -> bool:
-        """回车放行条件：非危险、非不可信、非 shell，且已展示超过守卫时间。"""
+        """回车放行条件：非危险、非不可信、非 shell、非 cmd 元字符，且已展示超过守卫时间。"""
         request = self._request
         if request is None:
             return False
         if self._danger or request.untrusted or request.shell_mode:
+            return False
+        if request.reason == "cmd_meta":
             return False
         return time.monotonic() - self._shown_at >= _ENTER_GUARD_S
 

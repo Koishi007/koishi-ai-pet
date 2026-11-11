@@ -624,13 +624,16 @@ class PetAgent(QObject):
         self._emit_next_confirm()
 
     def withdraw_confirm(self, request) -> bool:
-        """撤销一条还没有结论的请求，返回它是否仍在队列里。"""
+        """撤销一条还没有结论的请求：按拒绝落地并移出队列，返回它是否在队列里。"""
         with self._confirm_lock:
             index = self._queue_index(request)
             if index < 0:
                 return False
             self._confirm_queue.pop(index)
             self._renumber_confirms()
+        # 置为拒绝：迟到的展示信号会因此跳过它，等待方也不会再等
+        request.result = False
+        request.event.set()
         self._emit_next_confirm()
         return True
 

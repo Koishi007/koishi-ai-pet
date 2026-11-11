@@ -18,6 +18,7 @@ class ConfirmRequest:
     timeout_s: float = 0.0
     source: str = "model"
     matched_patterns: list[str] = field(default_factory=list)
+    reason: str = ""
     untrusted: bool = False
     sequence: int = 0
     total: int = 0

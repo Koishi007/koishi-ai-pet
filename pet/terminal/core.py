@@ -271,7 +271,10 @@ def terminate_tree(pid: int) -> tuple[bool, str]:
             completed = subprocess.run(
                 ["taskkill", "/F", "/T", "/PID", str(pid)],
                 capture_output=True, text=True, creationflags=_NO_WINDOW,
+                timeout=KILL_WAIT_S,
             )
+        except subprocess.TimeoutExpired:
+            return False, f"taskkill 超过 {KILL_WAIT_S} 秒未返回；进程 {pid} 可能仍在运行"
         except OSError as exc:
             return False, f"终止进程树失败：{exc}；进程 {pid} 可能仍在运行"
         if completed.returncode != 0:

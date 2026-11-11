@@ -148,10 +148,11 @@ class ProbeRegistry:
 
     def __init__(self):
         self._entries: dict[str, tuple[QThread, QObject]] = {}
-        self._lingering: list[tuple[QThread, QObject]] = []
+        self._lingering: dict[str, tuple[QThread, QObject]] = {}
 
     def running(self, name: str) -> bool:
-        entry = self._entries.get(name)
+        """同名任务是否还在跑；滞留下来的也算，免得同一组测试起第二份。"""
+        entry = self._entries.get(name) or self._lingering.get(name)
         return entry is not None and entry[0].isRunning()
 
     def start(self, name: str, worker: QObject, on_finished,
@@ -174,19 +175,20 @@ class ProbeRegistry:
         """登记项交给滞留表，等线程真的停下来再丢引用。"""
         pair = self._entries.pop(name, None)
         if pair is not None and pair[0].isRunning():
-            self._lingering.append(pair)
+            self._lingering[name] = pair
 
     def shutdown(self) -> None:
         """请求线程退出；quit() 打断不了在途网络调用，等不到就把引用留到它自己结束。"""
         self._prune()
-        for thread, worker in list(self._entries.values()):
+        for name, (thread, worker) in list(self._entries.items()):
             if thread.isRunning():
                 thread.quit()
                 thread.wait(2000)
             if thread.isRunning():
-                self._lingering.append((thread, worker))
+                self._lingering[name] = (thread, worker)
         self._entries.clear()
 
     def _prune(self) -> None:
         """丢掉已经结束的滞留线程：引用只为活着的线程保留。"""
-        self._lingering = [pair for pair in self._lingering if pair[0].isRunning()]
+        self._lingering = {name: pair for name, pair in self._lingering.items()
+                           if pair[0].isRunning()}

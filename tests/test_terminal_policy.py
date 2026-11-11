@@ -162,6 +162,12 @@ class TestBuiltin:
         monkeypatch.setattr(config, "TERMINAL_ALLOW", ["git *"])
         assert policy.check("model", ["git", "log", "&"], "", "git log &").decision == "allow"
 
+    def test_ask_mode_also_marks_cmd_meta(self, sandbox):
+        """ask 档也要带原因，卡片才能说明为什么突然要确认。"""
+        verdict = policy.check("model", ["dir", "&", "del", "x"], "dir", "dir & del x")
+        assert verdict.decision == "ask"
+        assert verdict.reason == "cmd_meta"
+
 
 class TestInterpreters:
 
@@ -359,6 +365,17 @@ class TestSystemPrograms:
 
         assert os.path.realpath(windows / "system32") in dirs
         assert os.path.realpath(windows) not in dirs
+
+    def test_user_writable_system_dir_is_dropped(self, tmp_path, monkeypatch):
+        """用户自己能写的「系统目录」（例如自家的 homebrew 前缀）不能算可信。"""
+        if os.name == "nt":
+            pytest.skip("Windows 不按 ACL 判断可写性")
+        writable = tmp_path / "brew"
+        writable.mkdir()
+        writable.chmod(0o777)
+        monkeypatch.setattr(policy, "_POSIX_SYSTEM_DIRS", (str(writable),))
+
+        assert policy.system_dirs() == ()
 
 
 class TestWriteFlags:

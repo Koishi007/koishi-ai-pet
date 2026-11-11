@@ -135,6 +135,22 @@ class TestCard:
         assert request.event.is_set() is False
         card.hide()
 
+    def test_cmd_meta_enter_does_not_allow(self, qt_app):
+        """经 cmd 拼出第二条命令的请求只认鼠标批准。"""
+        card = ConfirmCard()
+        request = _request(reason="cmd_meta")
+        card.show_request(request)
+        _settled(card)
+        card.keyPressEvent(_key(Qt.Key.Key_Return))
+        assert request.event.is_set() is False
+        assert "元字符" in card._hint.text()
+        card.hide()
+
+    def test_allow_button_takes_no_keyboard_focus(self, qt_app):
+        """允许按钮拿到焦点时空格会直接点击，绕过卡片的回车限制。"""
+        card = ConfirmCard()
+        assert card._allow_btn.focusPolicy() == Qt.FocusPolicy.NoFocus
+
     def test_enter_inside_guard_does_not_allow(self, qt_app):
         """卡片刚弹出时焦点可能还在别处，这时的回车不能放行任何命令。"""
         card = ConfirmCard()

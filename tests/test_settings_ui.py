@@ -245,11 +245,13 @@ def test_probe_registry_keeps_stuck_threads():
     registry.shutdown()
 
     assert registry._entries == {}
-    assert registry._lingering == [(thread, worker)]
+    assert registry._lingering["llm"] == (thread, worker)
+    assert registry.running("llm") is True
 
     thread.running = False
     registry._prune()
-    assert registry._lingering == []
+    assert registry._lingering == {}
+    assert registry.running("llm") is False
 
 
 def test_actions_shutdown_stops_hotkey_listener(qt_app):
