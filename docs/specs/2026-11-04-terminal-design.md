@@ -212,7 +212,7 @@ Windows 内建命令不在 `PATH` 里，`shutil.which` 找不到，必须显式�
 | `ask` | 任何命令都询问，卡片标注命中项 | 正常执行 |
 | `auto` | 清单里的命令直接执行，其余询问 | 正常执行 |
 
-默认值为 `ask`。`auto` 档下仍转询问的情形：解释器、命中危险模式、整条命令交给系统 shell；程序来自可写目录时直接拒绝 `untrusted_program`。
+默认值为 `ask`。`auto` 档下仍转询问的情形：解释器、命中危险模式、整条命令交给系统 shell、内建命令的参数含 cmd 元字符、免确认条目带了写文件的选项；程序来自可写目录时直接拒绝 `untrusted_program`。
 
 用户输入跳过策略判定、确认与 `shell` 开关检查，只经过解析、闸门、执行与终端回显。免确认清单、危险模式、沙箱根与 `TERMINAL_MODE` 都不参与。执行记录不另存，模型命令作为工具调用进事件日志。
 
@@ -237,6 +237,7 @@ TERMINAL_ALLOW = ["git status", "git log", "dir *", "where *"]
 - 程序名匹配 `argv[0]` 的 basename（去扩展名、小写）；参数模式与 `argv[1:]` 做前缀匹配：`"git status"` 允许 `git status --short`，不允许 `git push`。内建命令按原始程序名匹配，`dir` 命中 `dir *`，路由产生的 `cmd` 不参与判定。
 - 解释器名单是内置常量，`auto` 档一律转询问，写进免确认清单也不改变：`python`、`python3`、`py`、`node`、`npm`、`npx`、`pwsh`、`powershell`、`cmd`、`bash`、`sh`、`wsl`。内建命令不受该条约束，`cmd` 只在用户直接输入 `cmd` 时按解释器处理。
 - 免确认清单只决定「哪些命令免确认」，不承担拦截恶意命令的职责；拦截由危险模式、解释器规则与沙箱负责。
+- 条目命中也可能被两条规则否掉：带写文件选项时不算命中（`WRITE_FLAGS` 现登记 `git --output` 与 `sort /o`，防止免确认地覆盖任意可写文件）；经 `cmd` 解释的命令（内建命令与 `.bat` / `.cmd` 垫片）参数含元字符（`& | < > ^ % ! ( ) "` 与换行）时转询问，`dir & del x` 命中 `dir *` 但 `cmd` 会把 `&` 之后的部分当第二条命令执行。
 
 ### §5.3 危险模式
 
@@ -266,10 +267,10 @@ invoke-expression | \biex\b | -encodedcommand
 - 第一步查目标目录：在 `cwd` 下按 `PATHEXT` 顺序探测 `argv[0]` 的同名文件，POSIX 直接探测文件名。命中即视为程序来自可写目录。
 - 第二步查系统路径：`shutil.which(argv[0])` 解析为绝对路径；`None` 且第一步未命中时返回 `bad_command`。
 - 可写判定按目录树计算：候选路径 `realpath` 后与 `sandbox_root`、`cwd` 做带边界的 `os.path.commonpath` 比较，落在任一目录树内即视为来自可写目录。沙箱根的子目录同样命中，`sandbox_root/tools/git.bat` 与以绝对路径调用的 `sandbox_root/tools/git.bat` 都按命中处理。
-- 判定命中时，`auto` 档返回 `untrusted_program`，`ask` 档在卡片上标注「来自可写目录」后询问。
-- `builtin` 非空时跳过上面三步：内建命令由系统 `cmd` 执行，不参与程序解析与劫持判定。
+- 可写判定命中后还要过一次系统目录：程序落在 `policy.system_dirs()` 内仍按可信处理，否则 `auto` 档返回 `untrusted_program`、`ask` 档标注「来自可写目录」。用户把终端切到 `C:\` 或 `/` 后根会覆盖系统盘，没有这一步就会把所有系统程序判成不可信。Windows 取 `SYSTEMROOT\system32`、`SYSTEMROOT\SysWOW64`、`SYSTEMROOT\system32\WindowsPowerShell\v1.0` 与 `PROGRAMFILES` 系，不收 `SYSTEMROOT` 整棵树（`C:\Windows\Temp` 这类子目录普通用户可写）；POSIX 取 `/bin`、`/sbin`、`/usr/bin`、`/usr/sbin`、`/usr/local/bin`、`/usr/local/sbin`、`/opt/homebrew/bin`；只算本机真实存在的目录。同名程序被放进可写目录时解析结果不在系统目录内，照旧按不可信拒绝。
+- POSIX 的 `shutil.which` 不搜索当前目录，第一步命中只在 `cwd` 内存在同名可执行文件时发生。
+- `builtin` 非空时跳过上面几步：内建命令由系统 `cmd` 执行，不参与程序解析与劫持判定。
 - 所有档位执行时都使用判定出的绝对路径，避免判定与执行之间被替换。
-- POSIX 的 `shutil.which` 不搜索当前目录，第一步命中只在 `cwd` 内存在同名可执行文件时发生；macOS 的 `/usr/local/bin`、`/opt/homebrew/bin` 与 Linux 的 `/usr/bin`、`/bin` 视为可信目录。
 
 ### §5.5 工作目录与环境变量
 
@@ -277,7 +278,9 @@ invoke-expression | \biex\b | -encodedcommand
 - `cwd` 为空时取共享目录；相对路径按共享目录解析，绝对路径与相对路径都经 `os.path.realpath` 后与共享目录做 `commonpath` 比较，失败返回 `cwd_denied`。
 - 比较前两侧都过 `os.path.normcase`：Windows 路径大小写不敏感，macOS 默认文件系统也不敏感但 `posixpath` 区分大小写，不统一会误判越界。
 - 共享目录就是模型允许的根：用户把终端切到 `C:\` 后，模型命令的默认目录与允许范围也随之扩大到 `C:\`。模型不能自己切换目录。
-- 子进程环境只保留 `PATH`、`SYSTEMROOT`、`WINDIR`、`TEMP`、`TMP`、`HOME`、`USERPROFILE`、`LANG`、`LC_ALL`、`PYTHONIOENCODING`，加上 `TERMINAL_ENV_ALLOW` 列出的键；`LLM_KEY`、`*_API_KEY`、`*_TOKEN` 即使出现在该列表里也拒绝透传。
+- 子进程环境只保留 `ENV_KEYS`：`PATH`、`SYSTEMROOT`、`SYSTEMDRIVE`、`WINDIR`、`TEMP`、`TMP`、`HOME`、`USERPROFILE`、`HOMEDRIVE`、`HOMEPATH`、`USERNAME`、`USERDOMAIN`、`APPDATA`、`LOCALAPPDATA`、`PROGRAMDATA`、`PROGRAMFILES`、`PROGRAMFILES(X86)`、`PROGRAMW6432`、`COMMONPROGRAMFILES`、`PATHEXT`、`COMSPEC`、`PSMODULEPATH`、`LANG`、`LC_ALL`、`PYTHONIOENCODING`、`OS`、`SHELL`、`PWD`、`NUMBER_OF_PROCESSORS`、`PROCESSOR_ARCHITECTURE`，加上 `TERMINAL_ENV_ALLOW` 列出的键；变量名带 `KEY` / `TOKEN` / `SECRET` / `PASS` / `CRED` / `AUTH` 的即使出现在该列表里也拒绝透传。
+- 键名比较按大写进行：Windows 上 `os.environ` 的键名大小写不固定（`ProgramFiles(x86)`、`PSModulePath`），逐字比较会漏掉常用变量。
+- 用户输入的命令同样走这份白名单，不单独透传完整环境；`APPDATA`、`PATHEXT`、`PSMODULEPATH` 这些是为 npm/pip 用户级安装、PowerShell 模块与 git 凭据助手准备的。
 
 ### §5.6 失败即拒绝
 
@@ -301,12 +304,12 @@ handler 在工具线程中运行，界面在主线程，确认必须跨线程。
 
 1. UI 启动后调用 `TOOL_CTX.set_confirm_sink(agent.request_confirm)` 注册接收函数；应用退出时 `set_confirm_sink(None)` 注销。
 2. `TOOL_CTX.confirm(request)` 检查 sink；为空立即返回 `False`。
-3. `request_confirm(request)` 把请求放入 `_confirm_queue` 并写入 `sequence` 与 `total`；当前没有展示中的卡片时直接 `confirm_requested.emit(request)`，否则只入队。
-4. 主线程槽函数展示该请求，一次只显示一条卡片；标题用 `sequence` 与 `total`（如「命令 2/3」）。
+3. `request_confirm(request)` 把请求放入 `_confirm_queue` 并写入 `sequence` 与 `total`，同时把 `withdraw_confirm` 挂到 `request.withdraw`；当前没有展示中的卡片时直接 `confirm_requested.emit(request)`，否则只入队。
+4. 主线程槽函数展示该请求，一次只显示一条卡片；标题用 `sequence` 与 `total`（如「命令 2/3」）。发信号前 `request.shown` 已置位。
 5. 用户点击后写 `request.result` 并 `request.event.set()`；同一请求只唤醒一次。主线程不触碰工具线程的其他状态。
-6. 卡片关闭后调用 `next_confirm()` 推进下一条；队列为空时清空展示中的标记。
-7. 工具线程 `event.wait(confirm_timeout_s)` 返回，读 `result` 决定执行或拒绝。
-8. 卡片提供「全部拒绝」，清空队列并把剩余请求统一置为拒绝。
+6. 卡片关闭后调用 `next_confirm(request)`，按对象身份移除这一条；队列为空时发出 `confirm_cleared`，卡片收起。按身份而不是按队首移除，旧卡片的迟到回调就不会把还没展示过的新请求弹掉。
+7. 工具线程先 `shown.wait()` 再 `event.wait(confirm_timeout_s)`；超时后调用 `request.withdraw()` 把自己撤出队列，卡片不会接着弹一条没人等的命令。
+8. 卡片提供「全部拒绝」，清空队列并把剩余请求统一置为拒绝，同时发出 `confirm_cleared`。
 
 请求对象字段：
 
@@ -316,6 +319,9 @@ handler 在工具线程中运行，界面在主线程，确认必须跨线程。
 | `command`、`cwd`、`shell_mode`、`timeout_s`、`source` | 原始命令、工作目录、shell 模式、超时与来源 | `TerminalRunner` |
 | `matched_patterns`、`untrusted` | 命中的危险类别与可写目录标注 | `TerminalRunner` |
 | `sequence`、`total` | 队列序号与总数 | `PetAgent.request_confirm()` |
+| `queue_grace_s` | 排队宽限，超时口径里唯一来自配置的量 | `TerminalRunner` |
+| `shown` | 排队是否结束（交给卡片或已被拒绝），等待方据此开始按倒计时等 | `PetAgent` |
+| `withdraw` | 撤销回调，超时后把自己撤出队列 | `PetAgent.request_confirm()` |
 | `event`、`result` | `threading.Event` 与确认结果 | `TerminalRunner` 初始化；主线程写 `result` 并 `event.set()` |
 
 卡片只读这些字段，不做二次解析。卡片的视觉与键盘交互见 §7.6。
@@ -332,6 +338,7 @@ handler 在工具线程中运行，界面在主线程，确认必须跨线程。
 ### §6.3 超时与中断
 
 - 确认超时 `confirm_timeout_s` 默认 60 秒，卡片显示剩余秒数，归零后自动关闭并按拒绝处理。
+- 倒计时从卡片展示时开始，排队时间不计入：等待方先等 `shown`（上限为「一个倒计时 + `queue_grace_s`」，取 `queue_wait_s`），再按倒计时等结果。`TOOL_CTX` 不依赖 `pet.config`，两个口径由 `ConfirmRequest` 上的 `queue_grace_s`、`shown` 与 `withdraw` 承载。
 - 中断在途调用时，`PetAgent` 遍历未决请求置为拒绝并清空队列。
 - 应用退出时同样清空未决请求；清理写在 `pet/app.py` 的 `_shutdown()` 回调中，调用 `reject_pending_confirms("app exit")` 与 `set_confirm_sink(None)`。该回调在 `app.exec()` 返回前触发，覆盖 `os._exit(code)` 与 `sys.exit(code)` 两条分支；`atexit` 与析构函数不参与。
 - 终端窗口关闭不注销 sink：窗口是单例，关闭只是 `hide()`，下次菜单再次 `show()`。
@@ -475,9 +482,11 @@ handler 在工具线程中运行，界面在主线程，确认必须跨线程。
 
 交互约定：
 
-- `Esc` 拒绝当前项，`Enter` 允许；命中危险模式时 `Enter` 无效，只能点击「仍要执行」。
-- `Tab` 在三个按钮间移动；关闭按钮等同拒绝。
-- 卡片弹出时 `show()` + `raise_()` + `activateWindow()`，不阻塞主窗口。
+- `Esc` 拒绝当前项。`Enter` 只在同时满足三条时放行：未命中危险模式、程序可信且不是整条 shell 命令、卡片已展示超过 0.8 秒；其余情况只能点按钮。
+- 卡片不抢键盘焦点，点一下卡片后才接收 `Esc` / `Enter` / `Tab`；点开后的 0.8 秒内回车仍然无效，避免点一下顺手回车就放行。
+- `Tab` 在三个按钮间移动；卡片没有关闭按钮，`Esc` 与「拒绝」都按拒绝处理。
+- 卡片弹出时只 `show()` + `raise_()`，窗口带 `WA_ShowWithoutActivating`，不抢键盘焦点：用户可能正在别处输入，抢焦点会让随手一个回车放行一条还没看过的命令。
+- 队列被整体拒绝或当前请求被撤销时，卡片收到 `confirm_cleared` 直接收起，不写结果也不推进队列。
 - 同一时刻只存在一个卡片实例，队列推进时更新内容与标题，不反复创建窗口。
 - 恋恋开启鼠标穿透时卡片不受影响，它是独立窗口，不继承穿透状态。
 - 文案写「恋恋想执行一条命令」，不写「权限请求」「授权」这类系统术语；危险提示只写类别，不写正则原文。
@@ -749,7 +758,7 @@ TERMINAL_OUTPUT = {
 | `TERMINAL_COMMAND_TIMEOUT_S` | int | 30 | 单条命令的默认超时 |
 | `TERMINAL_MAX_COMMAND_TIMEOUT_S` | int | 120 | 模型可传的超时上限 |
 | `TERMINAL_CONFIRM_TIMEOUT_S` | int | 60 | 确认卡片倒计时 |
-| `TERMINAL_QUEUE_WAIT_S` | int | 10 | 执行闸门等待上限 |
+| `TERMINAL_QUEUE_WAIT_S` | int | 10 | 执行闸门等待上限，兼作确认排队宽限 |
 | `TERMINAL_MAX_CAPTURE_BYTES` | int | 131072 | 每流捕获的字节上限 |
 | `TERMINAL_MAX_OUTPUT_CHARS` | int | 4000 | 进入模型的输出上限（两流合计） |
 
@@ -759,11 +768,11 @@ TERMINAL_OUTPUT = {
 ### §10.3 超时推导
 
 ```
-method_timeout = TERMINAL_CONFIRM_TIMEOUT_S + TERMINAL_MAX_COMMAND_TIMEOUT_S + TERMINAL_QUEUE_WAIT_S
-                + KILL_WAIT_S + OUTPUT_JOIN_S + 3
+method_timeout = 2 * TERMINAL_CONFIRM_TIMEOUT_S + TERMINAL_MAX_COMMAND_TIMEOUT_S
+               + 2 * TERMINAL_QUEUE_WAIT_S + KILL_WAIT_S + OUTPUT_JOIN_S + 3
 ```
 
-默认 200 秒，在 `_register_terminal_tools()` 内由 `TerminalRunner` 计算并传给 `add_method(timeout=...)`。`KILL_WAIT_S` 与 `OUTPUT_JOIN_S` 取自 §4.2，3 秒是调度余量。预算覆盖最长路径「确认 → 排队 → 执行到超时 → 终止进程树 → 收尾读线程」，handler 清理完成前不触发 executor 超时。
+默认 270 秒，在 `_register_terminal_tools()` 内由 `TerminalRunner` 计算并传给 `add_method(timeout=...)`。确认那一项算两遍：先等请求排到卡片（一个倒计时 + 宽限），再等卡片倒计时；`KILL_WAIT_S` 与 `OUTPUT_JOIN_S` 取自 §4.2，3 秒是调度余量。预算覆盖最长路径「排队确认 → 卡片倒计时 → 闸门等待 → 执行到超时 → 终止进程树 → 收尾读线程」，handler 清理完成前不触发 executor 超时。
 
 `policy` 每次调用都从 `config` 实例读取，`config.save()` 更新属性后立即生效，不存在配置缓存过期的问题。
 
@@ -851,14 +860,14 @@ python scripts/gen_docs.py --check
 `tests/test_terminal_runner.py` 覆盖：
 
 1. 注册条件：`TERMINAL_ENABLED` 为假时工具不存在；为真时 `meta`、`side_effect`、`group` 三项正确；
-2. 超时推导：`method_timeout` 等于三项配置之和加 `KILL_WAIT_S`、`OUTPUT_JOIN_S` 与 3 秒余量，默认 200；
+2. 超时推导：`method_timeout` 等于 2 倍确认倒计时 + 命令上限 + 2 倍闸门等待，再加 `KILL_WAIT_S`、`OUTPUT_JOIN_S` 与 3 秒余量，默认 270；
 3. 闸门：`auto` 档放行的命令占住闸门后，第二次调用在 `queue_wait_s` 内返回 `busy`；
 4. 确认：确认函数返回 `False` 时返回 `denied_by_user` 且执行核心未被调用；未注入确认函数时立即拒绝；
 5. 结果：非零退出不带 `error` 键；
 6. `list` 快照：符合 `TERMINAL_LIST_OUTPUT` 的字段结构，`headline` 与 `body` 非空；`installed` 标记与 `shutil.which` 的桩一致；返回内容不含正则原文；
 7. shell 开关：开关为假时模型传 `shell` 返回 `shell_mode_disabled`；开关为真时按平台组装 `routed`；`run_user` 不受开关限制。
 
-`tests/test_terminal_confirm.py` 覆盖 sink 未注册立即拒绝（耗时小于 50ms）、sink 正常回传、超时拒绝、`reject_pending_confirms` 生效、sink 抛异常按拒绝处理，以及端到端链路：注册 sink 后模型命令进入确认队列，允许时执行核心被调用一次，拒绝时不被调用。另断言 `pet/tools/context.py` 的模块级没有 `pet.agent` 导入。
+`tests/test_terminal_confirm.py` 覆盖 sink 未注册立即拒绝（耗时小于 50ms）、sink 正常回传、超时拒绝、`reject_pending_confirms` 生效、sink 抛异常按拒绝处理，以及端到端链路：注册 sink 后模型命令进入确认队列，允许时执行核心被调用一次，拒绝时不被调用。排队口径另有四条：宽限内排到卡片仍算成功（`shown` 在倒计时走完之后才置位）、倒计时超时与一直没展示都会调用 `withdraw`、入队时挂上 `request.withdraw`、队列非空时不发 `confirm_cleared`；队列推进按对象身份移除，旧卡片的迟到回调不会弹掉新请求，`reject_pending_confirms` 也给未展示的请求置位 `shown`。另断言 `pet/tools/context.py` 的模块级没有 `pet.agent` 导入。
 
 `tests/test_terminal_window.py` 覆盖来源前缀与配色分组、按行数裁剪的 5000 行上限、历史去重与上下键取值、多行粘贴截断、自动滚动跟随、用户输入不经确认且以 shell 模式提交、首次打开用沙箱根、`cd` 与盘符切换、目录失效回退、隐藏后重新显示保留内容、冒号命令的 Tab 补全与轮换、`:quit` / `:restart` 回调与缺少回调时的错误，以及事件按 `run_id` 归属（拒绝不关别人的块、迟到分块丢弃）。用例用桩替换执行核心，不真的调用命令。
 
@@ -866,7 +875,7 @@ python scripts/gen_docs.py --check
 
 `tests/test_tool_commands.py` 覆盖 `timer` / `todo` / `knowledge` 各自 `register_commands()` 产出的用法行、补全候选与参数翻译，含非法输入抛 `ValueError` 的用例；另覆盖注册表的聚合：`recall` 的 `:memory` 已登记、工具关闭后命令消失、重名命令只留第一条、未注册工具直接拒绝。
 
-`tests/test_confirm_card.py` 覆盖 `card_position()` 的四种分支（上方足够、上方不足转下方、恋恋在屏幕外落右下角、结果夹进可用区），以及标题序号、`Esc` 拒绝、危险模式下 `Enter` 不触发允许、关闭等同拒绝。`tests/test_completion.py` 覆盖：首词候选、Shell 内建与可执行名、目录的优先级、`PATH` 与目录合并、目录类与文件类命令的候选过滤、隐藏条目的显示条件、公共前缀计算、引号保留与含空格时自动加引号、Windows 与 POSIX 的大小写差异、`~` 与 `..` 的基准解析、绝对路径、大目录先过滤后截断到 500 条、冒号命令名与子命令候选、命令名不区分大小写、别名解析子命令、`flags` 与 `values` 候选、三种 shell 的环境变量名、`help` 的命令名候选、`check` 的参数补程序名与目录条目。
+`tests/test_confirm_card.py` 覆盖 `card_position()` 的四种分支（上方足够、上方不足转下方、恋恋在屏幕外落右下角、结果夹进可用区），以及标题序号、`Esc` 拒绝并把请求交给队列、危险 / 不可信 / 整条 shell 三种请求不能靠 `Enter` 放行、展示后 0.8 秒内 `Enter` 无效且换下一条请求时重新计时、`dismiss` 只收指定请求、已出结果的请求不再展示、`show_request` 不激活窗口。`tests/test_completion.py` 覆盖：首词候选、Shell 内建与可执行名、目录的优先级、`PATH` 与目录合并、目录类与文件类命令的候选过滤、隐藏条目的显示条件、公共前缀计算、引号保留与含空格时自动加引号、Windows 与 POSIX 的大小写差异、`~` 与 `..` 的基准解析、绝对路径、大目录先过滤后截断到 500 条、冒号命令名与子命令候选、命令名不区分大小写、别名解析子命令、`flags` 与 `values` 候选、三种 shell 的环境变量名、`help` 的命令名候选、`check` 的参数补程序名与目录条目。
 
 手动检查清单：
 

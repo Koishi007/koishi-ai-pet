@@ -1,6 +1,7 @@
 """命令确认卡片：队列展示、倒计时、允许与拒绝。"""
 
 import logging
+import time
 
 from PySide6.QtCore import QPoint, QRect, QSize, Qt, QTimer
 from PySide6.QtGui import (QColor, QCursor, QGuiApplication, QIcon, QPainter,
@@ -19,6 +20,8 @@ logger = logging.getLogger(__name__)
 _GAP = 8
 _MARGIN = 24
 _AMBER_SECONDS = 10
+# 点开卡片后的一小段时间内忽略回车，避免点一下顺手回车就放行
+_ENTER_GUARD_S = 0.8
 # 卡片宽度上限，避免超长命令把窗口撑出屏幕
 CARD_MAX_WIDTH = 560
 
@@ -94,6 +97,7 @@ class ConfirmCard(QWidget):
         self._pet_rect_fn = None
         self._danger = False
         self._remaining = 0
+        self._shown_at = 0.0
         self._drag_offset: QPoint | None = None
 
         self.setWindowTitle("命令确认")
@@ -103,6 +107,8 @@ class ConfirmCard(QWidget):
             | Qt.WindowType.WindowStaysOnTopHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        # 不抢焦点：用户可能正在别处打字，卡片自己弹出来就够了
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         self.setMinimumWidth(420)
         self.setMaximumWidth(CARD_MAX_WIDTH)
         try:
@@ -215,8 +221,12 @@ class ConfirmCard(QWidget):
 
     def show_request(self, request) -> None:
         """展示一条请求；同一实例更新内容，不反复建窗。"""
+        if request.event.is_set():
+            # 排队期间已经被拒绝或撤销，不能把一条点了也没用的命令摆出来
+            return
         self._request = request
-        self._remaining = max(1, int(request.timeout_s))
+        elapsed = time.monotonic() - request.shown_at if request.shown_at else 0.0
+        self._remaining = max(1, int(float(request.timeout_s) - elapsed))
         self._danger = bool(request.matched_patterns)
         self._title.setText("恋恋想执行一条命令")
         self._counter.setText(f"{request.sequence}/{request.total}")
@@ -229,10 +239,10 @@ class ConfirmCard(QWidget):
         self._allow_btn.setStyleSheet(self._allow_style(self._danger))
         self._seconds.setText(f"{self._remaining}s")
         self._countdown.set_progress(1.0, False)
+        self._shown_at = time.monotonic()
         self._timer.start()
         self.show()
         self.raise_()
-        self.activateWindow()
         self._reposition()
 
     def _meta_text(self, request) -> str:
@@ -302,19 +312,29 @@ class ConfirmCard(QWidget):
             self._reject_all_fn()
 
     def finish(self, allowed: bool, advance: bool = True) -> None:
-        """写回结果并关闭；advance 为真时推进队列。"""
+        """写回结果并关闭；advance 为真时把这条请求交给队列推进。"""
         self._timer.stop()
         request, self._request = self._request, None
         if request is not None:
             request.result = bool(allowed)
             request.event.set()
         self.hide()
-        if advance and self._next_fn is not None:
-            self._next_fn()
+        if advance and request is not None and self._next_fn is not None:
+            self._next_fn(request)
+
+    def dismiss(self, request=None) -> None:
+        """队列已清空或请求被撤销：收起卡片，不写结果也不推进队列；带请求时只收这一条。"""
+        if request is not None and self._request is not request:
+            return
+        self._timer.stop()
+        self._request = None
+        self.hide()
 
     def mousePressEvent(self, event):
-        """卡片任意非按钮区域都可拖动。"""
+        """卡片任意非按钮区域都可拖动；点一下才接管键盘，Esc 与回车随之可用。"""
         if event.button() == Qt.MouseButton.LeftButton:
+            self.activateWindow()
+            self.setFocus()
             self._drag_offset = (event.globalPosition().toPoint()
                                  - self.frameGeometry().topLeft())
             event.accept()
@@ -337,10 +357,19 @@ class ConfirmCard(QWidget):
             self._deny()
             return
         if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-            if not self._danger:
+            if self._enter_allows():
                 self._allow()
             return
         super().keyPressEvent(event)
+
+    def _enter_allows(self) -> bool:
+        """回车放行条件：非危险、非不可信、非 shell，且已展示超过守卫时间。"""
+        request = self._request
+        if request is None:
+            return False
+        if self._danger or request.untrusted or request.shell_mode:
+            return False
+        return time.monotonic() - self._shown_at >= _ENTER_GUARD_S
 
     def closeEvent(self, event):
         self.finish(False)

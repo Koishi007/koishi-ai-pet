@@ -238,6 +238,20 @@ class TestDecode:
     def test_invalid_bytes_do_not_raise(self):
         assert isinstance(core.decode_bytes(b"\xff\xfe\x00a"), str)
 
+    def test_truncated_utf8_tail_is_dropped(self):
+        """截断点落在多字节字符中间：丢掉残缺尾部，不能整段跌到系统编码。"""
+        raw = "中文输出".encode("utf-8")[:-1]
+        assert core.decode_capture(raw, truncated=True) == "中文输"
+
+    def test_truncation_at_boundary_keeps_last_char(self):
+        raw = "中文输出".encode("utf-8")
+        assert core.decode_capture(raw, truncated=True) == "中文输出"
+
+    def test_system_encoding_still_works(self, monkeypatch):
+        monkeypatch.setattr(core.locale, "getpreferredencoding", lambda do_setlocale: "gbk")
+        assert core.decode_capture("中文".encode("gbk")) == "中文"
+        assert core.decode_capture("中文".encode("gbk"), truncated=True) == "中文"
+
 
 
 

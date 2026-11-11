@@ -126,6 +126,42 @@ class TestBuiltin:
         verdict = policy.check("model", ["cmd", "/c", "dir"], "", "cmd /c dir")
         assert verdict.decision == "ask"
 
+    @pytest.mark.parametrize("argv", [
+        ["dir", "&", "del", "x"],
+        ["dir", "|", "more"],
+        ["type", "a.txt", ">", "b.txt"],
+        ["echo", "%PATH%"],
+        ["dir", "^", "x"],
+    ])
+    def test_cmd_meta_arguments_need_confirmation(self, sandbox, monkeypatch, argv):
+        """内建命令的元字符会被 cmd 当成第二条命令，不能按免确认放行。"""
+        monkeypatch.setattr(config, "TERMINAL_MODE", "auto")
+        monkeypatch.setattr(config, "TERMINAL_ALLOW", [argv[0] + " *"])
+        verdict = policy.check("model", argv, argv[0], " ".join(argv))
+        assert verdict.decision == "ask"
+        assert verdict.reason == "cmd_meta"
+
+    def test_builtin_without_meta_stays_allowed(self, sandbox, monkeypatch):
+        monkeypatch.setattr(config, "TERMINAL_MODE", "auto")
+        monkeypatch.setattr(config, "TERMINAL_ALLOW", ["dir *"])
+        assert policy.check("model", ["dir", "/a"], "dir", "dir /a").decision == "allow"
+
+    def test_batch_shim_arguments_need_confirmation(self, sandbox, monkeypatch):
+        """*.cmd 垫片同样由 cmd 解释，参数里的 & 会拼出第二条命令。"""
+        monkeypatch.setattr(config, "TERMINAL_MODE", "auto")
+        monkeypatch.setattr(config, "TERMINAL_ALLOW", ["yarn *"])
+        monkeypatch.setattr(policy.shutil, "which", lambda name: "/opt/system/yarn.cmd")
+        verdict = policy.check("model", ["yarn", "build", "&", "del", "x"], "",
+                               "yarn build & del x")
+        assert verdict.decision == "ask"
+        assert verdict.reason == "cmd_meta"
+
+    def test_native_program_keeps_meta_arguments(self, sandbox, system_git, monkeypatch):
+        """非 cmd 解释的程序参数是字面量，不该因为元字符就多问一次。"""
+        monkeypatch.setattr(config, "TERMINAL_MODE", "auto")
+        monkeypatch.setattr(config, "TERMINAL_ALLOW", ["git *"])
+        assert policy.check("model", ["git", "log", "&"], "", "git log &").decision == "allow"
+
 
 class TestInterpreters:
 
@@ -269,6 +305,97 @@ class TestHijack:
         assert verdict.reason == "bad_command"
 
 
+class TestSystemPrograms:
+
+    def _system_exe(self, sandbox, name="git.exe"):
+        system = sandbox / "Windows" / "System32"
+        system.mkdir(parents=True, exist_ok=True)
+        exe = system / name
+        exe.write_text("", encoding="utf-8")
+        return system, exe
+
+    def test_system_program_inside_root_is_trusted(self, sandbox, monkeypatch):
+        """终端切到系统盘后根覆盖了 System32，系统目录里的程序仍按可信处理。"""
+        system, exe = self._system_exe(sandbox)
+        monkeypatch.setattr(policy, "system_dirs", lambda: (str(system),))
+        monkeypatch.setattr(policy.shutil, "which", lambda name: str(exe))
+        monkeypatch.setattr(config, "TERMINAL_MODE", "auto")
+        monkeypatch.setattr(config, "TERMINAL_ALLOW", ["git *"])
+
+        verdict = policy.check("model", ["git", "status"], "", "git status",
+                               cwd=str(sandbox))
+
+        assert verdict.decision == "allow"
+        assert verdict.untrusted is False
+
+    def test_writable_program_outside_system_dirs_is_denied(self, sandbox, monkeypatch):
+        system, _exe = self._system_exe(sandbox)
+        planted = sandbox / "git.bat"
+        planted.write_text("", encoding="utf-8")
+        monkeypatch.setattr(policy, "system_dirs", lambda: (str(system),))
+        monkeypatch.setattr(policy.shutil, "which", lambda name: str(planted))
+        monkeypatch.setattr(config, "TERMINAL_MODE", "auto")
+        monkeypatch.setattr(config, "TERMINAL_ALLOW", ["git *"])
+
+        verdict = policy.check("model", ["git", "status"], "", "git status",
+                               cwd=str(sandbox))
+
+        assert verdict.decision == "deny"
+        assert verdict.reason == "untrusted_program"
+
+    def test_empty_path_is_not_a_system_program(self):
+        assert policy.is_system_program("") is False
+
+    def test_windows_root_is_not_trusted_wholesale(self, tmp_path, monkeypatch):
+        """C:\\Windows\\Temp 这类可写子目录不能算系统目录。"""
+        if os.name != "nt":
+            pytest.skip("只在 Windows 上读取 SYSTEMROOT")
+        windows = tmp_path / "Windows"
+        (windows / "system32").mkdir(parents=True)
+        (windows / "SysWOW64").mkdir()
+        monkeypatch.setenv("SYSTEMROOT", str(windows))
+
+        dirs = policy.system_dirs()
+
+        assert os.path.realpath(windows / "system32") in dirs
+        assert os.path.realpath(windows) not in dirs
+
+
+class TestWriteFlags:
+
+    def test_git_log_output_asks(self, sandbox, system_git, monkeypatch):
+        """`git log --output=F` 会写文件，不能因为命中 `git log` 就免确认。"""
+        monkeypatch.setattr(config, "TERMINAL_MODE", "auto")
+        monkeypatch.setattr(config, "TERMINAL_ALLOW", ["git log"])
+        verdict = policy.check("model", ["git", "log", "--output=out.txt"], "",
+                               "git log --output=out.txt")
+        assert verdict.decision == "ask"
+
+    def test_git_log_oneline_stays_allowed(self, sandbox, system_git, monkeypatch):
+        monkeypatch.setattr(config, "TERMINAL_MODE", "auto")
+        monkeypatch.setattr(config, "TERMINAL_ALLOW", ["git log"])
+        verdict = policy.check("model", ["git", "log", "--oneline"], "",
+                               "git log --oneline")
+        assert verdict.decision == "allow"
+
+    def test_other_programs_ignore_the_table(self, sandbox, monkeypatch):
+        monkeypatch.setattr(policy.shutil, "which", lambda name: f"/opt/system/{name}")
+        assert policy.has_write_option("mytool", ["--output=x"]) is False
+
+    def test_sort_output_asks(self, sandbox, monkeypatch):
+        """`sort /o out.txt` 会写文件，内建命令同样受写选项约束。"""
+        monkeypatch.setattr(config, "TERMINAL_MODE", "auto")
+        monkeypatch.setattr(config, "TERMINAL_ALLOW", ["sort *"])
+        verdict = policy.check("model", ["sort", "/o", "out.txt"], "sort",
+                               "sort /o out.txt")
+        assert verdict.decision == "ask"
+
+    def test_sort_without_output_stays_allowed(self, sandbox, monkeypatch):
+        monkeypatch.setattr(config, "TERMINAL_MODE", "auto")
+        monkeypatch.setattr(config, "TERMINAL_ALLOW", ["sort *"])
+        assert policy.check("model", ["sort", "/r"], "sort", "sort /r").decision == "allow"
+
+
 class TestEnv:
 
     def test_secrets_are_dropped(self, sandbox, monkeypatch):
@@ -285,6 +412,21 @@ class TestEnv:
     def test_path_is_kept(self, sandbox, monkeypatch):
         monkeypatch.setenv("PATH", "/usr/bin")
         assert policy.build_env().get("PATH") == "/usr/bin"
+
+    def test_windows_toolchain_keys_are_kept(self, sandbox, monkeypatch):
+        monkeypatch.setenv("APPDATA", "/home/u/AppData/Roaming")
+        monkeypatch.setenv("PATHEXT", ".COM;.EXE")
+        monkeypatch.setenv("PSModulePath", "/opt/Modules")
+        # Windows 上 os.environ 的键名大小写会被归一，统一按大写比对
+        env = {key.upper(): value for key, value in policy.build_env().items()}
+        assert env.get("APPDATA") == "/home/u/AppData/Roaming"
+        assert env.get("PATHEXT") == ".COM;.EXE"
+        assert env.get("PSMODULEPATH") == "/opt/Modules"
+
+    def test_allow_list_is_case_insensitive(self, sandbox, monkeypatch):
+        monkeypatch.setenv("MY_VAR", "keep")
+        monkeypatch.setattr(config, "TERMINAL_ENV_ALLOW", ["my_var"])
+        assert policy.build_env().get("MY_VAR") == "keep"
 
 
 class TestClamp:

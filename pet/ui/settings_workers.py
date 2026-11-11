@@ -148,6 +148,7 @@ class ProbeRegistry:
 
     def __init__(self):
         self._entries: dict[str, tuple[QThread, QObject]] = {}
+        self._lingering: list[tuple[QThread, QObject]] = []
 
     def running(self, name: str) -> bool:
         entry = self._entries.get(name)
@@ -157,6 +158,7 @@ class ProbeRegistry:
               on_thread_finished=None) -> bool:
         if self.running(name):
             return False
+        self._prune()
         thread = QThread()
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
@@ -169,11 +171,22 @@ class ProbeRegistry:
         return True
 
     def release(self, name: str) -> None:
-        self._entries.pop(name, None)
+        """登记项交给滞留表，等线程真的停下来再丢引用。"""
+        pair = self._entries.pop(name, None)
+        if pair is not None and pair[0].isRunning():
+            self._lingering.append(pair)
 
     def shutdown(self) -> None:
-        for thread, _worker in self._entries.values():
+        """请求线程退出；quit() 打断不了在途网络调用，等不到就把引用留到它自己结束。"""
+        self._prune()
+        for thread, worker in list(self._entries.values()):
             if thread.isRunning():
                 thread.quit()
                 thread.wait(2000)
+            if thread.isRunning():
+                self._lingering.append((thread, worker))
         self._entries.clear()
+
+    def _prune(self) -> None:
+        """丢掉已经结束的滞留线程：引用只为活着的线程保留。"""
+        self._lingering = [pair for pair in self._lingering if pair[0].isRunning()]

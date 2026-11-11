@@ -1,5 +1,7 @@
 """确认卡片：位置分支、标题序号、快捷键、拖动与危险态。"""
 
+import time
+
 import pytest
 from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, QSize, Qt
 from PySide6.QtGui import QGuiApplication, QKeyEvent, QMouseEvent
@@ -31,6 +33,11 @@ def _request(**kwargs) -> ConfirmRequest:
 
 def _key(key) -> QKeyEvent:
     return QKeyEvent(QEvent.Type.KeyPress, key, Qt.KeyboardModifier.NoModifier)
+
+
+def _settled(card: ConfirmCard) -> None:
+    """把展示时刻推到回车守卫之外，模拟用户已经看过这条命令。"""
+    card._shown_at = time.monotonic() - 1.0
 
 
 class TestPosition:
@@ -91,13 +98,13 @@ class TestCard:
     def test_escape_rejects_and_advances(self, qt_app):
         card = ConfirmCard()
         advanced = []
-        card.set_advance(lambda: advanced.append(True))
+        card.set_advance(lambda request: advanced.append(request))
         request = _request()
         card.show_request(request)
         card.keyPressEvent(_key(Qt.Key.Key_Escape))
         assert request.result is False
         assert request.event.is_set()
-        assert advanced == [True]
+        assert advanced == [request]
 
     def test_danger_enter_does_not_allow(self, qt_app):
         card = ConfirmCard()
@@ -105,17 +112,106 @@ class TestCard:
         card.show_request(request)
         assert card._allow_btn.text() == ALLOW_DANGER_TEXT
         assert card._allow_btn.text() != confirm_card.ALLOW_TEXT
+        _settled(card)
         card.keyPressEvent(_key(Qt.Key.Key_Return))
         assert request.event.is_set() is False
+        card.hide()
+
+    def test_untrusted_enter_does_not_allow(self, qt_app):
+        card = ConfirmCard()
+        request = _request(untrusted=True)
+        card.show_request(request)
+        _settled(card)
+        card.keyPressEvent(_key(Qt.Key.Key_Return))
+        assert request.event.is_set() is False
+        card.hide()
+
+    def test_shell_mode_enter_does_not_allow(self, qt_app):
+        card = ConfirmCard()
+        request = _request(shell_mode="cmd")
+        card.show_request(request)
+        _settled(card)
+        card.keyPressEvent(_key(Qt.Key.Key_Return))
+        assert request.event.is_set() is False
+        card.hide()
+
+    def test_enter_inside_guard_does_not_allow(self, qt_app):
+        """卡片刚弹出时焦点可能还在别处，这时的回车不能放行任何命令。"""
+        card = ConfirmCard()
+        request = _request()
+        card.show_request(request)
+        card._shown_at = time.monotonic()
+        card.keyPressEvent(_key(Qt.Key.Key_Return))
+        assert request.event.is_set() is False
+        card.hide()
+
+    def test_next_request_rearms_enter_guard(self, qt_app):
+        """换下一条请求后守卫重新计时，不能继承上一条的展示时长。"""
+        card = ConfirmCard()
+        card.show_request(_request())
+        _settled(card)
+        second = _request()
+        card.show_request(second)
+        card.keyPressEvent(_key(Qt.Key.Key_Return))
+        assert second.event.is_set() is False
         card.hide()
 
     def test_enter_allows_regular_command(self, qt_app):
         card = ConfirmCard()
         request = _request()
         card.show_request(request)
+        _settled(card)
         card.keyPressEvent(_key(Qt.Key.Key_Return))
         assert request.result is True
         assert request.event.is_set()
+
+    def test_show_does_not_activate(self, qt_app):
+        calls = []
+        card = ConfirmCard()
+        card.activateWindow = lambda: calls.append(True)
+        assert card.testAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
+        card.show_request(_request())
+        assert calls == []
+        card.hide()
+
+    def test_resolved_request_is_not_shown(self, qt_app):
+        """排队期间已被拒绝的请求不能再弹出来，卡片会落在一条点不动的命令上。"""
+        card = ConfirmCard()
+        request = _request()
+        request.result = False
+        request.event.set()
+
+        card.show_request(request)
+
+        assert card._request is None
+        assert card.isVisible() is False
+
+    def test_dismiss_leaves_request_unanswered(self, qt_app):
+        """队列清空或请求被撤销：卡片收起，不写结果也不推进队列。"""
+        card = ConfirmCard()
+        advanced = []
+        card.set_advance(lambda request: advanced.append(request))
+        request = _request()
+        card.show_request(request)
+
+        card.dismiss()
+
+        assert request.event.is_set() is False
+        assert card._request is None
+        assert card.isVisible() is False
+        assert advanced == []
+
+    def test_dismiss_ignores_other_request(self, qt_app):
+        """迟到的清空信号不能把刚展示的新请求收掉。"""
+        card = ConfirmCard()
+        shown, stale = _request(), _request()
+        card.show_request(shown)
+
+        card.dismiss(stale)
+
+        assert card._request is shown
+        assert card.isVisible()
+        card.hide()
 
     def test_close_equals_reject(self, qt_app):
         card = ConfirmCard()

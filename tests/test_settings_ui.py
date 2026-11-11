@@ -222,6 +222,36 @@ def test_probe_registry_shutdown_covers_every_group():
     assert registry._entries == {}
 
 
+def test_probe_registry_keeps_stuck_threads():
+    """网络调用没返回时 quit() 不生效，仍在跑的线程不能丢引用。"""
+
+    class _StuckThread:
+        def __init__(self):
+            self.running = True
+
+        def isRunning(self):
+            return self.running
+
+        def quit(self):
+            pass
+
+        def wait(self, ms):
+            return False
+
+    registry = ProbeRegistry()
+    thread, worker = _StuckThread(), object()
+    registry._entries["llm"] = (thread, worker)
+
+    registry.shutdown()
+
+    assert registry._entries == {}
+    assert registry._lingering == [(thread, worker)]
+
+    thread.running = False
+    registry._prune()
+    assert registry._lingering == []
+
+
 def test_actions_shutdown_stops_hotkey_listener(qt_app):
     class _Listener:
         def __init__(self):

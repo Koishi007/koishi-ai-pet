@@ -18,6 +18,7 @@ _REASON_TEXT = {
     "bad_command": "程序在本机找不到",
     "untrusted_program": "程序文件在可写目录内，按不可信处理",
     "cwd_denied": "工作目录在工作目录根之外",
+    "cmd_meta": "参数含 cmd 元字符，可能拼出第二条命令",
 }
 
 _DECISION_TEXT = {"allow": "直接执行", "ask": "弹卡片询问", "deny": "拒绝执行"}
@@ -51,7 +52,9 @@ def check(ctx: LocalContext, arg: str) -> LocalResult:
     parsed, err = core.parse_command(command, "")
     if err:
         return LocalResult(stderr=f"无法解析：{command}", exit_code=EXIT_USAGE)
-    verdict = policy.check("model", parsed.argv, parsed.builtin, command, ctx.cwd)
+    # 判定根与 runner.prepare 一致：模型默认工作目录就是终端当前目录
+    verdict = policy.check("model", parsed.argv, parsed.builtin, command, ctx.cwd,
+                           root=ctx.cwd)
     decision = verdict.decision.value
     rows = [
         ("判定", f"{_DECISION_TEXT.get(decision, decision)}（{decision}）"),

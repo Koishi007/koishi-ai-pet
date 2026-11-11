@@ -56,7 +56,7 @@ class TestToolContract:
         registry = ToolRegistry()
         method = registry.get_method("terminal__run")
         assert method is not None
-        assert method.timeout == 200
+        assert method.timeout == 270
         out = method.handler(command="echo hi", cwd=str(sandbox))
         assert validate(method.output, out) == []
         assert out["exit_code"] == 0
@@ -75,9 +75,10 @@ class TestTimeout:
 
     def test_method_timeout_adds_every_stage(self, sandbox):
         runner = TerminalRunner()
-        expected = 60 + 120 + 10 + core.KILL_WAIT_S + core.OUTPUT_JOIN_S + 3
+        expected = (2 * 60 + 120 + 2 * 10
+                    + core.KILL_WAIT_S + core.OUTPUT_JOIN_S + 3)
         assert runner.method_timeout == expected
-        assert runner.method_timeout == 200
+        assert runner.method_timeout == 270
 
 
 class TestGate:

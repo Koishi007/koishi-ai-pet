@@ -18,16 +18,38 @@ INTERPRETERS = (
     "pwsh", "powershell", "cmd", "bash", "sh", "wsl",
 )
 
-# 子进程环境固定透传的键
+# 子进程环境固定透传的键；Windows 工具链（npm/pip 用户级安装、PowerShell 模块、git 凭据）缺这些会报错
 ENV_KEYS = (
-    "PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP",
-    "HOME", "USERPROFILE", "LANG", "LC_ALL", "PYTHONIOENCODING",
+    "PATH", "SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "TEMP", "TMP",
+    "HOME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "USERNAME", "USERDOMAIN",
+    "APPDATA", "LOCALAPPDATA", "PROGRAMDATA",
+    "PROGRAMFILES", "PROGRAMFILES(X86)", "PROGRAMW6432", "COMMONPROGRAMFILES",
+    "PATHEXT", "COMSPEC", "PSMODULEPATH",
+    "LANG", "LC_ALL", "PYTHONIOENCODING",
+    "OS", "SHELL", "PWD", "NUMBER_OF_PROCESSORS", "PROCESSOR_ARCHITECTURE",
 )
 
-_SECRET_MARKERS = ("KEY", "TOKEN", "SECRET", "PASSWORD")
+# Windows 的键名大小写不固定，比较前统一折成大写
+_ENV_KEY_SET = frozenset(ENV_KEYS)
+
+_SECRET_MARKERS = ("KEY", "TOKEN", "SECRET", "PASS", "CRED", "AUTH")
 
 # 可执行文件扩展名：免确认命令里的程序名去扩展名时只认这些
 _EXEC_EXTS = (".exe", ".com", ".bat", ".cmd", ".ps1", ".sh")
+
+# 免确认条目里仍然写文件的选项：`git log --output=F`、`sort /o out.txt`
+WRITE_FLAGS = {"git": ("--output",), "sort": ("/o",)}
+
+# cmd 元字符：命令经 cmd 执行时，`dir & del x` 会拼出第二条命令
+CMD_META = re.compile(r'[&|<>^%!()"\n\r]')
+
+# 系统程序目录：工作目录根覆盖到系统盘时，其中的程序不按可写目录降级。
+# 不收 SYSTEMROOT 整棵树——C:\Windows\Temp 这类子目录普通用户可写。
+_WIN_SYSTEM_DIRS = ("system32", "SysWOW64",
+                    os.path.join("system32", "WindowsPowerShell", "v1.0"))
+_WIN_SYSTEM_DIR_KEYS = ("PROGRAMFILES", "PROGRAMFILES(X86)", "PROGRAMW6432")
+_POSIX_SYSTEM_DIRS = ("/bin", "/sbin", "/usr/bin", "/usr/sbin",
+                      "/usr/local/bin", "/usr/local/sbin", "/opt/homebrew/bin")
 
 # 内置危险模式：类别名 + 正则，空配置时整体生效
 DEFAULT_DENY_PATTERNS = (
@@ -152,8 +174,18 @@ def entry_matches(entry: tuple[str, list[str]], program: str,
 
 
 def allows(program: str, args: list[str]) -> bool:
-    """程序与参数是否命中免确认清单。"""
+    """程序与参数是否命中免确认清单；带写文件选项的一律不算命中。"""
+    if has_write_option(program, args):
+        return False
     return any(entry_matches(entry, program, args) for entry in allowed_entries())
+
+
+def has_write_option(program: str, args: list[str]) -> bool:
+    """命令是否带了 WRITE_FLAGS 里登记的写文件选项。"""
+    prefixes = WRITE_FLAGS.get(str(program or "").lower(), ())
+    if not prefixes:
+        return False
+    return any(str(arg).startswith(prefixes) for arg in args or ())
 
 
 def deny_patterns() -> list[tuple[str, str]]:
@@ -256,6 +288,43 @@ def is_writable_path(path: str, roots, platform: str = "") -> bool:
     return False
 
 
+def system_dirs() -> tuple[str, ...]:
+    """可信的系统程序目录；只返回本机真实存在的目录。"""
+    if os.name == "nt":
+        environ = {str(key).upper(): value for key, value in os.environ.items()}
+        candidates = [environ.get(key, "") for key in _WIN_SYSTEM_DIR_KEYS]
+        root = environ.get("SYSTEMROOT", "")
+        if root:
+            candidates.extend(os.path.join(root, name) for name in _WIN_SYSTEM_DIRS)
+    else:
+        candidates = list(_POSIX_SYSTEM_DIRS)
+    found: list[str] = []
+    for path in candidates:
+        if not path:
+            continue
+        resolved = os.path.realpath(path)
+        if os.path.isdir(resolved) and resolved not in found:
+            found.append(resolved)
+    return tuple(found)
+
+
+def is_system_program(path: str) -> bool:
+    """程序是否落在系统程序目录里；is_writable_path 在这里只做目录包含判断。"""
+    if not path:
+        return False
+    dirs = system_dirs()
+    if not dirs:
+        return False
+    return is_writable_path(path, dirs, sys.platform)
+
+
+def runs_via_cmd(builtin: str, resolved: str) -> bool:
+    """命令最终是否由 cmd 解释：内建命令与 .bat/.cmd 垫片都走 cmd。"""
+    if builtin:
+        return True
+    return str(resolved or "").lower().endswith((".bat", ".cmd"))
+
+
 def sandbox_cwd(cwd: str, sandbox_root_path: str, source: str) -> tuple[str, str]:
     """把 cwd 解析成绝对路径；模型来源越界返回 cwd_denied。"""
     if source == "user":
@@ -273,10 +342,12 @@ def sandbox_cwd(cwd: str, sandbox_root_path: str, source: str) -> tuple[str, str
 
 def build_env() -> dict[str, str]:
     """子进程环境：固定键与 TERMINAL_ENV_ALLOW，密钥类键即使列出也不透传。"""
-    allowed = {str(key).strip() for key in (config.TERMINAL_ENV_ALLOW or []) if str(key).strip()}
+    allowed = {str(key).strip().upper() for key in (config.TERMINAL_ENV_ALLOW or [])
+               if str(key).strip()}
     env: dict[str, str] = {}
     for key, value in os.environ.items():
-        if key not in ENV_KEYS and key not in allowed:
+        upper = key.upper()
+        if upper not in _ENV_KEY_SET and upper not in allowed:
             continue
         if is_secret_key(key):
             continue
@@ -327,7 +398,9 @@ def check(source: str, argv: list[str], builtin: str, command: str,
         if err:
             return Verdict(Decision.DENY, err, (), resolved,
                            abs_cwd=abs_cwd)
-        if is_writable_path(resolved, [root, abs_cwd], sys.platform):
+        # 根覆盖到系统盘时系统目录里的程序仍可信；被塞进可写目录的同名程序解析结果不在系统目录内
+        if is_writable_path(resolved, [root, abs_cwd], sys.platform) \
+                and not is_system_program(resolved):
             untrusted = True
             if mode == "auto":
                 return Verdict(Decision.DENY, "untrusted_program", (),
@@ -341,6 +414,10 @@ def check(source: str, argv: list[str], builtin: str, command: str,
         # 危险模式、解释器、整条 shell 命令一律转询问
         if matched or shell_mode:
             return Verdict(Decision.ASK, "", matched, resolved, untrusted, abs_cwd)
+        # 经 cmd 执行的命令带元字符会拼出第二条命令，不能按免确认放行
+        if runs_via_cmd(builtin, resolved) \
+                and any(CMD_META.search(str(arg)) for arg in argv):
+            return Verdict(Decision.ASK, "cmd_meta", matched, resolved, untrusted, abs_cwd)
         if not builtin and program in INTERPRETERS:
             return Verdict(Decision.ASK, "", matched, resolved, untrusted, abs_cwd)
         if allows(program, list(argv[1:])):

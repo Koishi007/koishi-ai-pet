@@ -144,6 +144,8 @@ class SettingsWindow(QWidget):
     def load_values(self):
         """从 config 填充各控件，每次打开窗口时调用。"""
         self.form.load(config)
+        # 下拉框值没变时不发 currentTextChanged，模式相关的启用状态要显式同步一次
+        self.tabs.on_mode_changed(self.tabs.widgets.brain_combo.currentText())
         self.tabs.update_profile_ui()
 
     def _on_save(self):

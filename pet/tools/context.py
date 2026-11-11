@@ -173,19 +173,36 @@ class ToolContext:
         self._confirm_sink = sink
 
     def confirm(self, request: "ConfirmRequest") -> bool:
-        """把确认请求转发给接收者并等待结果；队列只由接收者PetAgent持有。"""
+        """转发确认请求并等结果；排队不计入卡片倒计时，超时就把请求撤回来。"""
         sink = self._confirm_sink
         if sink is None:
             logger.warning("[ToolContext] 确认接收者未注册，按拒绝处理")
             return False
+        countdown = max(0.0, float(request.timeout_s))
         try:
             sink(request)
-            if not request.event.wait(max(0.0, float(request.timeout_s))):
+            if not request.shown.wait(countdown + max(0.0, float(request.queue_grace_s))):
+                self._withdraw(request)
                 return False
-            return bool(request.result)
+            if request.event.wait(countdown):
+                return bool(request.result)
+            self._withdraw(request)
+            return False
         except Exception:
             logger.exception("[ToolContext] 确认调用异常，按拒绝处理")
+            self._withdraw(request)
             return False
+
+    @staticmethod
+    def _withdraw(request) -> None:
+        """请求已经没人等：通知队列丢掉它。"""
+        withdraw = getattr(request, "withdraw", None)
+        if withdraw is None:
+            return
+        try:
+            withdraw()
+        except Exception:
+            logger.warning("[ToolContext] 撤销确认请求失败", exc_info=True)
 
     def db_path(self) -> str:
         """返回数据库路径，供工具使用。"""

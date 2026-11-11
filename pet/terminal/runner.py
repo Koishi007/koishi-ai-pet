@@ -89,11 +89,11 @@ class TerminalRunner:
 
     @property
     def method_timeout(self) -> float:
-        """工具方法的超时预算，覆盖确认、排队、执行、终止与收尾。"""
+        """工具方法的超时预算：排到卡片、卡片倒计时、闸门等待、执行、终止与收尾。"""
         return float(
-            int(config.TERMINAL_CONFIRM_TIMEOUT_S)
+            2 * int(config.TERMINAL_CONFIRM_TIMEOUT_S)
             + int(config.TERMINAL_MAX_COMMAND_TIMEOUT_S)
-            + int(config.TERMINAL_QUEUE_WAIT_S)
+            + 2 * int(config.TERMINAL_QUEUE_WAIT_S)
             + core.KILL_WAIT_S + core.OUTPUT_JOIN_S + 3
         )
 
@@ -240,6 +240,7 @@ class TerminalRunner:
                 cwd=verdict.abs_cwd,
                 shell_mode=shell,
                 timeout_s=float(config.TERMINAL_CONFIRM_TIMEOUT_S),
+                queue_grace_s=float(config.TERMINAL_QUEUE_WAIT_S),
                 source=source.value,
                 matched_patterns=list(verdict.matched),
                 untrusted=verdict.untrusted,

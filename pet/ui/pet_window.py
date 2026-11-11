@@ -852,6 +852,8 @@ class PetWindow(TransparentWindow):
                 card.set_advance(self._agent.next_confirm)
                 card.set_reject_all(
                     lambda: self._agent.reject_pending_confirms("deny all"))
+                # 队列被整体清空或请求被撤销时，卡片不能停在一条已经作废的命令上
+                self._agent.confirm_cleared.connect(card.dismiss)
             self._confirm_card = card
         self._confirm_card.show_request(request)
 

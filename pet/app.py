@@ -511,9 +511,11 @@ def main():
         except Exception as e:
             logger.warning(f"shutdown: context save failed: {e}")
 
-        # 退出前先清空未决确认，再关闭顶层窗口
+        # 退出前先清空未决确认并注销接收者，再关闭顶层窗口：
+        # 残留的工具线程此时再来确认，直接按拒绝返回，不会去接已被销毁的卡片
         try:
             agent.reject_pending_confirms("quit")
+            TOOL_CTX.set_confirm_sink(None)
         except Exception as e:
             logger.warning(f"shutdown: pending confirm cleanup failed: {e}")
         _close_all_windows()

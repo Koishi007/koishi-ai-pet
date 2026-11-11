@@ -292,6 +292,16 @@ class TestCheck:
         result = tc.run(":check git status", str(env), None)
         assert "（deny）" in result.stdout
 
+    def test_check_uses_terminal_cwd_as_root(self, env, monkeypatch):
+        """终端目录离开配置根后，试算要与模型跑同一条命令的结论一致。"""
+        root = env / "root"
+        root.mkdir()
+        elsewhere = env / "elsewhere"
+        elsewhere.mkdir()
+        monkeypatch.setattr(config, "TERMINAL_SANDBOX_ROOT", str(root))
+        result = tc.run(":check git status", str(elsewhere), None)
+        assert "（allow）" in result.stdout
+
     def test_unparsable_command(self, env):
         result = tc.run(':check echo "unclosed', str(env), None)
         assert result.exit_code == tc.EXIT_USAGE

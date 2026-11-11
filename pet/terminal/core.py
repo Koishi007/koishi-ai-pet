@@ -176,7 +176,7 @@ def run(argv: list[str], cwd: str = "", timeout_s: float = 30,
             logger.exception("[TerminalCore] 进程登记失败")
 
     captured = {"stdout": bytearray(), "stderr": bytearray()}
-    truncated = False
+    truncated_streams = {"stdout": False, "stderr": False}
     lock = threading.Lock()
 
     def _emit(stream: str, text: str) -> None:
@@ -188,7 +188,6 @@ def run(argv: list[str], cwd: str = "", timeout_s: float = 30,
             logger.exception("[TerminalCore] 输出回传失败")
 
     def _reader(stream, key: str) -> None:
-        nonlocal truncated
         pending = bytearray()
         try:
             while True:
@@ -201,7 +200,7 @@ def run(argv: list[str], cwd: str = "", timeout_s: float = 30,
                     if room > 0:
                         buf.extend(chunk[:room])
                     if len(chunk) > room:
-                        truncated = True
+                        truncated_streams[key] = True
                 if on_output is None:
                     continue
                 # 按整行回传
@@ -245,17 +244,21 @@ def run(argv: list[str], cwd: str = "", timeout_s: float = 30,
 
     for reader in readers:
         reader.join(OUTPUT_JOIN_S)
-    if any(reader.is_alive() for reader in readers):
+    reader_stuck = any(reader.is_alive() for reader in readers)
+    if reader_stuck:
         logger.warning("[TerminalCore] 读取线程未在 %ss 内退出：pid=%s", OUTPUT_JOIN_S, proc.pid)
-        captured["stderr"].extend("\n[读取线程未退出]".encode("utf-8"))
 
     exit_code = proc.returncode if proc.returncode is not None else -1
+    stderr = decode_capture(bytes(captured["stderr"]), truncated_streams["stderr"])
+    if reader_stuck:
+        # 标注加在解码之后：写进字节缓冲会挡住截断处的残缺 UTF-8 尾部
+        stderr += "\n[读取线程未退出]"
     return RunResult(
         exit_code=exit_code,
-        stdout=decode_bytes(bytes(captured["stdout"])),
-        stderr=decode_bytes(bytes(captured["stderr"])),
+        stdout=decode_capture(bytes(captured["stdout"]), truncated_streams["stdout"]),
+        stderr=stderr,
         duration_ms=_elapsed_ms(started),
-        truncated=truncated,
+        truncated=any(truncated_streams.values()),
         error=error,
         code=code,
     )
@@ -295,6 +298,25 @@ def decode_bytes(raw: bytes) -> str:
         return raw.decode(locale.getpreferredencoding(False))
     except (UnicodeDecodeError, LookupError):
         return raw.decode("utf-8", errors="replace")
+
+
+def decode_capture(raw: bytes, truncated: bool = False) -> str:
+    """解码捕获输出；截断切开 UTF-8 字符时丢掉残缺尾部再解码，避免整段跌到 GBK。"""
+    if not raw:
+        return ""
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        pass
+    if truncated:
+        for cut in range(1, 4):
+            if len(raw) <= cut:
+                break
+            try:
+                return raw[:-cut].decode("utf-8")
+            except UnicodeDecodeError:
+                continue
+    return decode_bytes(raw)
 
 
 def truncate_streams(stdout: str, stderr: str, max_chars: int) -> tuple[str, bool]:

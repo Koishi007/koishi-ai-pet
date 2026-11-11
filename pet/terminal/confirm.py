@@ -1,6 +1,7 @@
 """确认请求的数据结构：执行层与界面层共用，不依赖 Qt。"""
 
 import threading
+import typing
 from dataclasses import dataclass, field
 
 
@@ -20,5 +21,9 @@ class ConfirmRequest:
     untrusted: bool = False
     sequence: int = 0
     total: int = 0
+    queue_grace_s: float = 0.0
     event: threading.Event = field(default_factory=threading.Event)
+    shown: threading.Event = field(default_factory=threading.Event)
+    shown_at: float = 0.0
+    withdraw: typing.Callable[[], None] | None = None
     result: bool = False
