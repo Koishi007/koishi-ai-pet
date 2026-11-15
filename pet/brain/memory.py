@@ -131,11 +131,7 @@ def _drop_subsumed(terms: list[str]) -> list[str]:
 
 
 def _day_floor(date_str: str) -> str:
-    """YYYY-MM-DD → 当天 00:00 的下界字符串（含当天）。
-
-    created_at 以 datetime.isoformat() 存储，字典序与时间序一致，
-    故可与 'YYYY-MM-DD' 直接比较，且能命中 idx_created 索引。
-    """
+    """YYYY-MM-DD → 当天 00:00 的下界字符串"""
     return datetime.strptime(date_str.strip(), "%Y-%m-%d").strftime("%Y-%m-%d")
 
 
@@ -842,102 +838,33 @@ class _MemoryRetriever(ABC):
                 f"importance {old}→{new} (tool_hits 阈值)"
             )
 
-    def _log_l3_cleanup(self, count: int, cutoff: str, reason: str = "过期清理"):
-        """记录 L3 删除条数，避免静默消失无从排查。"""
-        if count:
-            logger.info(
-                f"[{self.__class__.__name__}] L3 {reason}: 删除 {count} 条 (cutoff={cutoff})")
-
     def enforce_capacity(self):
-        """容量控制（需在已有 lock 内调用）"""
+        """容量控制：超上限时按有效分淘汰"""
         count = self._conn.execute("SELECT COUNT(*) FROM memories").fetchall()[0][0]
         if count <= self.MAX_MEMORIES:
-            # 未超容量，但仍执行轻量 L3 硬清理（仅当存在过期 L3 时才写）
-            cutoff_l3 = (datetime.now() - timedelta(days=config.MEMORY_L3_EXPIRE_DAYS)).isoformat()
-            stale = self._conn.execute(
-                "SELECT 1 FROM memories WHERE level='L3' AND COALESCE(last_accessed_at, created_at) < ? LIMIT 1",
-                (cutoff_l3,)
-            ).fetchone()
-            if stale:
-                cur = self._conn.execute(
-                    "DELETE FROM memories WHERE level='L3' AND COALESCE(last_accessed_at, created_at) < ?",
-                    (cutoff_l3,)
-                )
-                self._conn.commit()
-                self._log_l3_cleanup(cur.rowcount, cutoff_l3)
             return
 
-        # 超容量：多阶段清理，统一在最后一次 commit
-        # 阶段 0：L3 硬清理
-        cutoff_l3 = (datetime.now() - timedelta(days=config.MEMORY_L3_EXPIRE_DAYS)).isoformat()
-        expired_l3 = self._conn.execute(
-            "DELETE FROM memories WHERE level='L3' AND COALESCE(last_accessed_at, created_at) < ?",
-            (cutoff_l3,)
-        ).rowcount
-
-        count = self._conn.execute("SELECT COUNT(*) FROM memories").fetchall()[0][0]
-        if count <= self.MAX_MEMORIES:
-            self._conn.commit()
-            self._log_l3_cleanup(expired_l3, cutoff_l3)
-            return
-
-        # 阶段 1：删除 L3 中 access_count <= 1 的旧记忆
-        cutoff = (datetime.now() - timedelta(days=1)).isoformat()
-        low_access_l3 = self._conn.execute(
-            "DELETE FROM memories WHERE level='L3' AND COALESCE(last_accessed_at, created_at) < ? AND access_count <= 1",
-            (cutoff,)
-        ).rowcount
-
-        # 阶段 2：淘汰可降级记忆（L1+i5 与 L3 豁免）
-        # 候选：L2 importance<5 + L1 importance<5，按 effective_importance 升序淘汰
-        total = self._conn.execute("SELECT COUNT(*) FROM memories").fetchall()[0][0]
-        if total > self.MAX_MEMORIES:
-            excess = total - self.MAX_MEMORIES
-            # 淘汰量为超额量的 2 倍（留少量缓冲），但不超过 10 条（避免单次大规模削减）
-            target_clear = min(excess * 2, 10)
-            ids_to_delete: list[int] = []
-
-            # 2a: 低权重 L2 + 低权重 L1（按 effective_importance 升序）
-            demote_rows = self._conn.execute(
-                "SELECT id, importance, access_count, level, created_at, last_accessed_at "
-                "FROM memories WHERE level IN ('L1','L2') AND importance < 5"
-            ).fetchall()
-            demote_rows.sort(key=lambda r: self._effective_importance(dict(r)))
-            for r in demote_rows:
-                if len(ids_to_delete) >= target_clear:
-                    break
-                ids_to_delete.append(r["id"])
-
-            # 2b: 兜底——若低权重不足，淘汰 importance=5 的 L2（按 effective 升序，最老先淘汰）
-            # 仅 L1+i5 永不淘汰；若仍超限，调大 MAX_MEMORIES 解决
-            if len(ids_to_delete) < excess:
-                remaining = excess - len(ids_to_delete)
-                l2_hi_rows = self._conn.execute(
-                    "SELECT id, importance, access_count, level, created_at, last_accessed_at "
-                    "FROM memories WHERE level='L2' AND importance = 5"
-                ).fetchall()
-                l2_hi_rows.sort(key=lambda r: self._effective_importance(dict(r)))
-                for r in l2_hi_rows[:remaining]:
-                    ids_to_delete.append(r["id"])
-                if l2_hi_rows:
-                    logger.warning(
-                        f"[{self.__class__.__name__}] 低权重不足，兜底淘汰 "
-                        f"{min(remaining, len(l2_hi_rows))} 条 importance=5 的 L2"
-                    )
-
-            if ids_to_delete:
-                placeholders = ",".join(["?"] * len(ids_to_delete))
-                self._conn.execute(
-                    f"DELETE FROM memories WHERE id IN ({placeholders})",
-                    ids_to_delete
-                )
-                logger.info(
-                    f"[{self.__class__.__name__}] 容量淘汰 {len(ids_to_delete)} 条 "
-                    f"(目标:{target_clear}, 总数:{total}→{total - len(ids_to_delete)})"
-                )
-        self._conn.commit()  # 统一一次 commit
-        self._log_l3_cleanup(expired_l3, cutoff_l3)
-        self._log_l3_cleanup(low_access_l3, cutoff, reason="低访问淘汰")
+        excess = count - self.MAX_MEMORIES
+        # 淘汰量为超额量的 2 倍，不超过10条
+        target_clear = min(excess * 2, 10)
+        # L1+importance=5 永不淘汰，其余按 effective_importance 升序入候选
+        rows = self._conn.execute(
+            "SELECT id, importance, access_count, level, created_at, last_accessed_at "
+            "FROM memories WHERE NOT (level='L1' AND importance = 5)"
+        ).fetchall()
+        rows.sort(key=lambda r: self._effective_importance(dict(r)))
+        ids_to_delete = [r["id"] for r in rows[:target_clear]]
+        if ids_to_delete:
+            placeholders = ",".join(["?"] * len(ids_to_delete))
+            self._conn.execute(
+                f"DELETE FROM memories WHERE id IN ({placeholders})",
+                ids_to_delete
+            )
+            logger.info(
+                f"[{self.__class__.__name__}] 容量淘汰 {len(ids_to_delete)} 条 "
+                f"(目标:{target_clear}, 总数:{count}→{count - len(ids_to_delete)})"
+            )
+        self._conn.commit()
 
     def close(self):
         with self._lock:
@@ -1314,8 +1241,6 @@ class MemoryStore:
                 self._conn.execute("ALTER TABLE memories ADD COLUMN tool_hits INTEGER DEFAULT 0")
             # 复合索引：覆盖 query_core 的 ORDER BY importance DESC
             self._conn.execute("CREATE INDEX IF NOT EXISTS idx_level_importance ON memories(importance DESC)")
-            # 部分索引：仅索引 L3 行，加速 enforce_capacity 的过期清理
-            self._conn.execute("CREATE INDEX IF NOT EXISTS idx_l3_access ON memories(level, last_accessed_at) WHERE level='L3'")
             self._conn.commit()
 
     def _try_load_vec_extension(self) -> bool:
@@ -1386,34 +1311,15 @@ class MemoryStore:
         return results
 
     def maintenance(self):
-        """定期维护：轻量操作每次执行，重量操作每 6 次 slow_tick 执行一次。"""
+        """定期维护：记忆打分"""
         with self._retriever._lock:
-            # L3 过期硬清理
-            cutoff_l3 = (datetime.now() - timedelta(days=config.MEMORY_L3_EXPIRE_DAYS)).isoformat()
-            stale_l3 = self._retriever._conn.execute(
-                "SELECT 1 FROM memories WHERE level='L3' "
-                "AND COALESCE(last_accessed_at, created_at) < ? LIMIT 1",
-                (cutoff_l3,)
-            ).fetchone()
-            if stale_l3:
-                cur = self._retriever._conn.execute(
-                    "DELETE FROM memories WHERE level='L3' "
-                    "AND COALESCE(last_accessed_at, created_at) < ?",
-                    (cutoff_l3,)
-                )
-                self._retriever._conn.commit()
-                logger.info(
-                    f"[MemoryStore] L3 过期清理: 删除 {cur.rowcount} 条 (cutoff={cutoff_l3})")
-
             # 每 6 次 slow_tick 执行一次
             self._maintenance_skip += 1
             if self._maintenance_skip >= self._HEAVY_INTERVAL:
                 self._maintenance_skip = 0
                 self._retriever._demote_l2_to_l3()
                 self._retriever._promote_by_tool_hits()  # recall 工具检索反哺 importance
-                count = self._retriever._conn.execute("SELECT COUNT(*) FROM memories").fetchall()[0][0]
-                if count > self._retriever.MAX_MEMORIES:
-                    self._retriever.enforce_capacity()
+                self._retriever.enforce_capacity()
 
 
     def list_memories(

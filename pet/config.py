@@ -127,7 +127,6 @@ _KEY_META = {
     "MEMORY_MERGE_KEY":           {"type": "str",     "default": "",             "category": "memory",   "needs_restart": False, "hidden": False, "description": "事件汇总的 API Key(三项齐全才生效)"},
     "MEMORY_MERGE_MODEL":         {"type": "str",     "default": "",             "category": "memory",   "needs_restart": False, "hidden": False, "description": "事件汇总的模型名(三项齐全才生效)", "placeholder": "留空沿用当前模型方案"},
     "MEMORY_RECALL_COOLDOWN_S":  {"type": "int",      "default": 300,            "category": "memory",   "needs_restart": False, "hidden": True,  "description": "记忆召回冷却时间(秒)"},
-    "MEMORY_L3_EXPIRE_DAYS":     {"type": "int",      "default": 3,              "category": "memory",   "needs_restart": False, "hidden": False, "description": "L3临时记忆过期天数"},
     "MEMORY_RERANK_WEIGHT_SIM":  {"type": "float",    "default": 0.7,            "category": "memory",   "needs_restart": False, "hidden": True,  "description": "重排序-语义相似度权重"},
     "MEMORY_RERANK_WEIGHT_IMP":  {"type": "float",    "default": 0.2,            "category": "memory",   "needs_restart": False, "hidden": True,  "description": "重排序-有效重要性权重"},
     "MEMORY_RERANK_WEIGHT_RECENCY": {"type": "float", "default": 0.1,           "category": "memory",   "needs_restart": False, "hidden": True,  "description": "重排序-时效性权重"},

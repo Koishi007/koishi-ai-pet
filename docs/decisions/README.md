@@ -28,3 +28,4 @@
 | [0010](0010-output-budget-in-code.md) | 输出上限收归代码并按请求形态配额 | 用户无法判断 token 额度，且思考占满额度会让整段输出作废 |
 | [0011](0011-comment-visibility-confirmed-on-send.md) | 评论发出后延时复核可见性 | `rpid` 只证明受理，折叠评论同样返回回执 |
 | [0012](0012-login-invalid-marker.md) | 登录失效由最近一次请求标记 | 凭证文件存在不代表会话有效 |
+| [0013](0013-memory-cleanup-only-over-capacity.md) | 记忆只在超容量时清理 | 定期维护只打分，删除全部集中在容量边界 |

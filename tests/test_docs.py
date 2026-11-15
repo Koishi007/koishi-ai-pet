@@ -5,7 +5,7 @@
 2. `docs/architecture.md` 覆盖全部包与顶层模块（新增包不能没有归属）
 3. 文档里的相对链接都指向真实存在的文件
 4. 每一页文档都在 `docs/README.md` 里被索引、每条 ADR 都在 `docs/decisions/README.md` 里登记
-5. 仓库文档没有被 .gitignore 静默忽略（历史草稿除外）
+5. 仓库文档没有被 .gitignore 静默忽略
 6. 手写文档的文风符合 `docs/README.md` 的「文风约定」（无人称、无破折号）
 
 CHANGELOG 不做校验：最新 tag 之后的提交随时在变，放进测试会逼着每个提交都重新生成一次。
@@ -27,9 +27,6 @@ REFERENCE = DOCS / "reference"
 LINK_CHECKED = (ROOT / "README.md", ROOT / "CONTRIBUTING.md", ROOT / "CHANGELOG.md",
                 ROOT / ".github" / "PULL_REQUEST_TEMPLATE.md")
 
-# 允许被忽略的历史本地草稿（其余文档必须进版本库）
-IGNORED_DRAFTS = ("docs/plan.md", "docs/iat_ws_python3.py")
-
 # 文风检查：只查手写文档（生成物由代码决定，改代码重新生成即可）
 STYLE_CHECKED = (ROOT / "README.md", ROOT / "CONTRIBUTING.md",
                  ROOT / ".github" / "PULL_REQUEST_TEMPLATE.md")
@@ -41,12 +38,6 @@ SECOND_PERSON_TERMS = ("你惦记着的事", "你现在的状态", "你对用户
 SECOND_PERSON = re.compile(r"(?<![「『《])(你|您)(?![」』》])")
 DASHES = ("—", "–")
 _FENCE = re.compile(r"^```.*?^```", re.DOTALL | re.MULTILINE)
-
-
-def _is_draft(rel: str) -> bool:
-    return (rel in IGNORED_DRAFTS
-            or rel.startswith("docs/superpowers/")
-            or rel.rsplit("/", 1)[-1].startswith("ChatHistoryWindow_"))
 
 
 def test_reference_docs_match_code():
@@ -71,7 +62,7 @@ def test_docs_index_lists_every_page():
     missing = []
     for path in sorted(DOCS.rglob("*.md")):
         rel = path.relative_to(DOCS).as_posix()
-        if rel == "README.md" or rel.startswith("decisions/") or _is_draft(f"docs/{rel}"):
+        if rel == "README.md" or rel.startswith("decisions/"):
             continue
         if path.name not in index:
             missing.append(rel)
@@ -129,7 +120,7 @@ def test_handwritten_docs_style():
     problems = []
     for path in sorted(DOCS.rglob("*.md")) + list(STYLE_CHECKED):
         rel = path.relative_to(ROOT).as_posix()
-        if rel.startswith("docs/reference/") or _is_draft(rel):
+        if rel.startswith("docs/reference/"):
             continue
         # 行内代码与代码块里的破折号是内容本身（含本文档举的反例），不参与检查
         text = re.sub(r"`[^`]*`", "", _FENCE.sub("", path.read_text(encoding="utf-8")))
@@ -144,7 +135,7 @@ def test_handwritten_docs_style():
 
 
 def test_docs_are_not_gitignored():
-    """仓库文档必须纳入版本管理，只有明确登记的历史草稿可以留在忽略列表里。"""
+    """仓库文档必须纳入版本管理，不能被 .gitignore 静默忽略。"""
     if not (ROOT / ".git").exists():
         pytest.skip("不在 git 工作区中")
 
@@ -155,9 +146,4 @@ def test_docs_are_not_gitignored():
         cwd=ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace",
     )
     ignored = {line.strip() for line in result.stdout.splitlines() if line.strip()}
-    expected = {rel for rel in relatives if _is_draft(rel)}
-    assert ignored == expected, (
-        "被忽略的文档与预期不符。\n"
-        f"  意外被忽略（需要放行）：{'、'.join(sorted(ignored - expected)) or '无'}\n"
-        f"  预期被忽略但没被忽略：{'、'.join(sorted(expected - ignored)) or '无'}"
-    )
+    assert not ignored, "以下文档被 .gitignore 忽略：" + "、".join(sorted(ignored))

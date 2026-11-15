@@ -29,6 +29,7 @@
 | 行为突然变得古怪（乱说话、夸张举动） | 理智低：< `SANITY_CRITICAL_THRESHOLD`（默认 20）会切 `grim` 动画并持续喷黑心，提示词也进入低理智档 | 调试面板把 `sanity` 调回高位；或调低该阈值 |
 | 记忆不召回 / 召回得莫名其妙 | 没配 embedding 就只走关键词；召回有 300 秒冷却；管理窗口编辑会刷新「最近访问」从而抬高有效分 | `settings.json` 里配 `EMBEDDING_*`；用下面的 sqlite 命令看实际数据 |
 | 反复记同样的东西 | 冷却期内的重复记忆会被拦截并提示模型别重复输出 | 属预期；改 `MEMORY_RECALL_COOLDOWN_S` 可调 |
+| 记忆越积越多、旧记忆还在 | 清理只在总数超过 `MEMORY_MAX_CAPACITY` 时发生 | 调小该上限，或在记忆管理窗口手动删除 |
 | 启动就退出 | 重复启动被单实例锁挡住 | 提示框会说明；确认无残留进程后删除 `KoishiAI.lock`（与 `settings.json` 同目录） |
 | 更新后起不来 | 依赖没更新成功、或 `update.*.new` 待应用 | 手动 `pip install -e .`；重启一次让 `pet/self_update.py` 替换脚本；日志里有 `[SelfUpdate]` 记录 |
 | 窗口探测不准 | 平台后端差异（Win32 / Quartz / X11）或窗口被遮挡 | 日志里有探测结果；非 Windows 平台的实现较少打磨 |

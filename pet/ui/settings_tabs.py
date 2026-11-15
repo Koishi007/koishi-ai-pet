@@ -300,7 +300,6 @@ class SettingsTabs:
         memory_form.addRow("向量维度:", f.line("EMBEDDING_DIM", "256", QIntValidator(64, 8192)))
         memory_form.addRow("记忆最大容量:", f.line("MEMORY_MAX_CAPACITY", "200", QIntValidator(50, 1000)))
         memory_form.addRow("记忆召回条数:", f.line("MEMORY_RECALL_COUNT", "15", QIntValidator(3, 30)))
-        memory_form.addRow("临时记忆过期(天):", f.line("MEMORY_L3_EXPIRE_DAYS", "3", QIntValidator(1, 30)))
         memory_form.addRow("旧事注入条数:", f.line("MEMORY_EVENT_RECALL_COUNT", "1", QIntValidator(0, 5)))
         memory_layout.addLayout(memory_form)
 

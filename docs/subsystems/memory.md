@@ -24,8 +24,7 @@
 | `level` | `L1` 核心 / `L2` 情景 / `L3` 临时 |
 | `tool_hits` | `recall__search` 主动检索计数，按轮衰减，用于晋升 |
 
-索引有两处细节：`idx_l3_access` 是 `(level, last_accessed_at) WHERE level='L3'` 的部分索引，
-专门加速 L3 过期清理；而注释写的「复合索引」`idx_level_importance` 实际只有 `importance` 一列，
+索引有一处细节：注释写的「复合索引」`idx_level_importance` 实际只有 `importance` 一列，
 与 `idx_importance` 重复，查询计划以实际建表语句为准。
 
 向量表 `memories_vec`（sqlite-vec 虚拟表）：`memory_id` + `embedding FLOAT[EMBEDDING_DIM] distance_metric=cosine`。
@@ -60,7 +59,7 @@
      做一次语义去重。
 5. **落库**：新建行先 `has_embedding=0` 再补向量；合并只在正文变长时重算向量；embedding 生成
    **在锁外**进行，失败就降级关键词检索。
-6. **收尾**：每次保存后跑一次容量控制 `enforce_capacity()`。
+6. **收尾**：每次保存后跑一次容量控制 `enforce_capacity()`，未超上限不清理。
 
 > 两个 0.6 量纲不同：`dedup_threshold` 是**文本相似度**，`EMBEDDING_DEDUP_THRESHOLD` 是**向量距离**，两者不可混用。
 
@@ -101,18 +100,19 @@
 
 ## 4. 维护：`maintenance`
 
-slow tick 触发（默认每 10 分钟）：
+slow tick 触发（默认每 10 分钟）。定期维护只打分，不删除记忆；删除只发生在超容量清理
+（`enforce_capacity`）与事件汇总的合并写回。
 
 | 频率 | 动作 |
 |---|---|
-| 每次 | L3 过期硬删（`MEMORY_L3_EXPIRE_DAYS`，默认 3 天；先探测再写，无过期行不落盘；删除条数记 INFO） |
-| 每 6 次（≈30 分钟） | `_demote_l2_to_l3()`：有效分 < 2.2 的 L1→L2、L2→L3（`importance=5` 的 L1 除外），并把 importance 压到 ≤4 维持「L3 最高 4」 |
+| 每 6 次（≈1 小时） | `_demote_l2_to_l3()`：有效分 < 2.2 的 L1→L2、L2→L3（`importance=5` 的 L1 除外），并把 importance 压到 ≤4 维持「L3 最高 4」 |
 | 每 6 次 | `_promote_by_tool_hits()`：先全表 `tool_hits × 0.9` 衰减；`≥40` 提到 importance 4、`≥120` 提到 5（命中即清零，不跳级，只对 L1/L2） |
-| 每 6 次 | 超容量时 `enforce_capacity()` |
+| 每 6 次 | `enforce_capacity()`：总数超 `MEMORY_MAX_CAPACITY` 才清理；保存路径每次落库后也调用，同一判据 |
 
-容量淘汰顺序（`MEMORY_MAX_CAPACITY`，默认 200）：先删 L3 过期项 → 再删「1 天前且访问 ≤1 次」的 L3 →
-仍超容量时按有效分从低到高淘汰非 `importance=5` 的 L1/L2，必要时兜底淘汰 L2 中 importance=5 的；
-**L1 + importance=5 永不淘汰**。
+容量淘汰（`MEMORY_MAX_CAPACITY`，默认 200，仅超出上限时执行）：候选为除 `L1 + importance=5`
+外的全部记忆，按有效分从低到高淘汰；L3 半衰期 1~3 天，旧 L3 有效分趋近 0，自然排在候选前列。
+**L1 + importance=5 永不淘汰**，候选删完仍超限时只能调大上限。淘汰量为超额量的 2 倍
+（留少量缓冲），单次不超过 10 条。
 
 两条边界：
 
@@ -129,7 +129,7 @@ slow tick 触发（默认每 10 分钟）：
 - 输出：模型按 `Group: #id,#id | 汇总内容` 返回分组，解析时只保留输入集合内的 id、组内 ≥2 条、至少含一条 `event`（纯 `conversation` 组忽略）、内容 ≤400 字；
 - 写回：每组插入一条新 `event` 记忆（`created_at` 取组内最大值、级别保底 `L2`、组内含 `L1` 时取 `L1`、`last_accessed_at` 取当前时间），删除组内旧条目（含 `conversation`），单事务；
 - 汇总产物不继承组内 `L3`：`created_at` 回填历史时间，若同时是 `L3` 会在下一个 slow tick 被过期清理删掉；
-- L3 过期清理与低访问淘汰都会输出删除条数日志，便于排查「写入后消失」。
+- 容量淘汰输出删除条数日志，便于排查「写入后消失」。
 - 失败：请求失败不推进游标，下一个整点重试同一批；解析无可应用组时正常推进；新增 `event`/`conversation` 不足 6 条，或候选中没有 `event` 时跳过。
 - 增量口径：上次汇总后的 `(created_at, id)` marker 起算，覆盖 `event` 与 `conversation` 两类（只新增对话也会触发）；汇总产物回填组内最大 `created_at`，写回后刷新 marker，避免被算作新增。
 - 游标只在内存，`register_all` 用库中最新 marker 初始化，重启后不重复汇总已有条目。
@@ -144,7 +144,7 @@ slow tick 触发（默认每 10 分钟）：
 | `EMBEDDING_ENABLED` / `EMBEDDING_URL` / `EMBEDDING_KEY` / `EMBEDDING_MODEL` | 向量检索总开关与端点（任一为空即降级关键词） |
 | `EMBEDDING_DIM` | 向量维度；改动会触发 `memories_vec` 重建 |
 | `EMBEDDING_DEDUP_THRESHOLD` | 语义去重的向量距离阈值（hidden） |
-| `MEMORY_MAX_CAPACITY` / `MEMORY_RECALL_COUNT` / `MEMORY_L3_EXPIRE_DAYS` | 容量、召回条数、L3 过期天数 |
+| `MEMORY_MAX_CAPACITY` / `MEMORY_RECALL_COUNT` | 容量、召回条数 |
 | `MEMORY_EVENT_RECALL_COUNT` | 「你惦记着的事」随机注入条数（0 = 关闭） |
 | `MEMORY_EVENT_MERGE_ENABLED` | 整点事件汇总开关 |
 | `MEMORY_MERGE_URL` / `MEMORY_MERGE_KEY` / `MEMORY_MERGE_MODEL` | 事件汇总的独立模型连接，三项齐全才生效 |

@@ -48,7 +48,6 @@
 | `EMBEDDING_DIM` | int | 256 | 是 | 向量维度(需与模型匹配)（≥64, ≤8192） |
 | `MEMORY_MAX_CAPACITY` | int | 200 |  | 记忆最大容量 |
 | `MEMORY_RECALL_COUNT` | int | 15 |  | 每次对话召回的记忆条数 |
-| `MEMORY_L3_EXPIRE_DAYS` | int | 3 |  | L3临时记忆过期天数 |
 | `MEMORY_EVENT_RECALL_COUNT` | int | 1 |  | 「你惦记着的事」随机注入的 event 记忆条数(0=关闭) |
 | `MEMORY_EVENT_MERGE_ENABLED` | bool | false |  | 整点汇总事件与对话记忆(会删除被合并的旧条目) |
 | `MEMORY_MERGE_URL` | str | `""` |  | 事件汇总的 API 地址(三项齐全才生效) |
@@ -185,4 +184,4 @@
 - `hidden`：`true` 表示不在界面显示，只能直接编辑 `settings.json`
 - `enum` / `minimum` / `maximum`：取值约束，会写进 `settings-schema.json`
 
-共 122 项（其中 64 项未在界面列出）。
+共 121 项（其中 64 项未在界面列出）。
