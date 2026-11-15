@@ -80,9 +80,7 @@
   发布前刷新一次；它不接 CI，原因见 [operations/release.md](operations/release.md) §4。
 - **ADR**：做出设计取舍时在 [decisions/](decisions/README.md) 新增一条，并在该目录 README 的索引里登记
   （`tests/test_docs.py` 会检查索引完整性）。
-- `docs/` 里还有几份历史本地草稿（`plan.md`、`iat_ws_python3.py`、`superpowers/`、
-  `ChatHistoryWindow_*.md`），被 `.gitignore` 忽略、不进仓库；`tests/test_docs.py` 的忽略
-  清单与 `.gitignore` 保持一致，要新增忽略项时两边都得改。
+
 
 ## 三条捷径
 
