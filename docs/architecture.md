@@ -199,7 +199,7 @@ system 动作表换成 `EDGE_ACTION_NAMES` 的八个贴边动作；调度器、�
 | mid | `_autonomous` | 自主决策触发 |
 | slow | `_vitals_save`、`_mood_save` | 数值落库 |
 | slow | `_vitals_check`、`_mood_check` | 阈值检查与自然衰减 |
-| slow | `_memory_maintenance` | 记忆维护（过期、压缩） |
+| slow | `_memory_maintenance` | 记忆打分与容量清理、事件 artifact 清理 |
 | slow | `_conversation_cleanup` | 对话历史清理 |
 
 调度器会在系统空闲超过 `SCHEDULER_IDLE_TIMEOUT_MS` 时暂停全部定时器，用户回来再恢复；

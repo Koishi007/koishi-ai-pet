@@ -232,7 +232,17 @@ class TestRunMerge:
         monkeypatch.setattr(memory_merge, "_call_llm",
                             lambda messages: f"Group: {ids} | 拍视频汇总")
         assert memory_merge.run_merge(store) == 1
-        store.maintenance()
+        store.save("event", "整理了旧照片", ["旧照片"], 3, "L3")
+        store.save("event", "买了盆绿萝", ["绿萝"], 3, "L3")
+        with store._retriever._lock:
+            conn = store._retriever._conn
+            conn.execute(
+                "UPDATE memories SET created_at = ?, last_accessed_at = NULL "
+                "WHERE level = 'L3'", (old,))
+            conn.commit()
+        monkeypatch.setattr(config, "MEMORY_MAX_CAPACITY", 2)
+        with store._retriever._lock:
+            store._retriever.enforce_capacity()
         rows, _ = store.list_memories()
         assert [r["content"] for r in rows] == ["拍视频汇总"]
         assert rows[0]["level"] == "L2"
@@ -259,7 +269,8 @@ class TestRunMerge:
             memory_merge.run_merge(store)
         assert "…<+10字>" in caplog.text
 
-    def test_l3_expiry_is_logged(self, store, caplog):
+    def test_maintenance_does_not_delete_rows(self, store):
+        """定期维护只打分，删除只在超上限时发生。"""
         store.save("event", "旧事件", ["旧"], 3, "L3")
         old = (datetime.now() - timedelta(days=10)).isoformat()
         with store._retriever._lock:
@@ -267,6 +278,32 @@ class TestRunMerge:
             conn.execute(
                 "UPDATE memories SET created_at = ?, last_accessed_at = NULL", (old,))
             conn.commit()
-        with caplog.at_level("INFO"):
+        for _ in range(store._HEAVY_INTERVAL):
             store.maintenance()
-        assert "L3 过期清理" in caplog.text
+        assert [r["content"] for r in store.list_memories()[0]] == ["旧事件"]
+
+    def test_capacity_cleanup_evicts_lowest_effective_first(self, store, monkeypatch, caplog):
+        store.save("event", "旧临时记忆", ["旧临时"], 1, "L3")
+        store.save("event", "旧情景记忆", ["旧情景"], 2, "L2")
+        store.save("event", "新近记忆", ["新近"], 4, "L1")
+        old = (datetime.now() - timedelta(days=10)).isoformat()
+        with store._retriever._lock:
+            conn = store._retriever._conn
+            conn.execute(
+                "UPDATE memories SET created_at = ?, last_accessed_at = NULL "
+                "WHERE content != '新近记忆'", (old,))
+            conn.commit()
+        monkeypatch.setattr(config, "MEMORY_MAX_CAPACITY", 2)
+        with caplog.at_level("INFO"):
+            with store._retriever._lock:
+                store._retriever.enforce_capacity()
+        assert "容量淘汰" in caplog.text
+        assert [r["content"] for r in store.list_memories()[0]] == ["新近记忆"]
+
+    def test_capacity_cleanup_spares_l1_core(self, store, monkeypatch):
+        """L1+importance=5 永不淘汰。"""
+        store.save("event", "核心身份", ["核心"], 5, "L1")
+        monkeypatch.setattr(config, "MEMORY_MAX_CAPACITY", 0)
+        with store._retriever._lock:
+            store._retriever.enforce_capacity()
+        assert [r["content"] for r in store.list_memories()[0]] == ["核心身份"]
