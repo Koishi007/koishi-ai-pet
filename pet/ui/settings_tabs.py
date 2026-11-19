@@ -130,7 +130,7 @@ class SettingsTabs:
         form.addRow("", f.check("LLM_TOOLS_ENABLED", "启用工具调用"))
         form.addRow("", _hint("模型不支持 tools 参数时请关闭此选项"))
 
-        w.tool_rounds_edit = f.line("LLM_TOOL_MAX_ROUNDS", "30", QIntValidator(10, 99))
+        w.tool_rounds_edit = f.line("LLM_TOOL_MAX_ROUNDS", "99", QIntValidator(10, 99))
         form.addRow("工具调用最大轮次:", w.tool_rounds_edit)
 
         w.cache_check = f.check("LLM_CACHE_PROMPT", "Prompt 缓存")

@@ -50,7 +50,7 @@ _KEY_META = {
     "LLM_TEMPERATURE":            {"type": "float",    "default": 0.7,           "category": "connection", "needs_restart": False, "hidden": False, "description": "LLM 采样温度"},
     "LLM_TOOL_PARALLEL":          {"type": "bool",     "default": True,          "category": "connection", "needs_restart": False, "hidden": True,  "description": "LLM 工具并行调用"},
     "LLM_TOOLS_ENABLED":          {"type": "bool",     "default": True,          "category": "connection", "needs_restart": False, "hidden": False, "description": "是否可使用工具"},
-    "LLM_TOOL_MAX_ROUNDS":        {"type": "int",      "default": 30,            "category": "connection", "needs_restart": False, "hidden": False, "description": "工具调用最大轮次（二十问等长流程游戏需要 ≥22 轮）", "minimum": 10, "maximum": 99},
+    "LLM_TOOL_MAX_ROUNDS":        {"type": "int",      "default": 99,            "category": "connection", "needs_restart": False, "hidden": False, "description": "工具调用最大轮次（二十问等长流程游戏需要 ≥22 轮）", "minimum": 10, "maximum": 99},
     "LLM_TOOL_ROLE_MODE":         {"type": "str",      "default": "auto",        "category": "connection", "needs_restart": False, "hidden": True,  "description": "历史工具记录通道：auto 默认 native，端点明确拒绝时逐档降级", "enum": ["auto", "native", "user-note", "system-note", "minimal"]},
     "NATIVE_REPLAY_ARGS":         {"type": "str",      "default": "minimal",     "category": "connection", "needs_restart": False, "hidden": True,  "description": "native 通道回放工具参数的还原方式", "enum": ["minimal", "empty"]},
     "LLM_TOOL_ROLE_OVERRIDE":     {"type": "str",      "default": "",            "category": "connection", "needs_restart": False, "hidden": True,  "description": "按模型前缀强制指定工具通道，形如 qwen2.5=system-note,glm=user-note"},
