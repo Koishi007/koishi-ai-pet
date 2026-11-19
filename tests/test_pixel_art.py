@@ -37,6 +37,38 @@ def test_create_defaults(art):
     assert "透明" in result["headline"]
 
 
+def test_ops_field_error_carries_field_list(art):
+    core.create("图", "16")
+    with pytest.raises(PixelArtError) as exc:
+        core.paint(ops=[{"op": "ellipse", "cx": 8, "cy": 8, "rx": 4, "ry": 4, "c": 1}])
+    assert exc.value.code == "bad_param"
+    assert "x, y, w, h" in exc.value.hint
+
+
+def test_db32_preset_supports_32_colors(art):
+    created = core.create("多彩", "16", preset="db32")
+    assert created["data"]["palette_size"] == 32
+
+    rows = ["v" * 16] + ["." * 16 for _ in range(15)]
+    data = core.set_pixels(rows=rows)["data"]
+    assert data["changed_cells"] == 16
+    assert core.preview()["body"].splitlines()[0].startswith("00 vv")
+
+    with pytest.raises(PixelArtError) as exc:
+        core.set_pixels(rows=["w" * 16], region=[0, 0, 16, 1])
+    assert exc.value.code == "bad_rows"
+
+
+def test_custom_palette_allows_32_colors(art):
+    colors = [f"#{i:02X}{i:02X}{i:02X}" for i in range(32)]
+    created = core.create("自定义", "16", palette=colors)
+    assert created["data"]["palette_size"] == 32
+
+    with pytest.raises(PixelArtError) as exc:
+        core.create("超长", "16", palette=colors + ["#FFFFFF"])
+    assert exc.value.code == "palette_full"
+
+
 def test_name_validation(art):
     with pytest.raises(PixelArtError) as exc:
         core.create("   ", "16")
@@ -276,6 +308,17 @@ def test_export_json_roundtrip(art):
     assert payload["size"] == 16
     assert payload["rows"][0] == "0123456789abcdef"
     assert payload["palette"][0] == "#000000"
+
+
+def test_export_json_single_char_for_32_colors(art):
+    core.create("多彩", "16", preset="db32")
+    rows = ["v" * 16] + ["." * 16 for _ in range(15)]
+    core.set_pixels(rows=rows)
+    path = core.export(format="json")["data"]["path"]
+    with open(path, encoding="utf-8") as fh:
+        payload = json.load(fh)
+    assert payload["rows"][0] == "v" * 16
+    assert len(payload["palette"]) == 32
 
 
 def test_export_svg_crisp(art):

@@ -211,7 +211,8 @@ def _build_palette(preset, palette) -> tuple[str, list[tuple[int, int, int]]]:
     name = str(preset or "pico8").strip().lower()
     colors = PRESETS.get(name)
     if colors is None:
-        raise PixelArtError("bad_param", f"未知色板 {preset!r}", "可用：pico8、gameboy、nes")
+        raise PixelArtError("bad_param", f"未知色板 {preset!r}",
+                            "可用：" + "、".join(PRESETS))
     return name, list(colors)
 
 

@@ -5,8 +5,9 @@ from __future__ import annotations
 import numpy as np
 
 TRANSPARENT = 255
-MAX_COLORS = 16
-HEX_CHARS = "0123456789abcdef"
+MAX_COLORS = 32
+# 单字符色索引：0-9 与 a-v，共 32 个；. 透明，? 保留原值
+INDEX_CHARS = "0123456789abcdefghijklmnopqrstuv"
 
 PICO8 = [
     (0x00, 0x00, 0x00), (0x1D, 0x2B, 0x53), (0x7E, 0x25, 0x53), (0x00, 0x87, 0x51),
@@ -22,7 +23,19 @@ NES = [
     (0xF8, 0x78, 0xF8), (0xF8, 0xB8, 0xF8), (0xFC, 0xE4, 0xA0), (0xF8, 0xB8, 0x00),
 ]
 
-PRESETS = {"pico8": PICO8, "gameboy": GAMEBOY, "nes": NES}
+# DawnBringer 32：32 色通用像素画板，相邻色阶跨度比 pico8 小
+DB32 = [
+    (0x00, 0x00, 0x00), (0x22, 0x20, 0x34), (0x45, 0x28, 0x3C), (0x66, 0x39, 0x31),
+    (0x8F, 0x56, 0x3B), (0xDF, 0x71, 0x26), (0xD9, 0xA0, 0x66), (0xEE, 0xC3, 0x9A),
+    (0xFB, 0xF2, 0x36), (0x99, 0xE5, 0x50), (0x6A, 0xBE, 0x30), (0x37, 0x94, 0x6E),
+    (0x4B, 0x69, 0x2F), (0x52, 0x4B, 0x24), (0x32, 0x3C, 0x39), (0x3F, 0x3F, 0x74),
+    (0x30, 0x60, 0x82), (0x5B, 0x6E, 0xE1), (0x63, 0x9B, 0xFF), (0x5F, 0xCD, 0xE4),
+    (0xCB, 0xDB, 0xFC), (0xFF, 0xFF, 0xFF), (0x9B, 0xAD, 0xB7), (0x84, 0x7E, 0x87),
+    (0x69, 0x6A, 0x6A), (0x59, 0x56, 0x52), (0x76, 0x42, 0x8A), (0xAC, 0x32, 0x32),
+    (0xD9, 0x57, 0x63), (0xD7, 0x7B, 0xBA), (0x8F, 0x97, 0x4A), (0x8A, 0x6F, 0x30),
+]
+
+PRESETS = {"pico8": PICO8, "gameboy": GAMEBOY, "nes": NES, "db32": DB32}
 
 
 class PixelArtError(Exception):
@@ -36,7 +49,7 @@ class PixelArtError(Exception):
 
 
 class Canvas:
-    """一张画布的完整状态。index 为 uint8 矩阵，0-15 是色索引，255 透明。"""
+    """一张画布的完整状态。index 为 uint8 矩阵，0-31 是色索引，255 透明。"""
 
     def __init__(self, canvas_id: str, name: str, size: int, preset: str,
                  palette: list[tuple[int, int, int]], index: np.ndarray,
@@ -93,7 +106,7 @@ def nearest_index(rgb: tuple[int, int, int], palette: list[tuple[int, int, int]]
 
 
 def parse_color(value, palette: list[tuple[int, int, int]], field: str = "c") -> int:
-    """索引（0-15 的整数或单字符）或 #RRGGBB；板外颜色拒绝并给最近索引。"""
+    """索引（0-31 的整数或单字符）或 #RRGGBB；板外颜色拒绝并给最近索引。"""
     if isinstance(value, bool) or value is None:
         raise PixelArtError("bad_color", f"{field} 必须是色索引或 #RRGGBB")
     if isinstance(value, int):
@@ -101,7 +114,7 @@ def parse_color(value, palette: list[tuple[int, int, int]], field: str = "c") ->
     elif isinstance(value, str):
         text = value.strip()
         if not text:
-            raise PixelArtError("bad_color", f"{field} 为空", "用 0-9a-f 或 #RRGGBB")
+            raise PixelArtError("bad_color", f"{field} 为空", "用 0-9a-v 或 #RRGGBB")
         if text.startswith("#"):
             rgb = parse_hex(text)
             idx = nearest_index(rgb, palette)
@@ -113,13 +126,13 @@ def parse_color(value, palette: list[tuple[int, int, int]], field: str = "c") ->
             return idx
         if len(text) == 1:
             ch = text.lower()
-            if ch not in HEX_CHARS:
-                raise PixelArtError("bad_color", f"{field} 字符 {value!r} 非法", "只允许 0-9a-f")
-            idx = HEX_CHARS.index(ch)
+            if ch not in INDEX_CHARS:
+                raise PixelArtError("bad_color", f"{field} 字符 {value!r} 非法", "只允许 0-9a-v")
+            idx = INDEX_CHARS.index(ch)
         elif text.isdigit():
             idx = int(text)
         else:
-            raise PixelArtError("bad_color", f"{field} 值 {value!r} 无法解析", "用 0-9a-f 或 #RRGGBB")
+            raise PixelArtError("bad_color", f"{field} 值 {value!r} 无法解析", "用 0-9a-v 或 #RRGGBB")
     else:
         raise PixelArtError("bad_color", f"{field} 类型不支持: {type(value).__name__}")
 
@@ -172,8 +185,8 @@ def parse_rows(rows, width: int, height: int,
                 out[y, x] = base[y, x] if base is not None else TRANSPARENT
             elif ch == ".":
                 out[y, x] = TRANSPARENT
-            elif ch in HEX_CHARS:
-                idx = HEX_CHARS.index(ch)
+            elif ch in INDEX_CHARS:
+                idx = INDEX_CHARS.index(ch)
                 if idx >= palette_size:
                     raise PixelArtError("bad_rows", f"第 {y + 1} 行第 {x + 1} 列色索引越界",
                                         f"当前色板 {palette_size} 色，索引用 0-{palette_size - 1}")
@@ -181,7 +194,7 @@ def parse_rows(rows, width: int, height: int,
             else:
                 raise PixelArtError("bad_rows",
                                     f"第 {y + 1} 行第 {x + 1} 列字符 {raw!r} 非法",
-                                    "只允许 0-9a-f、. 与 ?")
+                                    "只允许 0-9a-v、. 与 ?")
     return out
 
 
@@ -197,14 +210,15 @@ def encode_rle(index: np.ndarray) -> str:
         if value == prev:
             count += 1
             continue
-        parts.append(f"{count}:{_char(prev)}")
+        parts.append(f"{count}:{char_of(prev)}")
         prev, count = value, 1
-    parts.append(f"{count}:{_char(prev)}")
+    parts.append(f"{count}:{char_of(prev)}")
     return "".join(parts)
 
 
-def _char(value: int) -> str:
-    return "." if value == TRANSPARENT else HEX_CHARS[value]
+def char_of(value: int) -> str:
+    """色索引转单字符；透明为 `.`。"""
+    return "." if value == TRANSPARENT else INDEX_CHARS[value]
 
 
 def decode_rle(text, size: int, palette_size: int = MAX_COLORS) -> np.ndarray:
@@ -234,13 +248,13 @@ def decode_rle(text, size: int, palette_size: int = MAX_COLORS) -> np.ndarray:
         j += 1
         if ch == ".":
             value = TRANSPARENT
-        elif ch in HEX_CHARS:
-            value = HEX_CHARS.index(ch)
+        elif ch in INDEX_CHARS:
+            value = INDEX_CHARS.index(ch)
             if value >= palette_size:
                 raise PixelArtError("bad_rle", f"字符 {ch!r} 超出当前色板（{palette_size} 色）",
                                     f"索引用 0-{palette_size - 1}")
         else:
-            raise PixelArtError("bad_rle", f"字符 {ch!r} 非法", "只允许 0-9a-f 与 .")
+            raise PixelArtError("bad_rle", f"字符 {ch!r} 非法", "只允许 0-9a-v 与 .")
         if pos + count > total:
             raise PixelArtError("bad_rle",
                                 f"格数超出：期望 {total}，实际至少 {pos + count}")
@@ -281,7 +295,7 @@ def render_text_matrix(index: np.ndarray, region=None) -> str:
 
     lines = []
     for row_idx in range(block.shape[0]):
-        chars = "".join(_char(int(v)) for v in block[row_idx])
+        chars = "".join(char_of(int(v)) for v in block[row_idx])
         lines.append(f"{y + row_idx:02d} {chars}")
     return "\n".join(lines)
 

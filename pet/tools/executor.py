@@ -1,5 +1,6 @@
 """工具执行器 — 解析 LLM 输出中的 Tool JSON，路由执行，返回结果。"""
 
+import json
 import logging
 import math
 import threading
@@ -107,6 +108,17 @@ def _coerce_arg(value: Any, type_name: str) -> tuple[Any, bool]:
             return ("true" if value else "false"), True
         if isinstance(value, (int, float)):
             return str(value), True
+    elif type_name in ("list", "dict") and isinstance(value, str):
+        # 模型常把数组/对象序列化成字符串：能解析成同类结构就放行
+        text = value.strip()
+        if text.startswith(("[", "{")):
+            try:
+                parsed = json.loads(text)
+            except (json.JSONDecodeError, ValueError):
+                return value, False
+            if (type_name == "list" and isinstance(parsed, list)) \
+                    or (type_name == "dict" and isinstance(parsed, dict)):
+                return parsed, True
     return value, False
 
 

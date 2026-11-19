@@ -11,8 +11,8 @@ import numpy as np
 from PIL import Image
 
 from pet.file_intake.paths import check_write_path, desktop_dir
-from pet.tools.pixel_art.canvas import (TRANSPARENT, PixelArtError, encode_rle,
-                                        hex_of, render_text_matrix)
+from pet.tools.pixel_art.canvas import (TRANSPARENT, PixelArtError, char_of,
+                                        encode_rle, hex_of, render_text_matrix)
 
 FORMATS = ("png", "svg", "json", "rle")
 _EXTENSIONS = {"png": ".png", "svg": ".svg", "json": ".json", "rle": ".txt"}
@@ -77,8 +77,7 @@ def to_svg(index: np.ndarray, palette, scale: int = None) -> str:
 def to_json(index: np.ndarray, palette, size: int, preset: str, revision: int) -> str:
     rows = []
     for y in range(size):
-        rows.append("".join("." if int(v) == TRANSPARENT else format(int(v), "x")
-                            for v in index[y]))
+        rows.append("".join(char_of(int(v)) for v in index[y]))
     payload = {
         "size": size,
         "preset": preset,

@@ -33,9 +33,6 @@ HISTORY_SUMMARY_PREFIX = "[历史摘要] "
 # assistant_turn 结构化 payload 的版本号
 ASSISTANT_TURN_VERSION = 1
 
-_MAX_DIGEST_KEYS = 3
-_MAX_DIGEST_CHARS = 40
-
 
 @dataclass(frozen=True)
 class Event:
@@ -60,31 +57,6 @@ def truncate_bytes(text: str, limit: int) -> str:
 def new_group_id() -> str:
     """工具轮次组标识。"""
     return uuid.uuid4().hex[:12]
-
-
-def args_digest(args: dict | None) -> str:
-    """参数要点：最多 3 个顶层标量，字符串截 40 字符，嵌套只写 {…}。
-
-    字符串与布尔值写成 JSON 字面量，`replay_args` 才能无歧义还原。
-    """
-    if not args:
-        return "-"
-    parts = []
-    for key, value in args.items():
-        if len(parts) >= _MAX_DIGEST_KEYS:
-            break
-        if isinstance(value, (dict, list)):
-            parts.append(f"{key}={{…}}")
-        elif isinstance(value, str):
-            text = value[:_MAX_DIGEST_CHARS]
-            if len(value) > _MAX_DIGEST_CHARS:
-                text += "…"
-            parts.append(f"{key}={json.dumps(text, ensure_ascii=False)}")
-        elif value is None:
-            parts.append(f"{key}=null")
-        elif isinstance(value, (bool, int, float)):
-            parts.append(f"{key}={json.dumps(value)}")
-    return ", ".join(parts) or "-"
 
 
 class EventStore:

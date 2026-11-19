@@ -10,7 +10,7 @@ import logging
 from typing import Optional, Protocol
 
 from pet.config import config
-from pet.brain.events import args_digest, new_group_id
+from pet.brain.events import new_group_id
 from pet.brain.output import BehaviorOutput
 from pet.brain.parsing import parse_behavior
 from pet.tools.executor import ToolCall, ToolExecutor
@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 # 这里只放引擎自己产生的错误码；工具私有的码由工具在返回里带 hint。
 _FAILURE_HINTS = {
     "bad_arguments": "检查参数名与类型后重试。",
+    "bad_param": "按方法描述里的字段名重试；数组参数直接给 JSON 数组，不要序列化成字符串。",
     "timeout": "稍后重试，或换用其他工具；有副作用的操作不要重复调用。",
     "handler_error": "稍后重试，或换用其他工具。",
     "unknown_tool": "检查工具名是否存在于工具列表，并使用完整函数名重新调用；动作名不能当作工具。",
@@ -263,12 +264,7 @@ def _record_tool_events(session, tool_calls_map: dict, sorted_indices: list,
             args = json.loads(tc["arguments"] or "{}")
         except json.JSONDecodeError:
             args = {}
-        args.pop("aside", None)
-        if tool_aside:
-            # aside 置首：摘要最多 3 个键，放后面会被工具参数挤掉
-            args = {"aside": str(tool_aside), **args}
-        calls.append({"id": tc["id"], "name": tc["name"],
-                      "args_digest": args_digest(args),
+        calls.append({"id": tc["id"], "name": tc["name"], "args": args,
                       "side_effect": TOOL_REGISTRY.is_side_effect(tc["name"])})
         brief = result.meta.get("record") or _tool_brief(result, result_text)
         results.append({"tool_call_id": tc["id"], "ok": bool(result.ok),

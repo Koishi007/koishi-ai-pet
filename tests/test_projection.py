@@ -5,7 +5,7 @@ import time
 
 import pytest
 
-from pet.brain.events import Event, args_digest
+from pet.brain.events import Event
 from pet.brain.projection import Budget, Profile, degrade_messages, project, replay_args
 
 T0 = time.time() - 600
@@ -24,11 +24,13 @@ def assistant(payload, seq):
     return ev(seq, "assistant_turn", {"v": 1, **payload})
 
 
-def tool_group(seq, name="bilibili__like", digest="bvid=BV1aPJR6oExx",
+def tool_group(seq, name="bilibili__like", args=None,
                brief="点赞成功", results=True):
     gid = f"g{seq}"
     events = [
-        ev(seq, "tool_call", {"name": name, "args_digest": digest, "side_effect": True},
+        ev(seq, "tool_call",
+           {"name": name, "args": json.dumps(args or {"bvid": "BV1aPJR6oExx"}),
+            "side_effect": True},
            group=gid, refs={"tool_call_id": f"c{seq}"}),
     ]
     if results:
@@ -114,13 +116,13 @@ class TestToolGroup:
         assert messages[-1]["role"] == "system"
 
     def test_native_empty_replay_keeps_aside_in_content(self):
-        messages = project(tool_group(1, digest='aside="我出石头"'),
+        messages = project(tool_group(1, args={"aside": "我出石头"}),
                            Profile(replay_args_mode="empty"), Budget(now=T0 + 1000))
         assert messages[0]["content"] == "Speech: 我出石头"
         assert messages[0]["tool_calls"][0]["function"]["arguments"] == "{}"
 
     def test_none_channel_keeps_aside_drops_tool_records(self):
-        messages = project(tool_group(1, digest='aside="我在看视频"'),
+        messages = project(tool_group(1, args={"aside": "我在看视频"}),
                            Profile(tool_channel="none"), Budget(now=T0 + 1000))
         assert len(messages) == 1
         assert messages[0]["content"] == "Speech: 我在看视频"
@@ -152,9 +154,9 @@ class TestToolGroup:
     def test_multiple_tools_keep_order_and_ids(self):
         gid = "g9"
         events = [
-            ev(10, "tool_call", {"name": "a__x", "args_digest": "k=1"}, group=gid,
+            ev(10, "tool_call", {"name": "a__x", "args": '{"k": 1}'}, group=gid,
                refs={"tool_call_id": "c10"}),
-            ev(11, "tool_call", {"name": "b__y", "args_digest": "k=2"}, group=gid,
+            ev(11, "tool_call", {"name": "b__y", "args": '{"k": 2}'}, group=gid,
                refs={"tool_call_id": "c11"}),
             ev(12, "tool_result", {"brief": "甲好了"}, group=gid, refs={"tool_call_id": "c10"}),
             ev(13, "tool_result", {"brief": "乙好了"}, group=gid, refs={"tool_call_id": "c11"}),
@@ -169,7 +171,8 @@ class TestToolGroup:
     def test_native_keeps_aside_in_arguments(self):
         events = [
             ev(6, "tool_call", {"name": "weather__get_current",
-                                "args_digest": 'aside="查一下天气", city=深圳'},
+                                "args": json.dumps({"aside": "查一下天气", "city": "深圳"},
+                                                   ensure_ascii=False)},
                group="g5", refs={"tool_call_id": "c6"}),
             ev(7, "tool_result", {"ok": True, "brief": "深圳晴"},
                group="g5", refs={"tool_call_id": "c6"}),
@@ -186,7 +189,9 @@ class TestToolGroup:
         for i in range(3):
             gid = f"g{seq}"
             events += [
-                ev(seq, "tool_call", {"name": "a__x", "args_digest": f'aside="第{i}句"'},
+                ev(seq, "tool_call",
+                   {"name": "a__x", "args": json.dumps({"aside": f"第{i}句"},
+                                                      ensure_ascii=False)},
                    group=gid, refs={"tool_call_id": f"c{seq}"}),
                 ev(seq + 1, "tool_result", {"brief": "好"}, group=gid,
                    refs={"tool_call_id": f"c{seq}"}),
@@ -250,58 +255,28 @@ class TestFailedTurn:
 
 
 class TestReplayArgs:
-    def test_rebuilds_top_level_scalars(self):
-        call = ev(1, "tool_call", {"name": "x", "args_digest": "bvid=BV1aP, count=3"})
-        assert replay_args(call) == '{"bvid": "BV1aP", "count": 3}'
-
-    def test_nested_fields_omitted(self):
-        call = ev(1, "tool_call", {"name": "x", "args_digest": "meta={…}, keyword=小狗"})
-        assert replay_args(call) == '{"keyword": "小狗"}'
-
-    def test_empty_mode(self):
-        call = ev(1, "tool_call", {"name": "x", "args_digest": "a=1"})
-        assert replay_args(call, mode="empty") == "{}"
-
-    def test_empty_digest(self):
-        assert replay_args(ev(1, "tool_call", {"name": "x", "args_digest": "-"})) == "{}"
-
-    def test_quoted_string_keeps_inner_comma(self):
-        call = ev(1, "tool_call",
-                  {"name": "x", "args_digest": 'keyword="猫, 狗", count=3'})
-        assert replay_args(call) == '{"keyword": "猫, 狗", "count": 3}'
-
-    def test_numeric_string_stays_string(self):
-        call = ev(1, "tool_call", {"name": "x", "args_digest": 'bvid="123"'})
-        assert replay_args(call) == '{"bvid": "123"}'
-
-    def test_roundtrip_from_digest(self):
-        args = {"keyword": "猫, 狗", "bvid": "123", "aside": "好"}
-        call = ev(1, "tool_call", {"name": "x", "args_digest": args_digest(args)})
+    def test_returns_stored_args(self):
+        ops = [{"op": "rect", "x": 1, "y": 2, "w": 3, "h": 4, "c": 5}]
+        args = {"canvas_id": "1", "ops": ops}
+        call = ev(1, "tool_call", {"name": "pixel_art__paint",
+                                   "args": json.dumps(args, ensure_ascii=False)})
         assert json.loads(replay_args(call)) == args
 
+    def test_missing_args_is_empty_object(self):
+        assert replay_args(ev(1, "tool_call", {"name": "x"})) == "{}"
 
-class TestArgsDigest:
-    def test_limits_keys_and_truncates(self):
-        digest = args_digest({"a": "x" * 60, "b": 1, "c": 2, "d": 3})
-        assert "a=" in digest and "x" * 60 not in digest
-        assert "d=" not in digest
+    def test_broken_args_is_empty_object(self):
+        call = ev(1, "tool_call", {"name": "x", "args": "{坏了"})
+        assert replay_args(call) == "{}"
 
-    def test_string_is_json_literal(self):
-        assert args_digest({"keyword": "小狗"}) == 'keyword="小狗"'
-
-    def test_bool_is_json_literal(self):
-        assert args_digest({"flag": True}) == "flag=true"
-
-    def test_nested_written_as_ellipsis(self):
-        assert args_digest({"meta": {"k": "v"}}) == "meta={…}"
-
-    def test_empty(self):
-        assert args_digest(None) == "-"
+    def test_empty_mode_ignores_stored_args(self):
+        call = ev(1, "tool_call", {"name": "x", "args": '{"a": 1}'})
+        assert replay_args(call, mode="empty") == "{}"
 
 
 class TestChannelText:
     def test_degraded_text_has_no_internal_names(self):
-        events = tool_group(1, digest="bvid=BV1aP", brief="点赞成功")
+        events = tool_group(1, brief="点赞成功")
         for channel in ("user-note", "system-note"):
             messages = project(events, Profile(tool_channel=channel), Budget(now=T0 + 1000))
             for msg in messages:

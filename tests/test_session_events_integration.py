@@ -1,5 +1,6 @@
 """事件日志接入上下文层：旧表零读写、工具组投影、会话切换。"""
 
+import json
 import sqlite3
 
 from pet.brain.base import BrainMixin
@@ -90,18 +91,48 @@ class TestProjectionEntry:
         brain = _brain(tmp_path)
         brain.record_tool_events(
             "g1",
-            [{"id": "c1", "name": "bilibili__like", "args_digest": "bvid=BV1"}],
+            [{"id": "c1", "name": "bilibili__like", "args": {"bvid": "BV1"}}],
             [{"tool_call_id": "c1", "ok": True, "brief": "点赞成功"}],
         )
         messages = brain.get_multi_turn_messages()
         assert messages[0]["tool_calls"][0]["function"]["name"] == "bilibili__like"
         assert messages[1]["role"] == "tool"
 
+    def test_full_args_survive_projection(self, tmp_path):
+        brain = _brain(tmp_path)
+        ops = [{"op": "rect", "x": 1, "y": 2, "w": 3, "h": 4, "c": 5}]
+        brain.record_tool_events(
+            "g1",
+            [{"id": "c1", "name": "pixel_art__paint",
+              "args": {"canvas_id": "1", "ops": ops}}],
+            [{"tool_call_id": "c1", "ok": True, "brief": "绘制完成"}],
+        )
+        messages = brain.get_multi_turn_messages()
+        arguments = json.loads(
+            messages[0]["tool_calls"][0]["function"]["arguments"])
+        assert arguments["ops"] == ops
+
+    def test_large_args_restored_from_artifact(self, tmp_path):
+        brain = _brain(tmp_path)
+        ops = [{"op": "point", "x": i % 16, "y": i % 16, "c": 3} for i in range(200)]
+        brain.record_tool_events(
+            "g1",
+            [{"id": "c1", "name": "pixel_art__paint",
+              "args": {"canvas_id": "1", "ops": ops}}],
+            [{"tool_call_id": "c1", "ok": True, "brief": "绘制完成"}],
+        )
+        call = [e for e in brain.dump_events() if e["type"] == "tool_call"][0]
+        assert "args_artifact" in call["refs"]
+        messages = brain.get_multi_turn_messages()
+        arguments = json.loads(
+            messages[0]["tool_calls"][0]["function"]["arguments"])
+        assert arguments["ops"] == ops
+
     def test_tool_group_records_only_call_and_result(self, tmp_path):
         brain = _brain(tmp_path)
         brain.record_tool_events(
             "g1",
-            [{"id": "c1", "name": "x__y", "args_digest": 'aside="好"'}],
+            [{"id": "c1", "name": "x__y", "args": {"aside": "好"}}],
             [{"tool_call_id": "c1", "ok": True, "brief": "完成"}],
         )
         types = [e["type"] for e in brain.dump_events()
@@ -238,7 +269,7 @@ class TestArtifactProducer:
         raw = "长" * 3000
         brain.record_tool_events(
             "g1",
-            [{"id": "c1", "name": "x__y", "args_digest": "-", "side_effect": True}],
+            [{"id": "c1", "name": "x__y", "side_effect": True}],
             [{"tool_call_id": "c1", "ok": True, "brief": "完成", "raw": raw}],
         )
         result = [e for e in brain.dump_events() if e["type"] == "tool_result"][0]
@@ -250,7 +281,7 @@ class TestArtifactProducer:
         brain = _brain(tmp_path)
         brain.record_tool_events(
             "g1",
-            [{"id": "c1", "name": "x__y", "args_digest": "-", "side_effect": True}],
+            [{"id": "c1", "name": "x__y", "side_effect": True}],
             [{"tool_call_id": "c1", "ok": True, "brief": "完成", "raw": "短"}],
         )
         result = [e for e in brain.dump_events() if e["type"] == "tool_result"][0]
@@ -260,7 +291,7 @@ class TestArtifactProducer:
         brain = _brain(tmp_path)
         brain.record_tool_events(
             "g1",
-            [{"id": "c1", "name": "reader__read", "args_digest": "-", "side_effect": False}],
+            [{"id": "c1", "name": "reader__read", "side_effect": False}],
             [{"tool_call_id": "c1", "ok": True, "brief": "读了"}],
         )
         call = [e for e in brain.dump_events() if e["type"] == "tool_call"][0]
@@ -272,7 +303,7 @@ class TestMaintenance:
         brain = _brain(tmp_path)
         brain.record_tool_events(
             "g-open",
-            [{"id": "c1", "name": "x__y", "args_digest": "-"}],
+            [{"id": "c1", "name": "x__y"}],
             [],
         )
         groups = brain._events.unclosed_groups()

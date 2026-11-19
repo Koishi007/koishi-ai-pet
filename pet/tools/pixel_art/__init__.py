@@ -10,7 +10,8 @@ from pet.tools.pixel_art.core import (create, delete, list_canvases, open_canvas
                                       paint, palette, postprocess, preview, refresh_view,
                                       rename, set_pixels)
 from pet.tools.pixel_art.core import export as export_canvas
-from pet.tools.pixel_art.ops import POSTPROCESS_OPS
+from pet.tools.pixel_art.ops import (ALL_OPS, DITHERS, POSTPROCESS_OPS, SHAPES,
+                                     TILES)
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,33 @@ TOOL_DESCRIPTION = (
     "16 档整图给 rows，32/64 档用 paint 的 ops。"
 )
 TOOL_GROUP = "creative"
+
+# paint 的 ops 元素结构：字段名平铺，具体取哪些由 op 决定（见方法描述与 OP_FIELDS）
+OPS_ITEM_SCHEMA = {
+    "type": "object",
+    "required": ["op"],
+    "properties": {
+        "op": {"type": "string", "enum": list(ALL_OPS)},
+        "x": {"type": "integer"}, "y": {"type": "integer"},
+        "w": {"type": "integer"}, "h": {"type": "integer"},
+        "x1": {"type": "integer"}, "y1": {"type": "integer"},
+        "x2": {"type": "integer"}, "y2": {"type": "integer"},
+        "c": {"description": "色索引字符 0-9a-v 或 #RRGGBB"},
+        "fill": {"type": "boolean"},
+        "points": {"type": "array", "items": {"type": "array", "items": {"type": "integer"}},
+                   "description": "[[x, y], …]"},
+        "region": {"type": "array", "items": {"type": "integer"},
+                   "description": "[x, y, w, h]"},
+        "from": {"description": "起始色：色索引或 #RRGGBB"},
+        "to": {"description": "结束色：色索引或 #RRGGBB"},
+        "dither": {"type": "string", "enum": list(DITHERS)},
+        "mask": {"type": "string", "enum": ["none", "circle"]},
+        "ratio": {"type": "number"}, "seed": {"type": "integer"},
+        "tile": {"type": "string", "enum": list(TILES)},
+        "shape": {"type": "string", "enum": list(SHAPES)},
+        "count": {"type": "integer"},
+    },
+}
 
 SIMPLE_OUTPUT = {
     "type": "object",
@@ -64,7 +92,7 @@ PREVIEW_OUTPUT = {
         "headline": {"type": "string", "x-role": "headline",
                      "description": "画布名、尺寸、revision 与填充度"},
         "body": {"type": "string", "x-role": "body",
-                 "description": "16 列字符矩阵，行首两位行号；0-9a-f 为色索引，. 为透明"},
+                 "description": "16 列字符矩阵，行首两位行号；0-9a-v 为色索引，. 为透明"},
         "images": IMAGES_SCHEMA,
         "hint": {"type": "string", "x-role": "hint", "description": "下一步提示"},
     },
@@ -118,10 +146,12 @@ def register(registry):
                      "desc": "画布名，1-24 字符，可用中文；允许重名，标识以 id 为准"},
             "size": {"type": "str", "required": True, "enum": ["16", "32", "64"],
                      "desc": "正方形边长，三档之一"},
-            "preset": {"type": "str", "enum": ["pico8", "gameboy", "nes"],
-                       "default": "pico8", "desc": "预设色板；与 palette 互斥"},
-            "palette": {"type": "list", "desc": "自定义色板，#RRGGBB 数组，最多 16 色"},
-            "background": {"type": "str", "desc": "底色：色索引字符 0-9a-f 或 #RRGGBB；省略为透明"},
+            "preset": {"type": "str", "enum": ["pico8", "gameboy", "nes", "db32"],
+                       "default": "pico8",
+                       "desc": "预设色板：pico8 16 色、gameboy 4 色、nes 16 色、db32 32 色；与 palette 互斥"},
+            "palette": {"type": "list", "desc": "自定义色板，#RRGGBB 数组，最多 32 色"},
+            "background": {"type": "str",
+                           "desc": "底色：色索引字符 0-9a-v 或 #RRGGBB；透明请省略该参数，`.` 只是矩阵里的透明符，不是合法底色"},
         },
         output=ToolOutputDefinition(schema=CREATE_OUTPUT),
     )
@@ -167,7 +197,7 @@ def register(registry):
     registry.add_method(
         TOOL_NAME, "set",
         "提交像素矩阵：16 档可整图给 rows；32/64 档必须带 region（面积不超过 1024）。"
-        "字符 0-9a-f 为色索引，. 透明，? 保留原值；也可用 rle 整图覆盖",
+        "字符 0-9a-v 为色索引（最多 32 色），. 透明，? 保留原值；也可用 rle 整图覆盖",
         handler=guarded(set_pixels), timeout=15.0,
         args={
             "canvas_id": {"type": "str", "desc": "画布 id；省略时作用于当前画布"},
@@ -183,15 +213,20 @@ def register(registry):
 
     registry.add_method(
         TOOL_NAME, "paint",
-        "批量图元与过程式算子。ops 每项是对象，op 取 point/line/rect/ellipse/polygon/"
-        "path/erase/clear 或 gradient/noise/pattern/mask/scatter。示例 "
+        "批量落笔：ops 是对象数组，字段按 op 取。图元 point(x,y,c)、"
+        "line(x1,y1,x2,y2,c)、rect/ellipse(x,y,w,h,c,fill)、polygon/path(points=[[x,y],…],c)、"
+        "erase(x,y,w,h)、clear。过程式 gradient(region,from,to,dither,mask)、"
+        "noise(region,c,ratio,seed)、pattern(region,tile,c)、mask(region,shape,c)、"
+        "scatter(region,c,count,seed)。ellipse 用 x/y/w/h，没有 cx/cy/rx/ry；"
+        "c 为色索引字符 0-9a-v 或 #RRGGBB，region 为 [x,y,w,h]。示例 "
         '[{"op":"rect","x":8,"y":4,"w":16,"h":12,"c":4},{"op":"line","x1":0,"y1":0,'
         '"x2":31,"y2":31,"c":1}]',
         handler=guarded(paint), timeout=15.0,
         args={
             "canvas_id": {"type": "str", "desc": "画布 id；省略时作用于当前画布"},
             "revision": {"type": "int", "desc": "乐观锁；省略则不校验"},
-            "ops": {"type": "list", "required": True, "desc": "算子数组，最多 200 条"},
+            "ops": {"type": "list", "required": True, "items": OPS_ITEM_SCHEMA,
+                    "desc": "算子数组，最多 200 条；每项是对象，按 op 取字段"},
             "mirror_x": {"type": "bool", "default": False,
                          "desc": "每个 op 再按中线镜像执行一次"},
         },
@@ -249,7 +284,7 @@ def register(registry):
             "revision": {"type": "int", "desc": "乐观锁；省略则不校验"},
             "action": {"type": "str", "enum": ["get", "set", "quantize"], "default": "get",
                        "desc": "get 查询、set 换色值、quantize 重映射"},
-            "colors": {"type": "list", "desc": "新色板，#RRGGBB 数组，最多 16 色"},
+            "colors": {"type": "list", "desc": "新色板，#RRGGBB 数组，最多 32 色"},
         },
         output=ToolOutputDefinition(schema=PALETTE_OUTPUT),
     )

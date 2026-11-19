@@ -18,6 +18,30 @@ TILES = ("brick", "checker", "dots", "stripes", "grid")
 SHAPES = ("circle", "ellipse", "rect")
 DITHERS = ("none", "bayer4")
 
+# 每个 op 的字段表：字段错误时原样回给模型，避免它靠试错猜字段名
+OP_FIELDS = {
+    "point": "x, y, c",
+    "line": "x1, y1, x2, y2, c",
+    "rect": "x, y, w, h, c, fill（默认 true）",
+    "ellipse": "x, y, w, h, c, fill（默认 false）",
+    "polygon": "points（[[x,y],…]）, c, fill（默认 true）",
+    "path": "points（[[x,y],…]）, c",
+    "erase": "x, y, w, h",
+    "clear": "无字段",
+    "gradient": "region, from, to, dither, mask",
+    "noise": "region, c, ratio, seed",
+    "pattern": "region, tile, c",
+    "mask": "region, shape, c",
+    "scatter": "region, c, count, seed",
+}
+
+
+def _fields_hint(op) -> str:
+    """该 op 的字段表；未知 op 返回空，交给 bad_op 的可用列表提示。"""
+    name = op.get("op") if isinstance(op, dict) else None
+    fields = OP_FIELDS.get(name)
+    return f"{name} 的字段：{fields}" if fields else ""
+
 BAYER4 = ((0, 8, 2, 10),
           (12, 4, 14, 6),
           (3, 11, 1, 9),
@@ -126,11 +150,12 @@ def apply_postprocess(index: np.ndarray, op: str, params: dict, palette) -> None
 def _int(op: dict, key: str, default=None) -> int:
     value = op.get(key, default) if isinstance(op, dict) else default
     if value is None:
-        raise PixelArtError("bad_param", f"缺少整数参数 {key}")
+        raise PixelArtError("bad_param", f"缺少整数参数 {key}", _fields_hint(op))
     try:
         return int(value)
     except (TypeError, ValueError):
-        raise PixelArtError("bad_param", f"{key} 需要整数，收到 {value!r}") from None
+        raise PixelArtError("bad_param", f"{key} 需要整数，收到 {value!r}",
+                            _fields_hint(op)) from None
 
 
 def _num(op: dict, key: str, default: float) -> float:
@@ -138,27 +163,30 @@ def _num(op: dict, key: str, default: float) -> float:
     try:
         return float(value)
     except (TypeError, ValueError):
-        raise PixelArtError("bad_param", f"{key} 需要数值，收到 {value!r}") from None
+        raise PixelArtError("bad_param", f"{key} 需要数值，收到 {value!r}",
+                            _fields_hint(op)) from None
 
 
 def _color(op: dict, palette) -> int:
     if "c" not in op:
-        raise PixelArtError("bad_param", f"{op.get('op')} 缺少颜色 c")
+        raise PixelArtError("bad_param", f"{op.get('op')} 缺少颜色 c", _fields_hint(op))
     return parse_color(op["c"], palette)
 
 
 def _points(op: dict) -> list[tuple[int, int]]:
     raw = op.get("points")
     if not isinstance(raw, (list, tuple)) or len(raw) < 2:
-        raise PixelArtError("bad_param", f"{op.get('op')} 需要至少两个点")
+        raise PixelArtError("bad_param", f"{op.get('op')} 需要至少两个点", _fields_hint(op))
     points = []
     for item in raw:
         if not isinstance(item, (list, tuple)) or len(item) != 2:
-            raise PixelArtError("bad_param", f"{op.get('op')} 的 points 项必须是 [x, y]")
+            raise PixelArtError("bad_param", f"{op.get('op')} 的 points 项必须是 [x, y]",
+                                _fields_hint(op))
         try:
             points.append((int(item[0]), int(item[1])))
         except (TypeError, ValueError) as e:
-            raise PixelArtError("bad_param", f"{op.get('op')} 的 points 含非整数") from e
+            raise PixelArtError("bad_param", f"{op.get('op')} 的 points 含非整数",
+                                _fields_hint(op)) from e
     return points
 
 

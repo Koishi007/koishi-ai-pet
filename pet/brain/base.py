@@ -1,3 +1,4 @@
+import json
 import logging
 import re
 import sqlite3
@@ -9,8 +10,8 @@ from typing import List, Optional
 
 from pet.config import config
 from pet.db import get_conn
-from pet.brain.events import (ASSISTANT_TEXT_LIMIT, ASSISTANT_TURN_VERSION,
-                              EventStore, truncate_bytes)
+from pet.brain.events import (ARTIFACT_INLINE_LIMIT, ASSISTANT_TEXT_LIMIT,
+                              ASSISTANT_TURN_VERSION, EventStore, truncate_bytes)
 from pet.brain.output import sanitize_assistant_fields
 from pet.brain.projection import Budget, project
 from pet.brain.tool_channel import current_profile
@@ -307,13 +308,12 @@ class BrainMixin:
             return
         for call in calls:
             call_id = call.get("id", "")
+            payload = {"name": call.get("name", ""),
+                       "side_effect": bool(call.get("side_effect", False))}
+            refs = {"tool_call_id": call_id}
+            self._store_call_args(call.get("args"), payload, refs)
             try:
-                self._events.append(
-                    "tool_call",
-                    {"name": call.get("name", ""),
-                     "args_digest": call.get("args_digest", "-"),
-                     "side_effect": bool(call.get("side_effect", False))},
-                    group_id=group_id, refs={"tool_call_id": call_id})
+                self._events.append("tool_call", payload, group_id=group_id, refs=refs)
             except Exception as e:
                 logger.warning(f"[BrainMixin] append tool_call failed: {e}")
         for result in results:
@@ -331,6 +331,38 @@ class BrainMixin:
                     group_id=group_id, refs={"tool_call_id": call_id})
             except Exception as e:
                 logger.warning(f"[BrainMixin] append tool_result failed: {e}")
+
+    def _hydrate_call_args(self, events: list) -> None:
+        """投影前把落在 artifacts 的完整参数读回 payload，回放才有内容。"""
+        if self._events is None:
+            return
+        for event in events:
+            if event.type != "tool_call" or "args" in event.payload:
+                continue
+            artifact_id = event.refs.get("args_artifact")
+            if not artifact_id:
+                continue
+            body = self._events.get_artifact(artifact_id)
+            if body:
+                event.payload["args"] = body
+
+    def _store_call_args(self, args, payload: dict, refs: dict) -> None:
+        """完整参数内联进事件；超过内联阈值时落 artifacts 并记 id。
+
+        摘要会丢掉嵌套结构（ops / rows / palette），回放只能靠这里。
+        """
+        if not args:
+            return
+        try:
+            text = json.dumps(args, ensure_ascii=False)
+        except (TypeError, ValueError):
+            return
+        if len(text) <= ARTIFACT_INLINE_LIMIT:
+            payload["args"] = text
+            return
+        artifact_id = self._store_artifact(text)
+        if artifact_id:
+            refs["args_artifact"] = artifact_id
 
     def _store_artifact(self, raw: str) -> Optional[str]:
         """原文超过内联阈值时落 artifacts，返回 id；否则不建。"""
@@ -387,7 +419,9 @@ class BrainMixin:
                 skip_last=skip_last,
             )
             profile = current_profile()
-            messages = project(self._events.load(), profile, budget, stats)
+            events = self._events.load()
+            self._hydrate_call_args(events)
+            messages = project(events, profile, budget, stats)
         except Exception as e:
             logger.warning(f"[BrainMixin] projection failed: {e}")
             return []

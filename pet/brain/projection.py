@@ -152,7 +152,7 @@ def _speech_lines(text: str) -> list[str]:
 
 
 def _call_aside(call: Event) -> str:
-    """从参数摘要取 aside；摘要缺失或损坏时返回空。"""
+    """从事件参数取 aside；参数缺失或损坏时返回空。"""
     try:
         value = json.loads(replay_args(call)).get("aside")
     except (json.JSONDecodeError, TypeError):
@@ -180,40 +180,18 @@ def uses_native_tools(messages: list) -> bool:
     return False
 
 
-# 摘要文本里值可能带引号与逗号，只在后接 `键=` 的逗号处切分
-_ARGS_SPLIT = re.compile(r", (?=[A-Za-z_][\w]*=)")
-
-
 def replay_args(call: Event, mode: str = "minimal") -> str:
-    """从 args_digest 重建参数 JSON；无法还原的部分省略。"""
+    """回放参数：取事件里的完整 args；缺失或损坏时回空对象。"""
     if mode == "empty":
         return "{}"
-    digest = (call.payload.get("args_digest") or "").strip()
-    if not digest or digest == "-":
-        return "{}"
-    args = {}
-    for chunk in _ARGS_SPLIT.split(digest):
-        if "=" not in chunk:
-            continue
-        key, _, raw = chunk.partition("=")
-        if not key:
-            continue
-        if raw == "{…}":
-            continue
-        if raw.startswith('"'):
-            try:
-                args[key] = json.loads(raw)
-            except (json.JSONDecodeError, ValueError):
-                args[key] = raw
-            continue
-        if raw.endswith("…"):
-            args[key] = raw[:-1]
-            continue
+    stored = call.payload.get("args")
+    if isinstance(stored, str) and stored.strip():
         try:
-            args[key] = json.loads(raw)
+            json.loads(stored)
         except (json.JSONDecodeError, ValueError):
-            args[key] = raw
-    return json.dumps(args, ensure_ascii=False) if args else "{}"
+            return "{}"
+        return stored
+    return "{}"
 
 
 def format_event_time(ts: float, now: float = 0.0) -> str:

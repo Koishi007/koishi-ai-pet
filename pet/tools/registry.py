@@ -947,6 +947,9 @@ class ToolRegistry:
                         prop["default"] = spec["default"]
                     if "enum" in spec:
                         prop["enum"] = spec["enum"]
+                    # items 原样透传：跨参数声明不通用，只给数组型参数补充元素结构
+                    if "items" in spec:
+                        prop["items"] = spec["items"]
                     properties[arg_name] = prop
                     if spec.get("required"):
                         required.append(arg_name)
