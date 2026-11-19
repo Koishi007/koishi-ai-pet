@@ -80,6 +80,7 @@ class PixelArtWindow(QWidget):
         self._user_closed = False
         self._canvas_id: str | None = None
         self._status_base = ""
+        self._status_budget = 0  # 状态行的常规文本宽度，提示文案按它省略
 
         self.setObjectName("pixelArtWindow")
         self.setWindowTitle("像素画")
@@ -138,7 +139,10 @@ class PixelArtWindow(QWidget):
         status_row = QHBoxLayout()
         status_row.setContentsMargins(0, 0, 0, 0)
         self._status = QLabel("等待画布")
-        self._status.setStyleSheet("color: #666; font-size: 12px;")
+        status_font = self._status.font()
+        status_font.setPixelSize(12)
+        self._status.setFont(status_font)
+        self._status.setStyleSheet("color: #666;")
         status_row.addWidget(self._status)
         status_row.addStretch()
         self._export_btn = QPushButton("导出 PNG")
@@ -192,7 +196,7 @@ class PixelArtWindow(QWidget):
         self._status_base = (
             f"{size}×{size} · {preset} · revision {revision} · 本次 {changed} 格")
         if not self._flash_timer.isActive():
-            self._status.setText(self._status_base)
+            self._set_status(self._status_base)
         self._show_if_needed(payload)
 
     def _set_title(self, name: str | None) -> None:
@@ -209,7 +213,7 @@ class PixelArtWindow(QWidget):
         self._set_title(None)
         self._status_base = "还没有画布"
         if not self._flash_timer.isActive():
-            self._status.setText(self._status_base)
+            self._set_status(self._status_base)
 
     def _show_if_needed(self, payload: dict) -> None:
         if payload.get("force_show"):
@@ -234,13 +238,24 @@ class PixelArtWindow(QWidget):
             return
         self._flash(f"已导出至 {result['data']['path']}")
 
-    def _flash(self, text: str) -> None:
+    def _set_status(self, text: str) -> None:
+        """常规状态：记下文本宽度，提示文案按它省略，不撑宽窗口。"""
         self._status.setText(text)
+        self._status_budget = self._status.sizeHint().width()
+
+    def _flash(self, text: str) -> None:
+        """短暂提示：超宽部分中间省略，完整内容放 tooltip。"""
+        budget = self._status_budget or self._status.sizeHint().width()
+        metrics = QFontMetrics(self._status.font())
+        self._status.setText(
+            metrics.elidedText(text, Qt.TextElideMode.ElideMiddle, budget))
+        self._status.setToolTip(text)
         self._flash_timer.start()
 
     def _restore_status(self) -> None:
+        self._status.setToolTip("")
         if self._status_base:
-            self._status.setText(self._status_base)
+            self._set_status(self._status_base)
 
     def _close_by_user(self) -> None:
         """用户主动关窗：之后普通刷新不再自动弹出，直到 create / open。"""

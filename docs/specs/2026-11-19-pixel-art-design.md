@@ -382,7 +382,7 @@ CREATE INDEX IF NOT EXISTS idx_pixel_canvases_updated
 | 状态行 | `32×32 · pico8 · revision 3 · 本次 186 格`，画布名只在标题出现 |
 | 交互 | 关闭与导出两个按钮；无取色、无绘制、无撤销 |
 | 导出按钮 | 用窗口持有的 `canvas_id` 与当前 `revision`，与模型调用共用同一套渲染函数；无画布时禁用 |
-| 导出反馈 | 成功后状态行显示文件路径并保持 3 秒，失败显示原因 |
+| 导出反馈 | 成功后状态行显示文件路径并保持 3 秒，失败显示原因；超宽按常规状态行宽度中间省略，完整内容进 tooltip，不撑宽窗口 |
 | 焦点 | `WA_ShowWithoutActivating`，显示与刷新都不抢键盘焦点 |
 
 刷新链路：

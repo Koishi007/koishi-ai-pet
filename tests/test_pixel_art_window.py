@@ -148,6 +148,26 @@ def test_export_button_uses_current_canvas(qt_app, monkeypatch, tmp_path):
         window.hide()
 
 
+def test_export_flash_does_not_widen(qt_app, monkeypatch, tmp_path):
+    from pet.ui import pixel_art_window as module
+
+    long_path = tmp_path / ("很长的目录名" * 8) / "a.png"
+    monkeypatch.setattr(
+        module.art_core, "export",
+        lambda canvas_id=None, format=None: {"data": {"path": str(long_path)}})
+    window = module.PixelArtWindow()
+    window.render({**PAYLOAD, "force_show": True})
+    window._apply()
+    before = window.width()
+    window._export_png()
+    try:
+        assert window.width() == before
+        assert window._status.toolTip() == f"已导出至 {long_path}"
+        assert window._status.text() != f"已导出至 {long_path}"
+    finally:
+        window.hide()
+
+
 def test_export_button_reports_failure(qt_app, monkeypatch):
     from pet.ui import pixel_art_window as module
     from pet.tools.pixel_art.canvas import PixelArtError
