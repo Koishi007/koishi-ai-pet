@@ -31,6 +31,10 @@ _FAILURE_HINTS = {
 }
 _DEFAULT_FAILURE_HINT = "根据错误信息调整后重试。"
 
+# 有跨调用会话依赖的工具前缀：同一轮内退化为串行，按模型给出的顺序执行
+_SERIAL_PREFIXES = ("game__", "pixel_art__")
+
+
 class ToolSession(Protocol):
     """工具轮次需要的会话能力：轮次策略、工具开关、分组激活与流式回传。
 
@@ -278,13 +282,13 @@ def _record_tool_events(session, tool_calls_map: dict, sorted_indices: list,
 def _execute_round(tool_calls_map: dict, sorted_indices: list, executor: ToolExecutor,
                    session: ToolSession) -> dict:
     """执行一轮工具调用：并行或串行，返回 {index: 结果元组}。"""
-    # 游戏工具（game__*）有跨调用会话依赖（如 start 必须先于 play），
-    # 同轮并行会打乱执行顺序导致未开始/错乱，退化为串行按声明顺序执行
-    has_game_tool = any(
-        tool_calls_map[idx]["name"].startswith("game__")
+    # 有跨调用会话依赖的工具同名一轮并行会打乱顺序：
+    # 游戏要 start 先于 play，像素画要 create/open 先于落笔
+    has_stateful_tool = any(
+        tool_calls_map[idx]["name"].startswith(_SERIAL_PREFIXES)
         for idx in sorted_indices
     )
-    use_parallel = config.LLM_TOOL_PARALLEL and len(sorted_indices) > 1 and not has_game_tool
+    use_parallel = config.LLM_TOOL_PARALLEL and len(sorted_indices) > 1 and not has_stateful_tool
 
     tool_results = {}
     if use_parallel:

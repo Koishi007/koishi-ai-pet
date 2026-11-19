@@ -331,6 +331,12 @@ def main():
             handler(game_name, payload)
     agent.game_board_requested.connect(_dispatch_game_board)
 
+    # 像素画窗口：只读展示，由 pixel_art 的写入跨线程推送画面
+    from pet.ui.pixel_art_window import PixelArtWindow
+    pixel_art_window = PixelArtWindow()
+    pixel_art_window.set_pet_window(window)
+    agent.canvas_view_requested.connect(pixel_art_window.render)
+
     agent.action_requested.connect(window.queue_enqueue_action)
     agent.action_batch_started.connect(window.on_action_batch_started)
     agent.emotion_requested.connect(

@@ -147,6 +147,11 @@ class ToolContext:
         if self._check_agent():
             self._agent.game_board_requested.emit(game_name, {"action": "close"})
 
+    def show_canvas(self, payload: dict):
+        """把画布画面推给只读窗口（Qt 队列连接，跨线程安全）。"""
+        if self._agent is not None:
+            self._agent.canvas_view_requested.emit(payload)
+
     def register_tick(self, name: str, callback: Callable[[], None]):
         if self._check_agent():
             self._agent.scheduler.register(name, callback)

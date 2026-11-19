@@ -64,6 +64,7 @@
 | `pet/db.py` | 数据库路径管理 — 集中管理 pet.db 路径与统一连接配置。 | `get_db_path()` `get_conn()` |
 | `pet/file_intake/__init__.py` | 拖入文件的纯逻辑：类型嗅探、解码链、截断与额度、图片闸门、拒绝名单、目录摘要。 |  |
 | `pet/file_intake/image.py` | 图片读取：先 draft 后判像素闸门，通过后再解码与缩放。 | `load_image()` `load_image_with_reason()` |
+| `pet/file_intake/paths.py` | 桌面与文档目录解析、写入路径白名单校验 | `special_folder()` `allowed_roots()` `desktop_dir()` `check_write_path()` |
 | `pet/file_intake/sniff.py` | 类型嗅探、解码链、拒绝名单与目录摘要。 | `read_head()` `decode_bytes()` `sniff()` `match_deny()` `dir_summary()` `make_ref()` |
 | `pet/file_intake/text.py` | 文本读取与截断。 | `truncate()` `load_text()` `load_text_full()` |
 | `pet/file_intake/types.py` | 拖入文件的数据结构。 | `FileRef` `DropVerdict` |
@@ -109,6 +110,12 @@
 | `pet/tools/knowledge/panel.py` | 知识库管理面板 — 添加、导入文件、搜索、删除。 | `KnowledgePanel` `show_panel()` |
 | `pet/tools/knowledge/storage.py` | 知识库存储层 — SQLite + sqlite-vec 向量检索。 | `KnowledgeStorage` |
 | `pet/tools/output.py` | 工具输出的声明与投影：schema 约束规范值，render 产出内部内容块，由编码层压平成 wire 格式。 | `TextBlock` `ImageBlock` `ToolOutputDefinition` `validate()` `render_turn()` `render_text()` |
+| `pet/tools/pixel_art/__init__.py` | pixel_art 工具 — 点阵绘画：有限色板、矩阵与算子落笔、落库与导出 | `guarded()` `register()` |
+| `pet/tools/pixel_art/canvas.py` | 像素画数据模型：色板、矩阵解析、RLE 编解码、文本预览。 | `PixelArtError` `Canvas` `new_index()` `rgb_of()` `hex_of()` `parse_hex()` |
+| `pet/tools/pixel_art/core.py` | 像素画工具核心：画布缓存、revision 校验与十一个方法的 handler。 | `_Store` `_Bootstrap` `reset_store()` `create()` `open_canvas()` `list_canvases()` |
+| `pet/tools/pixel_art/export.py` | 像素画导出：PNG / SVG / JSON / RLE 渲染与落点处理。 | `default_scale()` `to_png_bytes()` `to_svg()` `to_json()` `to_rle()` `resolve_path()` |
+| `pet/tools/pixel_art/ops.py` | 像素画算子：图元栅格化、过程式填充与后处理。 | `apply_op()` `mirror_op()` `apply_postprocess()` |
+| `pet/tools/pixel_art/storage.py` | 画布持久化：pixel_canvases 表的读写。 | `PixelArtStorage` |
 | `pet/tools/registry.py` | 工具注册表 — 自动发现、注册、描述可用工具，并聚合工具登记的终端命令。 | `ToolMethod` `ToolDef` `ToolCommand` `ToolRegistry` `food_tool_available()` |
 | `pet/tools/system_monitor/__init__.py` | （模块未提供 docstring） | `register()` |
 | `pet/tools/system_monitor/core.py` | （模块未提供 docstring） | `get_overview()` `get_top_processes()` `get_memory_detail()` `get_network()` |
@@ -147,6 +154,7 @@
 | `pet/ui/particle.py` | 桌宠粒子特效 | `Particle` `_SpiralGlyph` `ParticleWidget` |
 | `pet/ui/pet_animations.py` | 桌宠帧动画模块 —— 基于 JSON 配置的帧序列播放。 | `PetAnimator` |
 | `pet/ui/pet_window.py` | 扁平圆角菜单基类 — Windows 下自绘圆角背景，macOS 走原生。 | `_FlatMenuBase` `StickyMenu` `_SpriteLabel` `PetWindow` |
+| `pet/ui/pixel_art_window.py` | 像素画只读窗口 — 跟随每次落笔刷新，展示画布内容与 revision。 | `CanvasView` `PixelArtWindow` |
 | `pet/ui/rps_panel.py` | 猜拳面板 — 继承 GamePanelBase，负责出拳展示与点击提交。 | `RpsPanel` |
 | `pet/ui/settings_actions.py` | 设置页的后台动作：连通性测试、模型列表、记忆汇总与热键录制 | `apply_pet_scale()` `SettingsActions` |
 | `pet/ui/settings_fields.py` | 设置页的控件工厂、表单模型与跨模块共享的控件引用 | `MarkdownEdit` `SettingsWidgets` `SettingsForm` |
@@ -173,4 +181,4 @@
 | `pet/voice/voice_session.py` | 语音会话编排：麦克风采集 → 讯飞识别 | `VoiceSession` |
 | `pet/voice/xunfei_stt.py` | 讯飞语音听写 (iat) WebSocket API 封装 | `XunfeiSTT` |
 
-共 165 个模块。
+共 173 个模块。

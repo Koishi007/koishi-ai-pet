@@ -69,6 +69,7 @@ class PetAgent(QObject):
     llm_loading        = Signal(bool)  # True=开始等待, False=结束
     notify_requested   = Signal(str, str, int)  # title, message, duration_ms
     game_board_requested = Signal(str, object)  # (game_name, board_payload)
+    canvas_view_requested = Signal(object)  # 像素画窗口画面（dict，跨线程投递）
     tool_interact_requested = Signal(dict)  # 工具线程请求的即时交互（kwargs），转回主线程执行
     confirm_requested = Signal(object)  # 需要展示的确认请求（ConfirmRequest），同一时刻只有一条
     confirm_cleared   = Signal(object)  # 队列清空或请求被撤销，参数是卡片上那条（可能为 None）

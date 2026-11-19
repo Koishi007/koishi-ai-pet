@@ -7,6 +7,7 @@ import sys
 import pytest
 from PIL import Image
 
+from pet.file_intake import paths as intake_paths
 from pet.tools.browser.core import BrowserTool
 from pet.tools.file_ops import core as file_ops_core
 from pet.tools.file_ops.core import FileOpsTool
@@ -17,7 +18,7 @@ def sandbox(tmp_path, monkeypatch):
     """把允许目录指向临时沙箱，避免触碰真实桌面/文档。"""
     desktop = tmp_path / "Desktop"
     desktop.mkdir()
-    monkeypatch.setattr(file_ops_core, "_ALLOWED_ROOTS", [str(desktop)])
+    monkeypatch.setattr(intake_paths, "allowed_roots", lambda: [str(desktop)])
     monkeypatch.setattr(file_ops_core, "_get_special_folder", lambda _name: str(desktop))
     return desktop
 
