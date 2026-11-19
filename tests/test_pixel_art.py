@@ -45,19 +45,18 @@ def test_name_validation(art):
     with pytest.raises(PixelArtError):
         core.create("x" * 25, "16")
 
-    core.create("苹果", "16")
-    with pytest.raises(PixelArtError) as dup:
-        core.create("苹果", "16")
-    assert dup.value.code == "name_taken"
-    assert "1" in dup.value.hint
+    first = core.create("苹果", "16")
+    second = core.create("苹果", "16")
+    assert first["data"]["canvas_id"] != second["data"]["canvas_id"]
+    assert core.open_canvas(second["data"]["canvas_id"])["data"]["name"] == "苹果"
 
 
 def test_persist_roundtrip(art):
-    core.create("云", "16", background="a")
+    canvas_id = core.create("云", "16", background="a")["data"]["canvas_id"]
     core.paint(ops=[{"op": "point", "x": 1, "y": 1, "c": 3}])
     core.reset_store(str(art / "pixel_art.db"))
 
-    opened = core.open_canvas(name="云")
+    opened = core.open_canvas(canvas_id)
     assert opened["data"]["name"] == "云"
     assert opened["data"]["revision"] == 1
     assert opened["data"]["filled_cells"] == 256
@@ -87,32 +86,34 @@ def test_list_pagination(art):
     assert len(third["body"].splitlines()) == 2
 
 
-def test_rename_and_conflict(art):
-    core.create("旧名", "16")
+def test_rename_allows_duplicates(art):
+    canvas_id = core.create("旧名", "16")["data"]["canvas_id"]
     core.paint(ops=[{"op": "point", "x": 0, "y": 0, "c": 1}])
     renamed = core.rename(name="新名")
     assert "新名" in renamed["headline"]
 
-    with pytest.raises(PixelArtError) as exc:
-        core.open_canvas(name="旧名")
-    assert exc.value.code == "no_canvas"
+    second_id = core.create("占位", "16")["data"]["canvas_id"]
+    core.rename(canvas_id=second_id, name="新名")
+    assert core.list_canvases()["body"].count("新名") == 2
+    assert core.open_canvas(canvas_id)["data"]["revision"] == 1
+    assert core.open_canvas(second_id)["data"]["revision"] == 0
 
-    core.create("占位", "16")
-    core.open_canvas(name="新名")
-    with pytest.raises(PixelArtError) as dup:
-        core.rename(name="占位")
-    assert dup.value.code == "name_taken"
-    assert core.open_canvas(name="新名")["data"]["revision"] == 1
+
+def test_open_requires_canvas_id(art):
+    core.create("画", "16")
+    with pytest.raises(PixelArtError) as exc:
+        core.open_canvas()
+    assert exc.value.code == "bad_param"
 
 
 def test_delete(art):
-    core.create("临时", "16")
+    canvas_id = core.create("临时", "16")["data"]["canvas_id"]
     result = core.delete()
     assert result["data"]["deleted"] is True
     assert "共 0 张" in core.list_canvases()["headline"]
 
     with pytest.raises(PixelArtError) as exc:
-        core.open_canvas(name="临时")
+        core.open_canvas(canvas_id)
     assert exc.value.code == "no_canvas"
 
 
@@ -145,7 +146,7 @@ def test_bad_rows_reports_position(art):
     assert exc.value.code == "bad_rows"
     assert "第 5 行" in exc.value.message
     assert "15" in exc.value.message
-    assert core.open_canvas(name="图")["data"]["revision"] == 0
+    assert core.open_canvas(core._store().current_id)["data"]["revision"] == 0
 
 
 def test_set_region_required_for_32(art):

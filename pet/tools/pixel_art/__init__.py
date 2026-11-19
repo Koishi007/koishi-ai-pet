@@ -17,8 +17,9 @@ logger = logging.getLogger(__name__)
 TOOL_NAME = "pixel_art"
 TOOL_DESCRIPTION = (
     "像素画/点阵画：新建、打开、列举、改名、删除画布；用像素矩阵或图元算子绘制，"
-    "可后处理、预览、导出 PNG/SVG/JSON。画布按名字存库，重启后仍可继续编辑。"
-    "已有画布用 list 查看、open 继续；16 档整图给 rows，32/64 档用 paint 的 ops。"
+    "可后处理、预览、导出 PNG/SVG/JSON。画布按 id 存库，重启后仍可继续编辑。"
+    "已有画布用 list 查看、open 按 id 继续；名字只作标识、允许重名。"
+    "16 档整图给 rows，32/64 档用 paint 的 ops。"
 )
 TOOL_GROUP = "creative"
 
@@ -114,7 +115,7 @@ def register(registry):
         handler=guarded(create), timeout=15.0,
         args={
             "name": {"type": "str", "required": True,
-                     "desc": "画布名，1-24 字符，全库唯一，可用中文"},
+                     "desc": "画布名，1-24 字符，可用中文；允许重名，标识以 id 为准"},
             "size": {"type": "str", "required": True, "enum": ["16", "32", "64"],
                      "desc": "正方形边长，三档之一"},
             "preset": {"type": "str", "enum": ["pico8", "gameboy", "nes"],
@@ -126,11 +127,10 @@ def register(registry):
     )
 
     registry.add_method(
-        TOOL_NAME, "open", "把库内已有画布载入内存并设为当前，窗口切换显示",
+        TOOL_NAME, "open", "按 id 把库内已有画布载入内存并设为当前，窗口切换显示",
         handler=guarded(open_canvas), timeout=15.0,
         args={
-            "canvas_id": {"type": "str", "desc": "画布 id；与 name 二选一"},
-            "name": {"type": "str", "desc": "画布名；与 canvas_id 二选一"},
+            "canvas_id": {"type": "str", "required": True, "desc": "画布 id，用 list 查"},
         },
         output=ToolOutputDefinition(schema=SIMPLE_OUTPUT),
     )

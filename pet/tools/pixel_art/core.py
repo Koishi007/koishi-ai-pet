@@ -236,17 +236,12 @@ def create(name, size, preset=None, palette=None, background=None):
     }
 
 
-def open_canvas(canvas_id=None, name=None):
-    if canvas_id and name:
-        raise PixelArtError("bad_param", "canvas_id 与 name 只能给一个")
-    if not canvas_id and not name:
-        raise PixelArtError("bad_param", "需要 canvas_id 或 name", _recent_hint(_store()))
+def open_canvas(canvas_id=None):
+    if not canvas_id:
+        raise PixelArtError("bad_param", "需要 canvas_id", _recent_hint(_store()))
     store = _store()
     with store.lock:
-        if canvas_id:
-            canvas = store.storage.get(str(canvas_id).strip())
-        else:
-            canvas = store.storage.get_by_name(str(name).strip())
+        canvas = store.storage.get(str(canvas_id).strip())
         if canvas is None:
             raise PixelArtError("no_canvas", "找不到目标画布", _recent_hint(store))
         store.current_id = canvas.id

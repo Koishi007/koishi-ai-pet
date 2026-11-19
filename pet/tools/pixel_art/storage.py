@@ -11,13 +11,13 @@ import numpy as np
 
 from pet.db import get_conn
 from pet.tools.context import TOOL_CTX
-from pet.tools.pixel_art.canvas import (Canvas, PixelArtError, decode_rle,
-                                        encode_rle, hex_of, parse_hex)
+from pet.tools.pixel_art.canvas import (Canvas, decode_rle, encode_rle,
+                                        hex_of, parse_hex)
 
 _TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS pixel_canvases (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    name       TEXT    NOT NULL UNIQUE,
+    name       TEXT    NOT NULL,
     size       INTEGER NOT NULL,
     preset     TEXT    NOT NULL,
     palette    TEXT    NOT NULL,
@@ -53,18 +53,12 @@ class PixelArtStorage:
         palette_json = json.dumps([hex_of(rgb) for rgb in palette])
         pixels = encode_rle(index)
         with self._lock:
-            try:
-                cur = self._conn.execute(
-                    "INSERT INTO pixel_canvases "
-                    "(name, size, preset, palette, pixels, revision, created_at, updated_at) "
-                    "VALUES (?,?,?,?,?,0,?,?)",
-                    (name, size, preset, palette_json, pixels, now, now))
-                self._conn.commit()
-            except sqlite3.IntegrityError as e:
-                row = self._conn.execute(
-                    "SELECT id FROM pixel_canvases WHERE name=?", (name,)).fetchone()
-                hint = f"直接编辑画布 {row['id']}" if row else "换一个名字"
-                raise PixelArtError("name_taken", f"画布名「{name}」已存在", hint) from e
+            cur = self._conn.execute(
+                "INSERT INTO pixel_canvases "
+                "(name, size, preset, palette, pixels, revision, created_at, updated_at) "
+                "VALUES (?,?,?,?,?,0,?,?)",
+                (name, size, preset, palette_json, pixels, now, now))
+            self._conn.commit()
             canvas_id = str(cur.lastrowid)
         return Canvas(canvas_id, name, size, preset, list(palette), index, 0)
 
@@ -81,26 +75,14 @@ class PixelArtStorage:
 
     def rename(self, canvas_id: str, name: str) -> None:
         with self._lock:
-            try:
-                self._conn.execute(
-                    "UPDATE pixel_canvases SET name=? WHERE id=?", (name, canvas_id))
-                self._conn.commit()
-            except sqlite3.IntegrityError as e:
-                row = self._conn.execute(
-                    "SELECT id FROM pixel_canvases WHERE name=?", (name,)).fetchone()
-                hint = f"直接编辑画布 {row['id']}" if row else "换一个名字"
-                raise PixelArtError("name_taken", f"画布名「{name}」已存在", hint) from e
+            self._conn.execute(
+                "UPDATE pixel_canvases SET name=? WHERE id=?", (name, canvas_id))
+            self._conn.commit()
 
     def get(self, canvas_id: str) -> Canvas | None:
         with self._lock:
             row = self._conn.execute(
                 "SELECT * FROM pixel_canvases WHERE id=?", (canvas_id,)).fetchone()
-        return self._to_canvas(row) if row else None
-
-    def get_by_name(self, name: str) -> Canvas | None:
-        with self._lock:
-            row = self._conn.execute(
-                "SELECT * FROM pixel_canvases WHERE name=?", (name,)).fetchone()
         return self._to_canvas(row) if row else None
 
     def latest(self) -> Canvas | None:

@@ -206,12 +206,12 @@
 
 - 目录：`pet/tools/pixel_art/`
 - 分组：`creative`
-- 说明：像素画/点阵画：新建、打开、列举、改名、删除画布；用像素矩阵或图元算子绘制，可后处理、预览、导出 PNG/SVG/JSON。画布按名字存库，重启后仍可继续编辑。已有画布用 list 查看、open 继续；16 档整图给 rows，32/64 档用 paint 的 ops。
+- 说明：像素画/点阵画：新建、打开、列举、改名、删除画布；用像素矩阵或图元算子绘制，可后处理、预览、导出 PNG/SVG/JSON。画布按 id 存库，重启后仍可继续编辑。已有画布用 list 查看、open 按 id 继续；名字只作标识、允许重名。16 档整图给 rows，32/64 档用 paint 的 ops。
 
 | 方法 | 参数 | 说明 |
 |---|---|---|
-| `create` | `name`（str, 必需） 画布名，1-24 字符，全库唯一，可用中文<br>`size`（str, 必需, 可选：16/32/64） 正方形边长，三档之一<br>`preset`（str, 默认 "pico8", 可选：pico8/gameboy/nes） 预设色板；与 palette 互斥<br>`palette`（list） 自定义色板，#RRGGBB 数组，最多 16 色<br>`background`（str） 底色：色索引字符 0-9a-f 或 #RRGGBB；省略为透明 | 新建画布：命名、定尺寸与色板，立即落库并显示窗口 |
-| `open` | `canvas_id`（str） 画布 id；与 name 二选一<br>`name`（str） 画布名；与 canvas_id 二选一 | 把库内已有画布载入内存并设为当前，窗口切换显示 |
+| `create` | `name`（str, 必需） 画布名，1-24 字符，可用中文；允许重名，标识以 id 为准<br>`size`（str, 必需, 可选：16/32/64） 正方形边长，三档之一<br>`preset`（str, 默认 "pico8", 可选：pico8/gameboy/nes） 预设色板；与 palette 互斥<br>`palette`（list） 自定义色板，#RRGGBB 数组，最多 16 色<br>`background`（str） 底色：色索引字符 0-9a-f 或 #RRGGBB；省略为透明 | 新建画布：命名、定尺寸与色板，立即落库并显示窗口 |
+| `open` | `canvas_id`（str, 必需） 画布 id，用 list 查 | 按 id 把库内已有画布载入内存并设为当前，窗口切换显示 |
 | `list` | `page`（int, 默认 1） 页码，从 1 起<br>`page_size`（int, 默认 20） 每页条数，1-50 | 分页列举已有画布：id、名字、尺寸、revision、更新时间 |
 | `rename` | `canvas_id`（str） 画布 id；省略时作用于当前画布<br>`name`（str, 必需） 新名字，1-24 字符 | 修改画布名 |
 | `delete` | `canvas_id`（str） 画布 id；省略时作用于当前画布 | 删除画布，同时清除内存缓存 |

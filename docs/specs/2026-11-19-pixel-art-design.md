@@ -65,8 +65,8 @@
 
 | 方法 | 职责 | 关键参数 | `data` 返回 |
 |---|---|---|---|
-| `pixel_art__create` | 新建画布，名字唯一，写入库 | `name`, `size`, `preset`, `palette`, `background` | `canvas_id`, `name`, `revision`, `palette_size` |
-| `pixel_art__open` | 把库内已有画布载入内存并设为当前 | `canvas_id` 或 `name` | `canvas_id`, `name`, `size`, `revision`, `filled_cells` |
+| `pixel_art__create` | 新建画布，写入库；名字可重复 | `name`, `size`, `preset`, `palette`, `background` | `canvas_id`, `name`, `revision`, `palette_size` |
+| `pixel_art__open` | 按 id 把库内已有画布载入内存并设为当前 | `canvas_id` | `canvas_id`, `name`, `size`, `revision`, `filled_cells` |
 | `pixel_art__list` | 分页列出现有画布 | `page`, `page_size` | 无（内容在 `body`，分页在 `pagination`） |
 | `pixel_art__rename` | 修改画布名 | `canvas_id`, `name` | `canvas_id`, `name` |
 | `pixel_art__delete` | 删除画布 | `canvas_id` | `deleted` |
@@ -85,10 +85,10 @@
 
 | 参数 | 声明 | 说明 |
 |---|---|---|
-| `name` | `str` | 画布名，去首尾空白后 1-24 字符，允许中文；`create` 与 `rename` 必填，`open` 可选；重名报 `name_taken` 并给出现有 id |
+| `name` | `str` | 画布名，去首尾空白后 1-24 字符，允许中文；`create` 与 `rename` 必填；允许重名，只作标识，定位一律用 id |
 | `size` | `str`, enum `["16","32","64"]`, required | 与枚举字面量对齐；执行器会把 `32` 强转为 `"32"`，但 `"32 "` 不 strip、`32.0` 变成 `"32.0"`，这类输入报错并回列合法值 |
 | `canvas_id` | `str`, default none | 省略时作用于 `current_id`；未知 id 报 `no_canvas` 并列出最近 5 张的 id 与名字 |
-| `open` 的目标 | `canvas_id` 或 `name` 二选一 | 只给其中一个；同时给报 `bad_param`，都没给报 `bad_param` 并列出最近 5 张 |
+| `open` 的目标 | `canvas_id`, required | 不支持按名字打开：名字可重复，无法唯一定位；缺省报 `bad_param` 并列出最近 5 张 |
 | `page` | `int`, default 1 | `list` 页码，从 1 起，超出末页时钳到末页 |
 | `page_size` | `int`, default 20 | `list` 每页条数，范围 1-50 |
 | `revision` | `int`, default none | 省略表示不做乐观锁；传入且不等于当前值时拒绝写入 |
@@ -121,7 +121,7 @@
 |---|---|
 | 建画布 | `新建画布「苹果」16×16，id 3，pico8 16 色，全透明` |
 | 打开 | `已打开画布 3「苹果」32×32，revision 12，画面 412/1024` |
-| 重名 | `「苹果」已是画布 3，换名字或直接编辑它` |
+| 名字重复 | 「苹果」可以存在多张，彼此以 id 区分，不报错 |
 | 落笔成功 | `「苹果」已绘制，revision 3，本次 186 格，画面 412/1024` |
 | 落笔无变化 | `「苹果」无像素变化，revision 仍为 3，画面 412/1024` |
 | 改名 | `画布 3 已改名为「小苹果」` |
@@ -176,7 +176,7 @@
 ```sql
 CREATE TABLE IF NOT EXISTS pixel_canvases (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    name       TEXT    NOT NULL UNIQUE,
+    name       TEXT    NOT NULL,
     size       INTEGER NOT NULL,
     preset     TEXT    NOT NULL,
     palette    TEXT    NOT NULL,
@@ -194,7 +194,7 @@ CREATE INDEX IF NOT EXISTS idx_pixel_canvases_updated
 | 像素存储 | `pixels` 存 §6.3 的 RLE 文本 | 一图一行；4096 格拆行会让一次落笔写 4096 条记录。RLE 在 64 档通常几百字节到 2KB，且与导出格式共用编解码器，往返已有测试 |
 | 不存 PNG | 存源数据 | PNG 无法增量编辑，读回还要重新解析；画面随时可由 `index` 重算 |
 | 色板 | JSON 数组，如 `["#000000","#1D2B53"]` | 标准库 `json`，不引入依赖；数组下标即色索引 |
-| 名字唯一 | `UNIQUE` 约束，捕获 `IntegrityError` 转 `name_taken` | 先查后插在并发下会漏，约束由库保证 |
+| 名字可重复 | 不加 `UNIQUE`，只有 `id` 唯一；`open` 不接受名字 | 按名字定位在多张同名画布下有歧义，标识统一用 id |
 | `revision` 入库 | 与像素同一条 UPDATE | 重启后乐观锁仍然有效 |
 | 时间 | `datetime.now().isoformat()` | 与 `timer_entries`、`todos` 的写法一致 |
 
@@ -457,7 +457,7 @@ handler 写入成功
 |---|---|---|
 | `pet/tools/pixel_art/__init__.py` | 新增 | `TOOL_NAME`、`TOOL_DESCRIPTION`（含分档落笔建议）、`TOOL_GROUP="creative"`、十一组输出 schema 常量（`list` 复用 `PAGINATION_SCHEMA`）、`register(side_effect=True)`、每个方法显式 `timeout=15.0`、右键菜单项 |
 | `pet/tools/pixel_art/core.py` | 新增 | 单例缓存（懒创建 + 锁）、`current_id`、LRU 淘汰、十一个方法的 handler、revision 校验、输出组装 |
-| `pet/tools/pixel_art/storage.py` | 新增 | `pixel_canvases` 建表、单行读写、RLE 编解码落库、名字唯一约束、`list` / `delete` |
+| `pet/tools/pixel_art/storage.py` | 新增 | `pixel_canvases` 建表、单行读写、RLE 编解码落库、`list` / `delete` |
 | `pet/tools/pixel_art/canvas.py` | 新增 | `Canvas` 数据模型、色板常量与最近色查找、`rows` / `rle` 解析、`bbox` 计算、文本矩阵渲染 |
 | `pet/tools/pixel_art/ops.py` | 新增 | 图元栅格化、过程式算子、后处理算子 |
 | `pet/tools/pixel_art/export.py` | 新增 | PNG / SVG / JSON / RLE 编码、落点处理、窗口用的 PNG 编码 |
@@ -483,15 +483,14 @@ handler 写入成功
 | 用例 | 断言 |
 |---|---|
 | 建画布 | 尺寸、色板长度、初始 `revision=0`、背景为透明 |
-| 命名 | 空白名与超过 24 字符被拒绝；重名报 `name_taken` 且不产生新行；中文名可存取 |
+| 命名 | 空白名与超过 24 字符被拒绝；同名可建多张且 id 不同；中文名可存取 |
 | 持久化往返 | 写入后清空缓存、新建 storage 实例，按 `canvas_id` 读回的 `index`、`palette`、`preset`、`name`、`revision` 与写入前一致 |
 | 重启恢复 | 关闭连接后重开，省略 `canvas_id` 时命中 `updated_at` 最新的一张 |
 | 写库失败 | 注入异常或只读连接，返回 `persist_failed` 且内存里的 `revision` 未变 |
 | 列举与删除 | `list` 按 `updated_at` 降序、不含像素列；`page_size=5` 时 12 张画布的第二页返回 5 条且 `has_next` 为真；`delete` 后 `list` 少一行，缓存不再命中 |
-| 改名 | `rename` 后按新名字 `open` 命中、按旧名字报 `no_canvas`；`revision` 与 `updated_at` 不变 |
-| 改名冲突 | 改成已有名字报 `name_taken`，原名字保持不变 |
-| 打开 | 清空缓存后 `open` 按 id 与按名字各成功一次，`current_id` 随之改变，后续省略 id 的写入作用于它；`revision` 与 `updated_at` 不变 |
-| 打开失败 | 未知 id 或名字报 `no_canvas` 并列出最近 5 张；`canvas_id` 与 `name` 同时给出报 `bad_param` |
+| 改名 | `rename` 后 `headline` 更新为新名字；改成与其它画布同名成功，各自 id 不变；`revision` 与 `updated_at` 不变 |
+| 打开 | 清空缓存后 `open` 按 id 成功，`current_id` 随之改变，后续省略 id 的写入作用于它；`revision` 与 `updated_at` 不变 |
+| 打开失败 | 未知 id 报 `no_canvas` 并列出最近 5 张；省略 `canvas_id` 报 `bad_param` |
 | `set` 整图 | 16 行合法输入后 `changed_cells` 等于非透明格数，`bbox` 覆盖绘制范围 |
 | `set` 局部与 `?` | 未改格子保持原值，`changed_cells` 只计实际变化 |
 | 行列错误 | 返回 `bad_rows`，`headline` 含正确行号与期望长度，且画布未被修改 |
@@ -542,7 +541,7 @@ handler 写入成功
 | 按钮绕过 executor | 无参数校验与超时兜底 | 参数在按钮内固定、不接受模型输入；异常捕获后写状态行，导出为毫秒级本地操作 |
 | 库内增长 | 画布只增不删 | 单张最多约 2KB；`list` 给模型可见性，`delete` 提供回收手段；不做自动清理，避免误删用户作品 |
 | 落库失败 | 内存与库不一致 | 先落库后换缓存，失败返回 `persist_failed` 且内存保持旧值 |
-| 重名 | 模型用同名 `create` 覆盖既有作品 | `name` 唯一约束拒绝，`headline` 给出现有 id 与「直接编辑」的提示 |
+| 重名 | 模型用同名新建，之后按名字指代会混 | 不加唯一约束，`create` 返回 `canvas_id`，工具描述要求后续调用一律带 id |
 
 ## §14 阶段
 
