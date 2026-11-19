@@ -248,6 +248,8 @@ class PixelArtWindow(QWidget):
         self.hide()
 
     def _place_near_pet(self) -> None:
+        # 首次显示前布局还没生效，先用 sizeHint 定尺寸，否则按 640×480 判断会误判放不下
+        self.adjustSize()
         pet = self._pet_window
         if pet is not None and pet.isVisible():
             geo = pet.geometry()

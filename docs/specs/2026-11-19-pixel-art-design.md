@@ -369,7 +369,7 @@ CREATE INDEX IF NOT EXISTS idx_pixel_canvases_updated
 
 目的是让落笔过程可见：线条与色块逐步出现，而不是只在最后看到一张成品文件。窗口不参与绘制，只提供关闭与导出两个动作。
 
-形态参照 `pet/ui/game_panel.py` 的 `GamePanelBase`：无边框、`WindowStaysOnTopHint` 加 `Qt.Tool`、半透明背景与圆角卡片、标题栏带关闭按钮、首次显示定位在桌宠右侧（屏幕放不下时放左侧）、按住可拖动。窗口单独实现为 `pet/ui/pixel_art_window.py`，不继承 `GamePanelBase`，后者带游戏倒计时与弃权语义。
+形态参照 `pet/ui/game_panel.py` 的 `GamePanelBase`：无边框、`WindowStaysOnTopHint` 加 `Qt.Tool`、半透明背景与圆角卡片、标题栏带关闭按钮、首次显示定位在桌宠右侧（屏幕放不下时放左侧）、按住可拖动。定位前先 `adjustSize()`：窗口未显示时布局未生效，直接用 `width()` / `height()` 会按 640×480 判断边界。窗口单独实现为 `pet/ui/pixel_art_window.py`，不继承 `GamePanelBase`，后者带游戏倒计时与弃权语义。
 
 导出按钮取当前显示的那张画布，直接调用 `export.py` 的纯函数：`format="png"`、`scale=256 // size`、`transparent=True`、`grid_overlay=False`、`path` 省略（落桌面）。这条链路不经模型，也不经 `ToolExecutor`：`executor` 服务于模型调用的参数校验、超时与输出投影，而按钮是本地操作，参数固定、没有模型参数可校验。导出在毫秒级完成，直接在 UI 线程执行；异常被捕获后写状态行，不抛到事件循环。
 

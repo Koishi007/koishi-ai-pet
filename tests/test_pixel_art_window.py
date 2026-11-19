@@ -73,6 +73,43 @@ def test_status_shows_preset(qt_app):
         window.hide()
 
 
+class _FakePet:
+    """定位用的桌宠替身：只提供位置与屏幕。"""
+
+    def __init__(self, rect, screen):
+        self._rect = rect
+        self._screen = screen
+
+    def isVisible(self):
+        return True
+
+    def geometry(self):
+        return self._rect
+
+    def screen(self):
+        return self._screen
+
+
+def test_place_near_pet_uses_actual_size(qt_app):
+    """首次显示前按 sizeHint 定位，不能拿 640×480 的默认尺寸做边界判断。"""
+    from PySide6.QtCore import QRect
+
+    from pet.ui.pixel_art_window import PixelArtWindow
+
+    screen = qt_app.primaryScreen()
+    avail = screen.availableGeometry()
+    pet_rect = QRect(avail.left() + 10, avail.top() + 10, 120, 120)
+    window = PixelArtWindow()
+    window.set_pet_window(_FakePet(pet_rect, screen))
+    window._place_near_pet()
+    try:
+        assert window.pos().x() == pet_rect.right() + 10
+        assert window.pos().y() == pet_rect.top()
+        assert window.width() < 640
+    finally:
+        window.hide()
+
+
 def test_empty_payload_shows_placeholder(qt_app):
     from pet.ui.pixel_art_window import PixelArtWindow
 
