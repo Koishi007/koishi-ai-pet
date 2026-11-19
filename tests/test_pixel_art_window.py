@@ -34,7 +34,7 @@ def test_render_updates_status(qt_app):
     window.render({**PAYLOAD, "force_show": True})
     window._apply()
     try:
-        assert "苹果" in window._status.text()
+        assert "苹果" in window._title.text()
         assert "revision 2" in window._status.text()
         assert window.isVisible()
     finally:

@@ -5,8 +5,8 @@
 
 import logging
 
-from PySide6.QtCore import QPoint, Qt, QTimer
-from PySide6.QtGui import QColor, QPainter, QPixmap
+from PySide6.QtCore import QPoint, QRectF, Qt, QTimer
+from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPainterPath, QPixmap
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from pet.tools.pixel_art import core as art_core
@@ -15,6 +15,7 @@ from pet.tools.pixel_art.canvas import PixelArtError
 logger = logging.getLogger(__name__)
 
 _CANVAS_SIZE = 256
+_CORNER_RADIUS = 8
 _BG_QSS = (
     "QWidget#pixelArtBg {"
     "  background: #f5f6fa;"
@@ -49,6 +50,10 @@ class CanvasView(QWidget):
 
     def paintEvent(self, event):  # noqa: N802 - Qt 命名
         painter = QPainter(self)
+        full = QRectF(self.rect())
+        clip = QPainterPath()
+        clip.addRoundedRect(full, _CORNER_RADIUS, _CORNER_RADIUS)
+        painter.setClipPath(clip)
         cell = 8
         for y in range(0, _CANVAS_SIZE, cell):
             for x in range(0, _CANVAS_SIZE, cell):
@@ -57,6 +62,10 @@ class CanvasView(QWidget):
                                  QColor(0xE6, 0xE6, 0xE6) if shade else QColor(0xC9, 0xC9, 0xC9))
         if self._pixmap is not None:
             painter.drawPixmap(0, 0, self._pixmap)
+        painter.setClipping(False)
+        painter.setPen(QColor(0xD5, 0xD9, 0xE2))
+        painter.drawRoundedRect(full.adjusted(0.5, 0.5, -0.5, -0.5),
+                                _CORNER_RADIUS, _CORNER_RADIUS)
 
 
 class PixelArtWindow(QWidget):
@@ -103,13 +112,17 @@ class PixelArtWindow(QWidget):
         bg.setObjectName("pixelArtBg")
         bg.setStyleSheet(_BG_QSS)
         layout = QVBoxLayout(bg)
-        layout.setContentsMargins(14, 6, 14, 10)
-        layout.setSpacing(6)
+        layout.setContentsMargins(16, 10, 16, 12)
+        layout.setSpacing(8)
 
         title_row = QHBoxLayout()
         title_row.setContentsMargins(0, 0, 0, 0)
         self._title = QLabel("像素画")
-        self._title.setStyleSheet("font-size: 14px; font-weight: bold; color: #333;")
+        title_font = self._title.font()
+        title_font.setPixelSize(14)
+        title_font.setBold(True)
+        self._title.setFont(title_font)
+        self._title.setStyleSheet("color: #333;")
         title_row.addWidget(self._title)
         title_row.addStretch()
         close = QPushButton("×")
@@ -120,7 +133,7 @@ class PixelArtWindow(QWidget):
         layout.addLayout(title_row)
 
         self._canvas = CanvasView()
-        layout.addWidget(self._canvas)
+        layout.addWidget(self._canvas, alignment=Qt.AlignmentFlag.AlignHCenter)
 
         status_row = QHBoxLayout()
         status_row.setContentsMargins(0, 0, 0, 0)
@@ -175,19 +188,25 @@ class PixelArtWindow(QWidget):
         changed = payload.get("changed_cells", 0)
         self._canvas_id = payload.get("canvas_id")
         self._export_btn.setEnabled(bool(self._canvas_id))
-        self._title.setText(f"像素画 · {name}")
+        self._set_title(name)
         self._status_base = (
-            f"{name} · {size}×{size} · {preset} · revision {revision} · 本次 {changed} 格")
+            f"{size}×{size} · {preset} · revision {revision} · 本次 {changed} 格")
         if not self._flash_timer.isActive():
             self._status.setText(self._status_base)
         self._show_if_needed(payload)
+
+    def _set_title(self, name: str | None) -> None:
+        """标题带画布名；超宽时省略，避免长名字撑宽窗口。"""
+        text = "像素画" if not name else f"像素画 · {name}"
+        metrics = QFontMetrics(self._title.font())
+        self._title.setText(metrics.elidedText(text, Qt.TextElideMode.ElideRight, _CANVAS_SIZE))
 
     def _render_empty(self) -> None:
         """空态：清空画面并提示先建画布，导出按钮禁用。"""
         self._canvas_id = None
         self._canvas.clear()
         self._export_btn.setEnabled(False)
-        self._title.setText("像素画")
+        self._set_title(None)
         self._status_base = "还没有画布"
         if not self._flash_timer.isActive():
             self._status.setText(self._status_base)
