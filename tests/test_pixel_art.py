@@ -429,3 +429,19 @@ def test_postprocess_region_scope(art):
     with pytest.raises(PixelArtError) as exc:
         core.postprocess(op="rotate90", region=[0, 0, 4, 4])
     assert exc.value.code == "bad_param"
+
+
+def test_refresh_view_without_canvas_pushes_empty(art, monkeypatch):
+    pushed = []
+    monkeypatch.setattr(core.TOOL_CTX, "show_canvas", pushed.append)
+    core.refresh_view()
+    assert pushed == [{"empty": True, "force_show": True}]
+
+
+def test_refresh_view_pushes_current_canvas(art, monkeypatch):
+    pushed = []
+    core.create("苹果", "16")
+    monkeypatch.setattr(core.TOOL_CTX, "show_canvas", pushed.append)
+    core.refresh_view()
+    assert pushed and pushed[0]["name"] == "苹果"
+    assert pushed[0]["force_show"] is True

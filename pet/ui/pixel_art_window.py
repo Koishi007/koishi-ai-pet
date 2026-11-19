@@ -158,6 +158,10 @@ class PixelArtWindow(QWidget):
         self._pending = None
         if not payload:
             return
+        if payload.get("empty"):
+            self._render_empty()
+            self._show_if_needed(payload)
+            return
         png = payload.get("png")
         if isinstance(png, (bytes, bytearray)):
             pixmap = QPixmap()
@@ -176,6 +180,19 @@ class PixelArtWindow(QWidget):
             f"{name} · {size}×{size} · {preset} · revision {revision} · 本次 {changed} 格")
         if not self._flash_timer.isActive():
             self._status.setText(self._status_base)
+        self._show_if_needed(payload)
+
+    def _render_empty(self) -> None:
+        """空态：清空画面并提示先建画布，导出按钮禁用。"""
+        self._canvas_id = None
+        self._canvas.clear()
+        self._export_btn.setEnabled(False)
+        self._title.setText("像素画")
+        self._status_base = "还没有画布"
+        if not self._flash_timer.isActive():
+            self._status.setText(self._status_base)
+
+    def _show_if_needed(self, payload: dict) -> None:
         if payload.get("force_show"):
             self._user_closed = False
         if not self.isVisible() and not self._user_closed:

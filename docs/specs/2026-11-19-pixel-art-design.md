@@ -400,7 +400,7 @@ handler 写入成功
 | 不传对象 | `Canvas` 在工具线程内可变，跨线程共享会读到半写状态 |
 | 编码复用 | `png` 由 `export` 的同一渲染函数生成，窗口画面与导出文件必然一致 |
 | 合并刷新 | 60ms 内的多次写入只重绘一次，64 档连续算子不会反复重建 QPixmap |
-| 打开时机 | `create` 与 `open` 成功后自动显示；之后经右键菜单「像素画」重新打开（`registry.add_menu_action`） |
+| 打开时机 | `create` 与 `open` 成功后自动显示；之后经右键菜单「画布」重新打开（`registry.add_menu_action`） |
 | 切换 | `open` 另一张时就地换内容，不重建窗口；右键菜单打开时显示 `current_id` 那张 |
 | 关闭语义 | 用户关窗不中断绘制，也不再自动弹出，直到下一次 `create` |
 | 推送范围 | `create`、`open`、`set`、`paint`、`postprocess`、`palette` 的 `set` / `quantize`、`rename` 都推一次完整 payload；`palette set` 只改色板不改 `index`，不推会让窗口停在旧颜色 |
@@ -565,6 +565,6 @@ handler 写入成功
 | 窗口抑制 | payload 带 `force_show`，仅 `create` / `open` / 右键菜单置真 | 「用户关窗后不自动弹出」需要区分推送来源 |
 | 窗口导出 | 按钮直接调 `core.export(canvas_id, format="png")`，参数固定 | 用户操作不经 `ToolExecutor`；异常写状态行，3 秒后恢复 |
 | RLE 扩展名 | `.txt` | 设计只规定格式，未规定后缀 |
-| 右键菜单 | `refresh_view` 重推当前画布 | 设计只写了「重新打开」 |
+| 右键菜单 | `refresh_view` 重推当前画布；库里没有画布时推 `{"empty": True}` 空态 | 设计只写了「重新打开」，空态是后补的入口行为 |
 
 未实现：`copy`（另存一版）、外部图片导入、SVG 之外的矢量格式。`preview image` 与网格坐标已随窗口一并完成。

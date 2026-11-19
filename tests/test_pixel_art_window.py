@@ -73,6 +73,22 @@ def test_status_shows_preset(qt_app):
         window.hide()
 
 
+def test_empty_payload_shows_placeholder(qt_app):
+    from pet.ui.pixel_art_window import PixelArtWindow
+
+    window = PixelArtWindow()
+    window.render({**PAYLOAD, "force_show": True})
+    window._apply()
+    window.render({"empty": True, "force_show": True})
+    window._apply()
+    try:
+        assert window.isVisible()
+        assert "还没有画布" in window._status.text()
+        assert not window._export_btn.isEnabled()
+    finally:
+        window.hide()
+
+
 def test_export_button_uses_current_canvas(qt_app, monkeypatch, tmp_path):
     from pet.ui import pixel_art_window as module
 

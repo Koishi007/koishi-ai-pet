@@ -488,14 +488,25 @@ def palette(action="get", colors=None, revision=None, canvas_id=None):
         return {"headline": _write_headline(canvas, data), "data": data}
 
 
+def _push_empty() -> None:
+    """没有画布时推空态：窗口显示占位文案并禁用导出。"""
+    try:
+        TOOL_CTX.show_canvas({"empty": True, "force_show": True})
+    except Exception:
+        logger.debug("[pixel_art] canvas push failed", exc_info=True)
+
+
 def refresh_view() -> None:
-    """右键菜单入口：把当前画布重新推给窗口。"""
+    """右键菜单入口：把当前画布重新推给窗口；没有画布时推空态。"""
     store = _store()
     with store.lock:
         try:
             canvas = _resolve(store, None)
         except PixelArtError:
-            return
+            canvas = None
+    if canvas is None:
+        _push_empty()
+        return
     _push(store, canvas, force_show=True)
 
 

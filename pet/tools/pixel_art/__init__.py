@@ -254,4 +254,4 @@ def register(registry):
         output=ToolOutputDefinition(schema=PALETTE_OUTPUT),
     )
 
-    registry.add_menu_action(TOOL_NAME, "像素画", refresh_view)
+    registry.add_menu_action(TOOL_NAME, "画布", refresh_view)
