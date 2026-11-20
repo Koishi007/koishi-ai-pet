@@ -203,8 +203,9 @@ class MemoryWindow(QWidget):
             row1.addWidget(btn)
 
         row1.addSpacing(12)
+        row1.addStretch()
 
-        # 类别筛选
+        # 类别筛选：与第二行「每页」右对齐
         self._label_cat = QLabel("类别:")
         self._label_cat.setStyleSheet(f"font-size: 12px; color: {theme.INK};")
         row1.addWidget(self._label_cat)
@@ -214,7 +215,6 @@ class MemoryWindow(QWidget):
         self._category_combo.currentIndexChanged.connect(self._on_filter_category)
         row1.addWidget(self._category_combo)
 
-        row1.addStretch()
         layout.addLayout(row1)
 
         # 第二行：日期范围 + 搜索 + 每页条数
@@ -252,6 +252,7 @@ class MemoryWindow(QWidget):
 
         row2.addWidget(QLabel("每页:"))
         self._page_size_combo = NoWheelComboBox()
+        self._page_size_combo.setFixedWidth(120)
         self._page_size_combo.addItems([str(s) for s in _PAGE_SIZES])
         self._page_size_combo.setCurrentText(str(_DEFAULT_PAGE_SIZE))
         self._page_size_combo.currentTextChanged.connect(self._on_page_size_changed)

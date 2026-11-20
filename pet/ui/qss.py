@@ -171,7 +171,6 @@ QComboBox {{
     min-height: 18px;
     font-size: 12px;
     color: {theme.INK};
-    min-width: 64px;
 }}
 QComboBox:hover {{
     background: {theme.SURFACE_WARM};
