@@ -95,6 +95,7 @@ class GamePanelBase(QWidget):
             f"font-size: 11px; font-weight: bold; color: {theme.PRIMARY_DEEP};"
             f" background: {theme.PRIMARY_SOFT}; border-radius: 8px; padding: 1px 6px;")
         title_row.addWidget(self._countdown_label)
+        self._countdown_label.setVisible(False)
         btn_close = QPushButton("×")
         btn_close.setFixedSize(26, 26)
         btn_close.setStyleSheet(_BTN_CLOSE_QSS)
@@ -138,10 +139,9 @@ class GamePanelBase(QWidget):
             self.raise_()
 
     def _update_countdown_label(self):
-        if self._waiting and self._countdown > 0:
-            self._countdown_label.setText(f"剩余 {self._countdown}s")
-        else:
-            self._countdown_label.setText("")
+        active = self._waiting and self._countdown > 0
+        self._countdown_label.setText(f"剩余 {self._countdown}s" if active else "")
+        self._countdown_label.setVisible(active)
 
     def _tick_countdown(self):
         self._countdown -= 1
