@@ -113,6 +113,7 @@ class SettingsWindow(QWidget):
         self._tabs = QTabWidget()
         self._tabs.setDocumentMode(True)
         self._tabs.tabBar().setExpanding(True)
+        self._tabs.tabBar().setDrawBase(False)
         for label, page in self.tabs.build():
             self._tabs.addTab(page, label)
         root.addWidget(self._tabs, stretch=1)

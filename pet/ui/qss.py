@@ -423,6 +423,12 @@ QFrame[frameShape="4"] {{
 """
 
 TAB_BAR_QSS = f"""
+QTabWidget {{
+    background: transparent;
+}}
+QTabBar {{
+    background: transparent;
+}}
 QTabWidget::pane {{
     border: {theme.BORDER}px solid {theme.INK};
     border-radius: {theme.RADIUS_LG}px;
