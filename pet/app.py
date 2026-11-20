@@ -14,6 +14,7 @@ from PySide6.QtCore import QObject, QTimer, Qt, Signal, Slot
 
 from pet.ui.log_window import LogRelay, LogWindowHandler
 from pet.ui import settings_hooks
+from pet.ui.qss import ui_font
 from pet.ui.styles import ICON_PATH
 from pet.ui.pet_window import PetWindow
 from pet.ui.system_tray import SystemTrayManager
@@ -258,6 +259,7 @@ def main():
 
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
+    app.setFont(ui_font())
     try:
         app.setWindowIcon(QIcon(ICON_PATH))
     except Exception:

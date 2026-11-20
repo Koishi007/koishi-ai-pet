@@ -11,24 +11,38 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWi
 
 from pet.tools.pixel_art import core as art_core
 from pet.tools.pixel_art.canvas import PixelArtError
+from pet import theme
+from pet.ui.frame import paint_ink_frame
 
 logger = logging.getLogger(__name__)
 
 _CANVAS_SIZE = 256
 _CORNER_RADIUS = 8
-_BG_QSS = (
-    "QWidget#pixelArtBg {"
-    "  background: #f5f6fa;"
-    "  border-radius: 12px;"
-    "  font-size: 13px;"
-    "}"
-)
 _CLOSE_QSS = (
     "QPushButton {"
-    "  background: transparent; border: none; border-radius: 13px;"
-    "  font-size: 15px; color: #999;"
+    f"  background: transparent; border: {theme.BORDER}px solid transparent;"
+    "  border-radius: 13px; font-size: 14px;"
+    f"  color: {theme.INK_MUTED};"
     "}"
-    "QPushButton:hover { background: #e81123; color: #fff; }"
+    "QPushButton:hover {"
+    f"  background: {theme.DANGER}; color: {theme.SURFACE};"
+    f"  border-color: {theme.INK};"
+    "}"
+)
+_EXPORT_QSS = (
+    "QPushButton {"
+    f"  background: {theme.SURFACE};"
+    f"  border: {theme.BORDER}px solid {theme.INK};"
+    "  border-radius: 9px; padding: 0 10px;"
+    f"  font-size: 11px; color: {theme.INK};"
+    "}"
+    "QPushButton:hover {"
+    f"  background: {theme.PRIMARY_SOFT};"
+    "}"
+    "QPushButton:disabled {"
+    f"  background: {theme.PAPER_DEEP}; color: {theme.INK_MUTED};"
+    f"  border-color: {theme.LINE};"
+    "}"
 )
 
 
@@ -63,7 +77,7 @@ class CanvasView(QWidget):
         if self._pixmap is not None:
             painter.drawPixmap(0, 0, self._pixmap)
         painter.setClipping(False)
-        painter.setPen(QColor(0xD5, 0xD9, 0xE2))
+        painter.setPen(QColor(theme.LINE))
         painter.drawRoundedRect(full.adjusted(0.5, 0.5, -0.5, -0.5),
                                 _CORNER_RADIUS, _CORNER_RADIUS)
 
@@ -105,16 +119,15 @@ class PixelArtWindow(QWidget):
         self._setup_ui()
         self.hide()
 
+    def paintEvent(self, event) -> None:  # noqa: N802 - Qt 命名
+        paint_ink_frame(self, radius=theme.RADIUS_LG)
+
     def _setup_ui(self) -> None:
         root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
-
-        bg = QWidget()
-        bg.setObjectName("pixelArtBg")
-        bg.setStyleSheet(_BG_QSS)
-        layout = QVBoxLayout(bg)
-        layout.setContentsMargins(16, 10, 16, 12)
-        layout.setSpacing(8)
+        root.setContentsMargins(16, 8, 16 + theme.SHADOW_WINDOW,
+                                12 + theme.SHADOW_WINDOW)
+        root.setSpacing(8)
+        layout = root
 
         title_row = QHBoxLayout()
         title_row.setContentsMargins(0, 0, 0, 0)
@@ -123,7 +136,7 @@ class PixelArtWindow(QWidget):
         title_font.setPixelSize(14)
         title_font.setBold(True)
         self._title.setFont(title_font)
-        self._title.setStyleSheet("color: #333;")
+        self._title.setStyleSheet(f"color: {theme.INK};")
         title_row.addWidget(self._title)
         title_row.addStretch()
         close = QPushButton("×")
@@ -142,22 +155,16 @@ class PixelArtWindow(QWidget):
         status_font = self._status.font()
         status_font.setPixelSize(12)
         self._status.setFont(status_font)
-        self._status.setStyleSheet("color: #666;")
+        self._status.setStyleSheet(f"color: {theme.INK_MUTED};")
         status_row.addWidget(self._status)
         status_row.addStretch()
         self._export_btn = QPushButton("导出 PNG")
-        self._export_btn.setFixedHeight(24)
-        self._export_btn.setStyleSheet(
-            "QPushButton { background: #e8eaf0; border: none; border-radius: 6px;"
-            "  padding: 0 10px; font-size: 12px; color: #444; }"
-            "QPushButton:hover { background: #dfe3ec; }"
-            "QPushButton:disabled { color: #aaa; }")
+        self._export_btn.setFixedHeight(26)
+        self._export_btn.setStyleSheet(_EXPORT_QSS)
         self._export_btn.setEnabled(False)
         self._export_btn.clicked.connect(self._export_png)
         status_row.addWidget(self._export_btn)
         layout.addLayout(status_row)
-
-        root.addWidget(bg)
 
     def set_pet_window(self, window) -> None:
         self._pet_window = window

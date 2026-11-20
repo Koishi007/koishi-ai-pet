@@ -9,10 +9,13 @@ from PySide6.QtWidgets import (
     QPushButton, QLabel, QMessageBox, QMenu, QApplication,
     QDialog, QLineEdit, QFormLayout, QDialogButtonBox,
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPoint, QSize, Qt
+from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 
 from pet.tools.todo.core import TodoListTool
-from pet.tools.todo.style import LIST_QSS, BUTTON_QSS
+from pet.tools.todo.style import (BASE_QSS, BUTTON_QSS, CLOSE_QSS, LIST_QSS,
+                                  PANEL_QSS)
+from pet import theme
 
 logger = logging.getLogger(__name__)
 
@@ -42,56 +45,54 @@ class TodoPanel(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
         self._setup_ui()
+        self.setStyleSheet(BASE_QSS + PANEL_QSS)
         self._refresh()
 
+    @staticmethod
+    def _status_icon(done: bool) -> QIcon:
+        """圆形状态标记：未完成为空心圆，完成为黄绿底加对勾。"""
+        pixmap = QPixmap(18, 18)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(QPen(QColor(theme.INK), theme.BORDER))
+        painter.setBrush(QColor(theme.ACCENT if done else theme.SURFACE))
+        painter.drawEllipse(1, 1, 15, 15)
+        if done:
+            painter.setPen(QPen(QColor(theme.INK), 2))
+            painter.drawPolyline([
+                QPoint(5, 9), QPoint(8, 12), QPoint(13, 6),
+            ])
+        painter.end()
+        return QIcon(pixmap)
 
     def _setup_ui(self):
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        # 背景容器
         bg = QWidget()
         bg.setObjectName("todoBg")
-        bg.setStyleSheet("""
-            QWidget#todoBg {
-                background: #f0f0f0;
-                border-radius: 8px;
-                font-size: 12px;
-            }
-        """)
+        bg.setStyleSheet(PANEL_QSS)
         layout = QVBoxLayout(bg)
-        layout.setContentsMargins(16, 0, 16, 16)
+        layout.setContentsMargins(14, 4, 14, 12)
         layout.setSpacing(8)
         root.addWidget(bg)
 
         title_bar = QWidget()
-        title_bar.setFixedHeight(40)
+        title_bar.setFixedHeight(theme.TITLE_BAR_H)
         title_row = QHBoxLayout(title_bar)
-        title_row.setContentsMargins(0, 0, 0, 0)
+        title_row.setContentsMargins(2, 0, 0, 0)
 
         title = QLabel("待办事项")
         title.setStyleSheet(
-            "font-size: 16px; font-weight: bold; color: #333;"
+            f"font-size: 14px; font-weight: 800; color: {theme.INK};"
         )
         title_row.addWidget(title)
         title_row.addStretch()
-
-        btn_close = QPushButton("×")
-        btn_close.setFixedSize(28, 28)
-        btn_close.setStyleSheet("""
-            QPushButton {
-                background: transparent;
-                border: none;
-                border-radius: 14px;
-                font-size: 14px;
-                color: #999;
-            }
-            QPushButton:hover {
-                background: #e81123;
-                color: #fff;
-            }
-        """)
+        btn_close = QPushButton("✕")
+        btn_close.setFixedSize(34, 34)
+        btn_close.setStyleSheet(CLOSE_QSS)
         btn_close.clicked.connect(self.close)
         title_row.addWidget(btn_close)
 
@@ -103,36 +104,22 @@ class TodoPanel(QWidget):
         self._list.customContextMenuRequested.connect(self._on_list_context_menu)
         self._list.setFrameShape(QListWidget.Shape.NoFrame)
         self._list.setAlternatingRowColors(True)
+        self._list.setIconSize(QSize(18, 18))
         layout.addWidget(self._list, stretch=1)
 
         btn_row = QHBoxLayout()
-        btn_row.setSpacing(6)
+        btn_row.setSpacing(7)
 
-        for text, handler, extra_qss in [
-            ("添加", self._on_add, """
-                QPushButton:hover {
-                    background: #4a90d9;
-                    border-color: #4a90d9;
-                    color: #fff;
-                }
-            """),
-            ("完成", self._on_toggle, """
-                QPushButton:hover {
-                    background: #27ae60;
-                    border-color: #27ae60;
-                    color: #fff;
-                }
-            """),
-            ("删除", self._on_delete, """
-                QPushButton:hover {
-                    background: #e74c3c;
-                    border-color: #e74c3c;
-                    color: #fff;
-                }
-            """),
+        for text, handler, color, background, hover in [
+            ("添加", self._on_add, theme.INK, theme.SURFACE, theme.SURFACE_WARM),
+            ("完成", self._on_toggle, theme.INK, theme.ACCENT, theme.ACCENT_HOVER),
+            ("删除", self._on_delete, theme.DANGER, theme.SURFACE, theme.PRIMARY_SOFT),
         ]:
             btn = QPushButton(text)
-            btn.setStyleSheet(BUTTON_QSS + extra_qss)
+            btn.setStyleSheet(BUTTON_QSS + (
+                f"QPushButton {{ color: {color}; background: {background}; }}"
+                f"QPushButton:hover {{ background: {hover}; }}"
+            ))
             btn.clicked.connect(handler)
             btn_row.addWidget(btn)
 
@@ -140,7 +127,8 @@ class TodoPanel(QWidget):
         layout.addLayout(btn_row)
 
         self._stats = QLabel("")
-        self._stats.setStyleSheet("font-size: 11px; color: #666;")
+        self._stats.setStyleSheet(
+            f"font-size: 11px; color: {theme.INK_MUTED};")
         layout.addWidget(self._stats)
 
 
@@ -165,13 +153,15 @@ class TodoPanel(QWidget):
         items = self._core.list_all()
         self._list.clear()
         for t in items:
-            if t["status"] == "done":
-                text = f"  [√] ~~{t['title']}~~"
-            else:
-                text = f"  [ ] {t['title']}"
-            item = QListWidgetItem(text)
+            done = t["status"] == "done"
+            item = QListWidgetItem(self._status_icon(done), t["title"])
             item.setData(Qt.ItemDataRole.UserRole, t["id"])
             item.setData(Qt.ItemDataRole.ToolTipRole, t["title"])
+            if done:
+                font = item.font()
+                font.setStrikeOut(True)
+                item.setFont(font)
+                item.setForeground(QColor(theme.INK_MUTED))
             self._list.addItem(item)
         done_count = sum(1 for t in items if t["status"] == "done")
         self._stats.setText(f"共 {len(items)} 条，{done_count} 已完成")
@@ -186,6 +176,7 @@ class TodoPanel(QWidget):
         """弹出标题对话框添加待办。"""
         dlg = QDialog(self)
         dlg.setWindowTitle("添加待办")
+        dlg.setStyleSheet(BASE_QSS)
         dlg.resize(320, 100)
         form = QFormLayout(dlg)
         form.setSpacing(10)

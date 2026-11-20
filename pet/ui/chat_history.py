@@ -15,26 +15,16 @@ from PySide6.QtWidgets import (
 )
 
 from pet.brain.conversation_store import ConversationStore
+from pet import theme
+from pet.ui.frame import paint_ink_frame
+from pet.ui.qss import TITLE_LABEL_QSS, app_stylesheet
 from pet.ui.styles import (
-    ICON_PATH, BUTTON_PRIMARY_QSS, TEXTEDIT_QSS, SCROLLBAR_QSS, LIST_QSS,
-    _COLOR_BG, _COLOR_TEXT_TITLE, TITLE_LABEL_QSS, WINDOW_RADIUS,
-    _COLOR_BUBBLE_USER, _COLOR_BUBBLE_USER_BORDER, _COLOR_BUBBLE_PET, _COLOR_BUBBLE_PET_BORDER,
+    ICON_PATH, HISTORY_ICON_PATH, BUTTON_PRIMARY_QSS, SCROLLBAR_QSS, LIST_QSS,
     make_minimize_button, make_close_button, ensure_taskbar_icon,
 )
+from pet.ui.widgets import make_icon_badge
 
 logger = logging.getLogger(__name__)
-
-_WINDOW_QSS = """
-QWidget#ChatHistoryRoot {
-    background: transparent;
-}
-"""
-
-_HEADER_QSS = """
-QWidget#ChatHistoryHeader {
-    background: transparent;
-}
-"""
 
 
 class ChatBubbleDelegate(QStyledItemDelegate):
@@ -46,7 +36,7 @@ class ChatBubbleDelegate(QStyledItemDelegate):
         self._h_padding = 14
         self._v_padding = 10
         self._spacing = 6
-        self._bubble_radius = 8
+        self._bubble_radius = 12
 
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex):
         painter.save()
@@ -60,7 +50,7 @@ class ChatBubbleDelegate(QStyledItemDelegate):
 
         # 特殊提示信息处理
         if role == "info":
-            painter.setPen(QColor("#999999"))
+            painter.setPen(QColor(theme.INK_MUTED))
             font = QFont("Microsoft YaHei", 9)
             painter.setFont(font)
             painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, content)
@@ -76,7 +66,7 @@ class ChatBubbleDelegate(QStyledItemDelegate):
         
         font_time = QFont("Microsoft YaHei", 8)
         painter.setFont(font_time)
-        painter.setPen(QColor("#999999"))
+        painter.setPen(QColor(theme.INK_MUTED))
         time_rect = QRect(rect.left() + self._h_padding, y, rect.width() - 2 * self._h_padding, 16)
         
         if is_user:
@@ -110,22 +100,22 @@ class ChatBubbleDelegate(QStyledItemDelegate):
         bubble_rect = QRect(bubble_x, y, bubble_w, bubble_h)
 
         # 绘制气泡背景
-        bubble_color = QColor(_COLOR_BUBBLE_USER) if is_user else QColor(_COLOR_BUBBLE_PET)
-        border_color = QColor(_COLOR_BUBBLE_USER_BORDER) if is_user else QColor(_COLOR_BUBBLE_PET_BORDER)
+        bubble_color = QColor(theme.ACCENT_SOFT) if is_user else QColor(theme.SURFACE)
+        border_color = QColor(theme.INK)
 
         path = QPainterPath()
         path.addRoundedRect(bubble_rect, self._bubble_radius, self._bubble_radius)
 
         painter.fillPath(path, bubble_color)
-        painter.setPen(QPen(border_color, 1))
+        painter.setPen(QPen(border_color, theme.BORDER))
         painter.drawPath(path)
 
         # 绘制文本
-        painter.setPen(QColor("#333333"))
+        painter.setPen(QColor(theme.INK))
         text_rect = QRect(bubble_x + self._h_padding, y + self._v_padding, int(text_width), int(text_height))
 
         ctx = QAbstractTextDocumentLayout.PaintContext()
-        ctx.palette.setColor(QPalette.ColorRole.Text, QColor("#333333"))
+        ctx.palette.setColor(QPalette.ColorRole.Text, QColor(theme.INK))
 
         painter.translate(text_rect.topLeft())
         doc.documentLayout().draw(painter, ctx)
@@ -176,7 +166,7 @@ class ChatHistoryWindow(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
 
-        self.setStyleSheet(_WINDOW_QSS)
+        self.setStyleSheet(app_stylesheet())
 
         try:
             self.setWindowIcon(QIcon(ICON_PATH))
@@ -185,18 +175,12 @@ class ChatHistoryWindow(QWidget):
 
         header = QWidget()
         header.setObjectName("ChatHistoryHeader")
-        header.setFixedHeight(38)
-        header.setStyleSheet(_HEADER_QSS)
+        header.setFixedHeight(theme.TITLE_BAR_H)
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(12, 0, 6, 0)
-        header_layout.setSpacing(6)
+        header_layout.setContentsMargins(3, 0, 0, 0)
+        header_layout.setSpacing(8)
 
-        icon_label = QLabel()
-        try:
-            icon_label.setPixmap(QIcon(ICON_PATH).pixmap(18, 18))
-        except Exception:
-            pass
-        header_layout.addWidget(icon_label)
+        header_layout.addWidget(make_icon_badge(HISTORY_ICON_PATH))
 
         title_label = QLabel("对话历史")
         title_label.setStyleSheet(TITLE_LABEL_QSS)
@@ -217,7 +201,7 @@ class ChatHistoryWindow(QWidget):
         self._date_list.setStyleSheet(LIST_QSS + SCROLLBAR_QSS + f"""
             QListWidget {{
                 font-size: 12px;
-                background: {_COLOR_BG};
+                background: {theme.SURFACE_WARM};
             }}
         """)
         self._date_list.currentItemChanged.connect(self._on_date_changed)
@@ -227,11 +211,11 @@ class ChatHistoryWindow(QWidget):
         self._content_view = QListWidget()
         self._content_view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._content_view.setSpacing(4)
-        self._content_view.setStyleSheet(TEXTEDIT_QSS + SCROLLBAR_QSS + f"""
+        self._content_view.setStyleSheet(SCROLLBAR_QSS + f"""
             QListWidget {{
-                background: {_COLOR_BG};
-                border: 1px solid #ddd;
-                border-radius: 8px;
+                background: {theme.SURFACE};
+                border: {theme.BORDER}px solid {theme.INK};
+                border-radius: {theme.RADIUS_LG}px;
                 outline: none;
             }}
         """)
@@ -249,7 +233,8 @@ class ChatHistoryWindow(QWidget):
         toolbar.addWidget(refresh_btn)
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(8, 4, 8, 8)
+        root.setContentsMargins(8, 3, 8 + theme.SHADOW_WINDOW,
+                                8 + theme.SHADOW_WINDOW)
         root.setSpacing(6)
         root.addWidget(header)
         root.addLayout(body)
@@ -281,14 +266,7 @@ class ChatHistoryWindow(QWidget):
 
 
     def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        rect = self.rect().adjusted(0, 0, -1, -1)
-        path = QPainterPath()
-        path.addRoundedRect(rect, WINDOW_RADIUS, WINDOW_RADIUS)
-        painter.fillPath(path, QColor(_COLOR_BG))
-        painter.setPen(QPen(QColor("#000000"), 1))
-        painter.drawPath(path)
+        paint_ink_frame(self)
 
 
     def _header_press(self, event):

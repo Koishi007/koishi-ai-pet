@@ -56,6 +56,7 @@
 | [specs/2026-11-04-terminal-design.md](specs/2026-11-04-terminal-design.md) | 设计文档 | 手写 | 桌宠终端环境：内建命令路由与读线程捕获、参数模式白名单与程序解析、并行调用的确认队列与执行闸门、超时口径推导、终端窗口与审计记录 | 动手前写，落地后补齐结论 |
 | [specs/2026-11-04-terminal-plan.md](specs/2026-11-04-terminal-plan.md) | 实施计划 | 手写 | 该改动拆成的七个任务：纯逻辑包与策略、执行核心、元工具注册、确认通道、界面、本地命令、文档收尾 | 执行时逐项勾选 |
 | [specs/2026-11-19-pixel-art-design.md](specs/2026-11-19-pixel-art-design.md) | 设计文档 | 手写 | 点阵画工具：三档画布与有限色板、矩阵与算子两套落笔、revision 乐观锁与并行串行化、文本矩阵自检、只读画布窗口与最近邻导出 | 动手前写，落地后补齐结论 |
+| [specs/2026-11-20-ui-style-refactor-design.md](specs/2026-11-20-ui-style-refactor-design.md) | 设计文档 | 手写 | 手绘风 UI 样式改造：令牌分层、QSS 表达边界、28 个文件的内联样式收敛、工具样式自包含约定 | 动手前写，落地后补齐结论 |
 | [../CHANGELOG.md](../CHANGELOG.md) | 事实参考 | 生成 | 按版本分组的变更记录 | `python scripts/gen_changelog.py` |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | 操作指南 | 手写 | 开发流程、测试、提交与 PR 规范 | 流程变化时人工更新 |
 

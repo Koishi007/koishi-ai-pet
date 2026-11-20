@@ -15,28 +15,23 @@ from PySide6.QtWidgets import (
 )
 
 from pet.game.gamebase import GAME
+from pet import theme
+from pet.ui.frame import paint_ink_frame
 
 logger = logging.getLogger(__name__)
-
-_BG_QSS = (
-    "QWidget#gamePanelBg {"
-    "  background: #f5f6fa;"
-    "  border-radius: 12px;"
-    "  font-size: 13px;"
-    "}"
-)
 
 _BTN_CLOSE_QSS = (
     "QPushButton {"
     "  background: transparent;"
-    "  border: none;"
+    f"  border: {theme.BORDER}px solid transparent;"
     "  border-radius: 13px;"
-    "  font-size: 15px;"
-    "  color: #999;"
+    "  font-size: 14px;"
+    f"  color: {theme.INK_MUTED};"
     "}"
     "QPushButton:hover {"
-    "  background: #e81123;"
-    "  color: #fff;"
+    f"  background: {theme.DANGER};"
+    f"  color: {theme.SURFACE};"
+    f"  border-color: {theme.INK};"
     "}"
 )
 
@@ -74,12 +69,12 @@ class GamePanelBase(QWidget):
 
     def _setup_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
+        root.setContentsMargins(0, 0, theme.SHADOW_WINDOW, theme.SHADOW_WINDOW)
         root.setSpacing(0)
 
         bg = QWidget()
         bg.setObjectName("gamePanelBg")
-        bg.setStyleSheet(_BG_QSS)
+        bg.setStyleSheet("background: transparent;")
         self._content_layout = QVBoxLayout(bg)
         self._content_layout.setContentsMargins(14, 4, 14, 12)
         self._content_layout.setSpacing(8)
@@ -91,11 +86,14 @@ class GamePanelBase(QWidget):
         title_row = QHBoxLayout(title_bar)
         title_row.setContentsMargins(0, 0, 0, 0)
         self._title = QLabel(self.TITLE)
-        self._title.setStyleSheet("font-size: 15px; font-weight: bold; color: #333;")
+        self._title.setStyleSheet(
+            f"font-size: 14px; font-weight: 800; color: {theme.INK};")
         title_row.addWidget(self._title)
         title_row.addStretch()
         self._countdown_label = QLabel("")
-        self._countdown_label.setStyleSheet("font-size: 12px; font-weight: bold; color: #e74c3c;")
+        self._countdown_label.setStyleSheet(
+            f"font-size: 11px; font-weight: bold; color: {theme.PRIMARY_DEEP};"
+            f" background: {theme.PRIMARY_SOFT}; border-radius: 8px; padding: 1px 6px;")
         title_row.addWidget(self._countdown_label)
         btn_close = QPushButton("×")
         btn_close.setFixedSize(26, 26)
@@ -192,6 +190,9 @@ class GamePanelBase(QWidget):
                 geo = screen.availableGeometry()
                 self.move(geo.center() - self.rect().center())
         self._placed = True
+
+    def paintEvent(self, event):
+        paint_ink_frame(self, radius=theme.RADIUS_LG)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:

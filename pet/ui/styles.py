@@ -1,4 +1,4 @@
-"""界面样式库：米白扁平 QSS、终端暗色色板、字体回退链与窗口通用按钮。"""
+"""界面样式兼容层：转发令牌与公共 QSS，保留旧常量名。"""
 
 import ctypes
 import os
@@ -6,6 +6,17 @@ import sys
 
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QPushButton
+
+from pet import theme
+from pet.ui.qss import (BUTTON_DANGER_QSS, BUTTON_PRIMARY_QSS, BUTTON_QSS,
+                        CHECKBOX_QSS, CHECKMARK_SVG, COMBOBOX_QSS,
+                        HELP_BADGE_QSS, INPUT_HIGHLIGHT_QSS, INPUT_QSS,
+                        LABEL_MONO_QSS, LABEL_SECONDARY_QSS, LIST_QSS,
+                        MENU_QSS, MENU_SOLID_QSS, PANEL_QSS,
+                        SCROLL_AREA_TRANSPARENT_QSS,
+                        SCROLLBAR_QSS, SEPARATOR_QSS, TABLE_QSS, TAB_BAR_QSS,
+                        TEXTEDIT_QSS, TITLE_LABEL_QSS, TOOLTIP_QSS,
+                        WINDOW_QSS)
 
 
 _PROJECT_ROOT = os.path.join(
@@ -15,426 +26,33 @@ ICON_PATH = os.path.join(_PROJECT_ROOT, "assets", "icon", "index.ico")
 SETTING_ICON_PATH = os.path.join(_PROJECT_ROOT, "assets", "icon", "setting.png")
 SHOW_ICON_PATH = os.path.join(_PROJECT_ROOT, "assets", "icon", "show.png")
 HIDE_ICON_PATH = os.path.join(_PROJECT_ROOT, "assets", "icon", "hide.png")
-CHECKMARK_SVG = os.path.join(_PROJECT_ROOT, "assets", "icon", "checkmark.svg").replace("\\", "/")
+LOG_ICON_PATH = os.path.join(_PROJECT_ROOT, "assets", "icon", "ink", "log.svg")
+MEMORY_ICON_PATH = os.path.join(_PROJECT_ROOT, "assets", "icon", "ink", "memory.svg")
+DEBUG_ICON_PATH = os.path.join(_PROJECT_ROOT, "assets", "icon", "ink", "debug.svg")
+HISTORY_ICON_PATH = os.path.join(_PROJECT_ROOT, "assets", "icon", "ink", "history.svg")
 
 
-_COLOR_BG         = "#f5f2ed"
-_COLOR_SURFACE     = "#ffffff"
-_COLOR_BORDER      = "#ddd"
-_COLOR_BORDER_DARK = "#ccc"
-_COLOR_BORDER_FOCUS = "#aaa"
-_COLOR_TEXT        = "#333"
-_COLOR_TEXT_TITLE  = "#444"
-_COLOR_TEXT_SEC    = "#666"
-_COLOR_TEXT_MUTED  = "#999"
-_COLOR_ACCENT      = "#4a90d9"
-_COLOR_DANGER      = "#e81123"
-_COLOR_WARNING     = "#e67e22"
-_COLOR_HOVER_BG   = "#e0e0e0"
+_COLOR_BG = theme.PAPER
+_COLOR_SURFACE = theme.SURFACE
+_COLOR_BORDER = theme.INK
+_COLOR_BORDER_DARK = theme.INK
+_COLOR_BORDER_FOCUS = theme.PRIMARY
+_COLOR_TEXT = theme.INK
+_COLOR_TEXT_TITLE = theme.INK
+_COLOR_TEXT_SEC = theme.INK_SOFT
+_COLOR_TEXT_MUTED = theme.INK_MUTED
+_COLOR_ACCENT = theme.PRIMARY
+_COLOR_DANGER = theme.DANGER
+_COLOR_WARNING = theme.ACCENT_DEEP
+_COLOR_HOVER_BG = theme.PRIMARY_SOFT
+
+_COLOR_BUBBLE_USER = theme.ACCENT_SOFT
+_COLOR_BUBBLE_USER_BORDER = theme.INK
+_COLOR_BUBBLE_PET = theme.SURFACE_WARM
+_COLOR_BUBBLE_PET_BORDER = theme.INK
 
 
-_COLOR_BUBBLE_USER        = "#d4edda"
-_COLOR_BUBBLE_USER_BORDER = "#b8d4be"
-_COLOR_BUBBLE_PET         = "#d6eaf8"
-_COLOR_BUBBLE_PET_BORDER  = "#b8cfe0"
-
-
-WINDOW_RADIUS = 10
-
-
-WINDOW_QSS = """
-QWidget#FlatWindow {
-    background: """ + _COLOR_BG + """;
-}
-"""
-
-
-PANEL_QSS = """
-QGroupBox {
-    font-size: 12px;
-    font-weight: bold;
-    color: """ + _COLOR_TEXT_SEC + """;
-    background: transparent;
-    border: 1px solid """ + _COLOR_BORDER + """;
-    border-radius: 8px;
-    margin-top: 10px;
-    padding: 14px 8px 8px 8px;
-}
-QGroupBox::title {
-    subcontrol-origin: margin;
-    subcontrol-position: top left;
-    padding: 0 8px;
-    color: """ + _COLOR_TEXT_SEC + """;
-}
-"""
-
-
-_BTN_BASE = """
-    background: """ + _COLOR_SURFACE + """;
-    border: 1px solid """ + _COLOR_BORDER + """;
-    border-radius: 6px;
-    padding: 4px 12px;
-    font-size: 12px;
-    color: """ + _COLOR_TEXT + """;
-"""
-
-BUTTON_QSS = """
-QPushButton {
-""" + _BTN_BASE + """
-}
-QPushButton:hover {
-    background: #e8e8e8;
-    border-color: """ + _COLOR_BORDER_FOCUS + """;
-}
-QPushButton:pressed {
-    background: #d8d8d8;
-}
-QPushButton:checked {
-    background: """ + _COLOR_ACCENT + """;
-    color: #fff;
-    border-color: """ + _COLOR_ACCENT + """;
-}
-QPushButton:disabled {
-    background: #f0f0f0;
-    color: #bbb;
-    border-color: #e0e0e0;
-}
-"""
-
-BUTTON_PRIMARY_QSS = """
-QPushButton {
-""" + _BTN_BASE + """
-    background: """ + _COLOR_ACCENT + """;
-    color: #fff;
-    border-color: """ + _COLOR_ACCENT + """;
-}
-QPushButton:hover {
-    background: #3a7bc8;
-}
-QPushButton:pressed {
-    background: #2d6ab5;
-}
-QPushButton:disabled {
-    background: #e0e0e0;
-    color: #aaa;
-    border-color: #d0d0d0;
-}
-"""
-
-
-BUTTON_DANGER_QSS = """
-QPushButton {
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    padding: 4px 10px;
-    font-size: 14px;
-    color: #888;
-}
-QPushButton:hover {
-    background: #e81123;
-    color: #fff;
-}
-"""
-
-
-INPUT_QSS = """
-QLineEdit, QSpinBox {
-    background: """ + _COLOR_SURFACE + """;
-    border: 1px solid """ + _COLOR_BORDER + """;
-    border-radius: 6px;
-    padding: 3px 8px;
-    min-height: 20px;
-    font-size: 12px;
-    color: """ + _COLOR_TEXT + """;
-}
-QLineEdit:focus, QSpinBox:focus {
-    border-color: """ + _COLOR_BORDER_FOCUS + """;
-}
-QLineEdit:disabled, QSpinBox:disabled {
-    background: #f5f5f5;
-    color: #bbb;
-    border-color: #e0e0e0;
-}
-"""
-
-
-INPUT_HIGHLIGHT_QSS = """
-QLineEdit {
-    background: #f8fafc;
-    border: 1.5px solid #d0e3ff;
-    border-radius: 6px;
-    padding: 5px 10px;
-    font-size: 12px;
-    color: """ + _COLOR_TEXT + """;
-}
-QLineEdit:focus {
-    border-color: """ + _COLOR_ACCENT + """;
-    background: """ + _COLOR_SURFACE + """;
-}
-QLineEdit:disabled {
-    background: #f5f5f5;
-    color: #bbb;
-    border-color: #e0e0e0;
-}
-"""
-
-
-COMBOBOX_QSS = """
-QComboBox {
-    background: #f8fafc;
-    border: 1.5px solid #d0e3ff;
-    border-radius: 6px;
-    padding: 5px 10px;
-    min-height: 20px;
-    font-size: 12px;
-    color: """ + _COLOR_TEXT + """;
-    min-width: 64px;
-}
-QComboBox:hover {
-    border-color: """ + _COLOR_BORDER_FOCUS + """;
-}
-QComboBox:focus {
-    border-color: """ + _COLOR_ACCENT + """;
-    background: """ + _COLOR_SURFACE + """;
-}
-QComboBox:disabled {
-    background: #f5f5f5;
-    color: #bbb;
-    border-color: #e0e0e0;
-}
-QComboBox::drop-down {
-    subcontrol-origin: padding;
-    subcontrol-position: right center;
-    width: 16px;
-    border: none;
-}
-QComboBox QAbstractItemView {
-    background: """ + _COLOR_SURFACE + """;
-    border: 1px solid """ + _COLOR_BORDER + """;
-    border-radius: 4px;
-    selection-background-color: #e0e0e0;
-    color: """ + _COLOR_TEXT + """;
-    font-size: 12px;
-    outline: none;
-}
-"""
-
-
-TEXTEDIT_QSS = """
-QTextEdit, QPlainTextEdit {
-    background: """ + _COLOR_SURFACE + """;
-    border: 1px solid """ + _COLOR_BORDER + """;
-    border-radius: 8px;
-    padding: 6px 8px;
-    font-family: "Consolas", "Microsoft YaHei", monospace;
-    font-size: 12px;
-    color: """ + _COLOR_TEXT + """;
-    selection-background-color: #b3d9ff;
-}
-QTextEdit:focus, QPlainTextEdit:focus {
-    border-color: """ + _COLOR_BORDER_FOCUS + """;
-}
-QTextEdit:disabled, QPlainTextEdit:disabled {
-    background: #f5f5f5;
-    color: #bbb;
-    border-color: #e0e0e0;
-}
-"""
-
-
-SCROLLBAR_QSS = """
-QScrollBar:vertical {
-    background: """ + _COLOR_BG + """;
-    width: 8px;
-    border: none;
-    margin: 0px;
-}
-QScrollBar::handle:vertical {
-    background: """ + _COLOR_BORDER_DARK + """;
-    border-radius: 4px;
-    min-height: 24px;
-}
-QScrollBar::handle:vertical:hover {
-    background: """ + _COLOR_BORDER_FOCUS + """;
-}
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-    height: 0px;
-    border: none;
-    background: """ + _COLOR_BG + """;
-}
-QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
-    background: none;
-}
-QScrollBar:horizontal {
-    background: """ + _COLOR_BG + """;
-    height: 8px;
-    border: none;
-    margin: 0px;
-}
-QScrollBar::handle:horizontal {
-    background: """ + _COLOR_BORDER_DARK + """;
-    border-radius: 4px;
-    min-width: 24px;
-}
-QScrollBar::handle:horizontal:hover {
-    background: """ + _COLOR_BORDER_FOCUS + """;
-}
-QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
-    width: 0px;
-    border: none;
-    background: """ + _COLOR_BG + """;
-}
-QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
-    background: none;
-}
-"""
-
-
-LIST_QSS = """
-QListWidget {
-    background: """ + _COLOR_SURFACE + """;
-    border: 1px solid """ + _COLOR_BORDER + """;
-    border-radius: 6px;
-    font-family: "Consolas", "Microsoft YaHei", monospace;
-    font-size: 11px;
-    color: """ + _COLOR_TEXT + """;
-    outline: none;
-}
-QListWidget::item {
-    padding: 2px 4px;
-}
-QListWidget::item:selected {
-    background: #e0e0e0;
-    color: """ + _COLOR_TEXT + """;
-}
-"""
-
-
-MENU_QSS = """
-QMenu {
-    background: """ + _COLOR_SURFACE + """;
-    border: 1px solid """ + _COLOR_BORDER + """;
-    border-radius: 8px;
-    padding: 6px 4px;
-}
-QMenu::item {
-    padding: 7px 32px 7px 14px;
-    font-size: 13px;
-    color: """ + _COLOR_TEXT + """;
-    border-radius: 4px;
-    background: transparent;
-}
-QMenu::item:selected {
-    background: #e8e8e8;
-}
-QMenu::item:disabled {
-    color: #bbb;
-}
-QMenu::separator {
-    height: 1px;
-    background: """ + _COLOR_BORDER + """;
-    margin: 4px 10px;
-}
-"""
-
-
-CHECKBOX_QSS = """
-QCheckBox {
-    font-size: 12px;
-    color: """ + _COLOR_TEXT + """;
-    spacing: 6px;
-}
-QCheckBox:disabled {
-    color: #bbb;
-}
-QCheckBox::indicator {
-    width: 14px;
-    height: 14px;
-    margin: 3px 0;
-    background: """ + _COLOR_SURFACE + """;
-    border: 1px solid """ + _COLOR_BORDER_FOCUS + """;
-    border-radius: 3px;
-}
-QCheckBox::indicator:disabled {
-    background: #f5f5f5;
-    border-color: #e0e0e0;
-}
-QCheckBox::indicator:checked {
-    background: """ + _COLOR_SURFACE + """;
-    image: url(""" + CHECKMARK_SVG + """);
-    border-color: """ + _COLOR_ACCENT + """;
-    border-width: 2px;
-}
-QCheckBox::indicator:hover {
-    border-color: """ + _COLOR_ACCENT + """;
-}
-"""
-
-
-LABEL_SECONDARY_QSS = """
-    font-size: 12px;
-    color: """ + _COLOR_TEXT_SEC + """;
-"""
-
-LABEL_MONO_QSS = """
-    font-family: "Consolas", "Microsoft YaHei", monospace;
-    font-size: 12px;
-    color: """ + _COLOR_TEXT + """;
-"""
-
-
-TITLE_LABEL_QSS = f"font-size:13px; color:{_COLOR_TEXT_TITLE}; font-weight:bold; background:transparent;"
-
-
-SEPARATOR_QSS = """
-QFrame[frameShape="4"] {
-    color: """ + _COLOR_BORDER + """;
-}
-"""
-
-# 标签栏
-
-TAB_BAR_QSS = """
-QTabWidget::pane {
-    border: 1px solid """ + _COLOR_BORDER + """;
-    border-radius: 6px;
-    background: """ + _COLOR_SURFACE + """;
-    padding: 4px;
-    top: -1px;
-}
-QTabBar::tab {
-    background: """ + _COLOR_BG + """;
-    border: none;
-    border-bottom: 2px solid transparent;
-    padding: 8px 0;
-    font-size: 12px;
-    color: """ + _COLOR_TEXT_SEC + """;
-}
-QTabBar::tab:selected {
-    background: """ + _COLOR_BG + """;
-    color: """ + _COLOR_TEXT + """;
-    font-weight: bold;
-    border-bottom: 2px solid """ + _COLOR_ACCENT + """;
-}
-QTabBar::tab:hover:!selected {
-    background: #e8e8e8;
-}
-"""
-
-# 滚动容器透明：窗口自绘圆角背景
-SCROLL_AREA_TRANSPARENT_QSS = """
-QScrollArea {
-    background: transparent;
-    border: none;
-}
-QScrollArea > QWidget {
-    background: transparent;
-}
-QScrollArea > QWidget > QWidget {
-    background: transparent;
-}
-"""
+WINDOW_RADIUS = theme.RADIUS_XL
 
 
 # 宠物右侧按钮列的纵向偏移（相对宠物窗口顶部）
@@ -462,30 +80,33 @@ def make_title_button(text: str, hover_color: str,
                       base_color: str = _COLOR_TEXT_MUTED,
                       text_color: str = "#fff",
                       font_size: str = "18px") -> QPushButton:
-    """创建无边框面板窗口标题栏上的标准按钮（关闭 / 最小化）。"""
+    """创建无边框面板窗口标题栏上的圆形按钮（关闭 / 最小化）。"""
     btn = QPushButton(text)
-    btn.setFixedSize(36, 36)
+    btn.setFixedSize(34, 34)
     btn.setStyleSheet(f"""
-        QPushButton {{ background: transparent; border: none; border-radius: 18px;
-                     font-size: {font_size}; color: {base_color}; }}
-        QPushButton:hover {{ background: {hover_color}; color: {text_color}; }}
+        QPushButton {{ background: transparent; border: {theme.BORDER}px solid transparent;
+                     border-radius: 17px; font-size: {font_size}; color: {base_color}; }}
+        QPushButton:hover {{ background: {hover_color}; border-color: {theme.INK};
+                     color: {text_color}; }}
     """)
     return btn
 
 
-_LIGHT_BLUE_HOVER = "#87CEFA"
+_LIGHT_BLUE_HOVER = theme.PRIMARY_SOFT
 
 
 def make_minimize_button(window) -> QPushButton:
-    """创建淡蓝色 hover 的最小化按钮，点击后最小化指定窗口。"""
-    btn = make_title_button("−", _LIGHT_BLUE_HOVER, font_size="16px")
+    """创建主色 hover 的最小化按钮，点击后最小化指定窗口。"""
+    btn = make_title_button("−", _LIGHT_BLUE_HOVER,
+                            base_color=theme.INK_SOFT, text_color=theme.INK,
+                            font_size="16px")
     btn.clicked.connect(window.showMinimized)
     return btn
 
 
 def make_close_button(window, on_close=None) -> QPushButton:
     """创建红色 hover 的关闭按钮，点击后关闭窗口或调用自定义回调。"""
-    btn = make_title_button("✕", _COLOR_DANGER)
+    btn = make_title_button("✕", theme.DANGER, font_size="14px")
     if on_close is None:
         btn.clicked.connect(window.close)
     else:
@@ -515,38 +136,39 @@ def ensure_taskbar_icon(window):
         pass
 
 
-# 终端与确认卡片暗色色板，取值与上方米白配色互不共用
+# 终端暗色色板：值来自 theme，保持与手绘皮肤分离
 
-TERMINAL_BG = "#17191a"
-TERMINAL_PANEL = "#1f2224"
-TERMINAL_CODE_BG = "#101213"
-TERMINAL_BORDER = "#2f3437"
-TERMINAL_HOVER = "#262a2c"
 
-TERMINAL_TEXT = "#e8e5de"
-TERMINAL_STDOUT = "#c9c6bf"
-TERMINAL_STDERR = "#e08b86"
-TERMINAL_MUTED = "#8a9195"
-TERMINAL_MUTED_LIGHT = "#a8adaf"
+TERMINAL_BG = theme.TERMINAL_BG
+TERMINAL_PANEL = theme.TERMINAL_PANEL
+TERMINAL_CODE_BG = theme.TERMINAL_CODE_BG
+TERMINAL_BORDER = theme.TERMINAL_BORDER
+TERMINAL_HOVER = theme.TERMINAL_HOVER
 
-TERMINAL_ACCENT = "#5fbfa8"
-TERMINAL_ACCENT_DIM = "#3f7f72"
-TERMINAL_ACCENT_TEXT = "#0f1413"
-TERMINAL_USER = "#d9a441"
-TERMINAL_DANGER = "#d9534f"
-TERMINAL_IDLE = "#4a4f52"
+TERMINAL_TEXT = theme.TERMINAL_TEXT
+TERMINAL_STDOUT = theme.TERMINAL_STDOUT
+TERMINAL_STDERR = theme.TERMINAL_STDERR
+TERMINAL_MUTED = theme.TERMINAL_MUTED
+TERMINAL_MUTED_LIGHT = theme.TERMINAL_MUTED_LIGHT
+
+TERMINAL_ACCENT = theme.TERMINAL_ACCENT
+TERMINAL_ACCENT_DIM = theme.TERMINAL_ACCENT_DIM
+TERMINAL_ACCENT_TEXT = theme.TERMINAL_ACCENT_TEXT
+TERMINAL_USER = theme.TERMINAL_USER
+TERMINAL_DANGER = theme.TERMINAL_DANGER
+TERMINAL_IDLE = theme.TERMINAL_IDLE
 
 TERMINAL_MONO_FONTS = ("JetBrains Mono", "Cascadia Mono", "Consolas", "Menlo",
-                    "DejaVu Sans Mono", "Noto Sans Mono")
-TERMINAL_UI_FONTS = ("Segoe UI", "PingFang SC", "Microsoft YaHei UI", "Noto Sans CJK SC")
+                       "DejaVu Sans Mono", "Noto Sans Mono")
+TERMINAL_UI_FONTS = theme.UI_FONTS
 
 TERMINAL_SOURCE_LABEL_USER = "[用户] $"
 TERMINAL_SOURCE_LABEL_MODEL = "[恋恋] $"
 
-TERMINAL_WINDOW_RADIUS = 8
-TERMINAL_CONTROL_RADIUS = 6
-TERMINAL_CARD_RADIUS = 10
-TERMINAL_BLOCK_GAP = 14
+TERMINAL_WINDOW_RADIUS = theme.TERMINAL_WINDOW_RADIUS
+TERMINAL_CONTROL_RADIUS = theme.TERMINAL_CONTROL_RADIUS
+TERMINAL_CARD_RADIUS = theme.TERMINAL_CARD_RADIUS
+TERMINAL_BLOCK_GAP = theme.TERMINAL_BLOCK_GAP
 
 
 def terminal_source_color(source: str) -> str:

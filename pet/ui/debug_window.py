@@ -10,17 +10,16 @@ from datetime import datetime
 import time
 
 from PySide6.QtCore import Qt, QPoint, QTimer, QSize
-from PySide6.QtGui import QFont, QIcon, QPainter, QPainterPath, QColor, QPen
+from PySide6.QtGui import QFont, QIcon
+from pet import theme
+from pet.ui.frame import paint_ink_frame
+from pet.ui.qss import TITLE_LABEL_QSS, app_stylesheet
 from pet.ui.styles import (
-    ICON_PATH, WINDOW_QSS, PANEL_QSS, BUTTON_QSS, BUTTON_PRIMARY_QSS,
-    BUTTON_DANGER_QSS, INPUT_HIGHLIGHT_QSS, COMBOBOX_QSS, TEXTEDIT_QSS,
-    LIST_QSS, CHECKBOX_QSS, LABEL_SECONDARY_QSS, LABEL_MONO_QSS,
-    SCROLLBAR_QSS, SCROLL_AREA_TRANSPARENT_QSS,
-    _COLOR_BG, _COLOR_BORDER_DARK, _COLOR_TEXT_TITLE, _COLOR_TEXT_MUTED, _COLOR_DANGER,
+    ICON_PATH, DEBUG_ICON_PATH, SCROLL_AREA_TRANSPARENT_QSS, SCROLLBAR_QSS,
     make_minimize_button, make_close_button, ensure_taskbar_icon,
 )
 
-from pet.ui.widgets import NoWheelComboBox
+from pet.ui.widgets import NoWheelComboBox, make_icon_badge
 from pet.ui.speech_bubble import SpeechBubble
 from pet.ui.emotion import EmotionBubble, EMOTION_MAP
 from pet.ui.particle import ParticleWidget
@@ -73,11 +72,7 @@ class DebugWindow(QWidget):
             pass
 
         self._setup_ui()
-        self.setStyleSheet(
-            PANEL_QSS + BUTTON_QSS + BUTTON_PRIMARY_QSS +
-            INPUT_HIGHLIGHT_QSS + COMBOBOX_QSS + TEXTEDIT_QSS + LIST_QSS +
-            CHECKBOX_QSS + SCROLL_AREA_TRANSPARENT_QSS
-        )
+        self.setStyleSheet(app_stylesheet())
 
         self._pos_timer = QTimer(self)
         self._pos_timer.timeout.connect(self._refresh_pos)
@@ -109,25 +104,21 @@ class DebugWindow(QWidget):
 
     def _setup_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(6, 2, 6, 4)
+        root.setContentsMargins(8, 3, 8 + theme.SHADOW_WINDOW,
+                                6 + theme.SHADOW_WINDOW)
         root.setSpacing(2)
 
         header = QWidget()
         header.setObjectName("LogHeader")
-        header.setFixedHeight(38)
+        header.setFixedHeight(theme.TITLE_BAR_H)
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(12, 0, 6, 0)
-        header_layout.setSpacing(6)
+        header_layout.setContentsMargins(3, 0, 0, 0)
+        header_layout.setSpacing(8)
 
-        try:
-            icon_lbl = QLabel()
-            icon_lbl.setPixmap(QIcon(ICON_PATH).pixmap(18, 18))
-            header_layout.addWidget(icon_lbl)
-        except Exception:
-            pass
+        header_layout.addWidget(make_icon_badge(DEBUG_ICON_PATH))
 
         title_lbl = QLabel("调试面板")
-        title_lbl.setStyleSheet(f"font-size:13px; color:{_COLOR_TEXT_TITLE}; font-weight:bold; background:transparent;")
+        title_lbl.setStyleSheet(TITLE_LABEL_QSS)
         header_layout.addWidget(title_lbl)
         header_layout.addStretch()
 
@@ -153,7 +144,7 @@ class DebugWindow(QWidget):
         body_scroll.setWidgetResizable(True)
         body_scroll.setFrameShape(QFrame.Shape.NoFrame)
         body_scroll.setWidget(body_host)
-        body_scroll.setStyleSheet(SCROLLBAR_QSS)
+        body_scroll.setStyleSheet(SCROLLBAR_QSS + SCROLL_AREA_TRANSPARENT_QSS)
         root.addWidget(body_scroll, 1)
 
 
@@ -434,7 +425,8 @@ class DebugWindow(QWidget):
         self.ctx_output.setReadOnly(True)
         self.ctx_output.setMaximumHeight(180)
         self.ctx_output.setFont(QFont("Consolas", 9))
-        self.ctx_output.setStyleSheet(f"QTextEdit {{ background: {_COLOR_BG}; }}" + SCROLLBAR_QSS)
+        self.ctx_output.setStyleSheet(
+            f"QTextEdit {{ background: {theme.SURFACE_WARM}; }}" + SCROLLBAR_QSS)
         ctx_layout.addWidget(self.ctx_output)
 
         right.addWidget(ctx_group)
@@ -442,7 +434,7 @@ class DebugWindow(QWidget):
         stats_layout = QHBoxLayout()
         self.label_llm_calls = QLabel("累计调用: —")
         self.label_llm_calls.setFont(QFont("Consolas", 9))
-        self.label_llm_calls.setStyleSheet("color:#555;")
+        self.label_llm_calls.setStyleSheet(f"color:{theme.INK_SOFT};")
         stats_layout.addWidget(self.label_llm_calls)
         stats_layout.addStretch()
         right.addLayout(stats_layout)
@@ -453,7 +445,8 @@ class DebugWindow(QWidget):
         self.log_output.setReadOnly(True)
         self.log_output.setMaximumHeight(150)
         self.log_output.setFont(QFont("Consolas", 9))
-        self.log_output.setStyleSheet(f"QTextEdit {{ background: {_COLOR_BG}; }}" + SCROLLBAR_QSS)
+        self.log_output.setStyleSheet(
+            f"QTextEdit {{ background: {theme.SURFACE_WARM}; }}" + SCROLLBAR_QSS)
         log_layout.addWidget(self.log_output)
         left.addWidget(log_group)
 
@@ -665,14 +658,7 @@ class DebugWindow(QWidget):
 
 
     def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        rect = self.rect().adjusted(0, 0, -1, -1)
-        path = QPainterPath()
-        path.addRoundedRect(rect, 10, 10)
-        painter.fillPath(path, QColor(_COLOR_BG))
-        painter.setPen(QPen(QColor("#000000"), 1))
-        painter.drawPath(path)
+        paint_ink_frame(self)
 
 
     def _header_press(self, event):

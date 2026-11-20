@@ -2,10 +2,10 @@
 
 from PySide6.QtWidgets import QLabel, QWidget
 from PySide6.QtCore import Qt, QTimer, QPoint, QPropertyAnimation, QParallelAnimationGroup, QEasingCurve
-from PySide6.QtGui import QPainter, QColor, QPen, QPolygon
+from PySide6.QtGui import QPainter, QColor, QPainterPath, QPen
 from pet.config import config
+from pet import theme
 from pet.ui.edge_dock import edge_mask_rect
-from pet.ui.styles import _COLOR_BUBBLE_PET
 
 TAIL_HEIGHT = 10
 
@@ -26,7 +26,7 @@ class SpeechBubble(QLabel):
         self.setStyleSheet(
             "padding: 10px;"
             f"font-size: {config.BUBBLE_FONT_SIZE}px;"
-            "color: #333;"
+            f"color: {theme.INK};"
         )
         self.setWordWrap(True)
         self.setMaximumWidth(config.BUBBLE_MAX_WIDTH)
@@ -65,25 +65,24 @@ class SpeechBubble(QLabel):
         w, h = self.width(), self.height()
         body_h = h - TAIL_HEIGHT
 
-        bubble_color = QColor(_COLOR_BUBBLE_PET)
-        bubble_color.setAlpha(230)
-
         body_rect = self.rect()
         body_rect.setHeight(body_h)
-        painter.setBrush(bubble_color)
-        painter.setPen(QPen(QColor(200, 200, 200), 1))
-        painter.drawRoundedRect(body_rect.adjusted(0, 0, -1, -1), 12, 12)
 
         cx = self._tail_x()
-        tail_top = body_h - 1
-        tail = QPolygon([
-            QPoint(cx - 6, tail_top),
-            QPoint(cx + 6, tail_top),
-            QPoint(cx,     h - 1),
-        ])
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(bubble_color)
-        painter.drawPolygon(tail)
+        body = QPainterPath()
+        body.addRoundedRect(body_rect.adjusted(1, 1, -2, -2),
+                            theme.RADIUS_LG, theme.RADIUS_LG)
+        # 尾巴底边压进气泡内部，union 才会合并成单一轮廓，避免出现第二条横边
+        tail = QPainterPath()
+        tail.moveTo(cx - 8, body_h - 7)
+        tail.lineTo(cx + 8, body_h - 7)
+        tail.lineTo(cx, h - 2)
+        tail.closeSubpath()
+        bubble = body.united(tail)
+
+        painter.setBrush(QColor(theme.SURFACE))
+        painter.setPen(QPen(QColor(theme.INK), theme.BORDER))
+        painter.drawPath(bubble)
 
         painter.end()
         super().paintEvent(event)

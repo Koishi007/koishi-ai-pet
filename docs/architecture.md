@@ -256,6 +256,7 @@ system 动作表换成 `EDGE_ACTION_NAMES` 的八个贴边动作；调度器、�
 | `pet/relaunch.py` | 托盘「重启」：按当前运行方式（源码 / 入口 exe / 打包）拉起新实例 |
 | `pet/self_update.py` | 启动时应用上一次更新遗留的 `update.*.new` 脚本 |
 | `pet/settings.py` | `settings.json` 的读写与跨平台路径、原子写入 |
+| `pet/theme.py` | 界面样式令牌：色板、圆角、描边、投影、间距与字体链；供 `pet/ui` 与工具面板共用 |
 | `pet/single_instance.py` | 单实例锁（`QLockFile`） |
 | `pet/version_check.py` | 启动后检查 GitHub Release 版本（在后台 QThread 里跑） |
 | `pet/version_utils.py` | 版本号解析与比较（纯逻辑，方便测试） |
@@ -347,6 +348,7 @@ system 动作表换成 `EDGE_ACTION_NAMES` 的八个贴边动作；调度器、�
 | 加一个粒子特效 | `pet/ui/particle.py` 的 `_SPAWNERS` 与 `_DEFAULT_Y` | 调试面板自动列出；重生成 [reference/effects.md](reference/effects.md) |
 | 加一个配置项 | `pet/config.py` 的 `_KEY_META` | 要在界面可见则同时改 `pet/ui/settings_tabs.py` 并补 `TAB_SPECS`；重生成 [reference/config.md](reference/config.md) |
 | 改提示词 | `pet/brain/prompts.py`；运行时段落改 `pet/brain/context_builder.py` | 组合白名单；重生成 [reference/prompt-blocks.md](reference/prompt-blocks.md) |
+| 改界面配色或圆角 | `pet/theme.py` 的令牌；公共控件样式在 `pet/ui/qss.py` | 工具面板的 QSS 只引令牌；见 [specs/2026-11-20-ui-style-refactor-design.md](specs/2026-11-20-ui-style-refactor-design.md) |
 | 加一个工具 | `pet/tools/<name>/__init__.py` | 声明 `TOOL_NAME`/`TOOL_DESCRIPTION`/`register()`，可加 `TOOL_GROUP`；每个方法声明 `output` 输出契约（见 [tool-development.md](tool-development.md) §返回值与输出契约）；重生成 [reference/tools.md](reference/tools.md) |
 | 加一个文件动作 | `pet/tools/<name>/__init__.py` 的 `register()` 内 `add_file_action(...)` | 拖入文件时由文件气泡渲染成按钮，工具被禁用则不出现；契约见 [tool-development.md](tool-development.md) |
 | 调数值手感 | `pet/pulse/vitals.py`、`pet/pulse/mood.py` + `_KEY_META` 的阈值项 | 文案档位同步（第 11 节第 2 条） |

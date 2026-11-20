@@ -4,37 +4,22 @@ from pathlib import Path
 
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLineEdit, QBoxLayout
 from PySide6.QtCore import Qt, QSize, QTimer, QPoint, Signal, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup, QEvent
-from PySide6.QtGui import QFont, QIcon
 from pet.config import config
+from pet import theme
+from pet.ui.icons import tinted_icon
+from pet.ui.qss import (BUBBLE_INPUT_BUSY_QSS, BUBBLE_INPUT_QSS,
+                        bubble_button_qss)
 from pet.ui.styles import BUBBLE_ROW_FEED, bubble_column_y
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+_FEED_ICON_PATH = str(BASE_DIR / "assets" / "icon" / "feed.png")
+_COLLAPSE_ICON_PATH = str(BASE_DIR / "assets" / "icon" / "collapse.png")
 
 
 class FeedBubble(QWidget):
     """喂食交互气泡 - 悬停桌宠时显示，点击展开输入框。"""
 
     feed_submitted = Signal(str)  # 用户提交喂食时发出
-
-    _INPUT_STYLE = (
-        "QLineEdit {"
-        "  background: rgba(255,255,255,230);"
-        "  border: 1px solid #ccc;"
-        "  border-radius: 14px;"
-        "  padding: 2px 10px;"
-        "  font-size: 13px;"
-        "}"
-    )
-    _INPUT_STYLE_BUSY = (
-        "QLineEdit {"
-        "  background: rgba(230,230,230,200);"
-        "  border: 1px solid #ddd;"
-        "  border-radius: 14px;"
-        "  padding: 2px 10px;"
-        "  font-size: 13px;"
-        "  color: #999;"
-        "}"
-    )
 
     def __init__(self, pet_window, parent=None):
         super().__init__(parent)
@@ -75,19 +60,9 @@ class FeedBubble(QWidget):
         # 喂食按钮（收起态显示）
         self._btn = QPushButton()
         self._btn.setFixedSize(32, 32)
-        self._btn.setIcon(QIcon(str(BASE_DIR / "assets" / "icon" / "feed.png")))
-        self._btn.setIconSize(QSize(28, 28))
-        self._btn.setStyleSheet(
-            "QPushButton {"
-            "  background: rgba(255,255,255,220);"
-            "  border: 1px solid #ccc;"
-            "  border-radius: 16px;"
-            "}"
-            "QPushButton:hover {"
-            "  background: rgba(240,255,240,240);"
-            "  border-color: #aaa;"
-            "}"
-        )
+        self._btn.setIcon(tinted_icon(_FEED_ICON_PATH, theme.INK, 20))
+        self._btn.setIconSize(QSize(20, 20))
+        self._btn.setStyleSheet(bubble_button_qss(theme.BUBBLE_FEED))
         self._btn.clicked.connect(self._toggle_expand)
         self._layout.addWidget(self._btn)
 
@@ -97,7 +72,7 @@ class FeedBubble(QWidget):
         self._input.setMinimumWidth(0)
         self._input.setMaximumWidth(180)
         self._input.setMinimumHeight(28)
-        self._input.setStyleSheet(self._INPUT_STYLE)
+        self._input.setStyleSheet(BUBBLE_INPUT_QSS)
         self._input.returnPressed.connect(self._on_submit)
         self._input.hide()
         self._layout.addWidget(self._input)
@@ -129,7 +104,7 @@ class FeedBubble(QWidget):
         self._input.setMinimumWidth(0)
         self._input.setMaximumWidth(180)
         self._input.show()
-        self._btn.setIcon(QIcon(str(BASE_DIR / "assets" / "icon" / "collapse.png")))
+        self._btn.setIcon(tinted_icon(_COLLAPSE_ICON_PATH, theme.INK, 20))
 
         self._expand_anim = QPropertyAnimation(self._input, b"minimumWidth")
         self._expand_anim.setDuration(200)
@@ -147,7 +122,7 @@ class FeedBubble(QWidget):
             return
         self._expanded = False
         self._collapse_timer.stop()  # 手动收起时取消定时器
-        self._btn.setIcon(QIcon(str(BASE_DIR / "assets" / "icon" / "feed.png")))
+        self._btn.setIcon(tinted_icon(_FEED_ICON_PATH, theme.INK, 20))
 
         self._collapse_anim = QPropertyAnimation(self._input, b"minimumWidth")
         self._collapse_anim.setDuration(150)
@@ -211,11 +186,11 @@ class FeedBubble(QWidget):
         self._busy = busy
         if busy:
             self._input.setEnabled(False)
-            self._input.setStyleSheet(self._INPUT_STYLE_BUSY)
+            self._input.setStyleSheet(BUBBLE_INPUT_BUSY_QSS)
             self._input.setPlaceholderText("正在思考...")
         else:
             self._input.setEnabled(True)
-            self._input.setStyleSheet(self._INPUT_STYLE)
+            self._input.setStyleSheet(BUBBLE_INPUT_QSS)
             self._input.setPlaceholderText("喂点什么...")
 
     def hide_bubble(self):

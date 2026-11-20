@@ -5,21 +5,23 @@ from __future__ import annotations
 import logging
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (QApplication, QHBoxLayout, QLabel, QMessageBox,
                                QPushButton, QTabWidget, QVBoxLayout, QWidget)
 
 from pet.auto_start import set_auto_start
 from pet.config import _KEY_META, config
+from pet import theme
+from pet.ui.frame import paint_ink_frame
+from pet.ui.qss import TITLE_LABEL_QSS, app_stylesheet
 from pet.ui.settings_actions import SettingsActions, apply_pet_scale
 from pet.ui.settings_fields import SettingsForm
 from pet.ui.settings_hooks import invalidate_action_section
 from pet.ui.settings_tabs import SettingsTabs
-from pet.ui.styles import (BUTTON_PRIMARY_QSS, BUTTON_QSS, CHECKBOX_QSS,
-                           COMBOBOX_QSS, INPUT_QSS, PANEL_QSS,
-                           SETTING_ICON_PATH, TAB_BAR_QSS, TEXTEDIT_QSS,
-                           _COLOR_BG, _COLOR_TEXT_TITLE, ensure_taskbar_icon,
-                           make_close_button, make_minimize_button)
+from pet.ui.styles import (BUTTON_PRIMARY_QSS, SETTING_ICON_PATH,
+                           ensure_taskbar_icon, make_close_button,
+                           make_minimize_button)
+from pet.ui.widgets import make_icon_badge
 
 logger = logging.getLogger(__name__)
 
@@ -76,11 +78,7 @@ class SettingsWindow(QWidget):
             self._msg, self.isVisible, self.tabs.update_profile_ui)
         self._setup_ui()
         self.tabs.bind(self.actions)
-        self.setStyleSheet(
-            PANEL_QSS + BUTTON_QSS + BUTTON_PRIMARY_QSS +
-            INPUT_QSS + COMBOBOX_QSS + TEXTEDIT_QSS + CHECKBOX_QSS +
-            TAB_BAR_QSS
-        )
+        self.setStyleSheet(app_stylesheet())
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -88,23 +86,21 @@ class SettingsWindow(QWidget):
 
     def _setup_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(6, 2, 6, 4)
-        root.setSpacing(0)
+        root.setContentsMargins(8, 3, 8 + theme.SHADOW_WINDOW,
+                                6 + theme.SHADOW_WINDOW)
+        root.setSpacing(2)
 
         title_bar = QWidget()
-        title_bar.setFixedHeight(38)
+        title_bar.setFixedHeight(theme.TITLE_BAR_H)
         title_row = QHBoxLayout(title_bar)
-        title_row.setContentsMargins(12, 0, 6, 0)
-        title_row.setSpacing(6)
+        title_row.setContentsMargins(3, 0, 0, 0)
+        title_row.setSpacing(8)
         try:
-            icon_lbl = QLabel()
-            icon_lbl.setPixmap(QIcon(SETTING_ICON_PATH).pixmap(18, 18))
-            title_row.addWidget(icon_lbl)
+            title_row.addWidget(make_icon_badge(SETTING_ICON_PATH))
         except Exception:
             pass
         title = QLabel("设置")
-        title.setStyleSheet(
-            f"font-size:13px; color:{_COLOR_TEXT_TITLE}; font-weight:bold; background:transparent;")
+        title.setStyleSheet(TITLE_LABEL_QSS)
         title_row.addWidget(title)
         title_row.addStretch()
         title_row.addWidget(make_minimize_button(self))
@@ -117,7 +113,6 @@ class SettingsWindow(QWidget):
         self._tabs = QTabWidget()
         self._tabs.setDocumentMode(True)
         self._tabs.tabBar().setExpanding(True)
-        self._tabs.tabBar().setStyleSheet(f"QTabBar {{ background: {_COLOR_BG}; }}")
         for label, page in self.tabs.build():
             self._tabs.addTab(page, label)
         root.addWidget(self._tabs, stretch=1)
@@ -226,11 +221,4 @@ class SettingsWindow(QWidget):
             self._drag_pos = event.globalPosition().toPoint()
 
     def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        rect = self.rect().adjusted(0, 0, -1, -1)
-        path = QPainterPath()
-        path.addRoundedRect(rect, 10, 10)
-        painter.fillPath(path, QColor(_COLOR_BG))
-        painter.setPen(QPen(QColor("#000000"), 1))
-        painter.drawPath(path)
+        paint_ink_frame(self)

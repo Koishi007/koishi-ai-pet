@@ -9,7 +9,7 @@ from PySide6.QtWidgets import QMessageBox, QSystemTrayIcon, QMenu
 from PySide6.QtGui import (QAction, QColor, QCursor, QGuiApplication, QIcon,
                            QPainter, QPainterPath, QPen)
 from PySide6.QtCore import QObject, QTimer, Qt
-from pet.ui.styles import ICON_PATH, MENU_QSS
+from pet.ui.styles import ICON_PATH, MENU_QSS, MENU_SOLID_QSS
 from pet.ui.settings_window import SettingsWindow
 
 from pet.config import config
@@ -138,12 +138,14 @@ class SystemTrayManager(QObject):
             pass
 
         menu = QMenu(self.pet)
-        menu.setStyleSheet(MENU_QSS)
         # Windows 原生菜单不认 QSS border-radius，需 frameless + 自绘
         if sys.platform == "win32":
+            menu.setStyleSheet(MENU_QSS)
             menu.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Popup | Qt.WindowType.NoDropShadowWindowHint)
             menu.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
             _wrap_menu_paint(menu)
+        else:
+            menu.setStyleSheet(MENU_SOLID_QSS)
 
         if self.pet.isVisible():
             hide_action = QAction("隐藏", menu)

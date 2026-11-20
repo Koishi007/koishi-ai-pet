@@ -9,10 +9,11 @@ from PySide6.QtWidgets import (QFormLayout, QGroupBox, QHBoxLayout, QLabel,
                                QVBoxLayout, QWidget)
 
 from pet.config import PET_SCALE_STEPS, config
+from pet import theme
 from pet.ui.settings_fields import SettingsForm, SettingsWidgets
 from pet.ui.settings_spec import TAB_SPECS
 from pet.ui.styles import (BUTTON_PRIMARY_QSS, INPUT_HIGHLIGHT_QSS,
-                           SCROLLBAR_QSS, TEXTEDIT_QSS, _COLOR_BG,
+                           SCROLLBAR_QSS, TEXTEDIT_QSS,
                            _COLOR_TEXT_MUTED, _COLOR_TEXT_SEC)
 from pet.ui.widgets import NoWheelComboBox
 
@@ -28,7 +29,8 @@ def _test_output() -> QTextEdit:
     out.setReadOnly(True)
     out.setMaximumHeight(60)
     out.setFont(QFont("Consolas", 9))
-    out.setStyleSheet(TEXTEDIT_QSS + f"QTextEdit {{ background: {_COLOR_BG}; }}")
+    out.setStyleSheet(
+        TEXTEDIT_QSS + f"QTextEdit {{ background: {theme.SURFACE_WARM}; }}")
     return out
 
 
@@ -72,8 +74,8 @@ class SettingsTabs:
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.Shape.NoFrame)
         scroll.setStyleSheet(
-            f"QScrollArea {{ border: none; background: {_COLOR_BG}; }}" + SCROLLBAR_QSS)
-        scroll.viewport().setStyleSheet(f"background: {_COLOR_BG};")
+            "QScrollArea { border: none; background: transparent; }" + SCROLLBAR_QSS)
+        scroll.viewport().setStyleSheet("background: transparent;")
         scroll.setWidget(content)
         layout.addWidget(scroll)
         return page
@@ -119,7 +121,7 @@ class SettingsTabs:
         model_row.addWidget(w.model_edit)
         w.btn_fetch_models = QPushButton("获取列表")
         w.btn_fetch_models.setStyleSheet(BUTTON_PRIMARY_QSS)
-        w.btn_fetch_models.setFixedWidth(72)
+        w.btn_fetch_models.setFixedWidth(84)
         model_row.addWidget(w.btn_fetch_models)
         form.addRow("首选模型名称:", model_row)
 
@@ -181,7 +183,7 @@ class SettingsTabs:
         alt_model_row.addWidget(w.alt_model_edit)
         w.btn_fetch_models_alt = QPushButton("获取列表")
         w.btn_fetch_models_alt.setStyleSheet(BUTTON_PRIMARY_QSS)
-        w.btn_fetch_models_alt.setFixedWidth(72)
+        w.btn_fetch_models_alt.setFixedWidth(84)
         alt_model_row.addWidget(w.btn_fetch_models_alt)
         alt_form.addRow("备选模型名称:", alt_model_row)
         switch_layout.addLayout(alt_form)
@@ -294,7 +296,7 @@ class SettingsTabs:
         mem_model_row.addWidget(f.line("EMBEDDING_MODEL", "embedding-3"))
         w.btn_fetch_mem_models = QPushButton("获取列表")
         w.btn_fetch_mem_models.setStyleSheet(BUTTON_PRIMARY_QSS)
-        w.btn_fetch_mem_models.setFixedWidth(72)
+        w.btn_fetch_mem_models.setFixedWidth(84)
         mem_model_row.addWidget(w.btn_fetch_mem_models)
         memory_form.addRow("模型名:", mem_model_row)
         memory_form.addRow("向量维度:", f.line("EMBEDDING_DIM", "256", QIntValidator(64, 8192)))
@@ -370,7 +372,7 @@ class SettingsTabs:
     def _personality(self) -> QWidget:
         f = self.form
         content = QWidget()
-        content.setStyleSheet(f"background: {_COLOR_BG};")
+        content.setStyleSheet("background: transparent;")
         layout = QVBoxLayout(content)
         layout.setContentsMargins(8, 8, 8, 8)
 

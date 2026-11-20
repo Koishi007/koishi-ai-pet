@@ -6,34 +6,34 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QGridLayout, QPushButton, QLabel
 
 from pet.game.gamebase import GAME
+from pet import theme
 from pet.ui.game_panel import GamePanelBase
 
 logger = logging.getLogger(__name__)
 
 _CELL_QSS = (
     "QPushButton {"
-    "  background: #ffffff;"
-    "  border: 2px solid #d0d6e0;"
+    f"  background: {theme.SURFACE};"
+    f"  border: {theme.BORDER}px solid {theme.INK};"
     "  border-radius: 12px;"
-    "  font-size: 40px;"
-    "  font-weight: bold;"
-    "  color: #333;"
+    "  font-size: 34px;"
+    "  font-weight: 800;"
+    f"  color: {theme.INK};"
     "}"
     "QPushButton:hover {"
-    "  background: #f0f6ff;"
-    "  border-color: #7aa7e0;"
+    f"  background: {theme.PRIMARY_SOFT};"
     "}"
 )
 
-# 桌宠回合的空格：视觉禁用（灰底、无 hover），点击由 _waiting 拦截
+# 桌宠回合的空格：视觉禁用（浅底、无 hover），点击由 _waiting 拦截
 _CELL_DISABLED_QSS = (
     "QPushButton {"
-    "  background: #eceef3;"
-    "  border: 2px solid #d0d6e0;"
+    f"  background: {theme.PAPER_DEEP};"
+    f"  border: {theme.BORDER}px solid {theme.LINE};"
     "  border-radius: 12px;"
-    "  font-size: 40px;"
-    "  font-weight: bold;"
-    "  color: #999;"
+    "  font-size: 34px;"
+    "  font-weight: 800;"
+    f"  color: {theme.INK_MUTED};"
     "}"
 )
 
@@ -54,7 +54,7 @@ class TicTacToePanel(GamePanelBase):
     def _build_content(self, layout):
         self._message = QLabel("")
         self._message.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._message.setStyleSheet("font-size: 13px; color: #555;")
+        self._message.setStyleSheet(f"font-size: 12px; color: {theme.INK_SOFT};")
         self._message.setFixedHeight(22)
         layout.addWidget(self._message)
 
@@ -76,7 +76,7 @@ class TicTacToePanel(GamePanelBase):
 
         hint = QLabel("轮到你时点击空格落子")
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        hint.setStyleSheet("font-size: 12px; color: #999;")
+        hint.setStyleSheet(f"font-size: 11px; color: {theme.INK_MUTED};")
         layout.addWidget(hint)
 
     def _render_game(self, payload: dict):
@@ -99,9 +99,11 @@ class TicTacToePanel(GamePanelBase):
                 btn = self._cells[r][c]
                 btn.setText(mark)
                 if mark == "X":
-                    style = _CELL_QSS.replace("color: #333;", "color: #e67e22;")
+                    style = _CELL_QSS.replace(
+                        f"color: {theme.INK};", f"color: {theme.PRIMARY_DEEP};")
                 elif mark == "O":
-                    style = _CELL_QSS.replace("color: #333;", "color: #2e86c1;")
+                    style = _CELL_QSS.replace(
+                        f"color: {theme.INK};", f"color: {theme.INFO};")
                 elif self._waiting:
                     style = _CELL_QSS  # 用户回合：空格可点
                 else:

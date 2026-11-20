@@ -4,18 +4,20 @@ import logging
 from collections import deque
 
 from PySide6.QtCore import Qt, Signal, QObject, QPoint
-from PySide6.QtGui import QFont, QTextCursor, QIcon, QPainter, QPainterPath, QColor, QPen
+from PySide6.QtGui import QFont, QTextCursor, QIcon
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QTextEdit, QPushButton, QLabel,
 )
+from pet import theme
+from pet.ui.frame import paint_ink_frame
+from pet.ui.qss import TITLE_LABEL_QSS, app_stylesheet
 from pet.ui.styles import (
-    ICON_PATH, TEXTEDIT_QSS, BUTTON_QSS, BUTTON_PRIMARY_QSS, BUTTON_DANGER_QSS, COMBOBOX_QSS, SCROLLBAR_QSS,
-    _COLOR_BG, _COLOR_BORDER_DARK, _COLOR_TEXT_TITLE, _COLOR_TEXT_MUTED, _COLOR_DANGER,
-    TITLE_LABEL_QSS, WINDOW_RADIUS,
+    ICON_PATH, LOG_ICON_PATH, TEXTEDIT_QSS, BUTTON_PRIMARY_QSS, COMBOBOX_QSS,
+    SCROLLBAR_QSS,
     make_minimize_button, make_close_button, ensure_taskbar_icon,
 )
-from pet.ui.widgets import NoWheelComboBox
+from pet.ui.widgets import NoWheelComboBox, make_icon_badge
 
 
 
@@ -86,18 +88,6 @@ class LogWindowHandler(logging.Handler):
 
 
 
-_WINDOW_QSS = """
-QWidget#LogWindowRoot {
-    background: transparent;
-}
-"""
-
-_HEADER_QSS = """
-QWidget#LogHeader {
-    background: transparent;
-}
-"""
-
 _MAX_BLOCK_COUNT = 5000
 
 
@@ -119,7 +109,7 @@ class LogWindow(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
 
-        self.setStyleSheet(_WINDOW_QSS)
+        self.setStyleSheet(app_stylesheet())
 
         # 窗口图标 (与托盘一致)
         try:
@@ -129,18 +119,12 @@ class LogWindow(QWidget):
 
         header = QWidget()
         header.setObjectName("LogHeader")
-        header.setFixedHeight(38)
-        header.setStyleSheet(_HEADER_QSS)
+        header.setFixedHeight(theme.TITLE_BAR_H)
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(12, 0, 6, 0)
-        header_layout.setSpacing(6)
+        header_layout.setContentsMargins(3, 0, 0, 0)
+        header_layout.setSpacing(8)
 
-        icon_label = QLabel()
-        try:
-            icon_label.setPixmap(QIcon(ICON_PATH).pixmap(18, 18))
-        except Exception:
-            pass
-        header_layout.addWidget(icon_label)
+        header_layout.addWidget(make_icon_badge(LOG_ICON_PATH))
 
         title_label = QLabel("日志")
         title_label.setStyleSheet(TITLE_LABEL_QSS)
@@ -175,12 +159,13 @@ class LogWindow(QWidget):
         self._log_view.setFont(QFont("Consolas", 10))
         self._log_view.setStyleSheet(TEXTEDIT_QSS + SCROLLBAR_QSS + f"""
             QTextEdit {{
-                background: {_COLOR_BG};
+                background: {theme.SURFACE_WARM};
             }}
         """)
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(8, 4, 8, 8)
+        root.setContentsMargins(8, 4, 8 + theme.SHADOW_WINDOW,
+                                8 + theme.SHADOW_WINDOW)
         root.setSpacing(6)
         root.addWidget(header)
         root.addLayout(toolbar)
@@ -199,14 +184,7 @@ class LogWindow(QWidget):
 
 
     def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        rect = self.rect().adjusted(0, 0, -1, -1)
-        path = QPainterPath()
-        path.addRoundedRect(rect, WINDOW_RADIUS, WINDOW_RADIUS)
-        painter.fillPath(path, QColor(_COLOR_BG))
-        painter.setPen(QPen(QColor("#000000"), 1))
-        painter.drawPath(path)
+        paint_ink_frame(self)
 
 
     def _header_press(self, event):

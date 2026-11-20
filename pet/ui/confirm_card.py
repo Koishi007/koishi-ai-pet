@@ -4,16 +4,13 @@ import logging
 import time
 
 from PySide6.QtCore import QPoint, QRect, QSize, Qt, QTimer
-from PySide6.QtGui import (QColor, QCursor, QGuiApplication, QIcon, QPainter,
-                           QPainterPath, QPen)
+from PySide6.QtGui import (QColor, QCursor, QGuiApplication, QIcon, QPainter)
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from pet.terminal import core
-from pet.ui.styles import (ICON_PATH, TERMINAL_ACCENT, TERMINAL_ACCENT_TEXT,
-                           TERMINAL_BORDER, TERMINAL_CARD_RADIUS, TERMINAL_CODE_BG,
-                           TERMINAL_CONTROL_RADIUS, TERMINAL_DANGER, TERMINAL_HOVER,
-                           TERMINAL_MUTED, TERMINAL_PANEL, TERMINAL_TEXT, TERMINAL_USER,
-                           terminal_mono_font, terminal_ui_font)
+from pet import theme
+from pet.ui.frame import paint_ink_frame
+from pet.ui.styles import (ICON_PATH, terminal_mono_font, terminal_ui_font)
 
 logger = logging.getLogger(__name__)
 
@@ -79,10 +76,10 @@ class _CountdownBar(QWidget):
 
     def paintEvent(self, event):
         painter = QPainter(self)
-        painter.fillRect(self.rect(), QColor(TERMINAL_BORDER))
+        painter.fillRect(self.rect(), QColor(theme.LINE))
         width = int(self.width() * self._progress)
         if width > 0:
-            color = TERMINAL_USER if self._urgent else TERMINAL_ACCENT
+            color = theme.DANGER if self._urgent else theme.PRIMARY
             painter.fillRect(0, 0, width, self.height(), QColor(color))
 
 
@@ -117,17 +114,17 @@ class ConfirmCard(QWidget):
             pass
 
         self._strip = QWidget()
-        self._strip.setFixedHeight(2)
+        self._strip.setFixedHeight(3)
 
         self._title = QLabel("恋恋想执行一条命令")
-        self._title.setFont(terminal_ui_font(12, bold=True))
-        self._title.setStyleSheet(f"color:{TERMINAL_TEXT};")
+        self._title.setFont(terminal_ui_font(11, bold=True))
+        self._title.setStyleSheet(f"color:{theme.INK};")
         self._counter = QLabel("1/1")
-        self._counter.setFont(terminal_mono_font(10))
-        self._counter.setStyleSheet(f"color:{TERMINAL_MUTED};")
+        self._counter.setFont(terminal_mono_font(9))
+        self._counter.setStyleSheet(f"color:{theme.INK_MUTED};")
         self._seconds = QLabel("")
-        self._seconds.setFont(terminal_mono_font(10))
-        self._seconds.setStyleSheet(f"color:{TERMINAL_MUTED};")
+        self._seconds.setFont(terminal_mono_font(9))
+        self._seconds.setStyleSheet(f"color:{theme.INK_MUTED};")
 
         title_row = QHBoxLayout()
         title_row.setContentsMargins(0, 0, 0, 0)
@@ -140,20 +137,21 @@ class ConfirmCard(QWidget):
         self._command = QLabel()
         self._command.setWordWrap(True)
         self._command.setMaximumHeight(84)
-        self._command.setFont(terminal_mono_font(12))
+        self._command.setFont(terminal_mono_font(10))
         self._command.setStyleSheet(
-            f"background:{TERMINAL_CODE_BG}; color:{TERMINAL_TEXT};"
-            f" border-radius:{TERMINAL_CONTROL_RADIUS}px; padding:12px;"
+            f"background:{theme.PAPER_DEEP}; color:{theme.INK};"
+            f" border:1px solid {theme.LINE}; border-radius:{theme.RADIUS_SM}px;"
+            " padding:10px;"
         )
 
         self._meta = QLabel()
         self._meta.setWordWrap(True)
-        self._meta.setFont(terminal_ui_font(11))
-        self._meta.setStyleSheet(f"color:{TERMINAL_MUTED};")
+        self._meta.setFont(terminal_ui_font(9))
+        self._meta.setStyleSheet(f"color:{theme.INK_MUTED};")
 
         self._hint = QLabel()
         self._hint.setWordWrap(True)
-        self._hint.setFont(terminal_ui_font(12))
+        self._hint.setFont(terminal_ui_font(9))
         self._hint.setVisible(False)
 
         self._countdown = _CountdownBar()
@@ -161,21 +159,21 @@ class ConfirmCard(QWidget):
         self._deny_all_btn = QPushButton(DENY_ALL_TEXT)
         self._deny_all_btn.setFlat(True)
         self._deny_all_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._deny_all_btn.setFont(terminal_ui_font(11))
+        self._deny_all_btn.setFont(terminal_ui_font(9))
         self._deny_all_btn.setStyleSheet(
-            f"QPushButton {{ color:{TERMINAL_MUTED}; background:transparent; border:none; }}"
-            f"QPushButton:hover {{ color:{TERMINAL_DANGER}; }}"
+            f"QPushButton {{ color:{theme.INK_MUTED}; background:transparent; border:none; }}"
+            f"QPushButton:hover {{ color:{theme.DANGER}; }}"
         )
         self._deny_all_btn.clicked.connect(self._deny_all)
 
         self._deny_btn = QPushButton(DENY_TEXT)
         self._deny_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._deny_btn.setFont(terminal_ui_font(12))
+        self._deny_btn.setFont(terminal_ui_font(10))
         self._deny_btn.setStyleSheet(
-            f"QPushButton {{ color:{TERMINAL_TEXT}; background:transparent;"
-            f" border:1px solid {TERMINAL_BORDER}; border-radius:{TERMINAL_CONTROL_RADIUS}px;"
-            f" padding:6px 18px; }}"
-            f"QPushButton:hover {{ background:{TERMINAL_HOVER}; }}"
+            f"QPushButton {{ color:{theme.INK}; background:{theme.SURFACE};"
+            f" border:{theme.BORDER}px solid {theme.INK};"
+            f" border-radius:{theme.RADIUS_MD}px; padding:6px 18px; }}"
+            f"QPushButton:hover {{ background:{theme.PRIMARY_SOFT}; }}"
         )
         self._deny_btn.clicked.connect(self._deny)
 
@@ -183,7 +181,8 @@ class ConfirmCard(QWidget):
         self._allow_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         # 只认鼠标：键盘激活会绕过 keyPressEvent 里的回车限制
         self._allow_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._allow_btn.setFont(terminal_ui_font(12, bold=True))
+        self._allow_btn.setFont(terminal_ui_font(10, bold=True))
+        self._allow_btn.setStyleSheet(self._allow_style(False))
         self._allow_btn.clicked.connect(self._allow)
 
         button_row = QHBoxLayout()
@@ -195,8 +194,9 @@ class ConfirmCard(QWidget):
         button_row.addWidget(self._allow_btn)
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(18, 12, 18, 16)
-        root.setSpacing(10)
+        root.setContentsMargins(16, 12, 16 + theme.SHADOW_WINDOW,
+                                14 + theme.SHADOW_WINDOW)
+        root.setSpacing(9)
         root.addWidget(self._strip)
         root.addLayout(title_row)
         root.addWidget(self._command)
@@ -236,7 +236,11 @@ class ConfirmCard(QWidget):
         self._meta.setText(self._meta_text(request))
         self._apply_hint(request)
         self._strip.setStyleSheet(
-            f"background:{TERMINAL_DANGER if self._danger else TERMINAL_USER if request.untrusted else TERMINAL_ACCENT};")
+            "background:"
+            + (theme.DANGER if self._danger
+               else theme.ACCENT_DEEP if request.untrusted
+               else theme.PRIMARY)
+            + "; border-radius: 2px;")
         self._allow_btn.setText(ALLOW_DANGER_TEXT if self._danger else ALLOW_TEXT)
         self._allow_btn.setStyleSheet(self._allow_style(self._danger))
         self._seconds.setText(f"{self._remaining}s")
@@ -260,29 +264,37 @@ class ConfirmCard(QWidget):
 
     def _apply_hint(self, request) -> None:
         if request.matched_patterns:
-            text, color = "命中危险规则：" + "、".join(request.matched_patterns), TERMINAL_DANGER
+            text, color = "命中危险规则：" + "、".join(request.matched_patterns), theme.DANGER
+            background = theme.DANGER_SOFT
         elif request.untrusted:
-            text, color = "程序来自可写目录", TERMINAL_USER
+            text, color = "程序来自可写目录", theme.ACCENT_DEEP
+            background = theme.ACCENT_SOFT
         elif request.shell_mode:
-            text, color = "整条命令交给 shell，不做程序解析", TERMINAL_USER
+            text, color = "整条命令交给 shell，不做程序解析", theme.ACCENT_DEEP
+            background = theme.ACCENT_SOFT
         elif request.reason == "cmd_meta":
-            text, color = "参数含 shell 元字符，可能执行第二条命令", TERMINAL_USER
+            text, color = "参数含 shell 元字符，可能执行第二条命令", theme.ACCENT_DEEP
+            background = theme.ACCENT_SOFT
         else:
-            text, color = "", TERMINAL_MUTED
+            text, color, background = "", theme.INK_MUTED, theme.PAPER_DEEP
         self._hint.setText(text)
         self._hint.setStyleSheet(
-            f"color:{TERMINAL_TEXT}; background:{TERMINAL_CODE_BG}; padding:8px;"
-            f" border-left:3px solid {color}; border-radius:{TERMINAL_CONTROL_RADIUS}px;"
+            f"color:{theme.INK}; background:{background}; padding:8px;"
+            f" border-left:3px solid {color}; border-radius:{theme.RADIUS_SM}px;"
         )
         self._hint.setVisible(bool(text))
 
     @staticmethod
     def _allow_style(danger: bool) -> str:
-        color = TERMINAL_DANGER if danger else TERMINAL_ACCENT
+        color = theme.DANGER if danger else theme.PRIMARY
+        hover = theme.DANGER_HOVER if danger else theme.PRIMARY_HOVER
+        pressed = theme.DANGER if danger else theme.PRIMARY_DEEP
         return (
-            f"QPushButton {{ color:{TERMINAL_ACCENT_TEXT}; background:{color}; border:none;"
-            f" border-radius:{TERMINAL_CONTROL_RADIUS}px; padding:6px 18px; }}"
-            f"QPushButton:hover {{ background:{TERMINAL_DANGER if not danger else '#e06a66'}; }}"
+            f"QPushButton {{ color:{theme.SURFACE}; background:{color};"
+            f" border:{theme.BORDER}px solid {theme.INK};"
+            f" border-radius:{theme.RADIUS_MD}px; padding:5px 16px; font-weight:bold; }}"
+            f"QPushButton:hover {{ background:{hover}; }}"
+            f"QPushButton:pressed {{ background:{pressed}; }}"
         )
 
     def _tick(self) -> None:
@@ -399,11 +411,4 @@ class ConfirmCard(QWidget):
             logger.debug("[ConfirmCard] 定位失败，沿用系统位置", exc_info=True)
 
     def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        rect = self.rect().adjusted(0, 0, -1, -1)
-        path = QPainterPath()
-        path.addRoundedRect(rect, TERMINAL_CARD_RADIUS, TERMINAL_CARD_RADIUS)
-        painter.fillPath(path, QColor(TERMINAL_PANEL))
-        painter.setPen(QPen(QColor(TERMINAL_BORDER), 1))
-        painter.drawPath(path)
+        paint_ink_frame(self, fill=theme.SURFACE, radius=theme.RADIUS_LG)
