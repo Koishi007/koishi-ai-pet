@@ -300,7 +300,6 @@ QTableWidget {{
     background: {theme.SURFACE};
     alternate-background-color: {theme.SURFACE_WARM};
     border: {theme.BORDER}px solid {theme.INK};
-    border-radius: {theme.RADIUS_LG}px;
     gridline-color: {theme.LINE};
     color: {theme.INK};
     font-size: 11px;

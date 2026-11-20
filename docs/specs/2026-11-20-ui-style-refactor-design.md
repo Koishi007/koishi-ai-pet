@@ -305,6 +305,7 @@ def tinted_icon(path: str, color: str, size: int = 28) -> QIcon:
 | 字体链 | QSS `font-family` 列表 | `QApplication.setFont()` 加 `setFamilies()` | QSS 不保证按列表回退，调试面板曾落到宋体，与雅黑混排 |
 | 气泡尾巴 | 与本体一体 | 尾底压进本体 7px 后再 `united()` | 共边布尔并集可能保留第二条横边，重叠区域可消除接缝 |
 | 气泡按钮 hover | 提亮 | 按底色明度推导：浅底压深、深底提亮 | 统一用 `PRIMARY_SOFT` 会让深色按钮 hover 发白 |
+| 表格圆角 | 表格自身圆角 | 去掉表格圆角，窗口内留 14px 外边距 | QTableWidget 的 viewport 不裁剪到圆角，表头方角会顶出卡片 |
 | 托盘菜单 | 单层圆角卡片 | Windows 的 `MENU_QSS` 只留菜单项，卡片由 `paintEvent` 绘制；其余平台用带底色的 `MENU_SOLID_QSS` | QMenu 自带面板会与自绘卡片叠成双层，且透明背景在非 Windows 上无窗口绘制 |
 | 终端 | 暗色保留 | 色板移入 `theme.py`，圆角与按钮语言未改 | 终端是内容面，暗色对比更适合命令行 |
 | 工具样式 | 新建 `style.py` | 待办沿用，知识库与 B 站新增 | 三个面板的 QSS 均可由令牌重建 |

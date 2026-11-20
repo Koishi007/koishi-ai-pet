@@ -76,8 +76,8 @@ class MemoryWindow(QWidget):
     def _setup_window(self):
         self.setWindowTitle("记忆管理")
         self.setObjectName("FlatWindow")
-        self.setMinimumSize(850, 650)
-        self.resize(850, 650)
+        self.setMinimumSize(920, 660)
+        self.resize(1000, 700)
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.Window
@@ -106,9 +106,9 @@ class MemoryWindow(QWidget):
 
     def _setup_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(8, 3, 8 + theme.SHADOW_WINDOW,
-                                6 + theme.SHADOW_WINDOW)
-        root.setSpacing(2)
+        root.setContentsMargins(14, 6, 14 + theme.SHADOW_WINDOW,
+                                14 + theme.SHADOW_WINDOW)
+        root.setSpacing(4)
 
         # 标题栏
         header = QWidget()
@@ -275,12 +275,12 @@ class MemoryWindow(QWidget):
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
-        self._table.setColumnWidth(0, 30)
+        self._table.setColumnWidth(0, 34)
         self._table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self._table.setColumnWidth(2, 50)
-        self._table.setColumnWidth(3, 50)
-        self._table.setColumnWidth(4, 100)
-        self._table.setColumnWidth(5, 50)
+        self._table.setColumnWidth(2, 64)
+        self._table.setColumnWidth(3, 64)
+        self._table.setColumnWidth(4, 120)
+        self._table.setColumnWidth(5, 80)
         self._table.verticalHeader().setVisible(False)
         self._table.setAlternatingRowColors(True)
         self._table.setStyleSheet(TABLE_QSS)
