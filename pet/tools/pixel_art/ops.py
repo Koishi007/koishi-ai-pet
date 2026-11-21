@@ -93,8 +93,7 @@ def apply_op(index: np.ndarray, op: dict, palette, default_seed: int = 0) -> Non
 def apply_mirror_x(index: np.ndarray, op: dict, palette, default_seed: int = 0) -> bool:
     """按画布中线镜像该 op 的落笔效果；无坐标可镜像时返回 False。
 
-    图元算子按 x' = size - 1 - x 反射后重绘；过程式算子的落笔依赖绝对坐标，
-    反射后重跑会画错位置，因此把该区域落笔后的内容整体翻到镜像区域。
+    图元算子按 x' = size - 1 - x 反射后重绘；过程式算子把该 region 的落笔内容翻到镜像区域。
     """
     size = index.shape[0]
     name = op.get("op")
@@ -230,7 +229,6 @@ def _set(index: np.ndarray, x: int, y: int, color: int) -> None:
 
 
 def _line(index: np.ndarray, x1: int, y1: int, x2: int, y2: int, color: int) -> None:
-    # 先裁到画布内：端点可能在画布外很远，按原线段迭代会空转上亿次
     clipped = _clip_segment(x1, y1, x2, y2, index.shape[0])
     if clipped is None:
         return

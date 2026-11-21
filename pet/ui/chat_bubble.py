@@ -138,7 +138,7 @@ class ChatBubble(QWidget):
                 self._collapse_timer.stop()
             elif (event.type() == QEvent.Type.KeyPress
                   and event.key() == Qt.Key.Key_Escape):
-                # Esc 只是收起，撤销语音编辑期开的回车拦截
+                # Esc 只收起，撤销语音期开的回车拦截
                 self._voice_auto_collapse.stop()
                 self.enter_intercept.emit(False)
                 self._collapse()
@@ -219,7 +219,7 @@ class ChatBubble(QWidget):
         if not text:
             return
         if self._busy:
-            # 忙碌时上游不接收请求，草稿留在输入框
+            # 忙碌时不提交，草稿留在输入框
             self._hint.setText(_HINT_BUSY)
             return
         self.chat_submitted.emit(text)

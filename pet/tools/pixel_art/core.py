@@ -385,7 +385,7 @@ def preview(mode="text", region=None, scale=None, canvas_id=None):
     with store.lock:
         canvas = _resolve(store, canvas_id)
         parsed = parse_region(region, canvas.size) if region is not None else None
-        # 一次取全字段快照：矩阵、标题与 PNG 必须来自同一版本
+        # 矩阵、标题与 PNG 取自同一份快照
         index = canvas.copy_index()
         palette = list(canvas.palette)
         size = canvas.size

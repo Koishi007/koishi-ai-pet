@@ -154,7 +154,7 @@ class PixelArtPanel(QWidget):
         if not isinstance(payload, dict):
             return
         if self._pending and self._pending.get("force_show"):
-            # 合并时保留先到的打开请求，否则用户刚关掉面板就不再展开
+            # 合并时保留先到的打开请求
             payload = dict(payload)
             payload["force_show"] = True
         self._pending = payload

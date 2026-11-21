@@ -336,7 +336,6 @@ class EventStore:
         """删除该会话之外的全部事件，并回收不再被引用的 artifact。
 
         切到新会话时按用户预期释放磁盘；旧会话没有查看入口，日志与对话历史另有存处。
-        当前会话里的工具结果正文与工具调用参数都算引用，一并保留。
         """
         if self._conn is None:
             return 0
@@ -372,7 +371,7 @@ class EventStore:
                      truncate: bool = True) -> Optional[str]:
         """超过内联阈值才落 artifact，返回 id；内联够用返回 None。
 
-        truncate=False 时原样保存，供需要逐字回放的正文使用。
+        truncate=False 时原样保存。
         """
         if self._conn is None or len(body) <= ARTIFACT_INLINE_LIMIT:
             return None

@@ -78,7 +78,7 @@ class InkDialog(QDialog):
         button_row.addStretch()
         for role, label, style in buttons:
             btn = InkButton(label)
-            # 回车交给对话框统一处理，按钮不抢默认键
+            # 回车交给对话框处理
             btn.setAutoDefault(False)
             btn.setDefault(False)
             btn.setStyleSheet(style)

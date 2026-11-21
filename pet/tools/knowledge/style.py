@@ -59,7 +59,6 @@ QLineEdit:focus {{
 }}
 """
 
-# 添加对话框：输入控件带文字色也要带背景色，否则跟随系统深色主题时看不清
 DIALOG_QSS = BASE_QSS + INPUT_QSS + f"""
 QTextEdit {{
     background: {theme.SURFACE};

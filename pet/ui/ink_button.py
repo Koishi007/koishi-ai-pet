@@ -17,11 +17,7 @@ def paint_ink_shadow(painter, rect: QRectF, radius: int,
 
 
 class _InnerButton(QPushButton):
-    """按下时随墨影下沉的按钮本体。
-
-    下沉后按钮面整体位移，光标落在原来按下的位置反而在按钮面之外；
-    命中判定把这一段补回来，否则按下即松开会丢失 clicked。
-    """
+    """按下时随墨影下沉的按钮本体；命中判定包含下沉前的按钮矩形。"""
 
     def __init__(self, text: str, parent, sink: tuple):
         super().__init__(text, parent)
