@@ -11,29 +11,16 @@ import logging
 
 from PySide6.QtCore import Qt, QTimer, QPoint
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel,
 )
 
 from pet.game.gamebase import GAME
 from pet import theme
 from pet.ui.frame import paint_ink_frame
+from pet.ui.qss import chip_qss
+from pet.ui.styles import make_close_button
 
 logger = logging.getLogger(__name__)
-
-_BTN_CLOSE_QSS = (
-    "QPushButton {"
-    "  background: transparent;"
-    f"  border: {theme.BORDER}px solid transparent;"
-    "  border-radius: 13px;"
-    "  font-size: 14px;"
-    f"  color: {theme.INK_MUTED};"
-    "}"
-    "QPushButton:hover {"
-    f"  background: {theme.DANGER};"
-    f"  color: {theme.SURFACE};"
-    f"  border-color: {theme.INK};"
-    "}"
-)
 
 
 class GamePanelBase(QWidget):
@@ -91,16 +78,13 @@ class GamePanelBase(QWidget):
         title_row.addWidget(self._title)
         title_row.addStretch()
         self._countdown_label = QLabel("")
-        self._countdown_label.setStyleSheet(
-            f"font-size: 11px; font-weight: bold; color: {theme.PRIMARY_DEEP};"
-            f" background: {theme.PRIMARY_SOFT}; border-radius: 8px; padding: 1px 6px;")
+        self._countdown_label.setObjectName("chip")
+        self._countdown_label.setStyleSheet(chip_qss(theme.YELLOW))
         title_row.addWidget(self._countdown_label)
         self._countdown_label.setVisible(False)
-        btn_close = QPushButton("×")
-        btn_close.setFixedSize(26, 26)
-        btn_close.setStyleSheet(_BTN_CLOSE_QSS)
+        btn_close = make_close_button(self, on_close=self._on_close_clicked,
+                                      size=26)
         btn_close.setToolTip("结束游戏")
-        btn_close.clicked.connect(self._on_close_clicked)
         title_row.addWidget(btn_close)
         self._content_layout.addWidget(title_bar)
 
@@ -192,7 +176,7 @@ class GamePanelBase(QWidget):
         self._placed = True
 
     def paintEvent(self, event):
-        paint_ink_frame(self, radius=theme.RADIUS_LG)
+        paint_ink_frame(self)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:

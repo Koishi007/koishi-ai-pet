@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QGridLayout, QPushButton, QLabel
 from pet.game.gamebase import GAME
 from pet import theme
 from pet.ui.game_panel import GamePanelBase
+from pet.ui.ink_button import InkButton
 
 logger = logging.getLogger(__name__)
 
@@ -54,19 +55,22 @@ class TicTacToePanel(GamePanelBase):
     def _build_content(self, layout):
         self._message = QLabel("")
         self._message.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._message.setStyleSheet(f"font-size: 12px; color: {theme.INK_SOFT};")
+        self._message.setStyleSheet(f"font-size: 12.5px; color: {theme.INK_SOFT};")
         self._message.setFixedHeight(22)
         layout.addWidget(self._message)
 
         grid = QGridLayout()
         grid.setContentsMargins(0, 0, 0, 0)
         grid.setSpacing(6)
+        for c in range(3):
+            grid.setColumnStretch(c, 1)
         self._cells: list[list[QPushButton]] = []
         for r in range(3):
             row_btns = []
             for c in range(3):
-                btn = QPushButton("")
-                btn.setFixedSize(80, 80)
+                btn = InkButton("", radius=12, shadow_offset=(1, 2))
+                btn.setMinimumWidth(76)
+                btn.setFixedHeight(76)
                 btn.setStyleSheet(_CELL_QSS)
                 btn.clicked.connect(lambda checked=False, rr=r, cc=c: self._on_cell_clicked(rr, cc))
                 grid.addWidget(btn, r, c)

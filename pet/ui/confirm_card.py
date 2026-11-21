@@ -2,14 +2,19 @@
 
 import logging
 import time
+from html import escape
 
-from PySide6.QtCore import QPoint, QRect, QSize, Qt, QTimer
-from PySide6.QtGui import (QColor, QCursor, QGuiApplication, QIcon, QPainter)
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtCore import QPoint, QRect, QRectF, QSize, Qt, QTimer
+from PySide6.QtGui import (QColor, QCursor, QGuiApplication, QIcon, QPainter,
+                           QPainterPath, QPen)
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
+
+from pet.ui.ink_button import InkButton
 
 from pet.terminal import core
 from pet import theme
 from pet.ui.frame import paint_ink_frame
+from pet.ui.qss import chip_qss
 from pet.ui.styles import (ICON_PATH, terminal_mono_font, terminal_ui_font)
 
 logger = logging.getLogger(__name__)
@@ -61,11 +66,11 @@ def card_position(pet_rect: QRect, screen_rect: QRect, card_size: QSize) -> QPoi
 
 
 class _CountdownBar(QWidget):
-    """按钮行上方的 1px 倒计时线。"""
+    """倒计时胶囊条：墨框圆角，剩余部分按主色填充。"""
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedHeight(2)
+        self.setFixedHeight(5)
         self._progress = 1.0
         self._urgent = False
 
@@ -76,11 +81,24 @@ class _CountdownBar(QWidget):
 
     def paintEvent(self, event):
         painter = QPainter(self)
-        painter.fillRect(self.rect(), QColor(theme.LINE))
-        width = int(self.width() * self._progress)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        inner = QRectF(self.rect()).adjusted(0.75, 0.75, -0.75, -0.75)
+        radius = inner.height() / 2
+        path = QPainterPath()
+        path.addRoundedRect(inner, radius, radius)
+        painter.fillPath(path, QColor(theme.PAPER_DEEP))
+        width = inner.width() * self._progress
         if width > 0:
-            color = theme.DANGER if self._urgent else theme.PRIMARY
-            painter.fillRect(0, 0, width, self.height(), QColor(color))
+            painter.save()
+            painter.setClipPath(path)
+            painter.fillRect(
+                QRectF(inner.x(), inner.y(), width, inner.height()),
+                QColor(theme.DANGER if self._urgent else theme.PRIMARY))
+            painter.restore()
+        painter.setPen(QPen(QColor(theme.INK), 1.5))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawPath(path)
+        painter.end()
 
 
 class ConfirmCard(QWidget):
@@ -120,11 +138,13 @@ class ConfirmCard(QWidget):
         self._title.setFont(terminal_ui_font(11, bold=True))
         self._title.setStyleSheet(f"color:{theme.INK};")
         self._counter = QLabel("1/1")
+        self._counter.setObjectName("chip")
         self._counter.setFont(terminal_mono_font(9))
-        self._counter.setStyleSheet(f"color:{theme.INK_MUTED};")
+        self._counter.setStyleSheet(chip_qss())
         self._seconds = QLabel("")
+        self._seconds.setObjectName("chip")
         self._seconds.setFont(terminal_mono_font(9))
-        self._seconds.setStyleSheet(f"color:{theme.INK_MUTED};")
+        self._seconds.setStyleSheet(chip_qss(theme.YELLOW))
 
         title_row = QHBoxLayout()
         title_row.setContentsMargins(0, 0, 0, 0)
@@ -132,7 +152,6 @@ class ConfirmCard(QWidget):
         title_row.addWidget(self._title)
         title_row.addStretch()
         title_row.addWidget(self._counter)
-        title_row.addWidget(self._seconds)
 
         self._command = QLabel()
         self._command.setWordWrap(True)
@@ -140,7 +159,7 @@ class ConfirmCard(QWidget):
         self._command.setFont(terminal_mono_font(10))
         self._command.setStyleSheet(
             f"background:{theme.PAPER_DEEP}; color:{theme.INK};"
-            f" border:1px solid {theme.LINE}; border-radius:{theme.RADIUS_SM}px;"
+            f" border:{theme.BORDER}px solid {theme.INK}; border-radius:{theme.RADIUS_SM}px;"
             " padding:10px;"
         )
 
@@ -156,17 +175,18 @@ class ConfirmCard(QWidget):
 
         self._countdown = _CountdownBar()
 
-        self._deny_all_btn = QPushButton(DENY_ALL_TEXT)
-        self._deny_all_btn.setFlat(True)
+        self._deny_all_btn = InkButton(DENY_ALL_TEXT, radius=theme.RADIUS_SM)
         self._deny_all_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._deny_all_btn.setFont(terminal_ui_font(9))
         self._deny_all_btn.setStyleSheet(
-            f"QPushButton {{ color:{theme.INK_MUTED}; background:transparent; border:none; }}"
-            f"QPushButton:hover {{ color:{theme.DANGER}; }}"
+            f"QPushButton {{ color:{theme.INK}; background:{theme.SURFACE};"
+            f" border:{theme.BORDER}px solid {theme.INK};"
+            f" border-radius:{theme.RADIUS_SM}px; padding:4px 10px; font-size:11.5px; }}"
+            f"QPushButton:hover {{ background:{theme.SURFACE_WARM}; }}"
         )
         self._deny_all_btn.clicked.connect(self._deny_all)
 
-        self._deny_btn = QPushButton(DENY_TEXT)
+        self._deny_btn = InkButton(DENY_TEXT)
         self._deny_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._deny_btn.setFont(terminal_ui_font(10))
         self._deny_btn.setStyleSheet(
@@ -177,7 +197,7 @@ class ConfirmCard(QWidget):
         )
         self._deny_btn.clicked.connect(self._deny)
 
-        self._allow_btn = QPushButton(ALLOW_TEXT)
+        self._allow_btn = InkButton(ALLOW_TEXT)
         self._allow_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         # 只认鼠标：键盘激活会绕过 keyPressEvent 里的回车限制
         self._allow_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -193,6 +213,16 @@ class ConfirmCard(QWidget):
         button_row.addWidget(self._deny_btn)
         button_row.addWidget(self._allow_btn)
 
+        auto_row = QHBoxLayout()
+        auto_row.setContentsMargins(0, 0, 0, 0)
+        auto_row.setSpacing(8)
+        auto_label = QLabel("自动拒绝")
+        auto_label.setFont(terminal_ui_font(9))
+        auto_label.setStyleSheet(f"color:{theme.INK_MUTED};")
+        auto_row.addWidget(auto_label)
+        auto_row.addWidget(self._countdown, stretch=1)
+        auto_row.addWidget(self._seconds)
+
         root = QVBoxLayout(self)
         root.setContentsMargins(16, 12, 16 + theme.SHADOW_WINDOW,
                                 14 + theme.SHADOW_WINDOW)
@@ -202,7 +232,7 @@ class ConfirmCard(QWidget):
         root.addWidget(self._command)
         root.addWidget(self._meta)
         root.addWidget(self._hint)
-        root.addWidget(self._countdown)
+        root.addLayout(auto_row)
         root.addLayout(button_row)
 
         self._timer = QTimer(self)
@@ -232,7 +262,10 @@ class ConfirmCard(QWidget):
         self._danger = bool(request.matched_patterns)
         self._title.setText("恋恋想执行一条命令")
         self._counter.setText(f"{request.sequence}/{request.total}")
-        self._command.setText(core.display_argv(request.routed or request.argv))
+        command = escape(core.display_argv(request.routed or request.argv))
+        self._command.setText(
+            f'<span style="color:{theme.PRIMARY_DEEP};font-weight:700">$</span> '
+            + command.replace("\n", "<br/>"))
         self._meta.setText(self._meta_text(request))
         self._apply_hint(request)
         self._strip.setStyleSheet(
@@ -411,4 +444,4 @@ class ConfirmCard(QWidget):
             logger.debug("[ConfirmCard] 定位失败，沿用系统位置", exc_info=True)
 
     def paintEvent(self, event):
-        paint_ink_frame(self, fill=theme.SURFACE, radius=theme.RADIUS_LG)
+        paint_ink_frame(self, fill=theme.SURFACE)

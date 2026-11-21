@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
 )
 from pet import theme
 from pet.ui.frame import paint_ink_frame
+from pet.ui.ink_button import InkButton
 from pet.ui.qss import TITLE_LABEL_QSS, app_stylesheet
 from pet.ui.styles import (
     ICON_PATH, LOG_ICON_PATH, TEXTEDIT_QSS, BUTTON_PRIMARY_QSS, COMBOBOX_QSS,
@@ -148,7 +149,7 @@ class LogWindow(QWidget):
 
         toolbar.addStretch()
 
-        clear_btn = QPushButton("清空")
+        clear_btn = InkButton("清空")
         clear_btn.setStyleSheet(BUTTON_PRIMARY_QSS)
         clear_btn.clicked.connect(self._clear)
         toolbar.addWidget(clear_btn)

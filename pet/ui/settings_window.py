@@ -4,16 +4,19 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (QApplication, QHBoxLayout, QLabel, QMessageBox,
-                               QPushButton, QTabWidget, QVBoxLayout, QWidget)
+                               QTabWidget, QVBoxLayout, QWidget)
 
 from pet.auto_start import set_auto_start
 from pet.config import _KEY_META, config
 from pet import theme
 from pet.ui.frame import paint_ink_frame
-from pet.ui.qss import TITLE_LABEL_QSS, app_stylesheet
+from pet.ui.icons import tinted_icon
+from pet.ui.ink_button import InkButton
+from pet.ui.qss import (CHECKMARK_SVG, TAB_PILL_QSS, TITLE_LABEL_QSS,
+                        app_stylesheet)
 from pet.ui.settings_actions import SettingsActions, apply_pet_scale
 from pet.ui.settings_fields import SettingsForm
 from pet.ui.settings_hooks import invalidate_action_section
@@ -110,22 +113,56 @@ class SettingsWindow(QWidget):
         title_bar.mousePressEvent = self._header_press
         title_bar.mouseMoveEvent = self._header_move
 
+        rule_row = QHBoxLayout()
+        rule_row.setContentsMargins(12, 0, 12, 0)
+        rule = QWidget()
+        rule.setFixedHeight(theme.BORDER)
+        rule.setStyleSheet(f"background:{theme.INK};")
+        rule_row.addWidget(rule)
+        root.addLayout(rule_row)
+
         self._tabs = QTabWidget()
-        self._tabs.setDocumentMode(True)
-        self._tabs.tabBar().setExpanding(True)
-        self._tabs.tabBar().setDrawBase(False)
-        for label, page in self.tabs.build():
+        self._tabs.tabBar().hide()
+        self._tab_buttons = []
+        tab_row = QHBoxLayout()
+        # 底边留 8px：胶囊墨影下探 2px，再给内容框留出呼吸
+        tab_row.setContentsMargins(3, 2, 3, 8)
+        tab_row.setSpacing(6)
+        for i, (label, page) in enumerate(self.tabs.build()):
             self._tabs.addTab(page, label)
+            pill = InkButton(label, radius=13, shadow_offset=(1, 2),
+                             pressed_when_checked=True)
+            pill.setCheckable(True)
+            pill.setAutoExclusive(True)
+            pill.setFixedHeight(28)
+            pill.setStyleSheet(TAB_PILL_QSS)
+            pill.clicked.connect(lambda _=False, idx=i: self._select_tab(idx))
+            tab_row.addWidget(pill, stretch=1)
+            self._tab_buttons.append(pill)
+        self._tabs.currentChanged.connect(self._sync_tab_checked)
+        if self._tab_buttons:
+            self._tab_buttons[0].setChecked(True)
+        root.addLayout(tab_row)
         root.addWidget(self._tabs, stretch=1)
 
         bottom = QHBoxLayout()
         bottom.setContentsMargins(12, 4, 12, 8)
         bottom.addStretch()
-        btn_save = QPushButton("保存")
+        btn_save = InkButton("保存")
+        btn_save.setIcon(tinted_icon(CHECKMARK_SVG, theme.SURFACE, 14))
+        btn_save.setIconSize(QSize(14, 14))
         btn_save.setStyleSheet(BUTTON_PRIMARY_QSS)
         btn_save.clicked.connect(self._on_save)
         bottom.addWidget(btn_save)
         root.addLayout(bottom)
+
+    def _select_tab(self, index: int) -> None:
+        self._tabs.setCurrentIndex(index)
+        self._sync_tab_checked(index)
+
+    def _sync_tab_checked(self, index: int) -> None:
+        for i, btn in enumerate(self._tab_buttons):
+            btn.setChecked(i == index)
 
     def _msg(self, title: str, text: str, *,
              icon: QMessageBox.Icon = QMessageBox.Icon.NoIcon,

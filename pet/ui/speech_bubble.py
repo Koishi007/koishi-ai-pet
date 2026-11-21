@@ -80,7 +80,7 @@ class SpeechBubble(QLabel):
         tail.closeSubpath()
         bubble = body.united(tail)
 
-        painter.setBrush(QColor(theme.SURFACE))
+        painter.setBrush(QColor(theme.BUBBLE_SPEECH))
         painter.setPen(QPen(QColor(theme.INK), theme.BORDER))
         painter.drawPath(bubble)
 

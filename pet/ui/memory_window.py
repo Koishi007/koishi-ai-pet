@@ -18,6 +18,7 @@ from PySide6.QtGui import QColor, QFont, QIcon
 from pet.brain.memory import MEMORY_CATEGORIES
 from pet import theme
 from pet.ui.frame import paint_ink_frame
+from pet.ui.ink_button import InkButton
 from pet.ui.qss import TITLE_LABEL_QSS, app_stylesheet
 from pet.ui.widgets import NoWheelComboBox, make_icon_badge
 from pet.ui.styles import (
@@ -175,7 +176,7 @@ class MemoryWindow(QWidget):
         self._level_btns: dict[str, QPushButton] = {}
         for label in ("全部", "L1", "L2", "L3"):
             key = "" if label == "全部" else label
-            btn = QPushButton(label)
+            btn = InkButton(label, pressed_when_checked=True)
             btn.setCheckable(True)
             btn.setFixedWidth(54)
             btn.setFont(QFont("", 12))
@@ -193,7 +194,7 @@ class MemoryWindow(QWidget):
         self._imp_btns: dict[int, QPushButton] = {}
         for val in [0, 1, 2, 3, 4, 5]:
             label = "全部" if val == 0 else str(val)
-            btn = QPushButton(label)
+            btn = InkButton(label, pressed_when_checked=True)
             btn.setCheckable(True)
             btn.setFixedWidth(54)
             btn.setFont(QFont("", 12))
@@ -296,13 +297,13 @@ class MemoryWindow(QWidget):
         layout.setContentsMargins(0, 2, 0, 2)
         layout.setSpacing(8)
 
-        self._btn_delete = QPushButton("删除选中")
+        self._btn_delete = InkButton("删除选中")
         self._btn_delete.setStyleSheet(BUTTON_DANGER_QSS)
         self._btn_delete.clicked.connect(self._on_delete)
         self._btn_delete.setEnabled(False)
         layout.addWidget(self._btn_delete)
 
-        self._btn_refresh = QPushButton("刷新")
+        self._btn_refresh = InkButton("刷新")
         self._btn_refresh.setStyleSheet(BUTTON_PRIMARY_QSS)
         self._btn_refresh.clicked.connect(self._refresh_data)
         layout.addWidget(self._btn_refresh)
@@ -356,7 +357,7 @@ class MemoryWindow(QWidget):
 
         save_row = QHBoxLayout()
         save_row.addStretch()
-        self._btn_save = QPushButton("保存")
+        self._btn_save = InkButton("保存")
         self._btn_save.setStyleSheet(BUTTON_PRIMARY_QSS)
         self._btn_save.clicked.connect(self._on_save)
         self._btn_save.setEnabled(False)
@@ -378,20 +379,20 @@ class MemoryWindow(QWidget):
 
         self._page_btns: list[QPushButton] = []
 
-        self._btn_prev = QPushButton("<")
+        self._btn_prev = InkButton("<")
         self._btn_prev.setFixedWidth(32)
         self._btn_prev.clicked.connect(self._on_prev_page)
         layout.addWidget(self._btn_prev)
 
         for i in range(7):
-            btn = QPushButton()
+            btn = InkButton()
             btn.setFixedWidth(32)
             btn.setVisible(False)
             btn.clicked.connect(lambda checked, idx=i: self._on_goto_page(idx))
             self._page_btns.append(btn)
             layout.addWidget(btn)
 
-        self._btn_next = QPushButton(">")
+        self._btn_next = InkButton(">")
         self._btn_next.setFixedWidth(32)
         self._btn_next.clicked.connect(self._on_next_page)
         layout.addWidget(self._btn_next)

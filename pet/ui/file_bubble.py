@@ -15,6 +15,7 @@ from pet.config import config
 from pet.file_intake import KIND_LABELS, FileRef, dir_summary
 from pet import theme
 from pet.ui.debounce import Debounce
+from pet.ui.ink_button import InkButton
 from pet.tools.registry import TOOL_REGISTRY
 from pet.ui.styles import BUTTON_QSS, BUBBLE_ROW_CHAT, bubble_column_y
 
@@ -33,14 +34,15 @@ _PANEL_QSS = (
 )
 _CANCEL_QSS = (
     "QPushButton {"
-    "  background: transparent;"
-    "  border: none;"
+    f"  background: {theme.SURFACE};"
+    f"  border: {theme.BORDER}px solid {theme.INK};"
     "  border-radius: 8px;"
     "  padding: 2px 8px;"
     f"  color: {theme.INK_MUTED};"
     "  font-size: 12px;"
     "}"
     "QPushButton:hover {"
+    f"  background: {theme.SURFACE_WARM};"
     f"  color: {theme.DANGER};"
     "}"
 )
@@ -148,7 +150,7 @@ class FileBubble(QWidget):
         header.addWidget(self._title)
         header.addStretch(1)
 
-        self._cancel_button = QPushButton("取消")
+        self._cancel_button = InkButton("取消")
         self._cancel_button.setStyleSheet(_CANCEL_QSS)
         self._cancel_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self._cancel_button.clicked.connect(self._on_cancel)
@@ -303,7 +305,7 @@ class FileBubble(QWidget):
             if widget is not None:
                 widget.deleteLater()
         for action_id, label, usable in actions:
-            button = QPushButton(label)
+            button = InkButton(label)
             button.setStyleSheet(BUTTON_QSS)
             button.setEnabled(usable)
             button.clicked.connect(lambda _=False, aid=action_id: self._on_action(aid))

@@ -2,8 +2,13 @@
 
 from pathlib import Path
 
-from PySide6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QLineEdit, QBoxLayout
-from PySide6.QtCore import Qt, QSize, QTimer, QPoint, Signal, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup, QEvent
+from PySide6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QLineEdit,
+                               QLabel, QBoxLayout)
+from pet.ui.ink_button import InkButton, paint_ink_shadow
+from PySide6.QtCore import (Qt, QSize, QTimer, QPoint, QRect, QRectF, Signal,
+                            QPropertyAnimation, QEasingCurve,
+                            QParallelAnimationGroup, QEvent)
+from PySide6.QtGui import QPainter
 from pet.config import config
 from pet import theme
 from pet.ui.icons import tinted_icon
@@ -14,6 +19,7 @@ from pet.ui.styles import BUBBLE_ROW_FEED, bubble_column_y
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 _FEED_ICON_PATH = str(BASE_DIR / "assets" / "icon" / "feed.png")
 _COLLAPSE_ICON_PATH = str(BASE_DIR / "assets" / "icon" / "collapse.png")
+_SEND_ICON_PATH = str(BASE_DIR / "assets" / "icon" / "ink" / "arrow_right.svg")
 
 
 class FeedBubble(QWidget):
@@ -53,12 +59,17 @@ class FeedBubble(QWidget):
         self.hide()
 
     def _setup_ui(self):
-        self._layout = QHBoxLayout(self)
-        self._layout.setContentsMargins(4, 4, 4, 4)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(4, 4, 4, 4)
+        outer.setSpacing(2)
+
+        row = QWidget()
+        self._layout = QHBoxLayout(row)
+        self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.setSpacing(4)
 
         # 喂食按钮（收起态显示）
-        self._btn = QPushButton()
+        self._btn = InkButton(radius=theme.radius_for(32))
         self._btn.setFixedSize(32, 32)
         self._btn.setIcon(tinted_icon(_FEED_ICON_PATH, theme.INK, 20))
         self._btn.setIconSize(QSize(20, 20))
@@ -77,7 +88,37 @@ class FeedBubble(QWidget):
         self._input.hide()
         self._layout.addWidget(self._input)
 
+        # 发送按钮，展开态显示
+        self._send = InkButton(radius=theme.radius_for(27))
+        self._send.setFixedSize(27, 27)
+        self._send.setIcon(tinted_icon(_SEND_ICON_PATH, theme.INK, 14))
+        self._send.setIconSize(QSize(14, 14))
+        self._send.setStyleSheet(
+            bubble_button_qss(theme.BUBBLE_FEED, radius=theme.radius_for(27)))
+        self._send.clicked.connect(self._on_submit)
+        self._send.hide()
+        self._layout.addWidget(self._send)
+
+        self._hint = QLabel("Enter 发送 · Esc 收起")
+        self._hint.setStyleSheet(
+            f"font-size: 10.5px; color: {theme.INK_MUTED}; background: transparent;")
+        self._hint.setIndent(36)
+        self._hint.hide()
+        outer.addWidget(row)
+        outer.addWidget(self._hint)
+
         self.adjustSize()
+
+    def paintEvent(self, event):
+        if not self._input.isHidden():
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            top_left = self._input.mapTo(self, QPoint(0, 0))
+            paint_ink_shadow(
+                painter, QRectF(QRect(top_left, self._input.size())),
+                theme.RADIUS_LG)
+            painter.end()
+        super().paintEvent(event)
 
     def eventFilter(self, obj, event):
         if obj is self._input:
@@ -86,6 +127,11 @@ class FeedBubble(QWidget):
                 self._collapse_timer.start(2000)
             elif event.type() == QEvent.Type.FocusIn:
                 self._collapse_timer.stop()
+            elif (event.type() == QEvent.Type.KeyPress
+                  and event.key() == Qt.Key.Key_Escape):
+                self._collapse()
+                self.hide_bubble()
+                return True
         return super().eventFilter(obj, event)
 
     def _on_auto_collapse(self):
@@ -100,10 +146,14 @@ class FeedBubble(QWidget):
             self._expand()
 
     def _expand(self):
+        if self._collapse_anim is not None:
+            self._collapse_anim.stop()
         self._expanded = True
         self._input.setMinimumWidth(0)
         self._input.setMaximumWidth(180)
         self._input.show()
+        self._send.show()
+        self._hint.show()
         self._btn.setIcon(tinted_icon(_COLLAPSE_ICON_PATH, theme.INK, 20))
 
         self._expand_anim = QPropertyAnimation(self._input, b"minimumWidth")
@@ -115,11 +165,14 @@ class FeedBubble(QWidget):
             self._collapse_timer.start(5000)
         else:
             self._expand_anim.finished.connect(lambda: self._input.setFocus())
+        self._expand_anim.valueChanged.connect(lambda _: self.update())
         self._expand_anim.start()
 
     def _collapse(self):
         if not self._expanded:
             return
+        if self._expand_anim is not None:
+            self._expand_anim.stop()
         self._expanded = False
         self._collapse_timer.stop()  # 手动收起时取消定时器
         self._btn.setIcon(tinted_icon(_FEED_ICON_PATH, theme.INK, 20))
@@ -130,13 +183,17 @@ class FeedBubble(QWidget):
         self._collapse_anim.setEndValue(0)
         self._collapse_anim.setEasingCurve(QEasingCurve.Type.InCubic)
         self._collapse_anim.finished.connect(self._on_collapse_done)
+        self._collapse_anim.valueChanged.connect(lambda _: self.update())
         self._collapse_anim.start()
 
     def _on_collapse_done(self):
         # 收起只隐藏，不清空：未提交的输入要保留到下次展开
         self._input.hide()
+        self._send.hide()
+        self._hint.hide()
         self._input.setMinimumWidth(0)
         self._input.setMaximumWidth(180)
+        self.layout().activate()
         self.adjustSize()
 
     def _on_submit(self):
@@ -152,7 +209,6 @@ class FeedBubble(QWidget):
         self.cancel_hide()
         if self._hide_anim and self._hide_anim.state() == QPropertyAnimation.State.Running:
             self._hide_anim.stop()
-            # 淡出被打断：复原透明度与跟随，下面的提前返回不再重建这两项
             self.setWindowOpacity(1.0)
             self._follow_timer.start(50)
         if self.isVisible():
@@ -240,9 +296,11 @@ class FeedBubble(QWidget):
         if pet_geo.right() + bw + 10 > screen_right:
             x = pet_geo.left() - bw + 20  # 左侧
             self._layout.setDirection(QBoxLayout.Direction.RightToLeft)
+            self._hint.setIndent(31)
         else:
             x = pet_geo.right() - 20      # 右侧
             self._layout.setDirection(QBoxLayout.Direction.LeftToRight)
+            self._hint.setIndent(36)
         if geo:
             x = max(geo.left(), min(x, geo.right() - bw))
         self.move(x, y)

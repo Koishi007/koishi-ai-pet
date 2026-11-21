@@ -22,6 +22,7 @@
     --accent-soft:#EBF2CF;
     --info:#4E7F8C;
     --info-soft:#DCEAEC;
+    --sun:#F8E880;
     --danger:#BF5A4C;
     --danger-soft:#F6DED8;
     --r-xs:8px; --r-sm:11px; --r-md:14px; --r-lg:20px; --r-xl:26px;
@@ -53,7 +54,7 @@
   /* ---------- page ---------- */
   .page-head{display:flex;align-items:center;gap:14px;max-width:1480px;margin:0 auto 26px;position:relative;}
   .logo{
-    width:46px;height:46px;border-radius:50%;background:var(--primary);
+    width:46px;height:46px;border-radius:50%;background:var(--sun);
     border:var(--bd) solid var(--ink);box-shadow:var(--sh-2);
     display:grid;place-items:center;flex:none;
   }
@@ -83,7 +84,7 @@
   .rule{height:2px;background:var(--ink);opacity:.9;margin:0 12px;border-radius:2px;}
 
   .icon-badge{
-    width:24px;height:24px;border-radius:50%;background:var(--primary);
+    width:24px;height:24px;border-radius:50%;background:var(--sun);
     border:var(--bd) solid var(--ink);display:grid;place-items:center;flex:none;
   }
   .icon-badge.lime{background:var(--accent);}
@@ -138,6 +139,7 @@
     padding:3px 9px;border-radius:999px;border:1.5px solid var(--ink);background:var(--card);
   }
   .chip.jade{background:var(--primary-soft);}
+  .chip.sun{background:var(--sun);}
   .chip.lime{background:var(--accent-soft);}
   .chip.info{background:var(--info-soft);}
 
@@ -189,8 +191,10 @@
     flex:1;text-align:center;font-size:12px;font-weight:700;color:var(--ink-2);
     padding:7px 0;border:var(--bd) solid var(--ink);border-radius:999px;background:var(--card-2);
     cursor:pointer;box-shadow:1px 2px 0 var(--ink);
+    transition:transform .08s ease, box-shadow .08s ease;
   }
-  .tab.active{background:var(--primary);color:#FFFDF4;box-shadow:1px 2px 0 var(--ink);}
+  .tab:hover:not(.active){background:var(--sun);}
+  .tab.active{background:var(--primary);color:#FFFDF4;transform:translate(1px,2px);box-shadow:0 0 0 var(--ink);}
   .group{
     border:var(--bd) solid var(--ink);border-radius:var(--r-md);background:var(--card);
     padding:8px 12px 11px;position:relative;
@@ -323,9 +327,9 @@
 
 <header class="page-head">
   <div class="logo">
-    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#FFFDF4" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#1F2E26" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
       <path d="M12 5.6c4 0 7.3 3 8.4 6.4-1.1 3.4-4.4 6.4-8.4 6.4S4.7 15.4 3.6 12C4.7 8.6 8 5.6 12 5.6Z"/>
-      <path d="M12 15.2c-1.7-1.1-2.7-2.1-2.7-3.2a1.4 1.4 0 0 1 2.7-.7 1.4 1.4 0 0 1 2.7.7c0 1.1-1 2.1-2.7 3.2Z" fill="#FFFDF4" stroke="none"/>
+      <path d="M12 15.2c-1.7-1.1-2.7-2.1-2.7-3.2a1.4 1.4 0 0 1 2.7-.7 1.4 1.4 0 0 1 2.7.7c0 1.1-1 2.1-2.7 3.2Z" fill="#1F2E26" stroke="none"/>
       <path d="M6.2 5.4 5 3.6M12 3.4V1.6M17.8 5.4 19 3.6"/>
     </svg>
   </div>
@@ -348,9 +352,10 @@
         <div class="sw"><i style="background:#9DBE4D"></i><span>#9DBE4D</span></div>
         <div class="sw"><i style="background:#6F8F2E"></i><span>#6F8F2E</span></div>
         <div class="sw"><i style="background:#EBF2CF"></i><span>#EBF2CF</span></div>
+        <div class="sw"><i style="background:#F8E880"></i><span>#F8E880</span></div>
       </div>
       <div class="hint" style="margin-top:9px;line-height:1.6;">
-        青绿＝发色 / 主操作 · 黄绿＝发梢 / 完成态<br>两者都压在米白纸底上，避免高饱和
+        青绿＝发色 / 主操作 · 黄绿＝发梢 / 完成态 · 黄＝上衣 / 徽章与计时<br>都压在米白纸底上，避免高饱和
       </div>
     </div>
     <div class="token-card">
@@ -560,7 +565,7 @@
           </div>
           <h3 style="font-size:12.5px;">井字棋 · 你执 X（先手）</h3>
           <span class="spacer"></span>
-          <span class="chip jade" style="font-family:var(--mono);font-size:10px;">28s</span>
+          <span class="chip sun" style="font-family:var(--mono);font-size:10px;">28s</span>
           <button class="rbtn danger"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
         </div>
         <div class="game-body">
@@ -605,7 +610,7 @@
           <div class="confirm-meta">
             <span>自动拒绝</span>
             <div class="bar" style="flex:1;"><i></i></div>
-            <span class="chip jade" style="font-family:var(--mono);">10s</span>
+            <span class="chip sun" style="font-family:var(--mono);">10s</span>
           </div>
           <div class="confirm-actions">
             <button class="btn sm">全部拒绝</button>

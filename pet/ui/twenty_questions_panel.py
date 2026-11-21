@@ -10,6 +10,7 @@ from pet.game.gamebase import GAME
 from pet.game.twenty_questions import ANSWER_TEXT
 from pet import theme
 from pet.ui.game_panel import GamePanelBase
+from pet.ui.ink_button import InkButton
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +73,7 @@ class TwentyQuestionsPanel(GamePanelBase):
         ans_row = QHBoxLayout()
         ans_row.setSpacing(8)
         for key, text in (("yes", "是"), ("no", "否"), ("unknown", "不确定")):
-            btn = QPushButton(text)
+            btn = InkButton(text, radius=theme.RADIUS_LG)
             btn.setFixedHeight(42)
             btn.setStyleSheet(_BTN_QSS)
             btn.clicked.connect(lambda checked=False, k=key: self._on_answer_clicked(k))
@@ -84,7 +85,7 @@ class TwentyQuestionsPanel(GamePanelBase):
         ok_row = QHBoxLayout()
         ok_row.setSpacing(8)
         for correct, text in ((True, "猜对了"), (False, "猜错了")):
-            btn = QPushButton(text)
+            btn = InkButton(text, radius=theme.RADIUS_LG)
             btn.setFixedHeight(42)
             btn.setStyleSheet(_BTN_QSS)
             btn.clicked.connect(lambda checked=False, c=correct: self._on_correct_clicked(c))

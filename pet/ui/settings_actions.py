@@ -8,6 +8,8 @@ import threading
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QMenu, QMessageBox
 
+from pet.ui.styles import MENU_SOLID_QSS
+
 from pet.config import config
 from pet.ui.settings_fields import SettingsForm, SettingsWidgets
 from pet.ui.settings_workers import (EmbeddingTestWorker, LLMTestWorker,
@@ -428,6 +430,7 @@ class SettingsActions(QObject):
             self._msg("提示", "未找到可用模型。")
             return
         menu = QMenu(self._parent)
+        menu.setStyleSheet(MENU_SOLID_QSS)
         for mid in model_ids:
             action = menu.addAction(mid)
             action.triggered.connect(
@@ -462,6 +465,7 @@ class SettingsActions(QObject):
             self._msg("提示", "未找到可用模型。")
             return
         menu = QMenu(self._parent)
+        menu.setStyleSheet(MENU_SOLID_QSS)
         for mid in model_ids:
             action = menu.addAction(mid)
             action.triggered.connect(

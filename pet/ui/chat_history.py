@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 from pet.brain.conversation_store import ConversationStore
 from pet import theme
 from pet.ui.frame import paint_ink_frame
+from pet.ui.ink_button import InkButton
 from pet.ui.qss import TITLE_LABEL_QSS, app_stylesheet
 from pet.ui.styles import (
     ICON_PATH, HISTORY_ICON_PATH, BUTTON_PRIMARY_QSS, SCROLLBAR_QSS, LIST_QSS,
@@ -216,6 +217,7 @@ class ChatHistoryWindow(QWidget):
                 background: {theme.SURFACE};
                 border: {theme.BORDER}px solid {theme.INK};
                 border-radius: {theme.RADIUS_LG}px;
+                padding: 4px;
                 outline: none;
             }}
         """)
@@ -227,7 +229,7 @@ class ChatHistoryWindow(QWidget):
         toolbar.setContentsMargins(0, 0, 0, 0)
 
         toolbar.addStretch()
-        refresh_btn = QPushButton("刷新")
+        refresh_btn = InkButton("刷新")
         refresh_btn.setStyleSheet(BUTTON_PRIMARY_QSS)
         refresh_btn.clicked.connect(self._refresh)
         toolbar.addWidget(refresh_btn)

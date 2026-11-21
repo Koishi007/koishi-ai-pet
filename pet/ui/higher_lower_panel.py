@@ -9,6 +9,7 @@ from pet.game.gamebase import GAME
 from pet.game.higher_lower import _CN
 from pet import theme
 from pet.ui.game_panel import GamePanelBase
+from pet.ui.ink_button import InkButton
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +93,7 @@ class HigherLowerPanel(GamePanelBase):
         btn_row.setSpacing(10)
         self._bet_btns = {}
         for side in ("higher", "lower"):
-            btn = QPushButton(_CN[side])
+            btn = InkButton(_CN[side], radius=theme.RADIUS_LG)
             btn.setFixedHeight(52)
             btn.setStyleSheet(_BTN_QSS)
             btn.clicked.connect(lambda checked=False, s=side: self._on_bet_clicked(s))

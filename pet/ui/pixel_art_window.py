@@ -13,22 +13,13 @@ from pet.tools.pixel_art import core as art_core
 from pet.tools.pixel_art.canvas import PixelArtError
 from pet import theme
 from pet.ui.frame import paint_ink_frame
+from pet.ui.ink_button import InkButton
+from pet.ui.styles import make_close_button
 
 logger = logging.getLogger(__name__)
 
 _CANVAS_SIZE = 256
 _CORNER_RADIUS = 8
-_CLOSE_QSS = (
-    "QPushButton {"
-    f"  background: transparent; border: {theme.BORDER}px solid transparent;"
-    "  border-radius: 13px; font-size: 14px;"
-    f"  color: {theme.INK_MUTED};"
-    "}"
-    "QPushButton:hover {"
-    f"  background: {theme.DANGER}; color: {theme.SURFACE};"
-    f"  border-color: {theme.INK};"
-    "}"
-)
 _EXPORT_QSS = (
     "QPushButton {"
     f"  background: {theme.SURFACE};"
@@ -139,10 +130,7 @@ class PixelArtWindow(QWidget):
         self._title.setStyleSheet(f"color: {theme.INK};")
         title_row.addWidget(self._title)
         title_row.addStretch()
-        close = QPushButton("×")
-        close.setFixedSize(26, 26)
-        close.setStyleSheet(_CLOSE_QSS)
-        close.clicked.connect(self._close_by_user)
+        close = make_close_button(None, on_close=self._close_by_user, size=26)
         title_row.addWidget(close)
         layout.addLayout(title_row)
 
@@ -158,7 +146,7 @@ class PixelArtWindow(QWidget):
         self._status.setStyleSheet(f"color: {theme.INK_MUTED};")
         status_row.addWidget(self._status)
         status_row.addStretch()
-        self._export_btn = QPushButton("导出 PNG")
+        self._export_btn = InkButton("导出 PNG")
         self._export_btn.setFixedHeight(26)
         self._export_btn.setStyleSheet(_EXPORT_QSS)
         self._export_btn.setEnabled(False)

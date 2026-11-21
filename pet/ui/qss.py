@@ -9,6 +9,8 @@ from pet import theme
 _PROJECT_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
 CHECKMARK_SVG = os.path.join(
     _PROJECT_ROOT, "assets", "icon", "checkmark_ink.svg").replace("\\", "/")
+CHEVRON_SVG = os.path.join(
+    _PROJECT_ROOT, "assets", "icon", "ink", "chevron_down.svg").replace("\\", "/")
 
 _MONO_FONT = theme.MONO_FONT_CSS
 
@@ -60,7 +62,8 @@ QPushButton {{
 {_BTN_BORDER}
     border-radius: {theme.RADIUS_MD}px;
     padding: 5px 12px;
-    font-size: 12px;
+    font-size: 12.5px;
+    font-weight: bold;
     color: {theme.INK};
 }}
 QPushButton:hover {{
@@ -86,7 +89,7 @@ QPushButton {{
 {_BTN_BORDER}
     border-radius: {theme.RADIUS_MD}px;
     padding: 5px 14px;
-    font-size: 12px;
+    font-size: 12.5px;
     font-weight: bold;
     color: {theme.TEXT_ON_PRIMARY};
 }}
@@ -105,16 +108,22 @@ QPushButton:disabled {{
 
 BUTTON_DANGER_QSS = f"""
 QPushButton {{
-    background: transparent;
-    border: none;
-    border-radius: {theme.RADIUS_SM}px;
-    padding: 4px 10px;
-    font-size: 13px;
-    color: {theme.INK_MUTED};
+    background: {theme.SURFACE};
+{_BTN_BORDER}
+    border-radius: {theme.RADIUS_MD}px;
+    padding: 5px 12px;
+    font-size: 12.5px;
+    font-weight: bold;
+    color: {theme.DANGER};
 }}
 QPushButton:hover {{
     background: {theme.DANGER};
     color: {theme.TEXT_ON_PRIMARY};
+}}
+QPushButton:disabled {{
+    background: {theme.PAPER_DEEP};
+    color: {theme.INK_MUTED};
+    border-color: {theme.LINE};
 }}
 """
 
@@ -125,7 +134,7 @@ QLineEdit, QSpinBox, QDoubleSpinBox, QDateEdit {{
     border-radius: {theme.RADIUS_MD}px;
     padding: 5px 10px;
     min-height: 18px;
-    font-size: 12px;
+    font-size: 12.5px;
     color: {theme.INK};
     selection-background-color: {theme.PRIMARY_SOFT};
     selection-color: {theme.INK};
@@ -146,7 +155,7 @@ QLineEdit {{
     border: {theme.BORDER}px solid {theme.INK};
     border-radius: {theme.RADIUS_MD}px;
     padding: 5px 10px;
-    font-size: 12px;
+    font-size: 12.5px;
     color: {theme.INK};
     selection-background-color: {theme.PRIMARY_SOFT};
     selection-color: {theme.INK};
@@ -169,7 +178,7 @@ QComboBox {{
     border-radius: {theme.RADIUS_MD}px;
     padding: 5px 10px;
     min-height: 18px;
-    font-size: 12px;
+    font-size: 12.5px;
     color: {theme.INK};
 }}
 QComboBox:hover {{
@@ -188,8 +197,17 @@ QComboBox::drop-down {{
     subcontrol-position: right center;
     width: 20px;
     border: none;
+    image: url("{CHEVRON_SVG}");
 }}
-QComboBox QAbstractItemView {{
+"""
+
+# 弹层是独立顶层容器，窗口级样式传不进去，由 NoWheelComboBox 直接挂到容器上
+COMBOBOX_POPUP_QSS = f"""
+QFrame {{
+    background: transparent;
+    border: none;
+}}
+QListView {{
     background: {theme.SURFACE};
     border: {theme.BORDER}px solid {theme.INK};
     border-radius: {theme.RADIUS_SM}px;
@@ -226,13 +244,14 @@ QTextEdit:disabled, QPlainTextEdit:disabled {{
 
 SCROLLBAR_QSS = f"""
 QScrollBar:vertical {{
-    background: transparent;
+    background: {theme.PAPER_DEEP};
     width: 10px;
-    border: none;
+    border: 1.5px solid {theme.INK};
+    border-radius: 5px;
     margin: 0px;
 }}
 QScrollBar::handle:vertical {{
-    background: {theme.PRIMARY_SOFT};
+    background: {theme.PRIMARY};
     border: 1.5px solid {theme.INK};
     border-radius: 5px;
     min-height: 24px;
@@ -249,13 +268,14 @@ QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
     background: none;
 }}
 QScrollBar:horizontal {{
-    background: transparent;
+    background: {theme.PAPER_DEEP};
     height: 10px;
-    border: none;
+    border: 1.5px solid {theme.INK};
+    border-radius: 5px;
     margin: 0px;
 }}
 QScrollBar::handle:horizontal {{
-    background: {theme.PRIMARY_SOFT};
+    background: {theme.PRIMARY};
     border: 1.5px solid {theme.INK};
     border-radius: 5px;
     min-width: 24px;
@@ -278,6 +298,7 @@ QListWidget {{
     background: {theme.SURFACE};
     border: {theme.BORDER}px solid {theme.INK};
     border-radius: {theme.RADIUS_LG}px;
+    padding: 4px;
     font-family: "{_MONO_FONT}", monospace;
     font-size: 11px;
     color: {theme.INK};
@@ -434,7 +455,6 @@ QTabWidget::pane {{
     border-radius: {theme.RADIUS_LG}px;
     background: {theme.PAPER};
     padding: 6px;
-    top: -2px;
 }}
 QTabBar::tab {{
     background: {theme.SURFACE_WARM};
@@ -451,7 +471,31 @@ QTabBar::tab:selected {{
     font-weight: bold;
 }}
 QTabBar::tab:hover:!selected {{
-    background: {theme.PRIMARY_SOFT};
+    background: {theme.YELLOW};
+}}
+"""
+
+TAB_PILL_QSS = f"""
+QPushButton {{
+    background: {theme.SURFACE_WARM};
+    border: {theme.BORDER}px solid {theme.INK};
+    border-radius: 13px;
+    padding: 5px 0;
+    font-size: 12px;
+    color: {theme.INK_SOFT};
+}}
+QPushButton:hover:!checked {{
+    background: {theme.YELLOW};
+}}
+QPushButton:checked {{
+    background: {theme.PRIMARY};
+    color: {theme.TEXT_ON_PRIMARY};
+    font-weight: bold;
+}}
+QPushButton:disabled {{
+    background: {theme.PAPER_DEEP};
+    color: {theme.INK_MUTED};
+    border-color: {theme.LINE};
 }}
 """
 
@@ -489,8 +533,9 @@ QMessageBox QLabel {{
 """
 
 
-def bubble_button_qss(background: str, hover: str | None = None) -> str:
-    """32px 圆形气泡按钮：墨框加 1px 硬投影。
+def bubble_button_qss(background: str, hover: str | None = None,
+                      radius: int = 16) -> str:
+    """圆形气泡按钮：2px 墨框，radius 为圆角半径，32px 按钮取 16。
 
     hover 缺省时按底色明度推导：浅底压深、深底提亮，避免统一变白。
     """
@@ -502,10 +547,28 @@ def bubble_button_qss(background: str, hover: str | None = None) -> str:
 QPushButton {{
     background: {background};
     border: {theme.BORDER}px solid {theme.INK};
-    border-radius: 16px;
+    border-radius: {radius}px;
 }}
 QPushButton:hover {{
     background: {hover};
+}}
+"""
+
+
+def chip_qss(background: str = theme.SURFACE) -> str:
+    """墨框胶囊徽章；配合 setObjectName("chip") 按名字匹配。
+
+    圆角不超过半高：超大半径会被 Qt 裁成方角。
+    """
+    return f"""
+QLabel#chip {{
+    background: {background};
+    border: 1.5px solid {theme.INK};
+    border-radius: 9px;
+    padding: 1px 8px;
+    font-size: 11px;
+    font-weight: bold;
+    color: {theme.INK};
 }}
 """
 
@@ -554,15 +617,26 @@ QPushButton:hover {{
 }}
 """
 
+# 斜纹用双色斜向渐变近似，QSS 没有重复渐变
 MUSIC_VOLUME_BAR_QSS = f"""
 QProgressBar {{
     background: {theme.PAPER_DEEP};
-    border: 1px solid {theme.INK};
-    border-radius: 4px;
+    border: {theme.BORDER}px solid {theme.INK};
+    border-radius: 7px;
 }}
 QProgressBar::chunk {{
-    background: {theme.PRIMARY};
-    border-radius: 3px;
+    border-radius: 5px;
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+        stop:0 {theme.ACCENT}, stop:0.1 {theme.ACCENT},
+        stop:0.1 {theme.ACCENT_HOVER}, stop:0.2 {theme.ACCENT_HOVER},
+        stop:0.2 {theme.ACCENT}, stop:0.3 {theme.ACCENT},
+        stop:0.3 {theme.ACCENT_HOVER}, stop:0.4 {theme.ACCENT_HOVER},
+        stop:0.4 {theme.ACCENT}, stop:0.5 {theme.ACCENT},
+        stop:0.5 {theme.ACCENT_HOVER}, stop:0.6 {theme.ACCENT_HOVER},
+        stop:0.6 {theme.ACCENT}, stop:0.7 {theme.ACCENT},
+        stop:0.7 {theme.ACCENT_HOVER}, stop:0.8 {theme.ACCENT_HOVER},
+        stop:0.8 {theme.ACCENT}, stop:0.9 {theme.ACCENT},
+        stop:0.9 {theme.ACCENT_HOVER}, stop:1 {theme.ACCENT_HOVER});
 }}
 """
 
@@ -576,10 +650,15 @@ def ui_font(point_size: int = 9) -> QFont:
 
 
 def app_stylesheet() -> str:
-    """合并公共样式，供解析检查与整窗套用。"""
+    """合并公共样式，供解析检查与整窗套用。
+
+    同选择器的规则后者覆盖前者：通用按钮/输入样式放同族最后，
+    窗口级只兜底未单独设置样式的控件，单独设置过的以自身为准。
+    """
     return "".join((
-        BASE_QSS, WINDOW_QSS, PANEL_QSS, BUTTON_QSS, BUTTON_PRIMARY_QSS,
-        BUTTON_DANGER_QSS, INPUT_QSS, INPUT_HIGHLIGHT_QSS, COMBOBOX_QSS,
-        TEXTEDIT_QSS, SCROLLBAR_QSS, LIST_QSS, TABLE_QSS, MENU_QSS,
-        CHECKBOX_QSS, SEPARATOR_QSS, TAB_BAR_QSS, TOOLTIP_QSS, DIALOG_QSS,
+        BASE_QSS, WINDOW_QSS, PANEL_QSS, BUTTON_PRIMARY_QSS,
+        BUTTON_DANGER_QSS, BUTTON_QSS, INPUT_HIGHLIGHT_QSS, INPUT_QSS,
+        COMBOBOX_QSS, TEXTEDIT_QSS, SCROLLBAR_QSS, LIST_QSS, TABLE_QSS,
+        MENU_SOLID_QSS, CHECKBOX_QSS, SEPARATOR_QSS, TAB_BAR_QSS,
+        TOOLTIP_QSS, DIALOG_QSS, chip_qss(),
     ))

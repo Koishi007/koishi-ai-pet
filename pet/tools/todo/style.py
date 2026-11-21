@@ -6,7 +6,7 @@ PANEL_QSS = f"""
 QWidget#todoBg {{
     background: {theme.SURFACE};
     border: {theme.BORDER}px solid {theme.INK};
-    border-radius: {theme.RADIUS_LG}px;
+    border-radius: {theme.RADIUS_XL}px;
 }}
 """
 
@@ -48,7 +48,8 @@ QPushButton {{
     border: {theme.BORDER}px solid {theme.INK};
     border-radius: {theme.RADIUS_MD}px;
     padding: 4px 12px;
-    font-size: 12px;
+    font-size: 11.5px;
+    font-weight: bold;
     color: {theme.INK};
     min-width: 64px;
 }}
@@ -60,12 +61,31 @@ QPushButton:pressed {{
 }}
 """
 
+MENU_QSS = f"""
+QMenu {{
+    background: {theme.SURFACE};
+    border: {theme.BORDER}px solid {theme.INK};
+    border-radius: {theme.RADIUS_LG}px;
+    padding: 6px 4px;
+}}
+QMenu::item {{
+    padding: 6px 30px 6px 12px;
+    font-size: 12px;
+    color: {theme.INK};
+    border-radius: {theme.RADIUS_SM}px;
+    background: transparent;
+}}
+QMenu::item:selected {{
+    background: {theme.PRIMARY_SOFT};
+}}
+"""
+
 LIST_QSS = f"""
 QListWidget {{
     background: {theme.SURFACE};
     border: {theme.BORDER}px solid {theme.INK};
     border-radius: {theme.RADIUS_LG}px;
-    font-size: 12px;
+    font-size: 12.5px;
     color: {theme.INK};
     outline: none;
     alternate-background-color: {theme.SURFACE_WARM};

@@ -7,6 +7,7 @@ from PySide6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QBoxLayout, QPr
 from PySide6.QtCore import Qt, QSize, QTimer, QPoint, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup
 from pet import theme
 from pet.ui.icons import tinted_icon
+from pet.ui.ink_button import InkButton
 from pet.ui.qss import (MUSIC_ICON_BUTTON_QSS, MUSIC_PANEL_QSS,
                         MUSIC_VOLUME_BAR_QSS, bubble_button_qss)
 from pet.ui.styles import BUBBLE_ROW_MUSIC, bubble_column_y
@@ -54,7 +55,7 @@ def _icon(name: str, size: int = 22, color: str = theme.INK):
     return tinted_icon(str(_ICON_DIR / name), color, size)
 
 _VOL_BAR_W = 96
-_VOL_BAR_H = 8
+_VOL_BAR_H = 14
 _VOL_BAR_HIDE_MS = 1500
 
 _PREV_RESPONSES = ["上一首会好听些吗…", "切过去了…", "上一首…", "之前的歌…"]
@@ -116,7 +117,7 @@ class MusicBubble(QWidget):
         self._layout.setSpacing(4)
 
         # 音乐按钮（收起态显示）
-        self._btn = QPushButton()
+        self._btn = InkButton(radius=theme.radius_for(32))
         self._btn.setFixedSize(32, 32)
         self._btn.setIcon(_icon("music.png", 20, theme.INK))
         self._btn.setIconSize(QSize(20, 20))

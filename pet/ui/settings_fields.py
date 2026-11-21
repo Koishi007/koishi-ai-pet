@@ -7,12 +7,13 @@ from dataclasses import dataclass
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QDoubleValidator, QIntValidator
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QHBoxLayout, QLabel,
-                               QLineEdit, QPushButton, QTextEdit, QVBoxLayout,
+                               QLineEdit, QTextEdit, QVBoxLayout,
                                QWidget)
 
 from pet.config import _KEY_META
 from pet import theme
 from pet.ui.icons import tinted_icon
+from pet.ui.ink_button import InkButton
 from pet.ui.qss import HELP_BADGE_QSS
 from pet.ui.settings_spec import display_value, stored_value
 from pet.ui.styles import (BUTTON_PRIMARY_QSS, COMBOBOX_QSS, HIDE_ICON_PATH,
@@ -34,7 +35,7 @@ class MarkdownEdit(QWidget):
 
         toolbar = QHBoxLayout()
         toolbar.setContentsMargins(0, 0, 0, 0)
-        self._toggle_btn = QPushButton("编辑")
+        self._toggle_btn = InkButton("编辑")
         self._toggle_btn.setFixedWidth(72)
         self._toggle_btn.setStyleSheet(BUTTON_PRIMARY_QSS)
         self._toggle_btn.clicked.connect(self._toggle_mode)
@@ -154,7 +155,7 @@ class SettingsForm:
         self.fields[key] = edit
         row.addWidget(edit)
 
-        toggle = QPushButton()
+        toggle = InkButton(radius=9, shadow_offset=(1, 2))
         toggle.setIcon(tinted_icon(SHOW_ICON_PATH, theme.INK, 16))
         toggle.setIconSize(QSize(16, 16))
         toggle.setFixedSize(30, 30)

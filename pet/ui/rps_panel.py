@@ -9,6 +9,7 @@ from pet.game.gamebase import GAME
 from pet.game.rps import MOVES
 from pet import theme
 from pet.ui.game_panel import GamePanelBase
+from pet.ui.ink_button import InkButton
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +76,7 @@ class RpsPanel(GamePanelBase):
         btn_row.setSpacing(8)
         self._move_btns = {}
         for move in ("rock", "scissors", "paper"):
-            btn = QPushButton(_MOVE_ICONS[move])
+            btn = InkButton(_MOVE_ICONS[move], radius=theme.RADIUS_LG)
             btn.setFixedSize(80, 80)
             btn.setStyleSheet(_BTN_QSS)
             btn.clicked.connect(lambda checked=False, m=move: self._on_move_clicked(m))

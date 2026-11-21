@@ -1,4 +1,4 @@
-﻿"""Todo 管理面板"""
+"""Todo 管理面板"""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 
 from pet.tools.todo.core import TodoListTool
 from pet.tools.todo.style import (BASE_QSS, BUTTON_QSS, CLOSE_QSS, LIST_QSS,
-                                  PANEL_QSS)
+                                  MENU_QSS, PANEL_QSS)
 from pet import theme
 
 logger = logging.getLogger(__name__)
@@ -98,6 +98,14 @@ class TodoPanel(QWidget):
 
         layout.addWidget(title_bar)
 
+        rule_row = QHBoxLayout()
+        rule_row.setContentsMargins(12, 0, 12, 0)
+        rule = QWidget()
+        rule.setFixedHeight(theme.BORDER)
+        rule.setStyleSheet(f"background:{theme.INK};")
+        rule_row.addWidget(rule)
+        layout.addLayout(rule_row)
+
         self._list = QListWidget()
         self._list.setStyleSheet(LIST_QSS)
         self._list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -164,7 +172,7 @@ class TodoPanel(QWidget):
                 item.setForeground(QColor(theme.INK_MUTED))
             self._list.addItem(item)
         done_count = sum(1 for t in items if t["status"] == "done")
-        self._stats.setText(f"共 {len(items)} 条，{done_count} 已完成")
+        self._stats.setText(f"共 {len(items)} 条，{done_count} 已完成 · 右键可复制标题")
 
     def _current_id(self) -> int | None:
         item = self._list.currentItem()
@@ -220,6 +228,7 @@ class TodoPanel(QWidget):
             title = title.replace("[√]", "").replace("[ ]", "").replace("~~", "").strip()
 
         menu = QMenu(self)
+        menu.setStyleSheet(MENU_QSS)
         act_copy = menu.addAction("复制")
         if menu.exec(self._list.mapToGlobal(pos)) == act_copy:
             QApplication.clipboard().setText(title)

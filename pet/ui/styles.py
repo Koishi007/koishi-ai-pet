@@ -4,10 +4,13 @@ import ctypes
 import os
 import sys
 
+from PySide6.QtCore import QEvent, QSize
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QPushButton
 
 from pet import theme
+from pet.ui.icons import tinted_icon
+from pet.ui.ink_button import InkButton
 from pet.ui.qss import (BUTTON_DANGER_QSS, BUTTON_PRIMARY_QSS, BUTTON_QSS,
                         CHECKBOX_QSS, CHECKMARK_SVG, COMBOBOX_QSS,
                         HELP_BADGE_QSS, INPUT_HIGHLIGHT_QSS, INPUT_QSS,
@@ -30,6 +33,8 @@ LOG_ICON_PATH = os.path.join(_PROJECT_ROOT, "assets", "icon", "ink", "log.svg")
 MEMORY_ICON_PATH = os.path.join(_PROJECT_ROOT, "assets", "icon", "ink", "memory.svg")
 DEBUG_ICON_PATH = os.path.join(_PROJECT_ROOT, "assets", "icon", "ink", "debug.svg")
 HISTORY_ICON_PATH = os.path.join(_PROJECT_ROOT, "assets", "icon", "ink", "history.svg")
+CLOSE_ICON_PATH = os.path.join(_PROJECT_ROOT, "assets", "icon", "ink", "close.svg")
+HIDE_ICON_PATH = os.path.join(_PROJECT_ROOT, "assets", "icon", "ink", "hide.svg")
 
 
 _COLOR_BG = theme.PAPER
@@ -59,21 +64,69 @@ WINDOW_RADIUS = theme.RADIUS_XL
 BUBBLE_ROW_CHAT = 5
 BUBBLE_ROW_FEED = 45
 BUBBLE_ROW_MUSIC = 85
+# 收起态气泡高度 40：按钮 32 加上下边距 8，列底估算取固定值
+_BUBBLE_COLLAPSED_H = 40
 
 
 def bubble_column_y(pet_top: int, row_offset: int, height: int, geo) -> int:
     """按钮列中单个气泡的纵坐标。
 
-    列底按 BUBBLE_ROW_MUSIC + 本气泡高度估算：超出可用区时整列上移，
-    各自夹取会让三个气泡落到同一位置互相遮挡。
+    列底按 BUBBLE_ROW_MUSIC + 收起态气泡高度估算，超出可用区时整列共用同一上移量，
+    气泡展开与收起不改变纵坐标。本气泡自身超屏时再夹回，只影响展开后的高面板。
     """
     y = pet_top + row_offset
     if geo is None:
         return y
-    overflow = pet_top + BUBBLE_ROW_MUSIC + height - geo.bottom()
+    overflow = pet_top + BUBBLE_ROW_MUSIC + _BUBBLE_COLLAPSED_H - geo.bottom()
     if overflow > 0:
         y -= overflow
-    return max(geo.top(), y)
+    return max(geo.top(), min(y, geo.bottom() - height))
+
+
+def _title_button_qss(hover_color: str, base_color: str,
+                      text_color: str = "#fff", font_size: str = "18px") -> str:
+    return f"""
+        QPushButton {{ background: transparent; border: {theme.BORDER}px solid transparent;
+                     border-radius: 17px; font-size: {font_size}; color: {base_color}; }}
+        QPushButton:hover {{ background: {hover_color}; border-color: {theme.INK};
+                     color: {text_color}; }}
+    """
+
+
+class _IconTitleButton(InkButton):
+    """标题栏圆形图标按钮：纸面墨框加墨影，hover 换底色并重染图标。"""
+
+    def __init__(self, icon_path: str, hover_color: str, base_color: str,
+                 hover_icon_color: str, size: int = 34):
+        super().__init__(radius=size // 2, shadow_offset=(1, 2))
+        self.setFixedSize(size, size)
+        self.setStyleSheet(
+            f"QPushButton {{ background: {theme.SURFACE};"
+            f" border: {theme.BORDER}px solid {theme.INK};"
+            f" border-radius: {size // 2}px; }}"
+            f"QPushButton:hover {{ background: {hover_color}; }}")
+        self._icon_path = icon_path
+        self._base_color = base_color
+        self._hover_icon_color = hover_icon_color
+        self._apply_icon(base_color)
+        self._inner.installEventFilter(self)
+
+    def _apply_icon(self, color: str) -> None:
+        self.setIcon(tinted_icon(self._icon_path, color, 16))
+        self.setIconSize(QSize(16, 16))
+
+    def eventFilter(self, obj, event):
+        if obj is self._inner:
+            if event.type() == QEvent.Type.Enter:
+                self._apply_icon(self._hover_icon_color)
+            elif event.type() == QEvent.Type.Leave:
+                self._apply_icon(self._base_color)
+        return super().eventFilter(obj, event)
+
+    def showEvent(self, event):
+        # 隐藏期间收不到 leave 事件，重开时复位图标染色
+        self._apply_icon(self._base_color)
+        super().showEvent(event)
 
 
 def make_title_button(text: str, hover_color: str,
@@ -83,30 +136,27 @@ def make_title_button(text: str, hover_color: str,
     """创建无边框面板窗口标题栏上的圆形按钮（关闭 / 最小化）。"""
     btn = QPushButton(text)
     btn.setFixedSize(34, 34)
-    btn.setStyleSheet(f"""
-        QPushButton {{ background: transparent; border: {theme.BORDER}px solid transparent;
-                     border-radius: 17px; font-size: {font_size}; color: {base_color}; }}
-        QPushButton:hover {{ background: {hover_color}; border-color: {theme.INK};
-                     color: {text_color}; }}
-    """)
+    btn.setStyleSheet(_title_button_qss(hover_color, base_color, text_color, font_size))
     return btn
 
 
 _LIGHT_BLUE_HOVER = theme.PRIMARY_SOFT
 
 
-def make_minimize_button(window) -> QPushButton:
-    """创建主色 hover 的最小化按钮，点击后最小化指定窗口。"""
-    btn = make_title_button("−", _LIGHT_BLUE_HOVER,
-                            base_color=theme.INK_SOFT, text_color=theme.INK,
-                            font_size="16px")
+def make_minimize_button(window) -> InkButton:
+    """创建主色 hover 的隐藏按钮，点击后最小化指定窗口。"""
+    btn = _IconTitleButton(HIDE_ICON_PATH, _LIGHT_BLUE_HOVER,
+                           base_color=theme.INK,
+                           hover_icon_color=theme.INK)
     btn.clicked.connect(window.showMinimized)
     return btn
 
 
-def make_close_button(window, on_close=None) -> QPushButton:
+def make_close_button(window, on_close=None, size: int = 34) -> InkButton:
     """创建红色 hover 的关闭按钮，点击后关闭窗口或调用自定义回调。"""
-    btn = make_title_button("✕", theme.DANGER, font_size="14px")
+    btn = _IconTitleButton(CLOSE_ICON_PATH, theme.DANGER,
+                           base_color=theme.INK,
+                           hover_icon_color=theme.SURFACE, size=size)
     if on_close is None:
         btn.clicked.connect(window.close)
     else:

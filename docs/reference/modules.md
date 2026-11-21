@@ -153,6 +153,7 @@
 | `pet/ui/game_panel.py` | 游戏面板基类 — 通用无边框窗口框架 + 统一渲染入口 + 用户手动收场。 | `GamePanelBase` |
 | `pet/ui/higher_lower_panel.py` | 猜高低面板 — 继承 GamePanelBase，负责牌堆展示与下注提交。 | `HigherLowerPanel` |
 | `pet/ui/icons.py` | 单色图标：把灰阶 PNG 染成墨色并缓存。 | `tinted_icon()` |
+| `pet/ui/ink_button.py` | 带墨色硬投影与按压反馈的按钮：外层画影，内层按钮沿用 QSS 呈现。 | `paint_ink_shadow()` `InkButton` |
 | `pet/ui/log_window.py` | 日志窗口 | `LogRelay` `LogWindowHandler` `LogWindow` |
 | `pet/ui/memory_window.py` | 记忆管理窗口 | `MemoryWindow` |
 | `pet/ui/music_bubble.py` | 桌宠音乐控制气泡 - 操控系统媒体播放 | `MusicBubble` |
@@ -160,7 +161,7 @@
 | `pet/ui/pet_animations.py` | 桌宠帧动画模块 —— 基于 JSON 配置的帧序列播放。 | `PetAnimator` |
 | `pet/ui/pet_window.py` | 扁平圆角菜单基类 — Windows 下自绘圆角背景，macOS 走原生。 | `_FlatMenuBase` `StickyMenu` `_SpriteLabel` `PetWindow` |
 | `pet/ui/pixel_art_window.py` | 像素画只读窗口 — 跟随每次落笔刷新，展示画布内容与 revision。 | `CanvasView` `PixelArtWindow` |
-| `pet/ui/qss.py` | 由令牌拼装的公共控件样式。 | `bubble_button_qss()` `ui_font()` `app_stylesheet()` |
+| `pet/ui/qss.py` | 由令牌拼装的公共控件样式。 | `bubble_button_qss()` `chip_qss()` `ui_font()` `app_stylesheet()` |
 | `pet/ui/rps_panel.py` | 猜拳面板 — 继承 GamePanelBase，负责出拳展示与点击提交。 | `RpsPanel` |
 | `pet/ui/settings_actions.py` | 设置页的后台动作：连通性测试、模型列表、记忆汇总与热键录制 | `apply_pet_scale()` `SettingsActions` |
 | `pet/ui/settings_fields.py` | 设置页的控件工厂、表单模型与跨模块共享的控件引用 | `MarkdownEdit` `SettingsWidgets` `SettingsForm` |
@@ -170,7 +171,7 @@
 | `pet/ui/settings_window.py` | 设置界面 — 用户配置的图形界面 | `SettingsWindow` |
 | `pet/ui/settings_workers.py` | 设置页的后台任务：QObject worker 与 QThread 登记 | `LLMTestWorker` `EmbeddingTestWorker` `MemoryMergeWorker` `ModelsFetchWorker` `VoiceTestWorker` `ProbeRegistry` |
 | `pet/ui/speech_bubble.py` | 桌宠对话气泡：同一时刻只讲一句，多出来的排队 | `SpeechBubble` |
-| `pet/ui/styles.py` | 界面样式兼容层：转发令牌与公共 QSS，保留旧常量名。 | `bubble_column_y()` `make_title_button()` `make_minimize_button()` `make_close_button()` `ensure_taskbar_icon()` `terminal_source_color()` |
+| `pet/ui/styles.py` | 界面样式兼容层：转发令牌与公共 QSS，保留旧常量名。 | `bubble_column_y()` `_IconTitleButton` `make_title_button()` `make_minimize_button()` `make_close_button()` `ensure_taskbar_icon()` |
 | `pet/ui/swing.py` | 拖拽惯性钟摆：窗口加速度驱动贴图绕抓取点摆动，松手后自由衰减。 | `step_pendulum()` `SwingController` |
 | `pet/ui/system_tray.py` | （模块未提供 docstring） | `SystemTrayManager` |
 | `pet/ui/terminal_input.py` | 终端输入：输入行控件、历史轮换、Tab 补全与 PATH 扫描 | `push_history()` `elide_cwd()` `cwd_prompt()` `InputLine` `InputController` |
@@ -187,4 +188,4 @@
 | `pet/voice/voice_session.py` | 语音会话编排：麦克风采集 → 讯飞识别 | `VoiceSession` |
 | `pet/voice/xunfei_stt.py` | 讯飞语音听写 (iat) WebSocket API 封装 | `XunfeiSTT` |
 
-共 179 个模块。
+共 180 个模块。

@@ -5,11 +5,12 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QDoubleValidator, QFont, QIntValidator
 from PySide6.QtWidgets import (QFormLayout, QGroupBox, QHBoxLayout, QLabel,
-                               QLineEdit, QPushButton, QScrollArea, QTextEdit,
+                               QLineEdit, QScrollArea, QTextEdit,
                                QVBoxLayout, QWidget)
 
 from pet.config import PET_SCALE_STEPS, config
 from pet import theme
+from pet.ui.ink_button import InkButton
 from pet.ui.settings_fields import SettingsForm, SettingsWidgets
 from pet.ui.settings_spec import TAB_SPECS
 from pet.ui.styles import (BUTTON_PRIMARY_QSS, INPUT_HIGHLIGHT_QSS,
@@ -119,7 +120,7 @@ class SettingsTabs:
         w.model_edit.setStyleSheet(INPUT_HIGHLIGHT_QSS)
         f.fields["LLM_MODEL"] = w.model_edit
         model_row.addWidget(w.model_edit)
-        w.btn_fetch_models = QPushButton("获取列表")
+        w.btn_fetch_models = InkButton("获取列表")
         w.btn_fetch_models.setStyleSheet(BUTTON_PRIMARY_QSS)
         w.btn_fetch_models.setFixedWidth(84)
         model_row.addWidget(w.btn_fetch_models)
@@ -154,7 +155,7 @@ class SettingsTabs:
         w.label_active_profile.setStyleSheet(f"color:{_COLOR_TEXT_SEC}; font-size:11px;")
         switch_row.addWidget(w.label_active_profile)
         switch_row.addStretch()
-        w.btn_switch_profile = QPushButton("切换到备选模型")
+        w.btn_switch_profile = InkButton("切换到备选模型")
         w.btn_switch_profile.setStyleSheet(BUTTON_PRIMARY_QSS)
         switch_row.addWidget(w.btn_switch_profile)
         switch_layout.addLayout(switch_row)
@@ -181,7 +182,7 @@ class SettingsTabs:
         w.alt_model_edit.setStyleSheet(INPUT_HIGHLIGHT_QSS)
         f.fields["LLM_MODEL_ALT"] = w.alt_model_edit
         alt_model_row.addWidget(w.alt_model_edit)
-        w.btn_fetch_models_alt = QPushButton("获取列表")
+        w.btn_fetch_models_alt = InkButton("获取列表")
         w.btn_fetch_models_alt.setStyleSheet(BUTTON_PRIMARY_QSS)
         w.btn_fetch_models_alt.setFixedWidth(84)
         alt_model_row.addWidget(w.btn_fetch_models_alt)
@@ -190,7 +191,7 @@ class SettingsTabs:
         inner.addWidget(switch_group)
 
         test_row = QHBoxLayout()
-        w.btn_test = QPushButton("测试连接")
+        w.btn_test = InkButton("测试连接")
         w.btn_test.setStyleSheet(BUTTON_PRIMARY_QSS)
         test_row.addWidget(w.btn_test)
         w.label_test = QLabel("就绪")
@@ -294,7 +295,7 @@ class SettingsTabs:
         memory_form.addRow("API Key:", f.secret_row("EMBEDDING_KEY"))
         mem_model_row = QHBoxLayout()
         mem_model_row.addWidget(f.line("EMBEDDING_MODEL", "embedding-3"))
-        w.btn_fetch_mem_models = QPushButton("获取列表")
+        w.btn_fetch_mem_models = InkButton("获取列表")
         w.btn_fetch_mem_models.setStyleSheet(BUTTON_PRIMARY_QSS)
         w.btn_fetch_mem_models.setFixedWidth(84)
         mem_model_row.addWidget(w.btn_fetch_mem_models)
@@ -329,7 +330,7 @@ class SettingsTabs:
 
         merge_row = QHBoxLayout()
         merge_row.setSpacing(6)
-        w.btn_merge_now = QPushButton("立即汇总")
+        w.btn_merge_now = InkButton("立即汇总")
         w.btn_merge_now.setStyleSheet(BUTTON_PRIMARY_QSS)
         w.btn_merge_now.setFixedWidth(88)
         merge_row.addWidget(w.btn_merge_now)
@@ -341,13 +342,13 @@ class SettingsTabs:
 
         test_row = QHBoxLayout()
         test_row.setSpacing(6)
-        w.btn_merge_test = QPushButton("测试汇总模型连接")
+        w.btn_merge_test = InkButton("测试汇总模型连接")
         w.btn_merge_test.setStyleSheet(BUTTON_PRIMARY_QSS)
         test_row.addWidget(w.btn_merge_test)
         w.label_merge_test = QLabel("就绪")
         w.label_merge_test.setStyleSheet(f"color:{_COLOR_TEXT_SEC}; font-size:11px;")
         test_row.addWidget(w.label_merge_test)
-        w.btn_mem_test = QPushButton("测试向量模型连接")
+        w.btn_mem_test = InkButton("测试向量模型连接")
         w.btn_mem_test.setStyleSheet(BUTTON_PRIMARY_QSS)
         test_row.addWidget(w.btn_mem_test)
         w.label_mem_test = QLabel("就绪")
@@ -493,7 +494,7 @@ class SettingsTabs:
         w.hotkey_display.setStyleSheet(INPUT_HIGHLIGHT_QSS)
         f.fields["VOICE_HOTKEY"] = w.hotkey_display
         hotkey_row.addWidget(w.hotkey_display)
-        w.capture_btn = QPushButton("录制")
+        w.capture_btn = InkButton("录制")
         w.capture_btn.setStyleSheet(BUTTON_PRIMARY_QSS)
         hotkey_row.addWidget(w.capture_btn)
         voice_form.addRow("热键:", hotkey_row)
@@ -504,7 +505,7 @@ class SettingsTabs:
 
         test_row = QHBoxLayout()
         test_row.setSpacing(6)
-        w.voice_btn_test = QPushButton("测试连接")
+        w.voice_btn_test = InkButton("测试连接")
         w.voice_btn_test.setStyleSheet(BUTTON_PRIMARY_QSS)
         test_row.addWidget(w.voice_btn_test)
         w.voice_label_test = QLabel("就绪")
