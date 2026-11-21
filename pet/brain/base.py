@@ -349,7 +349,7 @@ class BrainMixin:
     def _store_call_args(self, args, payload: dict, refs: dict) -> None:
         """完整参数内联进事件；超过内联阈值时落 artifacts 并记 id。
 
-        摘要会丢掉嵌套结构（ops / rows / palette），回放只能靠这里。
+        参数要逐字回放，落 artifacts 时不截断。
         """
         if not args:
             return
@@ -360,14 +360,14 @@ class BrainMixin:
         if len(text) <= ARTIFACT_INLINE_LIMIT:
             payload["args"] = text
             return
-        artifact_id = self._store_artifact(text)
+        artifact_id = self._store_artifact(text, truncate=False)
         if artifact_id:
             refs["args_artifact"] = artifact_id
 
-    def _store_artifact(self, raw: str) -> Optional[str]:
+    def _store_artifact(self, raw: str, *, truncate: bool = True) -> Optional[str]:
         """原文超过内联阈值时落 artifacts，返回 id；否则不建。"""
         try:
-            return self._events.put_artifact(raw)
+            return self._events.put_artifact(raw, truncate=truncate)
         except Exception as e:
             logger.warning(f"[BrainMixin] put artifact failed: {e}")
             return None

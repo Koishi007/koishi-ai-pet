@@ -336,21 +336,24 @@ class EventStore:
         """删除该会话之外的全部事件，并回收不再被引用的 artifact。
 
         切到新会话时按用户预期释放磁盘；旧会话没有查看入口，日志与对话历史另有存处。
+        当前会话里的工具结果正文与工具调用参数都算引用，一并保留。
         """
         if self._conn is None:
             return 0
         with self._lock:
             referenced = set()
             rows = self._conn.execute(
-                "SELECT payload FROM session_events "
-                "WHERE session_id=? AND type='tool_result'", (session_id,)).fetchall()
+                "SELECT payload, refs FROM session_events WHERE session_id=? "
+                "AND type IN ('tool_result', 'tool_call')", (session_id,)).fetchall()
             for row in rows:
                 try:
-                    artifact_id = json.loads(row["payload"]).get("artifact_id")
+                    payload = json.loads(row["payload"] or "{}")
+                    refs = json.loads(row["refs"] or "{}")
                 except (TypeError, ValueError):
                     continue
-                if artifact_id:
-                    referenced.add(artifact_id)
+                for artifact_id in (payload.get("artifact_id"), refs.get("args_artifact")):
+                    if artifact_id:
+                        referenced.add(artifact_id)
             removed = self._conn.execute(
                 "DELETE FROM session_events WHERE session_id<>?",
                 (session_id,)).rowcount or 0
@@ -365,11 +368,15 @@ class EventStore:
         logger.info(f"[EventStore] purged {removed} events outside current session")
         return removed
 
-    def put_artifact(self, body: str, mime: str = "text/plain") -> Optional[str]:
-        """超过内联阈值才落 artifact，返回 id；内联够用返回 None。"""
+    def put_artifact(self, body: str, mime: str = "text/plain", *,
+                     truncate: bool = True) -> Optional[str]:
+        """超过内联阈值才落 artifact，返回 id；内联够用返回 None。
+
+        truncate=False 时原样保存，供需要逐字回放的正文使用。
+        """
         if self._conn is None or len(body) <= ARTIFACT_INLINE_LIMIT:
             return None
-        text = truncate_bytes(body, ARTIFACT_MAX_BYTES)
+        text = truncate_bytes(body, ARTIFACT_MAX_BYTES) if truncate else body
         if text is not body:
             logger.warning(f"[EventStore] artifact truncated to {ARTIFACT_MAX_BYTES} bytes")
         artifact_id = uuid.uuid4().hex

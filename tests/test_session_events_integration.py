@@ -128,6 +128,22 @@ class TestProjectionEntry:
             messages[0]["tool_calls"][0]["function"]["arguments"])
         assert arguments["ops"] == ops
 
+    def test_oversize_args_roundtrip_from_artifact(self, tmp_path):
+        brain = _brain(tmp_path)
+        text = "长" * 30000
+        brain.record_tool_events(
+            "g1",
+            [{"id": "c1", "name": "pixel_art__paint",
+              "args": {"canvas_id": "1", "note": text}}],
+            [{"tool_call_id": "c1", "ok": True, "brief": "绘制完成"}],
+        )
+        call = [e for e in brain.dump_events() if e["type"] == "tool_call"][0]
+        assert "args_artifact" in call["refs"]
+        messages = brain.get_multi_turn_messages()
+        arguments = json.loads(
+            messages[0]["tool_calls"][0]["function"]["arguments"])
+        assert arguments["note"] == text
+
     def test_tool_group_records_only_call_and_result(self, tmp_path):
         brain = _brain(tmp_path)
         brain.record_tool_events(
