@@ -268,7 +268,7 @@ system 动作表换成 `EDGE_ACTION_NAMES` 的八个贴边动作；调度器、�
 | 位置 | 内容 | 说明 |
 |---|---|---|
 | `%APPDATA%/KoishiAI/settings.json` | 用户配置（macOS/Linux 见 `pet/settings.py`） | 与默认值合并；`settings-schema.json` 是给外部编辑器的 schema |
-| `<项目根>/pet.db` | SQLite：`vitals`、`mood`、`session_events`、`session_meta`、`session_artifacts`、`chat_history`、记忆相关表 | 连接参数统一在 `pet/db.py`（WAL、busy_timeout）；`context_entries` / `context_meta` 是旧表，代码不再读写 |
+| `<项目根>/pet.db` | SQLite：`vitals`、`mood`、`session_events`、`session_meta`、`session_artifacts`、`chat_history`、`pixel_canvases`、记忆相关表 | 连接参数统一在 `pet/db.py`（WAL、busy_timeout）；`context_entries` / `context_meta` 是旧表，代码不再读写 |
 | `pet/tools/<tool>/config.json` | 工具私有配置 | 首次运行时由 `config.example.json` 复制生成 |
 | `logs/` | `koishiai.log`（按天轮转 3 份）、`crash/`（崩溃报告）、`startup.state` | 排障的第一入口 |
 | `KoishiAI.lock` | 单实例锁（与 settings.json 同目录） | 异常残留时可手删 |
