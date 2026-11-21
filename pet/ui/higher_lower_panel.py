@@ -7,26 +7,28 @@ from PySide6.QtWidgets import QHBoxLayout, QPushButton, QLabel
 
 from pet.game.gamebase import GAME
 from pet.game.higher_lower import _CN
+from pet import theme
 from pet.ui.game_panel import GamePanelBase
+from pet.ui.ink_button import InkButton
 
 logger = logging.getLogger(__name__)
 
 _BTN_QSS = (
     "QPushButton {"
-    "  background: #ffffff;"
-    "  border: 2px solid #d0d6e0;"
+    f"  background: {theme.SURFACE};"
+    f"  border: {theme.BORDER}px solid {theme.INK};"
     "  border-radius: 14px;"
     "  font-size: 14px;"
     "  font-weight: bold;"
-    "  color: #333;"
+    f"  color: {theme.INK};"
     "}"
     "QPushButton:hover {"
-    "  background: #f0f6ff;"
-    "  border-color: #7aa7e0;"
+    f"  background: {theme.PRIMARY_SOFT};"
     "}"
     "QPushButton:disabled {"
-    "  background: #eceef3;"
-    "  color: #999;"
+    f"  background: {theme.PAPER_DEEP};"
+    f"  color: {theme.INK_MUTED};"
+    f"  border-color: {theme.LINE};"
     "}"
 )
 
@@ -50,36 +52,40 @@ class HigherLowerPanel(GamePanelBase):
     def _build_content(self, layout):
         self._score = QLabel("")
         self._score.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._score.setStyleSheet("font-size: 13px; font-weight: bold; color: #555;")
+        self._score.setStyleSheet(
+            f"font-size: 12px; font-weight: bold; color: {theme.INK_SOFT};")
         layout.addWidget(self._score)
 
         self._message = QLabel("")
         self._message.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._message.setStyleSheet("font-size: 13px; color: #555;")
+        self._message.setStyleSheet(f"font-size: 12px; color: {theme.INK_SOFT};")
         self._message.setFixedHeight(22)
         layout.addWidget(self._message)
 
         self._pet_bet = QLabel("")
         self._pet_bet.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._pet_bet.setStyleSheet("font-size: 15px; color: #e67e22;")
+        self._pet_bet.setStyleSheet(
+            f"font-size: 14px; font-weight: bold; color: {theme.PRIMARY_DEEP};")
         self._pet_bet.setFixedHeight(24)
         layout.addWidget(self._pet_bet)
 
         self._base_label = QLabel("")
         self._base_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._base_label.setStyleSheet("font-size: 34px; font-weight: bold; color: #2c3e50;")
+        self._base_label.setStyleSheet(
+            f"font-size: 34px; font-weight: 800; color: {theme.INK};")
         self._base_label.setFixedHeight(48)
         layout.addWidget(self._base_label)
 
         self._history_label = QLabel("")
         self._history_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._history_label.setStyleSheet("font-size: 12px; color: #888;")
+        self._history_label.setStyleSheet(
+            f"font-size: 11px; color: {theme.INK_MUTED};")
         layout.addWidget(self._history_label)
 
         self._deck_label = QLabel("")
         self._deck_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._deck_label.setWordWrap(True)
-        self._deck_label.setStyleSheet("font-size: 13px; color: #555;")
+        self._deck_label.setStyleSheet(f"font-size: 12px; color: {theme.INK_SOFT};")
         self._deck_label.setFixedHeight(40)
         layout.addWidget(self._deck_label)
 
@@ -87,7 +93,7 @@ class HigherLowerPanel(GamePanelBase):
         btn_row.setSpacing(10)
         self._bet_btns = {}
         for side in ("higher", "lower"):
-            btn = QPushButton(_CN[side])
+            btn = InkButton(_CN[side], radius=theme.RADIUS_LG)
             btn.setFixedHeight(52)
             btn.setStyleSheet(_BTN_QSS)
             btn.clicked.connect(lambda checked=False, s=side: self._on_bet_clicked(s))
@@ -97,7 +103,7 @@ class HigherLowerPanel(GamePanelBase):
 
         hint = QLabel("轮到你时点击下注")
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        hint.setStyleSheet("font-size: 12px; color: #999;")
+        hint.setStyleSheet(f"font-size: 11px; color: {theme.INK_MUTED};")
         layout.addWidget(hint)
 
     def _render_game(self, payload: dict):

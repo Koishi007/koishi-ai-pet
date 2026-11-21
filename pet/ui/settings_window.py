@@ -4,22 +4,28 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen
-from PySide6.QtWidgets import (QApplication, QHBoxLayout, QLabel, QMessageBox,
-                               QPushButton, QTabWidget, QVBoxLayout, QWidget)
+from PySide6.QtCore import QSize, Qt
+from PySide6.QtGui import QIcon
+from PySide6.QtWidgets import (QApplication, QHBoxLayout, QLabel,
+                               QTabWidget, QVBoxLayout, QWidget)
 
 from pet.auto_start import set_auto_start
 from pet.config import _KEY_META, config
+from pet import theme
+from pet.ui.frame import paint_ink_frame
+from pet.ui.icons import tinted_icon
+from pet.ui.ink_button import InkButton
+from pet.ui.ink_dialog import Answer, ask, notify
+from pet.ui.qss import (CHECKMARK_SVG, TAB_PILL_QSS, TITLE_LABEL_QSS,
+                        app_stylesheet)
 from pet.ui.settings_actions import SettingsActions, apply_pet_scale
 from pet.ui.settings_fields import SettingsForm
 from pet.ui.settings_hooks import invalidate_action_section
 from pet.ui.settings_tabs import SettingsTabs
-from pet.ui.styles import (BUTTON_PRIMARY_QSS, BUTTON_QSS, CHECKBOX_QSS,
-                           COMBOBOX_QSS, INPUT_QSS, PANEL_QSS,
-                           SETTING_ICON_PATH, TAB_BAR_QSS, TEXTEDIT_QSS,
-                           _COLOR_BG, _COLOR_TEXT_TITLE, ensure_taskbar_icon,
-                           make_close_button, make_minimize_button)
+from pet.ui.styles import (BUTTON_PRIMARY_QSS, SETTING_ICON_PATH,
+                           ensure_taskbar_icon, make_close_button,
+                           make_minimize_button)
+from pet.ui.widgets import make_icon_badge
 
 logger = logging.getLogger(__name__)
 
@@ -76,11 +82,7 @@ class SettingsWindow(QWidget):
             self._msg, self.isVisible, self.tabs.update_profile_ui)
         self._setup_ui()
         self.tabs.bind(self.actions)
-        self.setStyleSheet(
-            PANEL_QSS + BUTTON_QSS + BUTTON_PRIMARY_QSS +
-            INPUT_QSS + COMBOBOX_QSS + TEXTEDIT_QSS + CHECKBOX_QSS +
-            TAB_BAR_QSS
-        )
+        self.setStyleSheet(app_stylesheet())
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -88,23 +90,21 @@ class SettingsWindow(QWidget):
 
     def _setup_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(6, 2, 6, 4)
-        root.setSpacing(0)
+        root.setContentsMargins(8, 3, 8 + theme.SHADOW_WINDOW,
+                                6 + theme.SHADOW_WINDOW)
+        root.setSpacing(2)
 
         title_bar = QWidget()
-        title_bar.setFixedHeight(38)
+        title_bar.setFixedHeight(theme.TITLE_BAR_H)
         title_row = QHBoxLayout(title_bar)
-        title_row.setContentsMargins(12, 0, 6, 0)
-        title_row.setSpacing(6)
+        title_row.setContentsMargins(3, 0, 0, 0)
+        title_row.setSpacing(8)
         try:
-            icon_lbl = QLabel()
-            icon_lbl.setPixmap(QIcon(SETTING_ICON_PATH).pixmap(18, 18))
-            title_row.addWidget(icon_lbl)
+            title_row.addWidget(make_icon_badge(SETTING_ICON_PATH))
         except Exception:
             pass
         title = QLabel("设置")
-        title.setStyleSheet(
-            f"font-size:13px; color:{_COLOR_TEXT_TITLE}; font-weight:bold; background:transparent;")
+        title.setStyleSheet(TITLE_LABEL_QSS)
         title_row.addWidget(title)
         title_row.addStretch()
         title_row.addWidget(make_minimize_button(self))
@@ -114,32 +114,59 @@ class SettingsWindow(QWidget):
         title_bar.mousePressEvent = self._header_press
         title_bar.mouseMoveEvent = self._header_move
 
+        rule_row = QHBoxLayout()
+        rule_row.setContentsMargins(12, 0, 12, 0)
+        rule = QWidget()
+        rule.setFixedHeight(theme.BORDER)
+        rule.setStyleSheet(f"background:{theme.INK};")
+        rule_row.addWidget(rule)
+        root.addLayout(rule_row)
+
         self._tabs = QTabWidget()
-        self._tabs.setDocumentMode(True)
-        self._tabs.tabBar().setExpanding(True)
-        self._tabs.tabBar().setStyleSheet(f"QTabBar {{ background: {_COLOR_BG}; }}")
-        for label, page in self.tabs.build():
+        self._tabs.tabBar().hide()
+        self._tab_buttons = []
+        tab_row = QHBoxLayout()
+        # 底边留 8px：胶囊墨影下探 2px，再给内容框留出呼吸
+        tab_row.setContentsMargins(3, 2, 3, 8)
+        tab_row.setSpacing(6)
+        for i, (label, page) in enumerate(self.tabs.build()):
             self._tabs.addTab(page, label)
+            pill = InkButton(label, radius=13, shadow_offset=(1, 2),
+                             pressed_when_checked=True)
+            pill.setCheckable(True)
+            pill.setAutoExclusive(True)
+            pill.setFixedHeight(28)
+            pill.setStyleSheet(TAB_PILL_QSS)
+            pill.clicked.connect(lambda _=False, idx=i: self._select_tab(idx))
+            tab_row.addWidget(pill, stretch=1)
+            self._tab_buttons.append(pill)
+        self._tabs.currentChanged.connect(self._sync_tab_checked)
+        if self._tab_buttons:
+            self._tab_buttons[0].setChecked(True)
+        root.addLayout(tab_row)
         root.addWidget(self._tabs, stretch=1)
 
         bottom = QHBoxLayout()
         bottom.setContentsMargins(12, 4, 12, 8)
         bottom.addStretch()
-        btn_save = QPushButton("保存")
+        btn_save = InkButton("保存")
+        btn_save.setIcon(tinted_icon(CHECKMARK_SVG, theme.SURFACE, 14))
+        btn_save.setIconSize(QSize(14, 14))
         btn_save.setStyleSheet(BUTTON_PRIMARY_QSS)
         btn_save.clicked.connect(self._on_save)
         bottom.addWidget(btn_save)
         root.addLayout(bottom)
 
-    def _msg(self, title: str, text: str, *,
-             icon: QMessageBox.Icon = QMessageBox.Icon.NoIcon,
-             warning: bool = False):
-        box = QMessageBox(self)
-        box.setWindowTitle(title)
-        box.setText(text)
-        box.setIcon(icon if warning else QMessageBox.Icon.NoIcon)
-        box.addButton("确定", QMessageBox.ButtonRole.AcceptRole)
-        box.exec()
+    def _select_tab(self, index: int) -> None:
+        self._tabs.setCurrentIndex(index)
+        self._sync_tab_checked(index)
+
+    def _sync_tab_checked(self, index: int) -> None:
+        for i, btn in enumerate(self._tab_buttons):
+            btn.setChecked(i == index)
+
+    def _msg(self, title: str, text: str, *, warning: bool = False):
+        notify(self, title=title, text=text, warning=warning)
 
     def load_values(self):
         """从 config 填充各控件，每次打开窗口时调用。"""
@@ -194,22 +221,16 @@ class SettingsWindow(QWidget):
     def closeEvent(self, event):
         """关闭前检查未保存修改，清理后台线程。"""
         if self.form.is_dirty():
-            box = QMessageBox(self)
-            box.setWindowTitle("未保存")
-            box.setText("有修改尚未保存，是否保存？")
-            box.setIcon(QMessageBox.Icon.NoIcon)
-            btn_save = box.addButton("保存", QMessageBox.ButtonRole.AcceptRole)
-            btn_discard = box.addButton("不保存", QMessageBox.ButtonRole.DestructiveRole)
-            btn_cancel = box.addButton("取消", QMessageBox.ButtonRole.RejectRole)
-            box.setDefaultButton(btn_cancel)
-            box.exec()
-            clicked = box.clickedButton()
-            if clicked == btn_save:
+            answer = ask(
+                self, title="未保存", text="有修改尚未保存，是否保存？",
+                accept="保存", destructive="不保存", reject="取消",
+                default=Answer.REJECT)
+            if answer is Answer.ACCEPT:
                 self._on_save()
                 if self.form.is_dirty():
                     event.ignore()
                     return
-            elif clicked == btn_cancel:
+            elif answer is Answer.REJECT:
                 event.ignore()
                 return
         self.actions.shutdown()
@@ -226,11 +247,4 @@ class SettingsWindow(QWidget):
             self._drag_pos = event.globalPosition().toPoint()
 
     def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        rect = self.rect().adjusted(0, 0, -1, -1)
-        path = QPainterPath()
-        path.addRoundedRect(rect, 10, 10)
-        painter.fillPath(path, QColor(_COLOR_BG))
-        painter.setPen(QPen(QColor("#000000"), 1))
-        painter.drawPath(path)
+        paint_ink_frame(self)

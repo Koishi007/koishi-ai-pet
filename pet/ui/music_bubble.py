@@ -3,9 +3,13 @@
 import random
 from pathlib import Path
 
-from PySide6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QBoxLayout, QProgressBar
+from PySide6.QtWidgets import QWidget, QHBoxLayout, QBoxLayout, QProgressBar
 from PySide6.QtCore import Qt, QSize, QTimer, QPoint, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup
-from PySide6.QtGui import QIcon
+from pet import theme
+from pet.ui.icons import tinted_icon
+from pet.ui.ink_button import InkButton
+from pet.ui.qss import (MUSIC_ICON_BUTTON_QSS, MUSIC_PANEL_QSS,
+                        MUSIC_VOLUME_BAR_QSS, bubble_button_qss)
 from pet.ui.styles import BUBBLE_ROW_MUSIC, bubble_column_y
 
 try:
@@ -43,36 +47,15 @@ def _get_volume():
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+_ICON_DIR = BASE_DIR / "assets" / "icon"
 
-_PANEL_STYLE = (
-    "QWidget#musicPanel {"
-    "  background: rgba(255,255,255,220);"
-    "  border-radius: 16px;"
-    "}"
-)
-_ICON_BTN_STYLE = (
-    "QPushButton {"
-    "  background: transparent;"
-    "  border: none;"
-    "  border-radius: 4px;"
-    "}"
-    "QPushButton:hover {"
-    "  background: rgba(0,0,0,30);"
-    "}"
-)
-_VOL_BAR_STYLE = (
-    "QProgressBar {"
-    "  background: rgba(0,0,0,40);"
-    "  border: none;"
-    "  border-radius: 4px;"
-    "}"
-    "QProgressBar::chunk {"
-    "  background: rgba(70,130,220,220);"
-    "  border-radius: 4px;"
-    "}"
-)
+
+def _icon(name: str, size: int = 22, color: str = theme.INK):
+    """图标染色，默认墨色，落在深色圆钮上时用米白。"""
+    return tinted_icon(str(_ICON_DIR / name), color, size)
+
 _VOL_BAR_W = 96
-_VOL_BAR_H = 8
+_VOL_BAR_H = 14
 _VOL_BAR_HIDE_MS = 1500
 
 _PREV_RESPONSES = ["上一首会好听些吗…", "切过去了…", "上一首…", "之前的歌…"]
@@ -134,77 +117,67 @@ class MusicBubble(QWidget):
         self._layout.setSpacing(4)
 
         # 音乐按钮（收起态显示）
-        self._btn = QPushButton()
+        self._btn = InkButton(radius=theme.radius_for(32))
         self._btn.setFixedSize(32, 32)
-        self._btn.setIcon(QIcon(str(BASE_DIR / "assets" / "icon" / "music.png")))
-        self._btn.setIconSize(QSize(28, 28))
-        self._btn.setStyleSheet(
-            "QPushButton {"
-            "  background: rgba(255,255,255,220);"
-            "  border: 1px solid #ccc;"
-            "  border-radius: 16px;"
-            "}"
-            "QPushButton:hover {"
-            "  background: rgba(220,230,255,240);"
-            "  border-color: #aaa;"
-            "}"
-        )
+        self._btn.setIcon(_icon("music.png", 20, theme.INK))
+        self._btn.setIconSize(QSize(20, 20))
+        self._btn.setStyleSheet(bubble_button_qss(theme.BUBBLE_MUSIC))
         self._btn.clicked.connect(self._toggle_expand)
         self._layout.addWidget(self._btn)
 
         self._panel = QWidget()
         self._panel.setObjectName("musicPanel")
-        self._panel.setStyleSheet(_PANEL_STYLE)
+        self._panel.setStyleSheet(MUSIC_PANEL_QSS)
         panel_layout = QHBoxLayout(self._panel)
-        panel_layout.setContentsMargins(0, 0, 0, 0)
-        panel_layout.setSpacing(0)
+        panel_layout.setContentsMargins(4, 0, 4, 0)
+        panel_layout.setSpacing(4)
 
-        self._btn_prev = QPushButton()
+        self._btn_prev = InkButton(radius=theme.RADIUS_SM, shadow_offset=(1, 2))
         self._btn_prev.setFixedSize(32, 32)
-        self._btn_prev.setIcon(QIcon(str(BASE_DIR / "assets" / "icon" / "music_previous.png")))
-        self._btn_prev.setIconSize(QSize(28, 28))
-        self._btn_prev.setStyleSheet(_ICON_BTN_STYLE)
+        self._btn_prev.setIcon(_icon("music_previous.png", 20))
+        self._btn_prev.setIconSize(QSize(20, 20))
+        self._btn_prev.setStyleSheet(MUSIC_ICON_BUTTON_QSS)
         self._btn_prev.clicked.connect(lambda: (self._send_media_key(_KEY_PREV), self._say(_PREV_RESPONSES)))
         panel_layout.addWidget(self._btn_prev)
 
-        self._btn_play = QPushButton()
+        self._btn_play = InkButton(radius=theme.RADIUS_SM, shadow_offset=(1, 2))
         self._btn_play.setFixedSize(32, 32)
-        self._btn_play.setIcon(QIcon(str(BASE_DIR / "assets" / "icon" / "music_pause.png")))
-        self._btn_play.setIconSize(QSize(28, 28))
-        self._btn_play.setStyleSheet(_ICON_BTN_STYLE)
+        self._btn_play.setIcon(_icon("music_pause.png", 20))
+        self._btn_play.setIconSize(QSize(20, 20))
+        self._btn_play.setStyleSheet(MUSIC_ICON_BUTTON_QSS)
         self._btn_play.clicked.connect(self._on_play_clicked)
         panel_layout.addWidget(self._btn_play)
 
-        self._btn_next = QPushButton()
+        self._btn_next = InkButton(radius=theme.RADIUS_SM, shadow_offset=(1, 2))
         self._btn_next.setFixedSize(32, 32)
-        self._btn_next.setIcon(QIcon(str(BASE_DIR / "assets" / "icon" / "music_next.png")))
-        self._btn_next.setIconSize(QSize(28, 28))
-        self._btn_next.setStyleSheet(_ICON_BTN_STYLE)
+        self._btn_next.setIcon(_icon("music_next.png", 20))
+        self._btn_next.setIconSize(QSize(20, 20))
+        self._btn_next.setStyleSheet(MUSIC_ICON_BUTTON_QSS)
         self._btn_next.clicked.connect(lambda: (self._send_media_key(_KEY_NEXT), self._say(_NEXT_RESPONSES)))
         panel_layout.addWidget(self._btn_next)
 
-        self._btn_vol_down = QPushButton()
+        self._btn_vol_down = InkButton(radius=theme.RADIUS_SM, shadow_offset=(1, 2))
         self._btn_vol_down.setFixedSize(32, 32)
-        self._btn_vol_down.setIcon(QIcon(str(BASE_DIR / "assets" / "icon" / "volume_down.png")))
-        self._btn_vol_down.setIconSize(QSize(28, 28))
-        self._btn_vol_down.setStyleSheet(_ICON_BTN_STYLE)
+        self._btn_vol_down.setIcon(_icon("volume_down.png", 20))
+        self._btn_vol_down.setIconSize(QSize(20, 20))
+        self._btn_vol_down.setStyleSheet(MUSIC_ICON_BUTTON_QSS)
         self._btn_vol_down.clicked.connect(lambda: (self._volume_step(False), self._say(_VOL_DOWN_RESPONSES)))
         panel_layout.addWidget(self._btn_vol_down)
 
         # 静音切换按钮（图标随 _is_muted 状态切换）
-        self._btn_mute = QPushButton()
+        self._btn_mute = InkButton(radius=theme.RADIUS_SM, shadow_offset=(1, 2))
         self._btn_mute.setFixedSize(32, 32)
-        self._btn_mute.setIcon(QIcon(str(BASE_DIR / "assets" / "icon" / ("volume_mute.png" if self._is_muted else "volume.png"))))
-        self._btn_mute.setIconSize(QSize(28, 28))
-        self._btn_mute.setStyleSheet(_ICON_BTN_STYLE)
+        self._btn_mute.setIcon(_icon("volume_mute.png" if self._is_muted else "volume.png", 20))
+        self._btn_mute.setIconSize(QSize(20, 20))
+        self._btn_mute.setStyleSheet(MUSIC_ICON_BUTTON_QSS)
         self._btn_mute.clicked.connect(self._on_mute_clicked)
         panel_layout.addWidget(self._btn_mute)
 
-        self._btn_vol_up = QPushButton()
+        self._btn_vol_up = InkButton(radius=theme.RADIUS_SM, shadow_offset=(1, 2))
         self._btn_vol_up.setFixedSize(32, 32)
-        self._btn_vol_up.setIcon(QIcon(str(BASE_DIR / "assets" / "icon" / "volume_up.png")))
-        self._btn_vol_up.setIconSize(QSize(28, 28))
-        self._btn_vol_up.setStyleSheet(_ICON_BTN_STYLE)
+        self._btn_vol_up.setIcon(_icon("volume_up.png", 20))
+        self._btn_vol_up.setIconSize(QSize(20, 20))
+        self._btn_vol_up.setStyleSheet(MUSIC_ICON_BUTTON_QSS)
         self._btn_vol_up.clicked.connect(lambda: (self._volume_step(True), self._say(_VOL_UP_RESPONSES)))
         panel_layout.addWidget(self._btn_vol_up)
 
@@ -214,7 +187,7 @@ class MusicBubble(QWidget):
         self._vol_bar.setTextVisible(False)
         self._vol_bar.setFixedHeight(_VOL_BAR_H)
         self._vol_bar.setMaximumWidth(0)
-        self._vol_bar.setStyleSheet(_VOL_BAR_STYLE)
+        self._vol_bar.setStyleSheet(MUSIC_VOLUME_BAR_QSS)
         panel_layout.addWidget(self._vol_bar)
         panel_layout.addSpacing(5)
 
@@ -304,7 +277,7 @@ class MusicBubble(QWidget):
         """发送播放/暂停键并切换图标。"""
         self._is_paused = not self._is_paused
         icon_name = "music_play.png" if self._is_paused else "music_pause.png"
-        self._btn_play.setIcon(QIcon(str(BASE_DIR / "assets" / "icon" / icon_name)))
+        self._btn_play.setIcon(_icon(icon_name, 20))
         self._send_media_key(_KEY_PLAY)
         self._say(_PAUSE_RESPONSES if self._is_paused else _RESUME_RESPONSES)
 
@@ -321,7 +294,7 @@ class MusicBubble(QWidget):
             self._is_muted = not self._is_muted
             self._send_media_key(_KEY_VOL_MUTE)
         icon_name = "volume_mute.png" if self._is_muted else "volume.png"
-        self._btn_mute.setIcon(QIcon(str(BASE_DIR / "assets" / "icon" / icon_name)))
+        self._btn_mute.setIcon(_icon(icon_name, 20))
         self._show_volume_bar()
         self._say(_MUTE_RESPONSES if self._is_muted else _UNMUTE_RESPONSES)
 

@@ -33,9 +33,6 @@ HISTORY_SUMMARY_PREFIX = "[历史摘要] "
 # assistant_turn 结构化 payload 的版本号
 ASSISTANT_TURN_VERSION = 1
 
-_MAX_DIGEST_KEYS = 3
-_MAX_DIGEST_CHARS = 40
-
 
 @dataclass(frozen=True)
 class Event:
@@ -60,31 +57,6 @@ def truncate_bytes(text: str, limit: int) -> str:
 def new_group_id() -> str:
     """工具轮次组标识。"""
     return uuid.uuid4().hex[:12]
-
-
-def args_digest(args: dict | None) -> str:
-    """参数要点：最多 3 个顶层标量，字符串截 40 字符，嵌套只写 {…}。
-
-    字符串与布尔值写成 JSON 字面量，`replay_args` 才能无歧义还原。
-    """
-    if not args:
-        return "-"
-    parts = []
-    for key, value in args.items():
-        if len(parts) >= _MAX_DIGEST_KEYS:
-            break
-        if isinstance(value, (dict, list)):
-            parts.append(f"{key}={{…}}")
-        elif isinstance(value, str):
-            text = value[:_MAX_DIGEST_CHARS]
-            if len(value) > _MAX_DIGEST_CHARS:
-                text += "…"
-            parts.append(f"{key}={json.dumps(text, ensure_ascii=False)}")
-        elif value is None:
-            parts.append(f"{key}=null")
-        elif isinstance(value, (bool, int, float)):
-            parts.append(f"{key}={json.dumps(value)}")
-    return ", ".join(parts) or "-"
 
 
 class EventStore:
@@ -370,15 +342,17 @@ class EventStore:
         with self._lock:
             referenced = set()
             rows = self._conn.execute(
-                "SELECT payload FROM session_events "
-                "WHERE session_id=? AND type='tool_result'", (session_id,)).fetchall()
+                "SELECT payload, refs FROM session_events WHERE session_id=? "
+                "AND type IN ('tool_result', 'tool_call')", (session_id,)).fetchall()
             for row in rows:
                 try:
-                    artifact_id = json.loads(row["payload"]).get("artifact_id")
+                    payload = json.loads(row["payload"] or "{}")
+                    refs = json.loads(row["refs"] or "{}")
                 except (TypeError, ValueError):
                     continue
-                if artifact_id:
-                    referenced.add(artifact_id)
+                for artifact_id in (payload.get("artifact_id"), refs.get("args_artifact")):
+                    if artifact_id:
+                        referenced.add(artifact_id)
             removed = self._conn.execute(
                 "DELETE FROM session_events WHERE session_id<>?",
                 (session_id,)).rowcount or 0
@@ -393,11 +367,15 @@ class EventStore:
         logger.info(f"[EventStore] purged {removed} events outside current session")
         return removed
 
-    def put_artifact(self, body: str, mime: str = "text/plain") -> Optional[str]:
-        """超过内联阈值才落 artifact，返回 id；内联够用返回 None。"""
+    def put_artifact(self, body: str, mime: str = "text/plain", *,
+                     truncate: bool = True) -> Optional[str]:
+        """超过内联阈值才落 artifact，返回 id；内联够用返回 None。
+
+        truncate=False 时原样保存。
+        """
         if self._conn is None or len(body) <= ARTIFACT_INLINE_LIMIT:
             return None
-        text = truncate_bytes(body, ARTIFACT_MAX_BYTES)
+        text = truncate_bytes(body, ARTIFACT_MAX_BYTES) if truncate else body
         if text is not body:
             logger.warning(f"[EventStore] artifact truncated to {ARTIFACT_MAX_BYTES} bytes")
         artifact_id = uuid.uuid4().hex

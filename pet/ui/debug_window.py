@@ -10,17 +10,17 @@ from datetime import datetime
 import time
 
 from PySide6.QtCore import Qt, QPoint, QTimer, QSize
-from PySide6.QtGui import QFont, QIcon, QPainter, QPainterPath, QColor, QPen
+from PySide6.QtGui import QFont, QIcon
+from pet import theme
+from pet.ui.frame import paint_ink_frame
+from pet.ui.qss import TITLE_LABEL_QSS, app_stylesheet
 from pet.ui.styles import (
-    ICON_PATH, WINDOW_QSS, PANEL_QSS, BUTTON_QSS, BUTTON_PRIMARY_QSS,
-    BUTTON_DANGER_QSS, INPUT_HIGHLIGHT_QSS, COMBOBOX_QSS, TEXTEDIT_QSS,
-    LIST_QSS, CHECKBOX_QSS, LABEL_SECONDARY_QSS, LABEL_MONO_QSS,
-    SCROLLBAR_QSS, SCROLL_AREA_TRANSPARENT_QSS,
-    _COLOR_BG, _COLOR_BORDER_DARK, _COLOR_TEXT_TITLE, _COLOR_TEXT_MUTED, _COLOR_DANGER,
+    ICON_PATH, DEBUG_ICON_PATH, SCROLL_AREA_TRANSPARENT_QSS, SCROLLBAR_QSS,
     make_minimize_button, make_close_button, ensure_taskbar_icon,
 )
 
-from pet.ui.widgets import NoWheelComboBox
+from pet.ui.ink_button import InkButton
+from pet.ui.widgets import NoWheelComboBox, make_icon_badge
 from pet.ui.speech_bubble import SpeechBubble
 from pet.ui.emotion import EmotionBubble, EMOTION_MAP
 from pet.ui.particle import ParticleWidget
@@ -49,9 +49,9 @@ class DebugWindow(QWidget):
 
         self.setWindowTitle("调试面板")
         self.setObjectName("FlatWindow")
-        # 可用区可能小于 1000×850（高缩放、小屏），尺寸按可用区收敛，超出内容由滚动区承载
+        # 可用区可能小于 1240×850（高缩放、小屏），尺寸按可用区收敛，超出内容由滚动区承载
         avail = QApplication.primaryScreen().availableGeometry()
-        w = min(1000, max(360, avail.width() - 40))
+        w = min(1240, max(360, avail.width() - 40))
         h = min(850, max(320, avail.height() - 40))
         # 下限可能高于可用区，尺寸再按可用区封顶
         w, h = min(w, avail.width()), min(h, avail.height())
@@ -73,11 +73,7 @@ class DebugWindow(QWidget):
             pass
 
         self._setup_ui()
-        self.setStyleSheet(
-            PANEL_QSS + BUTTON_QSS + BUTTON_PRIMARY_QSS +
-            INPUT_HIGHLIGHT_QSS + COMBOBOX_QSS + TEXTEDIT_QSS + LIST_QSS +
-            CHECKBOX_QSS + SCROLL_AREA_TRANSPARENT_QSS
-        )
+        self.setStyleSheet(app_stylesheet())
 
         self._pos_timer = QTimer(self)
         self._pos_timer.timeout.connect(self._refresh_pos)
@@ -109,25 +105,21 @@ class DebugWindow(QWidget):
 
     def _setup_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(6, 2, 6, 4)
+        root.setContentsMargins(8, 3, 8 + theme.SHADOW_WINDOW,
+                                6 + theme.SHADOW_WINDOW)
         root.setSpacing(2)
 
         header = QWidget()
         header.setObjectName("LogHeader")
-        header.setFixedHeight(38)
+        header.setFixedHeight(theme.TITLE_BAR_H)
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(12, 0, 6, 0)
-        header_layout.setSpacing(6)
+        header_layout.setContentsMargins(3, 0, 0, 0)
+        header_layout.setSpacing(8)
 
-        try:
-            icon_lbl = QLabel()
-            icon_lbl.setPixmap(QIcon(ICON_PATH).pixmap(18, 18))
-            header_layout.addWidget(icon_lbl)
-        except Exception:
-            pass
+        header_layout.addWidget(make_icon_badge(DEBUG_ICON_PATH))
 
         title_lbl = QLabel("调试面板")
-        title_lbl.setStyleSheet(f"font-size:13px; color:{_COLOR_TEXT_TITLE}; font-weight:bold; background:transparent;")
+        title_lbl.setStyleSheet(TITLE_LABEL_QSS)
         header_layout.addWidget(title_lbl)
         header_layout.addStretch()
 
@@ -153,7 +145,7 @@ class DebugWindow(QWidget):
         body_scroll.setWidgetResizable(True)
         body_scroll.setFrameShape(QFrame.Shape.NoFrame)
         body_scroll.setWidget(body_host)
-        body_scroll.setStyleSheet(SCROLLBAR_QSS)
+        body_scroll.setStyleSheet(SCROLLBAR_QSS + SCROLL_AREA_TRANSPARENT_QSS)
         root.addWidget(body_scroll, 1)
 
 
@@ -166,7 +158,7 @@ class DebugWindow(QWidget):
             COLS = 4
             btn_grid = QGridLayout()
             for i, action in enumerate(actions):
-                btn = QPushButton(action)
+                btn = InkButton(action, pressed_when_checked=True)
                 btn.setToolTip(action)
                 btn.setCheckable(True)
                 btn.setMinimumWidth(60)
@@ -186,7 +178,7 @@ class DebugWindow(QWidget):
         self.pet_loop = QCheckBox("循环")
         self.pet_loop.setChecked(True)
         ctrl_row.addWidget(self.pet_loop)
-        self.btn_pet_stop = QPushButton("停止")
+        self.btn_pet_stop = InkButton("停止")
         self.btn_pet_stop.clicked.connect(self._stop_pet_anim)
         ctrl_row.addWidget(self.btn_pet_stop)
         ctrl_row.addStretch()
@@ -224,13 +216,13 @@ class DebugWindow(QWidget):
         self.bounce_height.setText("150")
         self.bounce_height.setFixedWidth(90)
         win_row.addWidget(self.bounce_height)
-        self.btn_bounce = QPushButton("弹跳")
+        self.btn_bounce = InkButton("弹跳")
         self.btn_bounce.clicked.connect(self._test_bounce)
         win_row.addWidget(self.btn_bounce)
-        self.btn_fade_in = QPushButton("淡入 (Fade In)")
+        self.btn_fade_in = InkButton("淡入 (Fade In)")
         self.btn_fade_in.clicked.connect(self._test_fade_in)
         win_row.addWidget(self.btn_fade_in)
-        self.btn_fade_out = QPushButton("淡出 (Fade Out)")
+        self.btn_fade_out = InkButton("淡出 (Fade Out)")
         self.btn_fade_out.clicked.connect(self._test_fade_out)
         win_row.addWidget(self.btn_fade_out)
         anim_layout.addLayout(win_row)
@@ -243,7 +235,7 @@ class DebugWindow(QWidget):
         self.move_y = QLineEdit()
         self.move_y.setText("300")
         move_row.addWidget(self.move_y)
-        self.btn_move = QPushButton("移动")
+        self.btn_move = InkButton("移动")
         self.btn_move.clicked.connect(self._test_move)
         move_row.addWidget(self.btn_move)
         anim_layout.addLayout(move_row)
@@ -263,7 +255,7 @@ class DebugWindow(QWidget):
         self.walk_dist = QLineEdit()
         self.walk_dist.setText("800")
         walk_row.addWidget(self.walk_dist)
-        self.btn_walk = QPushButton("行走")
+        self.btn_walk = InkButton("行走")
         self.btn_walk.clicked.connect(self._test_walk)
         walk_row.addWidget(self.btn_walk)
         anim_layout.addLayout(walk_row)
@@ -275,13 +267,13 @@ class DebugWindow(QWidget):
         self.pose_duration.setText("5")
         self.pose_duration.setFixedWidth(70)
         pose_row.addWidget(self.pose_duration)
-        self.btn_sit = QPushButton("sit")
+        self.btn_sit = InkButton("sit")
         self.btn_sit.clicked.connect(self._test_sit)
         pose_row.addWidget(self.btn_sit)
-        self.btn_sleep = QPushButton("sleep")
+        self.btn_sleep = InkButton("sleep")
         self.btn_sleep.clicked.connect(self._test_sleep)
         pose_row.addWidget(self.btn_sleep)
-        self.btn_idle = QPushButton("idle")
+        self.btn_idle = InkButton("idle")
         self.btn_idle.clicked.connect(self._test_idle)
         pose_row.addWidget(self.btn_idle)
         pose_row.addStretch()
@@ -294,13 +286,13 @@ class DebugWindow(QWidget):
         qlayout = QVBoxLayout(queue_group)
 
         qbtn_row = QHBoxLayout()
-        self.btn_q_start = QPushButton("启动")
+        self.btn_q_start = InkButton("启动")
         self.btn_q_start.clicked.connect(self._queue_start)
         qbtn_row.addWidget(self.btn_q_start)
-        self.btn_q_stop = QPushButton("停止")
+        self.btn_q_stop = InkButton("停止")
         self.btn_q_stop.clicked.connect(self._queue_stop)
         qbtn_row.addWidget(self.btn_q_stop)
-        self.btn_q_clear = QPushButton("清空")
+        self.btn_q_clear = InkButton("清空")
         self.btn_q_clear.clicked.connect(self._queue_clear)
         qbtn_row.addWidget(self.btn_q_clear)
         qlayout.addLayout(qbtn_row)
@@ -321,7 +313,7 @@ class DebugWindow(QWidget):
         self.bubble_input.setPlaceholderText("输入气泡文字...")
         self.bubble_input.returnPressed.connect(self._test_bubble)
         input_row.addWidget(self.bubble_input)
-        self.btn_bubble = QPushButton("显示气泡")
+        self.btn_bubble = InkButton("显示气泡")
         self.btn_bubble.clicked.connect(self._test_bubble)
         input_row.addWidget(self.btn_bubble)
         bubble_layout.addLayout(input_row)
@@ -335,7 +327,7 @@ class DebugWindow(QWidget):
         EMO_COLS = 5
         emo_grid = QGridLayout()
         for i, emo_name in enumerate(EMOTION_MAP):
-            btn = QPushButton(emo_name)
+            btn = InkButton(emo_name)
             btn.setToolTip(emo_name)
             btn.setMinimumWidth(54)
             btn.clicked.connect(lambda checked, e=emo_name: self._test_emotion(e))
@@ -347,7 +339,7 @@ class DebugWindow(QWidget):
         self.emotion_input.setPlaceholderText("输入情绪名或 emoji...")
         self.emotion_input.returnPressed.connect(self._test_emotion_input)
         emo_input_row.addWidget(self.emotion_input)
-        self.btn_emotion = QPushButton("显示表情")
+        self.btn_emotion = InkButton("显示表情")
         self.btn_emotion.clicked.connect(self._test_emotion_input)
         emo_input_row.addWidget(self.btn_emotion)
         emotion_layout.addLayout(emo_input_row)
@@ -369,7 +361,7 @@ class DebugWindow(QWidget):
             col.addWidget(inp)
             param_layout.addLayout(col)
             self._param_inputs[key] = inp
-        btn = QPushButton("设置")
+        btn = InkButton("设置")
         btn.setFixedWidth(50)
         btn.clicked.connect(self._set_all_params)
         param_layout.addWidget(btn)
@@ -384,7 +376,7 @@ class DebugWindow(QWidget):
         PARTICLE_COLS = 4
         pbtn_grid = QGridLayout()
         for i, fx in enumerate(ParticleWidget.effect_names()):
-            btn = QPushButton(fx)
+            btn = InkButton(fx)
             btn.setMinimumWidth(54)
             btn.clicked.connect(lambda checked, e=fx: self._test_particle(e))
             pbtn_grid.addWidget(btn, i // PARTICLE_COLS, i % PARTICLE_COLS)
@@ -422,7 +414,7 @@ class DebugWindow(QWidget):
         ctx_layout = QVBoxLayout(ctx_group)
 
         ctx_btn_row = QHBoxLayout()
-        self.btn_ctx_refresh = QPushButton("刷新")
+        self.btn_ctx_refresh = InkButton("刷新")
         self.btn_ctx_refresh.clicked.connect(self._refresh_context)
         ctx_btn_row.addWidget(self.btn_ctx_refresh)
         self.label_ctx_count = QLabel("共 0 条")
@@ -432,9 +424,10 @@ class DebugWindow(QWidget):
 
         self.ctx_output = QTextEdit()
         self.ctx_output.setReadOnly(True)
-        self.ctx_output.setMaximumHeight(180)
+        self.ctx_output.setMaximumHeight(360)
         self.ctx_output.setFont(QFont("Consolas", 9))
-        self.ctx_output.setStyleSheet(f"QTextEdit {{ background: {_COLOR_BG}; }}" + SCROLLBAR_QSS)
+        self.ctx_output.setStyleSheet(
+            f"QTextEdit {{ background: {theme.SURFACE_WARM}; }}" + SCROLLBAR_QSS)
         ctx_layout.addWidget(self.ctx_output)
 
         right.addWidget(ctx_group)
@@ -442,7 +435,7 @@ class DebugWindow(QWidget):
         stats_layout = QHBoxLayout()
         self.label_llm_calls = QLabel("累计调用: —")
         self.label_llm_calls.setFont(QFont("Consolas", 9))
-        self.label_llm_calls.setStyleSheet("color:#555;")
+        self.label_llm_calls.setStyleSheet(f"color:{theme.INK_SOFT};")
         stats_layout.addWidget(self.label_llm_calls)
         stats_layout.addStretch()
         right.addLayout(stats_layout)
@@ -453,7 +446,8 @@ class DebugWindow(QWidget):
         self.log_output.setReadOnly(True)
         self.log_output.setMaximumHeight(150)
         self.log_output.setFont(QFont("Consolas", 9))
-        self.log_output.setStyleSheet(f"QTextEdit {{ background: {_COLOR_BG}; }}" + SCROLLBAR_QSS)
+        self.log_output.setStyleSheet(
+            f"QTextEdit {{ background: {theme.SURFACE_WARM}; }}" + SCROLLBAR_QSS)
         log_layout.addWidget(self.log_output)
         left.addWidget(log_group)
 
@@ -665,14 +659,7 @@ class DebugWindow(QWidget):
 
 
     def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        rect = self.rect().adjusted(0, 0, -1, -1)
-        path = QPainterPath()
-        path.addRoundedRect(rect, 10, 10)
-        painter.fillPath(path, QColor(_COLOR_BG))
-        painter.setPen(QPen(QColor("#000000"), 1))
-        painter.drawPath(path)
+        paint_ink_frame(self)
 
 
     def _header_press(self, event):

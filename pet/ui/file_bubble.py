@@ -13,9 +13,11 @@ from PySide6.QtWidgets import (QBoxLayout, QHBoxLayout, QLabel, QPushButton, QVB
 
 from pet.config import config
 from pet.file_intake import KIND_LABELS, FileRef, dir_summary
+from pet import theme
 from pet.ui.debounce import Debounce
+from pet.ui.ink_button import InkButton
 from pet.tools.registry import TOOL_REGISTRY
-from pet.ui.styles import BUBBLE_ROW_CHAT, bubble_column_y
+from pet.ui.styles import BUTTON_QSS, BUBBLE_ROW_CHAT, bubble_column_y
 
 logger = logging.getLogger(__name__)
 
@@ -25,39 +27,27 @@ CORE_ACTIONS = (("taste", "尝一口"), ("read", "看一看"))
 
 _PANEL_QSS = (
     "QWidget#filePanel {"
-    "  background: rgba(255,255,255,225);"
-    "  border: 1px solid #dcdcdc;"
-    "  border-radius: 12px;"
-    "}"
-)
-_ACTION_QSS = (
-    "QPushButton {"
-    "  background: rgba(255,255,255,240);"
-    "  border: 1px solid #ccc;"
-    "  border-radius: 10px;"
-    "  padding: 4px 10px;"
-    "  color: #333;"
-    "}"
-    "QPushButton:hover { background: rgba(240,240,250,255); }"
-    "QPushButton:disabled {"
-    "  color: #b4b4b4;"
-    "  background: rgba(248,248,248,200);"
-    "  border-color: #e4e4e4;"
+    f"  background: {theme.SURFACE};"
+    f"  border: {theme.BORDER}px solid {theme.INK};"
+    f"  border-radius: {theme.RADIUS_LG}px;"
     "}"
 )
 _CANCEL_QSS = (
     "QPushButton {"
-    "  background: transparent;"
-    "  border: 1px solid #d8d8d8;"
-    "  border-radius: 9px;"
+    f"  background: {theme.SURFACE};"
+    f"  border: {theme.BORDER}px solid {theme.INK};"
+    "  border-radius: 8px;"
     "  padding: 2px 8px;"
-    "  color: #888;"
+    f"  color: {theme.INK_MUTED};"
     "  font-size: 12px;"
     "}"
-    "QPushButton:hover { color: #444; border-color: #bbb; }"
+    "QPushButton:hover {"
+    f"  background: {theme.SURFACE_WARM};"
+    f"  color: {theme.DANGER};"
+    "}"
 )
-_TITLE_QSS = "color:#666; font-size:12px;"
-_ROW_QSS = "color:#333; font-size:12px;"
+_TITLE_QSS = f"color:{theme.INK_SOFT}; font-size:12px; font-weight:700;"
+_ROW_QSS = f"color:{theme.INK}; font-size:12px;"
 
 
 def _format_size(size: int) -> str:
@@ -160,7 +150,7 @@ class FileBubble(QWidget):
         header.addWidget(self._title)
         header.addStretch(1)
 
-        self._cancel_button = QPushButton("取消")
+        self._cancel_button = InkButton("取消")
         self._cancel_button.setStyleSheet(_CANCEL_QSS)
         self._cancel_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self._cancel_button.clicked.connect(self._on_cancel)
@@ -315,8 +305,8 @@ class FileBubble(QWidget):
             if widget is not None:
                 widget.deleteLater()
         for action_id, label, usable in actions:
-            button = QPushButton(label)
-            button.setStyleSheet(_ACTION_QSS)
+            button = InkButton(label)
+            button.setStyleSheet(BUTTON_QSS)
             button.setEnabled(usable)
             button.clicked.connect(lambda _=False, aid=action_id: self._on_action(aid))
             self._buttons.addWidget(button)

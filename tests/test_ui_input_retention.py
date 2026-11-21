@@ -52,3 +52,33 @@ def test_submit_clears_input(factory, submit, signal, qt_app):
 
     assert seen == ["待提交内容"]
     assert bubble._input.text() == ""
+
+
+def test_busy_submit_keeps_draft(qt_app):
+    bubble = ChatBubble(_WindowStub())
+    seen: list[str] = []
+    bubble.chat_submitted.connect(seen.append)
+    bubble.set_busy(True)
+    bubble._input.setText("等一会儿再发")
+
+    bubble.submit()
+
+    assert seen == []
+    assert bubble._input.text() == "等一会儿再发"
+
+
+def test_escape_releases_enter_intercept(qt_app):
+    from PySide6.QtCore import QEvent, Qt
+    from PySide6.QtGui import QKeyEvent
+
+    bubble = ChatBubble(_WindowStub())
+    seen: list[bool] = []
+    bubble.enter_intercept.connect(seen.append)
+    bubble._expand()
+    bubble.finalize_voice_text("语音草稿")
+
+    event = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Escape,
+                      Qt.KeyboardModifier.NoModifier)
+    assert bubble.eventFilter(bubble._input, event) is True
+    assert seen[-1] is False
+    assert bubble._input.text() == "语音草稿"

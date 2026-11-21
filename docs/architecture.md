@@ -213,7 +213,7 @@ system 动作表换成 `EDGE_ACTION_NAMES` 的八个贴边动作；调度器、�
 | `pet/brain/` | 决策与记忆：上下文组装、LLM 客户端与重试、输出解析、会话事件日志与投影、记忆库与事件汇总、窗口探测、对话历史 | `behavior.py`、`context_builder.py`、`prompts.py`、`memory.py`、`memory_merge.py`、`events.py`、`projection.py` |
 | `pet/action/` | 动作系统：动作定义与注册、帧动画播放队列、重力与站立、动作产出 | `registry.py`、`action.py`、`action_queue.py`、`gravity.py` |
 | `pet/pulse/` | 数值引擎：生理（饱食/精力）与心理（好感/愉悦/理智），含衰减、阈值与落库 | `vitals.py`、`mood.py` |
-| `pet/file_intake/` | 拖入文件的纯逻辑：类型嗅探、解码链、截断与额度、图片闸门与缩放、拒绝名单、目录摘要 | `sniff.py`、`text.py`、`image.py` |
+| `pet/file_intake/` | 拖入文件的纯逻辑：类型嗅探、解码链、截断与额度、图片闸门与缩放、拒绝名单、目录摘要；桌面与文档目录解析及写入白名单 | `sniff.py`、`text.py`、`image.py`、`paths.py` |
 | `pet/tools/` | 工具层：注册表（含终端命令登记）、执行器、上下文、输出契约、加载器，以及各工具子包 | `registry.py`、`executor.py`、`context.py`、`output.py` |
 | `pet/terminal/` | 终端能力：命令解析与内建路由、执行核心、策略与沙箱、两个入口共用的 `TerminalRunner`，不依赖 Qt | `core.py`、`policy.py`、`runner.py`、`confirm.py` |
 | `pet/cli/` | 终端本地命令：冒号前缀分发、内建命令、输出排版与帮助；工具命令来自注册表登记，不写死具体工具，不依赖 Qt | `__init__.py`、`catalog.py`、`dispatch.py`、`builtins.py`、`format.py`、`types.py` |
@@ -256,6 +256,7 @@ system 动作表换成 `EDGE_ACTION_NAMES` 的八个贴边动作；调度器、�
 | `pet/relaunch.py` | 托盘「重启」：按当前运行方式（源码 / 入口 exe / 打包）拉起新实例 |
 | `pet/self_update.py` | 启动时应用上一次更新遗留的 `update.*.new` 脚本 |
 | `pet/settings.py` | `settings.json` 的读写与跨平台路径、原子写入 |
+| `pet/theme.py` | 界面样式令牌：色板、圆角、描边、投影、间距与字体链；供 `pet/ui` 与工具面板共用 |
 | `pet/single_instance.py` | 单实例锁（`QLockFile`） |
 | `pet/version_check.py` | 启动后检查 GitHub Release 版本（在后台 QThread 里跑） |
 | `pet/version_utils.py` | 版本号解析与比较（纯逻辑，方便测试） |
@@ -314,6 +315,9 @@ system 动作表换成 `EDGE_ACTION_NAMES` 的八个贴边动作；调度器、�
 17. **终端命令由工具自己登记**：`:timer`、`:todo`、`:knowledge` 这类命令在工具的 `register(registry)` 里
     用 `add_command()` 声明，`pet/cli` 只聚合 `TOOL_REGISTRY.commands()`，不写死任何工具命令；
     命令只翻译参数，实际调用仍走 `ToolExecutor`。加工具不需要改 `pet/cli`。
+18. **工具包之外不写死工具**：`pet/app.py` 等工具包之外的模块不得 import 具体工具包（`pet/tools/<name>/`），
+    工具的界面与专属接线通过 `registry.add_*`（`add_menu_action` / `add_file_action` /
+    `add_command`）登记后由装配层通用消费；删除整个工具目录不得影响启动。
 
 ### ARCH 规则清单
 
@@ -332,6 +336,7 @@ system 动作表换成 `EDGE_ACTION_NAMES` 的八个贴边动作；调度器、�
 | `ARCH007` | 第 9 条素材成对 |
 | `ARCH008` | 包内不得出现模块级 import 环（见 §14） |
 | `ARCH009` | 第 12 条模块级副作用：只留常量、类型、定义与注册表登记 |
+| `ARCH010` | 第 18 条工具包之外不写死工具（工具贡献经注册表登记） |
 | `ARCH000` | 元规则：债还清后忘删 allowlist 条目时报出 |
 
 既有设计债登记在该测试的 allowlist 里（每条写明原因、文档依据与跟踪 issue），
@@ -347,6 +352,7 @@ system 动作表换成 `EDGE_ACTION_NAMES` 的八个贴边动作；调度器、�
 | 加一个粒子特效 | `pet/ui/particle.py` 的 `_SPAWNERS` 与 `_DEFAULT_Y` | 调试面板自动列出；重生成 [reference/effects.md](reference/effects.md) |
 | 加一个配置项 | `pet/config.py` 的 `_KEY_META` | 要在界面可见则同时改 `pet/ui/settings_tabs.py` 并补 `TAB_SPECS`；重生成 [reference/config.md](reference/config.md) |
 | 改提示词 | `pet/brain/prompts.py`；运行时段落改 `pet/brain/context_builder.py` | 组合白名单；重生成 [reference/prompt-blocks.md](reference/prompt-blocks.md) |
+| 改界面配色或圆角 | `pet/theme.py` 的令牌；公共控件样式在 `pet/ui/qss.py` | 工具面板的 QSS 只引令牌；见 [specs/2026-11-20-ui-style-refactor-design.md](specs/2026-11-20-ui-style-refactor-design.md) |
 | 加一个工具 | `pet/tools/<name>/__init__.py` | 声明 `TOOL_NAME`/`TOOL_DESCRIPTION`/`register()`，可加 `TOOL_GROUP`；每个方法声明 `output` 输出契约（见 [tool-development.md](tool-development.md) §返回值与输出契约）；重生成 [reference/tools.md](reference/tools.md) |
 | 加一个文件动作 | `pet/tools/<name>/__init__.py` 的 `register()` 内 `add_file_action(...)` | 拖入文件时由文件气泡渲染成按钮，工具被禁用则不出现；契约见 [tool-development.md](tool-development.md) |
 | 调数值手感 | `pet/pulse/vitals.py`、`pet/pulse/mood.py` + `_KEY_META` 的阈值项 | 文案档位同步（第 11 节第 2 条） |

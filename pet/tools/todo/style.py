@@ -1,47 +1,105 @@
+"""待办面板样式：选择器留在工具内，取值集中在本模块。"""
 
-_COLOR_BG = "#f0f0f0"
-_COLOR_SURFACE = "#ffffff"
-_COLOR_BORDER = "#ddd"
-_COLOR_BORDER_FOCUS = "#aaa"
-_COLOR_TEXT = "#333"
-_COLOR_TEXT_SEC = "#666"
-_COLOR_ACCENT = "#4a90d9"
+from pet import theme
 
-BUTTON_QSS = """
-QPushButton {
-    background: """ + _COLOR_SURFACE + """;
-    border: 1px solid """ + _COLOR_BORDER + """;
-    border-radius: 6px;
-    padding: 4px 12px;
-    font-size: 12px;
-    color: """ + _COLOR_TEXT + """;
-    min-width: 64px;
-}
-QPushButton:hover {
-    background: #e8e8e8;
-    border-color: """ + _COLOR_BORDER_FOCUS + """;
-}
-QPushButton:pressed {
-    background: #d8d8d8;
-}
+# 34px 关闭钮的胶囊半径，取高度一半
+CLOSE_RADIUS = 17
+
+PANEL_QSS = f"""
+QWidget#todoBg {{
+    background: {theme.SURFACE};
+    border: {theme.BORDER}px solid {theme.INK};
+    border-radius: {theme.RADIUS_XL}px;
+}}
 """
 
-LIST_QSS = """
-QListWidget {
-    background: """ + _COLOR_SURFACE + """;
-    border: 1px solid """ + _COLOR_BORDER + """;
-    border-radius: 6px;
-    font-family: "Consolas", "Microsoft YaHei", monospace;
-    font-size: 11px;
-    color: """ + _COLOR_TEXT + """;
+BASE_QSS = f"""
+QWidget {{
+    color: {theme.INK};
+}}
+QLabel {{
+    color: {theme.INK};
+    background: transparent;
+}}
+QMessageBox, QDialog {{
+    background: {theme.PAPER};
+}}
+QMessageBox QLabel {{
+    color: {theme.INK};
+    font-size: 12px;
+}}
+"""
+
+CLOSE_QSS = f"""
+QPushButton {{
+    background: transparent;
+    border: {theme.BORDER}px solid transparent;
+    border-radius: {CLOSE_RADIUS}px;
+    font-size: 14px;
+    color: {theme.INK_MUTED};
+}}
+QPushButton:hover {{
+    background: {theme.DANGER};
+    color: {theme.SURFACE};
+    border-color: {theme.INK};
+}}
+"""
+
+BUTTON_QSS = f"""
+QPushButton {{
+    background: {theme.SURFACE};
+    border: {theme.BORDER}px solid {theme.INK};
+    border-radius: {theme.RADIUS_MD}px;
+    padding: 4px 12px;
+    font-size: 11.5px;
+    font-weight: bold;
+    color: {theme.INK};
+    min-width: 64px;
+}}
+QPushButton:hover {{
+    background: {theme.SURFACE_WARM};
+}}
+QPushButton:pressed {{
+    background: {theme.PAPER_DEEP};
+}}
+"""
+
+MENU_QSS = f"""
+QMenu {{
+    background: {theme.SURFACE};
+    border: {theme.BORDER}px solid {theme.INK};
+    border-radius: {theme.RADIUS_LG}px;
+    padding: 6px 4px;
+}}
+QMenu::item {{
+    padding: 6px 30px 6px 12px;
+    font-size: 12px;
+    color: {theme.INK};
+    border-radius: {theme.RADIUS_SM}px;
+    background: transparent;
+}}
+QMenu::item:selected {{
+    background: {theme.PRIMARY_SOFT};
+}}
+"""
+
+LIST_QSS = f"""
+QListWidget {{
+    background: {theme.SURFACE};
+    border: {theme.BORDER}px solid {theme.INK};
+    border-radius: {theme.RADIUS_LG}px;
+    font-size: 12.5px;
+    color: {theme.INK};
     outline: none;
-}
-QListWidget::item {
-    padding: 6px 8px;
-    border-bottom: 1px solid """ + _COLOR_BORDER + """;
-}
-QListWidget::item:selected {
-    background: #e0e0e0;
-    color: """ + _COLOR_TEXT + """;
-}
+    alternate-background-color: {theme.SURFACE_WARM};
+    padding: 4px;
+}}
+QListWidget::item {{
+    padding: 7px 8px;
+    border-radius: {theme.RADIUS_SM}px;
+}}
+QListWidget::item:selected {{
+    background: {theme.PRIMARY_SOFT};
+    color: {theme.INK};
+}}
 """

@@ -107,7 +107,7 @@ CREATE TABLE IF NOT EXISTS session_artifacts (
 |---|---|---|---|
 | `user_msg` | `{text}` | 是 | 用户消息 |
 | `assistant_turn` | `{v, text?, summary?, emotion?, speech_parts?, actions?, memory?, mood?, vitals?}` | 是 | 一次**有效**模型响应的结构化记录；`v=1` 时 `text` 为原文（≤4KB，仅审计），投影只用其余字段 |
-| `tool_call` | `{name, args_digest, side_effect}` | 是 | 一次工具调用；不含原始参数，`args_digest` 含置首的 `aside`；`side_effect` 由工具注册表声明 |
+| `tool_call` | `{name, side_effect, args?}` | 是 | 一次工具调用；`args` 为完整参数 JSON（超阈值时改落 `refs.args_artifact`，见 §11 修订）；`side_effect` 由工具注册表声明 |
 | `tool_result` | `{ok, brief, artifact_id?}` | 是 | 结果摘要；大结果落 artifacts |
 | `failed_turn` | `{text, finish_reason, tag, reason}` | 否 | 解析失败的一次响应；只审计，不进入任何视图 |
 | `system_note` | `{text}` | 是 | 系统事实（离开提示、定时提醒等） |
@@ -119,8 +119,8 @@ CREATE TABLE IF NOT EXISTS session_artifacts (
 1. 只 `INSERT`；不提供 UPDATE / DELETE 接口。
 2. 修正用补偿事件：结果被复核推翻时追加新的 `tool_result`，`refs.supersedes` 指向旧 seq。
 3. **时序**：最终响应由产出方写一条结构化 `assistant_turn`（`v=1`）；工具轮只写 `tool_call` 与执行后的 `tool_result`（同一 `group_id`），中间响应的 Summary / Speech 与最终输出重复，不入日志。
-4. 工具轮 `arguments.aside` 不单独建事件：写进该次 `tool_call` 的 `args_digest` 并置首，投影时从摘要还原后并入工具轮 assistant `content`。
-5. `args_digest` 只保留参数要点：最多 3 个顶层标量，字符串截 40 字符；`aside` 置首保证不被工具参数挤出。
+4. 工具轮 `arguments.aside` 不单独建事件：留在该次 `tool_call.payload.args` 里，投影时取出并入工具轮 assistant `content`。
+5. `tool_call.payload.args` 存完整参数 JSON；超过 `ARTIFACT_INLINE_LIMIT` 时落 `session_artifacts`，`refs.args_artifact` 记 id，投影前读回。
 6. `tool_result.brief` 必须是人类可读短句；原文超过 `ARTIFACT_INLINE_LIMIT`（默认 2048 字符）才落 `session_artifacts`，否则只存 brief，不建 artifact。
 7. `summary.covers` 允许相邻，不允许重叠；重叠视为对旧 summary 的 supersede。
 8. 解析失败的响应写 `failed_turn`，**不写** `assistant_turn`，因此不会进入下一轮视图。
@@ -195,7 +195,7 @@ def project(events: list[Event], profile: Profile, budget: Budget) -> list[dict]
 5. 事件 → 逻辑消息：
    - `user_msg` / `system_note` / `summary` 渲染成 `[相对时间] 正文`；
    - `assistant_turn` 按字段渲染：Summary → Emotion → Speech → Action → Memory → Mood → Vitals，顺序固定、不加时间标签；
-   - `tool_call` + `tool_result` 按 `group_id` 聚合为 `ToolExchange`；`aside` 从 `tool_call.args_digest` 还原，按 `Speech: 正文` 行并入工具轮的 assistant `content`；
+   - `tool_call` + `tool_result` 按 `group_id` 聚合为 `ToolExchange`；`aside` 取自 `tool_call.args`，按 `Speech: 正文` 行并入工具轮的 assistant `content`；
    - `failed_turn` 直接丢弃。
 6. `ToolExchange` 按 profile 映射（§4.5）。
 7. 预算裁剪（§4.4），以组为原子单位。
@@ -270,9 +270,11 @@ for group in groups(按首个 seq 升序):
 
 | 档位 | 行为 |
 |---|---|
-| `minimal`（默认） | 按 `args_digest` 重建顶层标量 JSON；无法还原的嵌套字段省略 |
+| `minimal`（默认） | 用 `tool_call.payload.args`（完整参数）；缺失或损坏时输出 `"{}"` |
 | `empty` | `"{}"` |
 | 端点拒绝 | 本次调用降一档 `tool_channel`，重试一次 |
+
+完整参数的写入见 §14 的 2026-11-19 修订：摘要只作老事件兜底，不再承担回放。
 
 配置项 `NATIVE_REPLAY_ARGS = minimal | empty`。选 `minimal` 是因为部分兼容端点（vLLM、Ollama、部分网关）会按 function schema 校验必填字段，`"{}"` 有 400 风险。
 
@@ -333,21 +335,16 @@ class MessageEncoder(Protocol):
 
 | 时机 | 事件 | 内容 |
 |---|---|---|
-| 工具轮响应 | `tool_call` × N | `name`、`args_digest`（含置首的 `aside`）、`refs.tool_call_id`；`group_id=G` |
+| 工具轮响应 | `tool_call` × N | `name`、`args`（完整参数 JSON）、`side_effect`、`refs.tool_call_id`；`group_id=G` |
 | 工具执行完成 | `tool_result` × N | `ok`、`brief`、`artifact_id`；`group_id=G`、`refs.parent_seq` 指向对应 call |
 | 解析失败 | `failed_turn` | 原文、`finish_reason`、tag；不参与投影 |
 | 最终响应 | `assistant_turn` | 结构化字段（`v=1`）与原文；不带 `group_id` |
 
-`aside` 只出现在 `tool_call.args_digest` 里，不单独建事件，也不带 `（自言自语：` 标签。
+`aside` 只出现在 `tool_call.args` 里，不单独建事件，也不带 `（自言自语：` 标签。
 
 ### §5.2 参数与结果摘要
 
-`args_digest` 生成规则：
-
-- 只看顶层标量字段，最多 3 个，形如 `bvid="BV1aPJR6oExx", keyword="小狗"`。
-- 字符串与布尔值写成 JSON 字面量，`replay_args` 才能无歧义还原；字符串截断 40 字符，嵌套对象只写 `{…}`。
-- 空参数写 `-`。
-- 禁止写入完整 JSON。
+`args` 是完整参数 JSON（`json.dumps(..., ensure_ascii=False)`）；序列化超过 `ARTIFACT_INLINE_LIMIT` 时落 `session_artifacts`，事件只留 `refs.args_artifact`。`replay_args` 直接取回原文，不做任何重建。
 
 `brief` 的生成责任在 `ToolExecutor`（项目当前没有 `post_execute` 钩子，不引入新扩展点），回退链：
 
@@ -554,9 +551,19 @@ snapshot 一旦写入不可变，格式变更只能靠 `v` 迁移，因此：`su
 |---|---|---|
 | `assistant_turn` 时机 | 结果产出方写一条结构化事件（`v=1`），`text` 只作审计 | 投影按字段还原，历史与模型输出在字段层面一致；工具轮中间正文与最终输出重复，不入日志 |
 | 降档方式 | `degrade_messages` 改写本次请求体 | 重投影需要回传原始事件与 Profile，代价高于就地改写；缓存保证下一次投影直接是低档 |
-| `aside` 存储 | 写入 `tool_call.args_digest` 并置首，投影时还原 | 工具轮只留 `tool_call` 与 `tool_result` 两条事件；同一句话不落两份记录 |
+| `aside` 存储 | 留在 `tool_call.args` 里，投影时取出 | 工具轮只留 `tool_call` 与 `tool_result` 两条事件；同一句话不落两份记录 |
 | `side_effect` | 由 `ToolDef` 声明，未注册工具按有副作用处理 | 崩溃窗口只关心"是否动过外部世界"；未知即保守 |
 | artifact 生产 | `record_tool_events` 收到原文超 2048 字符时落表 | `brief` 只是短句，原文需要可追溯的落点 |
 | 增长控制 | slow_tick 达到阈值后 `compact`：连续前缀折叠成 snapshot 并删除原始事件 | 清理不依赖模型摘要是否成功；前缀边界可预测，不留下区间空隙 |
 
 未实现：`supports_image` 未接入（图片仍只在当轮请求里）；`failed_turn` 在两条非流式与流式入口都会落库，修复轮会再记一条。
+
+### 2026-11-19 修订：完整参数回放
+
+原先的摘要最多 3 个顶层键、嵌套值只写 `{…}`，`paint` 这类带 `ops` 的调用回放后必填参数缺失，历史里的“示范调用”反而教错模型。现在改为完整参数落事件，摘要函数与相关解析一并删除：
+
+| 项 | 实现 |
+|---|---|
+| 写入 | `tool_call.payload.args` 存完整参数 JSON；超过 `ARTIFACT_INLINE_LIMIT` 时落 `session_artifacts`，`refs.args_artifact` 记 id |
+| 读取 | `get_multi_turn_messages` 投影前 `_hydrate_call_args` 把 artifact 读回 `payload.args` |
+| 回放 | `replay_args` 只取 `payload.args`；缺失或损坏输出 `"{}"` |

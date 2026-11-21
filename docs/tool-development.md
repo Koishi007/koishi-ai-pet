@@ -15,6 +15,8 @@
 pet/tools/my_tool/
 ├── __init__.py           # 注册入口（必须）
 ├── core.py               # 业务实现（推荐，文件名任意）
+├── panel.py              # 界面面板（可选，见「界面与样式」）
+├── style.py              # 面板样式（可选，见「界面与样式」）
 ├── config.example.json   # 私有配置模板（可选，首次加载自动复制为 config.json）
 └── requirements.txt      # 私有依赖（可选，首次加载自动安装）
 ```
@@ -200,6 +202,7 @@ def alert() -> dict:
 | `action(name, args, kwargs)` | 触发动作，动作名须在 `pet/action/registry.py` 注册表内 |
 | `add_context(text)` | 往上下文追加一条 system 备注 |
 | `has_vision()` | 当前模型是否具备视觉能力；未绑定或视觉关闭时为 `False` |
+| `pet_geometry()` | 桌宠窗口几何 `{visible, rect, available}`，矩形为 `{x, y, width, height}` 数值；`available` 在无屏幕时为 `None`；未绑定、窗口未建立或采集失败时返回空字典 |
 | `note_event(kind, text)` | 上报事件，进入「最近发生了什么」章节 |
 | `notify(title, message, duration)` | 系统通知 |
 | `request_interact(hint, delay_ms, cooldown_ms, thinking, enable_tools)` | 请求一次即时交互（会占用脑线程）；`cooldown_ms` 默认 15000，同一 hint 在窗口内会被合并，传 0 关闭 |
@@ -238,6 +241,29 @@ registry.add_file_action(TOOL_NAME, "ingest", "收进知识库", _ingest_files, 
 | 禁用与缺席 | 工具被禁用或未加载时按钮不出现，核心不做存在性检查 |
 
 `FileRef` 的字段是 `path`、`name`、`suffix`、`size`、`kind`（`kind` 取 `text` / `image` / `binary` / `dir`）。
+
+## 界面与样式
+
+工具需要窗口界面时，面板放 `pet/tools/<工具名>/panel.py`，样式放同目录 `style.py`
+（B 站、待办、知识库、像素画都是这个结构）：
+
+- **分层**：工具包不得 import `pet.ui` / `pet.agent`（architecture.md §11）；工具包内
+  `PySide6` 的模块级 import 只允许出现在 `panel.py`，业务模块保持无 Qt 可加载
+- **样式**：QSS 常量集中在 `style.py`，颜色与圆角优先引用 `pet.theme` 令牌；棋盘底中性灰、
+  胶囊圆角这类专用取值定义为 `style.py` 顶部的命名常量并在定义处注明依据
+  （`tests/test_ui_theme.py` 扫描工具 `style.py` / `panel.py` 的色值与圆角字面量）；选择器留在工具内
+- **控件**：用普通 `QPushButton` 加工具自己的 QSS；`InkButton` 与 `paint_ink_frame`
+  这类皮肤组件属于 `pet.ui`，底卡、关闭按钮由面板自己画。确认框同理：`pet/ui/ink_dialog.py`
+  是 UI 层的对话框，工具面板不引用 `pet.ui`，仍用 `QMessageBox`
+- **入口**：`registry.add_menu_action(TOOL_NAME, "菜单文案", _show_panel)` 登记右键菜单；
+  `_show_panel` 在函数内延迟 import `panel` 推迟 Qt 重依赖，面板实例存模块级变量防 GC 回收，
+  已关闭的实例下次打开时回收重建，参考 `pet/tools/todo/panel.py` 的 `show_panel()`
+- **实时刷新**：面板的创建、刷新与跨线程投递都留在工具包内（像素画面板用 panel.py 里的
+  私有信号桥把写入画面排到主线程），系统只见 `add_menu_action` 的回调；
+  贴桌宠定位用 `TOOL_CTX.pet_geometry()`
+- **形态**：无边框圆角窗口，`PANEL_QSS` 画底卡，标题栏可拖动，右上角关闭按钮
+- **可插拔**：界面贡献都经 `registry.add_*`（`add_menu_action` / `add_file_action` /
+  `add_command`）登记，`pet/app.py` 只通用消费；删除整个工具目录不影响启动
 
 ## aside 通用参数
 

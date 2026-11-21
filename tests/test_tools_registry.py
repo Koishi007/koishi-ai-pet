@@ -249,6 +249,19 @@ class TestOpenAiSchema:
         assert mode["enum"] == ["fast", "slow"]
         assert mode["default"] == "fast"
 
+    def test_items_passthrough_for_array_args(self, registry):
+        registry.add_method(
+            "demo", "batch", "批量", handler=lambda ops=None: {"summary": "ok"},
+            args={"ops": {"type": "list", "required": True,
+                          "items": {"type": "object", "required": ["op"],
+                                    "properties": {"op": {"type": "string"}}}}},
+            output=_OUTPUT)
+        tools = registry.to_openai_tools(groups={"test"})
+        by_name = {t["function"]["name"]: t["function"] for t in tools}
+        ops = by_name["demo__batch"]["parameters"]["properties"]["ops"]
+        assert ops["items"]["required"] == ["op"]
+        assert ops["items"]["properties"]["op"]["type"] == "string"
+
     def test_groups_filter_excludes_other_groups(self, registry):
         registry.register("other", "其他工具", group="other")
         registry.add_method("other", "ping", "ping", handler=lambda: {"summary": "pong"},
@@ -373,6 +386,14 @@ class TestArgCoercion:
         assert executor_mod._coerce_arg("不是数字", "int")[1] is False
         assert executor_mod._coerce_arg("也许", "bool")[1] is False
         assert executor_mod._coerce_arg({"a": 1}, "str")[1] is False
+
+    def test_json_string_to_list_and_dict(self):
+        assert executor_mod._coerce_arg('[{"op": "point"}]', "list") == (
+            [{"op": "point"}], True)
+        assert executor_mod._coerce_arg('{"x": 1}', "dict") == ({"x": 1}, True)
+        assert executor_mod._coerce_arg('[1, 2', "list")[1] is False
+        assert executor_mod._coerce_arg('{"a": 1}', "list")[1] is False
+        assert executor_mod._coerce_arg("普通字符串", "list")[1] is False
 
     def test_bool_not_matched_as_number(self):
         assert executor_mod._match_type(True, int, "int") is False

@@ -5,9 +5,9 @@ import codecs
 import io
 import logging
 import os
-import sys
 
 from pet.file_intake import REASON_OVERSIZE, load_image_with_reason, sniff
+from pet.file_intake.paths import check_write_path, special_folder
 from pet.tools.context import TOOL_CTX
 
 logger = logging.getLogger(__name__)
@@ -16,32 +16,7 @@ logger = logging.getLogger(__name__)
 _MAX_IMAGE_PIXELS = 40_000_000
 _JPEG_QUALITY = 95
 
-
-def _get_special_folder(name: str) -> str:
-    """跨平台获取特殊文件夹路径（兼容中文 Windows）。"""
-    if sys.platform == "win32":
-        import ctypes
-        csidl = {"DESKTOP": 0, "DOCUMENTS": 5, "DOWNLOADS": 40}.get(name)
-        if csidl is not None:
-            buf = ctypes.create_unicode_buffer(1024)
-            if ctypes.windll.shell32.SHGetFolderPathW(0, csidl, 0, 0, buf) == 0:
-                return buf.value
-    # 回退 / macOS / Linux
-    return os.path.expanduser(f"~/{name.capitalize()}")
-
-
-_ALLOWED_ROOTS: list[str] | None = None
-
-
-def _allowed_roots() -> list[str]:
-    """允许访问的根目录，首次校验时才查询系统特殊目录。"""
-    global _ALLOWED_ROOTS
-    if _ALLOWED_ROOTS is None:
-        _ALLOWED_ROOTS = [
-            _get_special_folder("DESKTOP"),
-            _get_special_folder("DOCUMENTS"),
-        ]
-    return _ALLOWED_ROOTS
+_get_special_folder = special_folder
 
 
 def _encode_jpeg(image) -> str:
@@ -60,20 +35,7 @@ def _decode_prefix(raw: bytes) -> str:
 class FileOpsTool:
     def _check_path(self, path: str) -> str:
         # realpath 解析 symlink / junction：否则允许目录内的链接可指向外部造成逃逸
-        expanded = os.path.expanduser(path)
-        try:
-            abs_path = os.path.realpath(expanded)
-        except OSError as e:
-            # 解析失败（如路径含不受信任的装入点）时无法确认是否在允许目录内，按拒绝处理
-            raise PermissionError(f"不允许访问: {expanded}（路径无法解析: {e}）") from e
-        for root in _allowed_roots():
-            real_root = os.path.realpath(root)
-            try:
-                if os.path.commonpath([abs_path, real_root]) == real_root:
-                    return abs_path
-            except ValueError:
-                continue
-        raise PermissionError(f"不允许访问: {abs_path}")
+        return check_write_path(path)
 
     _PAGE_SIZE = 50
 

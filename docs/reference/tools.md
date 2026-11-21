@@ -9,6 +9,7 @@
 
 | 分组 | 工具 |
 |---|---|
+| `creative` | `pixel_art` |
 | `default` | `tool_search`、`food`、`game`、`recall`、`terminal` |
 | `file` | `file_ops` |
 | `info` | `bilibili`、`system_monitor`、`weather` |
@@ -200,6 +201,107 @@
 | `headline` | string | 是 | headline | 知识库总量与分页概况 |
 | `body` | string | 否 | body | 每条一行：编号与标题 |
 | `pagination` | object | 否 | pagination | 分页信息 |
+
+### `pixel_art`
+
+- 目录：`pet/tools/pixel_art/`
+- 分组：`creative`
+- 说明：像素画/点阵画：新建、打开、列举、改名、删除画布；用像素矩阵或图元算子绘制，可后处理、预览、导出 PNG/SVG/JSON。画布按 id 存库，重启后仍可继续编辑。已有画布用 list 查看、open 按 id 继续；名字只作标识、允许重名。16 档整图给 rows，32/64 档用 paint 的 ops。
+
+| 方法 | 参数 | 说明 |
+|---|---|---|
+| `create` | `name`（str, 必需） 画布名，1-24 字符，可用中文；允许重名，标识以 id 为准<br>`size`（str, 必需, 可选：16/32/64） 正方形边长，三档之一<br>`preset`（str, 默认 "pico8", 可选：pico8/gameboy/nes/db32） 预设色板：pico8 16 色、gameboy 4 色、nes 16 色、db32 32 色；与 palette 互斥<br>`palette`（list） 自定义色板，#RRGGBB 数组，最多 32 色<br>`background`（str） 底色：色索引字符 0-9a-v 或 #RRGGBB；透明请省略该参数，`.` 只是矩阵里的透明符，不是合法底色 | 新建画布：命名、定尺寸与色板，立即落库并显示窗口 |
+| `open` | `canvas_id`（str, 必需） 画布 id，用 list 查 | 按 id 把库内已有画布载入内存并设为当前，窗口切换显示 |
+| `list` | `page`（int, 默认 1） 页码，从 1 起<br>`page_size`（int, 默认 20） 每页条数，1-50 | 分页列举已有画布：id、名字、尺寸、revision、更新时间 |
+| `rename` | `canvas_id`（str） 画布 id；省略时作用于当前画布<br>`name`（str, 必需） 新名字，1-24 字符 | 修改画布名 |
+| `delete` | `canvas_id`（str） 画布 id；省略时作用于当前画布 | 删除画布，同时清除内存缓存 |
+| `set` | `canvas_id`（str） 画布 id；省略时作用于当前画布<br>`revision`（int） 乐观锁；省略则不校验<br>`rows`（list） 每行一个字符串，长度必须等于区域宽<br>`rle`（str） 整图游程，格式 <数量>:<字符>，如 12:.4:a<br>`region`（list） [x, y, w, h]，四整数，必须在画布内<br>`mirror_x`（bool, 默认 False） 以画布中线镜像落笔 | 提交像素矩阵：16 档可整图给 rows；32/64 档必须带 region（面积不超过 1024）。字符 0-9a-v 为色索引（最多 32 色），. 透明，? 保留原值；也可用 rle 整图覆盖 |
+| `paint` | `canvas_id`（str） 画布 id；省略时作用于当前画布<br>`revision`（int） 乐观锁；省略则不校验<br>`ops`（list, 必需） 算子数组，最多 200 条；每项是对象，按 op 取字段<br>`mirror_x`（bool, 默认 False） 每个 op 再按中线镜像执行一次 | 批量落笔：ops 是对象数组，字段按 op 取。图元 point(x,y,c)、line(x1,y1,x2,y2,c)、rect/ellipse(x,y,w,h,c,fill)、polygon/path(points=[[x,y],…],c)、erase(x,y,w,h)、clear。过程式 gradient(region,from,to,dither,mask)、noise(region,c,ratio,seed)、pattern(region,tile,c)、mask(region,shape,c)、scatter(region,c,count,seed)。ellipse 用 x/y/w/h，没有 cx/cy/rx/ry；c 为色索引字符 0-9a-v 或 #RRGGBB，region 为 [x,y,w,h]。示例 [{"op":"rect","x":8,"y":4,"w":16,"h":12,"c":4},{"op":"line","x1":0,"y1":0,"x2":31,"y2":31,"c":1}] |
+| `postprocess` | `canvas_id`（str） 画布 id；省略时作用于当前画布<br>`revision`（int） 乐观锁；省略则不校验<br>`op`（str, 必需） outline 描边、dither 抖动、mirror_x/y、rotate90、shade、cleanup、invert<br>`region`（list） [x, y, w, h]；省略为整图<br>`params`（dict） 参数：c、steps 等，随 op 而定 | 整图或区域级变换 |
+| `preview` | `canvas_id`（str） 画布 id；省略时作用于当前画布<br>`mode`（str, 默认 "text", 可选：text/image/both） text 文本矩阵、image 图片、both 两者<br>`region`（list） [x, y, w, h]；省略为整图<br>`scale`（int） 图片放大倍数，上限 32 | 自检预览：默认返回 16 列字符矩阵，有视觉能力时可附最近邻放大的图片 |
+| `export` | `canvas_id`（str） 画布 id；省略时作用于当前画布<br>`format`（str, 必需, 可选：png/svg/json/rle） 导出格式<br>`path`（str） 文件名或绝对路径；只允许桌面与文档目录<br>`scale`（int） 整数放大倍数，默认 256/size<br>`transparent`（bool, 默认 True） 保留透明背景<br>`grid_overlay`（bool, 默认 False） 叠加 1px 网格 | 导出 PNG/SVG/JSON/RLE，默认落桌面 |
+| `palette` | `canvas_id`（str） 画布 id；省略时作用于当前画布<br>`revision`（int） 乐观锁；省略则不校验<br>`action`（str, 默认 "get", 可选：get/set/quantize） get 查询、set 换色值、quantize 重映射<br>`colors`（list） 新色板，#RRGGBB 数组，最多 32 色 | 查看或替换色板；quantize 按最近色重映射已有像素 |
+
+**`create` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 新建画布的名字、尺寸与色数 |
+| `data` | object | 否 | data | canvas_id、name、revision、palette_size |
+
+**`open` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 一句话结论 |
+| `data` | object | 否 | data | 结构化明细：canvas_id、revision、bbox、变化格数等 |
+
+**`list` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 画布总数与页码 |
+| `body` | string | 否 | body | 每行一张：id、名字、尺寸、revision、更新时间 |
+| `pagination` | object | 否 | pagination | 分页信息 |
+
+**`rename` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 一句话结论 |
+| `data` | object | 否 | data | 结构化明细：canvas_id、revision、bbox、变化格数等 |
+
+**`delete` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 一句话结论 |
+| `data` | object | 否 | data | 结构化明细：canvas_id、revision、bbox、变化格数等 |
+
+**`set` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 一句话结论 |
+| `data` | object | 否 | data | 结构化明细：canvas_id、revision、bbox、变化格数等 |
+
+**`paint` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 一句话结论 |
+| `data` | object | 否 | data | 结构化明细：canvas_id、revision、bbox、变化格数等 |
+
+**`postprocess` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 一句话结论 |
+| `data` | object | 否 | data | 结构化明细：canvas_id、revision、bbox、变化格数等 |
+
+**`preview` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 画布名、尺寸、revision 与填充度 |
+| `body` | string | 否 | body | 16 列字符矩阵，行首两位行号；0-9a-v 为色索引，. 为透明 |
+| `images` | array | 否 | images | 图片列表 |
+| `hint` | string | 否 | hint | 下一步提示 |
+
+**`export` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 格式、尺寸与落点 |
+| `data` | object | 否 | data | path、width、height、bytes |
+
+**`palette` 返回字段**
+
+| 字段 | 类型 | 必填 | 角色 | 说明 |
+|---|---|---|---|---|
+| `headline` | string | 是 | headline | 色板状态或重映射结果 |
+| `body` | string | 否 | body | get 时逐条列出 索引:十六进制值 |
+| `data` | object | 否 | data | palette_size 与 remapped_cells |
 
 ### `system_monitor`
 

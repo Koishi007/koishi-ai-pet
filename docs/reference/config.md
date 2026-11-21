@@ -22,7 +22,7 @@
 | `LLM_MODEL` | str | `""` |  | 首选 LLM 模型名称 |
 | `LLM_TEMPERATURE` | float | 0.7 |  | LLM 采样温度 |
 | `LLM_TOOLS_ENABLED` | bool | true |  | 是否可使用工具 |
-| `LLM_TOOL_MAX_ROUNDS` | int | 30 |  | 工具调用最大轮次（二十问等长流程游戏需要 ≥22 轮）（≥10, ≤99） |
+| `LLM_TOOL_MAX_ROUNDS` | int | 99 |  | 工具调用最大轮次（二十问等长流程游戏需要 ≥22 轮）（≥10, ≤99） |
 | `LLM_CACHE_PROMPT` | bool | false |  | 启用 Prompt 缓存 |
 | `LLM_THINKING_DISABLED` | bool | false |  | 关闭思考模式 |
 | `LLM_FALLBACK_ENABLED` | bool | true |  | 调用报错或超时重试时自动切换到备选模型 |

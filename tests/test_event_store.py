@@ -168,6 +168,16 @@ class TestPurgeSessions:
         assert s.get_artifact(old_artifact) is None
         assert s.get_artifact(kept_artifact)
 
+    def test_keeps_call_args_artifact_of_current_session(self, tmp_path):
+        s = store(tmp_path)
+        s.new_session()
+        artifact_id = s.put_artifact("参" * (ARTIFACT_INLINE_LIMIT + 10))
+        s.append("tool_call", {"name": "x"}, refs={"args_artifact": artifact_id})
+
+        s.purge_sessions(s.current_session_id())
+
+        assert s.get_artifact(artifact_id)
+
     def test_drops_all_artifacts_when_current_session_has_none(self, tmp_path):
         s = store(tmp_path)
         old_artifact = s.put_artifact("旧" * (ARTIFACT_INLINE_LIMIT + 10))

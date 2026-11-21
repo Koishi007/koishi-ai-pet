@@ -304,7 +304,7 @@ class _FailingEventSession(_FakeSession):
 
 
 class TestToolEventAside:
-    def test_aside_kept_in_args_digest(self):
+    def test_full_args_kept_for_replay(self):
         recorded = {}
 
         class _Recorder:
@@ -317,7 +317,9 @@ class TestToolEventAside:
         tool_loop_mod._record_tool_events(
             _Recorder(), {0: tc}, [0],
             {0: (0, tc, result, "", "平局", "我出石头")})
-        assert 'aside="我出石头"' in recorded["calls"][0]["args_digest"]
+        call = recorded["calls"][0]
+        assert call["args"] == {"move": "rock", "aside": "我出石头"}
+        assert "args_digest" not in call
 
     def test_behavior_session_forwards_without_asides(self):
         class _Recorder:

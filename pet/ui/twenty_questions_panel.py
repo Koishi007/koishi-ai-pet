@@ -8,26 +8,28 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton
 
 from pet.game.gamebase import GAME
 from pet.game.twenty_questions import ANSWER_TEXT
+from pet import theme
 from pet.ui.game_panel import GamePanelBase
+from pet.ui.ink_button import InkButton
 
 logger = logging.getLogger(__name__)
 
 _BTN_QSS = (
     "QPushButton {"
-    "  background: #ffffff;"
-    "  border: 2px solid #d0d6e0;"
+    f"  background: {theme.SURFACE};"
+    f"  border: {theme.BORDER}px solid {theme.INK};"
     "  border-radius: 14px;"
     "  font-size: 14px;"
     "  font-weight: bold;"
-    "  color: #333;"
+    f"  color: {theme.INK};"
     "}"
     "QPushButton:hover {"
-    "  background: #f0f6ff;"
-    "  border-color: #7aa7e0;"
+    f"  background: {theme.PRIMARY_SOFT};"
     "}"
     "QPushButton:disabled {"
-    "  background: #eceef3;"
-    "  color: #999;"
+    f"  background: {theme.PAPER_DEEP};"
+    f"  color: {theme.INK_MUTED};"
+    f"  border-color: {theme.LINE};"
     "}"
 )
 
@@ -49,19 +51,21 @@ class TwentyQuestionsPanel(GamePanelBase):
     def _build_content(self, layout):
         self._round_label = QLabel("")
         self._round_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._round_label.setStyleSheet("font-size: 13px; font-weight: bold; color: #555;")
+        self._round_label.setStyleSheet(
+            f"font-size: 12px; font-weight: bold; color: {theme.INK_SOFT};")
         layout.addWidget(self._round_label)
 
         self._question_label = QLabel("")
         self._question_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._question_label.setWordWrap(True)
-        self._question_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #2c3e50;")
+        self._question_label.setStyleSheet(
+            f"font-size: 16px; font-weight: 800; color: {theme.INK};")
         self._question_label.setMinimumHeight(64)
         layout.addWidget(self._question_label)
 
         self._message = QLabel("")
         self._message.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._message.setStyleSheet("font-size: 13px; color: #555;")
+        self._message.setStyleSheet(f"font-size: 12px; color: {theme.INK_SOFT};")
         self._message.setFixedHeight(22)
         layout.addWidget(self._message)
 
@@ -69,7 +73,7 @@ class TwentyQuestionsPanel(GamePanelBase):
         ans_row = QHBoxLayout()
         ans_row.setSpacing(8)
         for key, text in (("yes", "是"), ("no", "否"), ("unknown", "不确定")):
-            btn = QPushButton(text)
+            btn = InkButton(text, radius=theme.RADIUS_LG)
             btn.setFixedHeight(42)
             btn.setStyleSheet(_BTN_QSS)
             btn.clicked.connect(lambda checked=False, k=key: self._on_answer_clicked(k))
@@ -81,7 +85,7 @@ class TwentyQuestionsPanel(GamePanelBase):
         ok_row = QHBoxLayout()
         ok_row.setSpacing(8)
         for correct, text in ((True, "猜对了"), (False, "猜错了")):
-            btn = QPushButton(text)
+            btn = InkButton(text, radius=theme.RADIUS_LG)
             btn.setFixedHeight(42)
             btn.setStyleSheet(_BTN_QSS)
             btn.clicked.connect(lambda checked=False, c=correct: self._on_correct_clicked(c))
@@ -91,7 +95,7 @@ class TwentyQuestionsPanel(GamePanelBase):
 
         hint = QLabel("心里想一个东西（动物/食物/物品等），让桌宠来猜")
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        hint.setStyleSheet("font-size: 12px; color: #999;")
+        hint.setStyleSheet(f"font-size: 11px; color: {theme.INK_MUTED};")
         layout.addWidget(hint)
 
     def _render_game(self, payload: dict):

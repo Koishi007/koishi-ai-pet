@@ -6,7 +6,10 @@ import logging
 import threading
 
 from PySide6.QtCore import QObject, Signal
-from PySide6.QtWidgets import QMenu, QMessageBox
+from PySide6.QtWidgets import QMenu
+
+from pet.ui.ink_dialog import Answer, ask
+from pet.ui.styles import MENU_SOLID_QSS
 
 from pet.config import config
 from pet.ui.settings_fields import SettingsForm, SettingsWidgets
@@ -271,17 +274,16 @@ class SettingsActions(QObject):
             self._msg("提示", f"当前可汇总的记忆只有 {count} 条，不足 2 条，无需汇总。")
             return
 
-        reply = QMessageBox.question(
-            self._parent, "确认汇总",
-            f"将把当前 {count} 条记忆（event 与 conversation）交给汇总模型，同主题的会被合并成一条 event 汇总。\n\n"
-            "· 被合并的原始记忆会被删除，只留汇总，不可撤销\n"
-            "· 判定为无需合并的独立记忆不受影响\n"
-            "· 汇总由模型生成，可能丢细节或概括偏差\n"
-            "· 本次调用消耗模型 token，用的是当前已保存的汇总配置\n\n"
-            "确定继续吗？",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
+        answer = ask(
+            self._parent, title="确认汇总",
+            text=(f"将把当前 {count} 条记忆（event 与 conversation）交给汇总模型，同主题的会被合并成一条 event 汇总。\n\n"
+                  "· 被合并的原始记忆会被删除，只留汇总，不可撤销\n"
+                  "· 判定为无需合并的独立记忆不受影响\n"
+                  "· 汇总由模型生成，可能丢细节或概括偏差\n"
+                  "· 本次调用消耗模型 token，用的是当前已保存的汇总配置\n\n"
+                  "确定继续吗？"),
+            accept="是", reject="否")
+        if answer is not Answer.ACCEPT:
             logger.info("[Settings] 手动汇总取消：用户未确认")
             return
 
@@ -428,6 +430,7 @@ class SettingsActions(QObject):
             self._msg("提示", "未找到可用模型。")
             return
         menu = QMenu(self._parent)
+        menu.setStyleSheet(MENU_SOLID_QSS)
         for mid in model_ids:
             action = menu.addAction(mid)
             action.triggered.connect(
@@ -462,6 +465,7 @@ class SettingsActions(QObject):
             self._msg("提示", "未找到可用模型。")
             return
         menu = QMenu(self._parent)
+        menu.setStyleSheet(MENU_SOLID_QSS)
         for mid in model_ids:
             action = menu.addAction(mid)
             action.triggered.connect(

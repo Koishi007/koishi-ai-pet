@@ -13,7 +13,8 @@ from pet.ui.base_window import TransparentWindow
 from pet.ui.pet_animations import PetAnimator
 from pet.ui.particle import ParticleWidget
 from pet.ui.swing import SwingController
-from pet.ui.styles import MENU_QSS
+from pet import theme
+from pet.ui.styles import MENU_QSS, MENU_SOLID_QSS
 from pet.ui.settings_window import SettingsWindow
 from pet.ui.file_drop_handler import FileDropHandler, paths_from_mime
 from pet.ui.edge_dock import dock_x, pick_dock_side, edge_mask_rect
@@ -26,7 +27,7 @@ from pet.config import config
 
 logger = logging.getLogger(__name__)
 
-_R = 8  # 菜单圆角半径
+_R = 14  # 菜单圆角半径
 
 
 class _FlatMenuBase(QMenu):
@@ -34,8 +35,8 @@ class _FlatMenuBase(QMenu):
 
     def __init__(self, title="", parent=None):
         super().__init__(title, parent)
-        self.setStyleSheet(MENU_QSS)
         self._is_win = sys.platform == "win32"
+        self.setStyleSheet(MENU_QSS if self._is_win else MENU_SOLID_QSS)
         if self._is_win:
             self.setWindowFlags(
                 Qt.WindowType.FramelessWindowHint
@@ -50,10 +51,11 @@ class _FlatMenuBase(QMenu):
             return
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        # 四边各留 1px，描边不会被窗口边界裁掉一半
         path = QPainterPath()
-        path.addRoundedRect(self.rect().adjusted(0, 0, -1, -1), _R, _R)
-        painter.fillPath(path, QColor("#ffffff"))
-        painter.setPen(QPen(QColor("#dddddd"), 1))
+        path.addRoundedRect(self.rect().adjusted(1, 1, -2, -2), _R, _R)
+        painter.fillPath(path, QColor(theme.SURFACE))
+        painter.setPen(QPen(QColor(theme.INK), theme.BORDER))
         painter.drawPath(path)
         painter.setClipPath(path)
         super().paintEvent(event)

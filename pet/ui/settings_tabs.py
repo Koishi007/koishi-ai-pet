@@ -5,14 +5,16 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QDoubleValidator, QFont, QIntValidator
 from PySide6.QtWidgets import (QFormLayout, QGroupBox, QHBoxLayout, QLabel,
-                               QLineEdit, QPushButton, QScrollArea, QTextEdit,
+                               QLineEdit, QScrollArea, QTextEdit,
                                QVBoxLayout, QWidget)
 
 from pet.config import PET_SCALE_STEPS, config
+from pet import theme
+from pet.ui.ink_button import InkButton
 from pet.ui.settings_fields import SettingsForm, SettingsWidgets
 from pet.ui.settings_spec import TAB_SPECS
 from pet.ui.styles import (BUTTON_PRIMARY_QSS, INPUT_HIGHLIGHT_QSS,
-                           SCROLLBAR_QSS, TEXTEDIT_QSS, _COLOR_BG,
+                           SCROLLBAR_QSS, TEXTEDIT_QSS,
                            _COLOR_TEXT_MUTED, _COLOR_TEXT_SEC)
 from pet.ui.widgets import NoWheelComboBox
 
@@ -28,7 +30,8 @@ def _test_output() -> QTextEdit:
     out.setReadOnly(True)
     out.setMaximumHeight(60)
     out.setFont(QFont("Consolas", 9))
-    out.setStyleSheet(TEXTEDIT_QSS + f"QTextEdit {{ background: {_COLOR_BG}; }}")
+    out.setStyleSheet(
+        TEXTEDIT_QSS + f"QTextEdit {{ background: {theme.SURFACE_WARM}; }}")
     return out
 
 
@@ -72,8 +75,8 @@ class SettingsTabs:
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.Shape.NoFrame)
         scroll.setStyleSheet(
-            f"QScrollArea {{ border: none; background: {_COLOR_BG}; }}" + SCROLLBAR_QSS)
-        scroll.viewport().setStyleSheet(f"background: {_COLOR_BG};")
+            "QScrollArea { border: none; background: transparent; }" + SCROLLBAR_QSS)
+        scroll.viewport().setStyleSheet("background: transparent;")
         scroll.setWidget(content)
         layout.addWidget(scroll)
         return page
@@ -117,9 +120,9 @@ class SettingsTabs:
         w.model_edit.setStyleSheet(INPUT_HIGHLIGHT_QSS)
         f.fields["LLM_MODEL"] = w.model_edit
         model_row.addWidget(w.model_edit)
-        w.btn_fetch_models = QPushButton("获取列表")
+        w.btn_fetch_models = InkButton("获取列表")
         w.btn_fetch_models.setStyleSheet(BUTTON_PRIMARY_QSS)
-        w.btn_fetch_models.setFixedWidth(72)
+        w.btn_fetch_models.setFixedWidth(84)
         model_row.addWidget(w.btn_fetch_models)
         form.addRow("首选模型名称:", model_row)
 
@@ -130,7 +133,7 @@ class SettingsTabs:
         form.addRow("", f.check("LLM_TOOLS_ENABLED", "启用工具调用"))
         form.addRow("", _hint("模型不支持 tools 参数时请关闭此选项"))
 
-        w.tool_rounds_edit = f.line("LLM_TOOL_MAX_ROUNDS", "30", QIntValidator(10, 99))
+        w.tool_rounds_edit = f.line("LLM_TOOL_MAX_ROUNDS", "99", QIntValidator(10, 99))
         form.addRow("工具调用最大轮次:", w.tool_rounds_edit)
 
         w.cache_check = f.check("LLM_CACHE_PROMPT", "Prompt 缓存")
@@ -152,7 +155,7 @@ class SettingsTabs:
         w.label_active_profile.setStyleSheet(f"color:{_COLOR_TEXT_SEC}; font-size:11px;")
         switch_row.addWidget(w.label_active_profile)
         switch_row.addStretch()
-        w.btn_switch_profile = QPushButton("切换到备选模型")
+        w.btn_switch_profile = InkButton("切换到备选模型")
         w.btn_switch_profile.setStyleSheet(BUTTON_PRIMARY_QSS)
         switch_row.addWidget(w.btn_switch_profile)
         switch_layout.addLayout(switch_row)
@@ -179,16 +182,16 @@ class SettingsTabs:
         w.alt_model_edit.setStyleSheet(INPUT_HIGHLIGHT_QSS)
         f.fields["LLM_MODEL_ALT"] = w.alt_model_edit
         alt_model_row.addWidget(w.alt_model_edit)
-        w.btn_fetch_models_alt = QPushButton("获取列表")
+        w.btn_fetch_models_alt = InkButton("获取列表")
         w.btn_fetch_models_alt.setStyleSheet(BUTTON_PRIMARY_QSS)
-        w.btn_fetch_models_alt.setFixedWidth(72)
+        w.btn_fetch_models_alt.setFixedWidth(84)
         alt_model_row.addWidget(w.btn_fetch_models_alt)
         alt_form.addRow("备选模型名称:", alt_model_row)
         switch_layout.addLayout(alt_form)
         inner.addWidget(switch_group)
 
         test_row = QHBoxLayout()
-        w.btn_test = QPushButton("测试连接")
+        w.btn_test = InkButton("测试连接")
         w.btn_test.setStyleSheet(BUTTON_PRIMARY_QSS)
         test_row.addWidget(w.btn_test)
         w.label_test = QLabel("就绪")
@@ -292,9 +295,9 @@ class SettingsTabs:
         memory_form.addRow("API Key:", f.secret_row("EMBEDDING_KEY"))
         mem_model_row = QHBoxLayout()
         mem_model_row.addWidget(f.line("EMBEDDING_MODEL", "embedding-3"))
-        w.btn_fetch_mem_models = QPushButton("获取列表")
+        w.btn_fetch_mem_models = InkButton("获取列表")
         w.btn_fetch_mem_models.setStyleSheet(BUTTON_PRIMARY_QSS)
-        w.btn_fetch_mem_models.setFixedWidth(72)
+        w.btn_fetch_mem_models.setFixedWidth(84)
         mem_model_row.addWidget(w.btn_fetch_mem_models)
         memory_form.addRow("模型名:", mem_model_row)
         memory_form.addRow("向量维度:", f.line("EMBEDDING_DIM", "256", QIntValidator(64, 8192)))
@@ -327,7 +330,7 @@ class SettingsTabs:
 
         merge_row = QHBoxLayout()
         merge_row.setSpacing(6)
-        w.btn_merge_now = QPushButton("立即汇总")
+        w.btn_merge_now = InkButton("立即汇总")
         w.btn_merge_now.setStyleSheet(BUTTON_PRIMARY_QSS)
         w.btn_merge_now.setFixedWidth(88)
         merge_row.addWidget(w.btn_merge_now)
@@ -339,13 +342,13 @@ class SettingsTabs:
 
         test_row = QHBoxLayout()
         test_row.setSpacing(6)
-        w.btn_merge_test = QPushButton("测试汇总模型连接")
+        w.btn_merge_test = InkButton("测试汇总模型连接")
         w.btn_merge_test.setStyleSheet(BUTTON_PRIMARY_QSS)
         test_row.addWidget(w.btn_merge_test)
         w.label_merge_test = QLabel("就绪")
         w.label_merge_test.setStyleSheet(f"color:{_COLOR_TEXT_SEC}; font-size:11px;")
         test_row.addWidget(w.label_merge_test)
-        w.btn_mem_test = QPushButton("测试向量模型连接")
+        w.btn_mem_test = InkButton("测试向量模型连接")
         w.btn_mem_test.setStyleSheet(BUTTON_PRIMARY_QSS)
         test_row.addWidget(w.btn_mem_test)
         w.label_mem_test = QLabel("就绪")
@@ -370,7 +373,7 @@ class SettingsTabs:
     def _personality(self) -> QWidget:
         f = self.form
         content = QWidget()
-        content.setStyleSheet(f"background: {_COLOR_BG};")
+        content.setStyleSheet("background: transparent;")
         layout = QVBoxLayout(content)
         layout.setContentsMargins(8, 8, 8, 8)
 
@@ -491,7 +494,7 @@ class SettingsTabs:
         w.hotkey_display.setStyleSheet(INPUT_HIGHLIGHT_QSS)
         f.fields["VOICE_HOTKEY"] = w.hotkey_display
         hotkey_row.addWidget(w.hotkey_display)
-        w.capture_btn = QPushButton("录制")
+        w.capture_btn = InkButton("录制")
         w.capture_btn.setStyleSheet(BUTTON_PRIMARY_QSS)
         hotkey_row.addWidget(w.capture_btn)
         voice_form.addRow("热键:", hotkey_row)
@@ -502,7 +505,7 @@ class SettingsTabs:
 
         test_row = QHBoxLayout()
         test_row.setSpacing(6)
-        w.voice_btn_test = QPushButton("测试连接")
+        w.voice_btn_test = InkButton("测试连接")
         w.voice_btn_test.setStyleSheet(BUTTON_PRIMARY_QSS)
         test_row.addWidget(w.voice_btn_test)
         w.voice_label_test = QLabel("就绪")

@@ -32,7 +32,7 @@
 | `pet/brain/context_builder.py` | LLM 请求上下文的构建 | `ContextBuilder` |
 | `pet/brain/conversation_store.py` | 对话历史持久化存储 — 记录所有 speech 输出和用户 chat 输入，按天切分，至多保存 7 天。 | `ConversationStore` |
 | `pet/brain/embedding_client.py` | OpenAI 兼容的嵌入向量客户端。 | `EmbeddingError` `EmbeddingClient` |
-| `pet/brain/events.py` | 会话事件日志：只追加的事件存储，`Message[]` 由 `projection.project` 从这里投影。 | `Event` `truncate_bytes()` `new_group_id()` `args_digest()` `EventStore` |
+| `pet/brain/events.py` | 会话事件日志：只追加的事件存储，`Message[]` 由 `projection.project` 从这里投影。 | `Event` `truncate_bytes()` `new_group_id()` `EventStore` |
 | `pet/brain/linux_detector.py` | Linux X11 窗口枚举 —— 基于 python-xlib + EWMH，与 Win32/macOS 版保持相同接口。 | `is_window_alive()` `get_window_rect()` `is_window_occluded()` `get_visible_windows()` |
 | `pet/brain/llm_client.py` | OpenAI-compatible LLM client（支持首选/备选两套模型方案） | `normalize_profile()` `active_llm_profile()` `other_profile()` `resolve_llm_profile()` `LLMClient` |
 | `pet/brain/llm_gateway.py` | LLM 调用封装：补全请求、流式建流与重试参数，供决策编排直接调用。 | `LlmGateway` |
@@ -64,6 +64,7 @@
 | `pet/db.py` | 数据库路径管理 — 集中管理 pet.db 路径与统一连接配置。 | `get_db_path()` `get_conn()` |
 | `pet/file_intake/__init__.py` | 拖入文件的纯逻辑：类型嗅探、解码链、截断与额度、图片闸门、拒绝名单、目录摘要。 |  |
 | `pet/file_intake/image.py` | 图片读取：先 draft 后判像素闸门，通过后再解码与缩放。 | `load_image()` `load_image_with_reason()` |
+| `pet/file_intake/paths.py` | 桌面与文档目录解析、写入路径白名单校验 | `special_folder()` `allowed_roots()` `desktop_dir()` `check_write_path()` |
 | `pet/file_intake/sniff.py` | 类型嗅探、解码链、拒绝名单与目录摘要。 | `read_head()` `decode_bytes()` `sniff()` `match_deny()` `dir_summary()` `make_ref()` |
 | `pet/file_intake/text.py` | 文本读取与截断。 | `truncate()` `load_text()` `load_text_full()` |
 | `pet/file_intake/types.py` | 拖入文件的数据结构。 | `FileRef` `DropVerdict` |
@@ -89,6 +90,7 @@
 | `pet/terminal/events.py` | 终端编排层 → 界面层的事件协议 | `_ValueEnum` `EventKind` `Phase` `CommandSource` `Decision` `TerminalEvent` |
 | `pet/terminal/policy.py` | 终端命令策略：档位、免确认命令、危险模式、程序解析与工作目录根。 | `Verdict` `desktop_dir()` `sandbox_root()` `effective_root()` `parse_allow_entry()` `program_key()` |
 | `pet/terminal/runner.py` | TerminalRunner：模型命令与用户终端共用的执行编排 | `failure()` `Prepared` `TerminalRunner` `platform_name()` `get_runner()` |
+| `pet/theme.py` | 古明地恋手绘风样式令牌：色板、圆角、描边、投影与字体链。 | `rgba()` `radius_for()` `ui_font_stack()` `mono_font_stack()` |
 | `pet/tools/__init__.py` | 工具加载器 — 自动发现 + 自动安装依赖 + 配置选择性加载。 | `load_tools()` |
 | `pet/tools/bilibili/__init__.py` | bili 工具 — 刷 B 站：搜索、读字幕、点赞投币评论、给主人发私信。 | `register()` |
 | `pet/tools/bilibili/core.py` | B 站接口客户端：wbi 签名、请求、解析、写操作。 | `credential_path()` `invalid_mark_path()` `mark_credential_invalid()` `clear_credential_invalid()` `credential_invalid()` `is_bvid()` |
@@ -98,6 +100,7 @@
 | `pet/tools/bilibili/panel.py` | B 站账号面板：扫码登录、功能开关、搜索关键词、私信 UID、退出登录。 | `_QrLabel` `_LoginWorker` `AccountPanel` `show_panel()` |
 | `pet/tools/bilibili/schedule.py` | 定时提醒：到点给模型一个念头，由提示词决定用什么工具。 | `parse_window()` `parse_pause_windows()` `invalid_pause_parts()` `in_window()` `is_paused()` `next_out_of_pause()` |
 | `pet/tools/bilibili/storage.py` | B 站工具的持久化层：判重表、每日轮次、写操作台账。 | `BiliStorage` |
+| `pet/tools/bilibili/style.py` | B 站面板样式：只引用令牌，选择器留在工具内。 |  |
 | `pet/tools/browser/__init__.py` | （模块未提供 docstring） | `register()` |
 | `pet/tools/browser/core.py` | 浏览器工具：每次调用冷启动 Chromium，用完即关。 | `BrowserTool` |
 | `pet/tools/context.py` | 工具上下文 — 暴露宠物能力供工具主动调用。 | `ToolContext` |
@@ -108,7 +111,16 @@
 | `pet/tools/knowledge/chunker.py` | 轻量文本分块器 — 按段落 + 字数窗口切分。 | `chunk_text()` |
 | `pet/tools/knowledge/panel.py` | 知识库管理面板 — 添加、导入文件、搜索、删除。 | `KnowledgePanel` `show_panel()` |
 | `pet/tools/knowledge/storage.py` | 知识库存储层 — SQLite + sqlite-vec 向量检索。 | `KnowledgeStorage` |
+| `pet/tools/knowledge/style.py` | 知识库面板样式：选择器留在工具内，取值集中在本模块。 |  |
 | `pet/tools/output.py` | 工具输出的声明与投影：schema 约束规范值，render 产出内部内容块，由编码层压平成 wire 格式。 | `TextBlock` `ImageBlock` `ToolOutputDefinition` `validate()` `render_turn()` `render_text()` |
+| `pet/tools/pixel_art/__init__.py` | pixel_art 工具 — 点阵绘画：有限色板、矩阵与算子落笔、落库与导出 | `guarded()` `register()` |
+| `pet/tools/pixel_art/canvas.py` | 像素画数据模型：色板、矩阵解析、RLE 编解码、文本预览。 | `PixelArtError` `Canvas` `new_index()` `rgb_of()` `hex_of()` `parse_hex()` |
+| `pet/tools/pixel_art/core.py` | 像素画工具核心：画布缓存、revision 校验与十一个方法的 handler。 | `_Store` `_Bootstrap` `reset_store()` `create()` `open_canvas()` `list_canvases()` |
+| `pet/tools/pixel_art/export.py` | 像素画导出：PNG / SVG / JSON / RLE 渲染与落点处理。 | `default_scale()` `to_png_bytes()` `to_svg()` `to_json()` `to_rle()` `resolve_path()` |
+| `pet/tools/pixel_art/ops.py` | 像素画算子：图元栅格化、过程式填充与后处理。 | `apply_op()` `apply_mirror_x()` `mirror_op()` `apply_postprocess()` |
+| `pet/tools/pixel_art/panel.py` | 像素画只读面板：跟随每次落笔刷新，展示画布内容与 revision。 | `CanvasView` `PixelArtPanel` `_ViewBridge` `push_view()` |
+| `pet/tools/pixel_art/storage.py` | 画布持久化：pixel_canvases 表的读写。 | `PixelArtStorage` |
+| `pet/tools/pixel_art/style.py` | 像素画面板样式：选择器留在工具内，取值集中在本模块。 |  |
 | `pet/tools/registry.py` | 工具注册表 — 自动发现、注册、描述可用工具，并聚合工具登记的终端命令。 | `ToolMethod` `ToolDef` `ToolCommand` `ToolRegistry` `food_tool_available()` |
 | `pet/tools/system_monitor/__init__.py` | （模块未提供 docstring） | `register()` |
 | `pet/tools/system_monitor/core.py` | （模块未提供 docstring） | `get_overview()` `get_top_processes()` `get_memory_detail()` `get_network()` |
@@ -120,7 +132,7 @@
 | `pet/tools/todo/panel.py` | Todo 管理面板 | `TodoPanel` `show_panel()` |
 | `pet/tools/todo/storage.py` | Todo 持久化存储 — SQLite 数据层。 | `TodoStorage` |
 | `pet/tools/todo/store.py` | todo 工具实例的持有者 — 工具入口与面板共享同一实例，避免面板回指工具包。 | `init_instance()` `get_instance()` |
-| `pet/tools/todo/style.py` | （模块未提供 docstring） |  |
+| `pet/tools/todo/style.py` | 待办面板样式：选择器留在工具内，取值集中在本模块。 |  |
 | `pet/tools/weather/__init__.py` | （模块未提供 docstring） | `register()` |
 | `pet/tools/weather/core.py` | 通过 Open-Meteo 免费 API 获取实时天气和预报。 | `get_current()` `get_forecast()` |
 | `pet/tools/web_search/__init__.py` | 支持 SearXNG（自建）、DeepSeek 搜索 API、Tavily 和 Bing Web Search API。 | `register()` |
@@ -139,14 +151,19 @@
 | `pet/ui/file_bubble.py` | 文件气泡 - 拖入文件后显示摘要与动作按钮，单例复用。 | `describe_ref()` `FileBubble` |
 | `pet/ui/file_drop_handler.py` | 拖放判定层：悬停与放下两层的判定、回调分发。 | `paths_from_mime()` `busy_event_text()` `FileDropHandler` |
 | `pet/ui/food_window.py` | 觅食的食物悬浮窗 — 纯展示组件，生命周期由 FoodManager 管理。 | `FoodWindow` |
+| `pet/ui/frame.py` | 窗口级圆角墨框与硬投影。 | `paint_ink_frame()` |
 | `pet/ui/game_panel.py` | 游戏面板基类 — 通用无边框窗口框架 + 统一渲染入口 + 用户手动收场。 | `GamePanelBase` |
 | `pet/ui/higher_lower_panel.py` | 猜高低面板 — 继承 GamePanelBase，负责牌堆展示与下注提交。 | `HigherLowerPanel` |
+| `pet/ui/icons.py` | 单色图标：把灰阶 PNG 染成墨色并缓存。 | `tinted_icon()` |
+| `pet/ui/ink_button.py` | 带墨色硬投影与按压反馈的按钮：外层画影，内层按钮沿用 QSS 呈现。 | `paint_ink_shadow()` `_InnerButton` `InkButton` |
+| `pet/ui/ink_dialog.py` | UI 层确认对话框：自绘标题栏，按钮用 InkButton。 | `Answer` `InkDialog` `ask()` `notify()` |
 | `pet/ui/log_window.py` | 日志窗口 | `LogRelay` `LogWindowHandler` `LogWindow` |
 | `pet/ui/memory_window.py` | 记忆管理窗口 | `MemoryWindow` |
 | `pet/ui/music_bubble.py` | 桌宠音乐控制气泡 - 操控系统媒体播放 | `MusicBubble` |
 | `pet/ui/particle.py` | 桌宠粒子特效 | `Particle` `_SpiralGlyph` `ParticleWidget` |
 | `pet/ui/pet_animations.py` | 桌宠帧动画模块 —— 基于 JSON 配置的帧序列播放。 | `PetAnimator` |
 | `pet/ui/pet_window.py` | 扁平圆角菜单基类 — Windows 下自绘圆角背景，macOS 走原生。 | `_FlatMenuBase` `StickyMenu` `_SpriteLabel` `PetWindow` |
+| `pet/ui/qss.py` | 由令牌拼装的公共控件样式。 | `bubble_button_qss()` `chip_qss()` `ui_font()` `app_stylesheet()` |
 | `pet/ui/rps_panel.py` | 猜拳面板 — 继承 GamePanelBase，负责出拳展示与点击提交。 | `RpsPanel` |
 | `pet/ui/settings_actions.py` | 设置页的后台动作：连通性测试、模型列表、记忆汇总与热键录制 | `apply_pet_scale()` `SettingsActions` |
 | `pet/ui/settings_fields.py` | 设置页的控件工厂、表单模型与跨模块共享的控件引用 | `MarkdownEdit` `SettingsWidgets` `SettingsForm` |
@@ -156,7 +173,7 @@
 | `pet/ui/settings_window.py` | 设置界面 — 用户配置的图形界面 | `SettingsWindow` |
 | `pet/ui/settings_workers.py` | 设置页的后台任务：QObject worker 与 QThread 登记 | `LLMTestWorker` `EmbeddingTestWorker` `MemoryMergeWorker` `ModelsFetchWorker` `VoiceTestWorker` `ProbeRegistry` |
 | `pet/ui/speech_bubble.py` | 桌宠对话气泡：同一时刻只讲一句，多出来的排队 | `SpeechBubble` |
-| `pet/ui/styles.py` | 界面样式库：米白扁平 QSS、终端暗色色板、字体回退链与窗口通用按钮。 | `bubble_column_y()` `make_title_button()` `make_minimize_button()` `make_close_button()` `ensure_taskbar_icon()` `terminal_source_color()` |
+| `pet/ui/styles.py` | 界面样式兼容层：转发令牌与公共 QSS，保留旧常量名。 | `bubble_column_y()` `_IconTitleButton` `make_title_button()` `make_minimize_button()` `make_close_button()` `ensure_taskbar_icon()` |
 | `pet/ui/swing.py` | 拖拽惯性钟摆：窗口加速度驱动贴图绕抓取点摆动，松手后自由衰减。 | `step_pendulum()` `SwingController` |
 | `pet/ui/system_tray.py` | （模块未提供 docstring） | `SystemTrayManager` |
 | `pet/ui/terminal_input.py` | 终端输入：输入行控件、历史轮换、Tab 补全与 PATH 扫描 | `push_history()` `elide_cwd()` `cwd_prompt()` `InputLine` `InputController` |
@@ -164,7 +181,7 @@
 | `pet/ui/terminal_window.py` | 终端窗口：装配回显视图、输入控制器、状态点与执行线程的信号桥。 | `resolve_initial_cwd()` `cd_target()` `drive_target()` `_WindowControl` `_Combo` `TerminalWindow` |
 | `pet/ui/tic_tac_toe_panel.py` | 井字棋棋盘面板 — 继承 GamePanelBase，负责棋盘渲染与点击落子。 | `TicTacToePanel` |
 | `pet/ui/twenty_questions_panel.py` | 二十问面板 — 桌宠提问猜东西，用户在面板点击"是/否/不确定"作答， | `TwentyQuestionsPanel` |
-| `pet/ui/widgets.py` | 通用控件。 | `NoWheelComboBox` |
+| `pet/ui/widgets.py` | 通用控件。 | `NoWheelComboBox` `make_icon_badge()` |
 | `pet/version_check.py` | 启动时版本检查 | `get_local_version()` `_CheckWorker` `UpdateChecker` |
 | `pet/version_utils.py` | 版本号解析与比较的纯逻辑。 | `strip_v()` `ver_newer()` |
 | `pet/voice/__init__.py` | 语音层 — 全局热键、麦克风采集与讯飞听写编排。 |  |
@@ -173,4 +190,4 @@
 | `pet/voice/voice_session.py` | 语音会话编排：麦克风采集 → 讯飞识别 | `VoiceSession` |
 | `pet/voice/xunfei_stt.py` | 讯飞语音听写 (iat) WebSocket API 封装 | `XunfeiSTT` |
 
-共 165 个模块。
+共 182 个模块。

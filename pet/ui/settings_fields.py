@@ -4,17 +4,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QDoubleValidator, QIcon, QIntValidator
+from PySide6.QtCore import QSize, Qt
+from PySide6.QtGui import QDoubleValidator, QIntValidator
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QHBoxLayout, QLabel,
-                               QLineEdit, QPushButton, QTextEdit, QVBoxLayout,
+                               QLineEdit, QTextEdit, QVBoxLayout,
                                QWidget)
 
 from pet.config import _KEY_META
+from pet import theme
+from pet.ui.icons import tinted_icon
+from pet.ui.ink_button import InkButton
+from pet.ui.qss import HELP_BADGE_QSS
 from pet.ui.settings_spec import display_value, stored_value
 from pet.ui.styles import (BUTTON_PRIMARY_QSS, COMBOBOX_QSS, HIDE_ICON_PATH,
-                           INPUT_HIGHLIGHT_QSS, SHOW_ICON_PATH,
-                           _COLOR_BORDER_DARK, _COLOR_TEXT_MUTED)
+                           INPUT_HIGHLIGHT_QSS, SHOW_ICON_PATH)
 from pet.ui.widgets import NoWheelComboBox
 
 
@@ -32,7 +35,7 @@ class MarkdownEdit(QWidget):
 
         toolbar = QHBoxLayout()
         toolbar.setContentsMargins(0, 0, 0, 0)
-        self._toggle_btn = QPushButton("编辑")
+        self._toggle_btn = InkButton("编辑")
         self._toggle_btn.setFixedWidth(72)
         self._toggle_btn.setStyleSheet(BUTTON_PRIMARY_QSS)
         self._toggle_btn.clicked.connect(self._toggle_mode)
@@ -152,13 +155,20 @@ class SettingsForm:
         self.fields[key] = edit
         row.addWidget(edit)
 
-        toggle = QPushButton()
-        toggle.setIcon(QIcon(SHOW_ICON_PATH))
-        toggle.setFixedWidth(28)
+        toggle = InkButton(radius=9, shadow_offset=(1, 2))
+        toggle.setIcon(tinted_icon(SHOW_ICON_PATH, theme.INK, 16))
+        toggle.setIconSize(QSize(16, 16))
+        toggle.setFixedSize(30, 30)
         toggle.setCheckable(True)
+        toggle.setStyleSheet(
+            f"QPushButton {{ background:{theme.SURFACE};"
+            f" border:{theme.BORDER}px solid {theme.INK}; border-radius:9px; }}"
+            f"QPushButton:hover {{ background:{theme.PRIMARY_SOFT}; }}"
+        )
         toggle.toggled.connect(
             lambda checked: (
-                toggle.setIcon(QIcon(HIDE_ICON_PATH if checked else SHOW_ICON_PATH)),
+                toggle.setIcon(tinted_icon(
+                    HIDE_ICON_PATH if checked else SHOW_ICON_PATH, theme.INK, 16)),
                 edit.setEchoMode(
                     QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password
                 )
@@ -184,10 +194,7 @@ class SettingsForm:
         badge.setFixedSize(16, 16)
         badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
         badge.setCursor(Qt.CursorShape.WhatsThisCursor)
-        badge.setStyleSheet(
-            f"QLabel {{ color:{_COLOR_TEXT_MUTED}; border:1px solid {_COLOR_BORDER_DARK};"
-            f" border-radius:8px; font-size:11px; }}"
-        )
+        badge.setStyleSheet(HELP_BADGE_QSS)
         badge.setToolTip(tooltip)
         return badge
 

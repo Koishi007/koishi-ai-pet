@@ -7,23 +7,26 @@ from PySide6.QtWidgets import (
     QGroupBox, QLabel, QLineEdit,
     QFormLayout, QTableWidget, QTableWidgetItem,
     QHeaderView, QAbstractItemView, QCheckBox,
-    QScrollArea, QTextEdit, QMessageBox,
+    QScrollArea, QTextEdit,
     QSizePolicy, QSpacerItem, QDateEdit,
 )
 from datetime import datetime
 
 from PySide6.QtCore import Qt, QTimer, QDate, QSignalBlocker
-from PySide6.QtGui import QFont, QIcon, QPainter, QPainterPath, QColor, QPen
+from PySide6.QtGui import QColor, QFont, QIcon
 
 from pet.brain.memory import MEMORY_CATEGORIES
-from pet.ui.widgets import NoWheelComboBox
+from pet import theme
+from pet.ui.frame import paint_ink_frame
+from pet.ui.ink_button import InkButton
+from pet.ui.ink_dialog import Answer, ask, notify
+from pet.ui.qss import TITLE_LABEL_QSS, app_stylesheet
+from pet.ui.widgets import NoWheelComboBox, make_icon_badge
 from pet.ui.styles import (
-    ICON_PATH, WINDOW_QSS, PANEL_QSS, BUTTON_QSS,
-    BUTTON_PRIMARY_QSS, BUTTON_DANGER_QSS,
+    ICON_PATH, MEMORY_ICON_PATH, BUTTON_PRIMARY_QSS, BUTTON_DANGER_QSS,
+    INPUT_QSS, TABLE_QSS,
     TEXTEDIT_QSS, COMBOBOX_QSS, LIST_QSS,
     SCROLLBAR_QSS,
-    _COLOR_BG, _COLOR_BORDER_DARK, _COLOR_TEXT_TITLE,
-    _COLOR_ACCENT, _COLOR_DANGER,
     make_minimize_button, make_close_button, ensure_taskbar_icon,
 )
 
@@ -34,9 +37,9 @@ _DEFAULT_PAGE_SIZE = 50
 
 # 级别颜色映射
 _LEVEL_COLORS = {
-    "L1": "#e81123",
-    "L2": "#4a90d9",
-    "L3": "#999999",
+    "L1": theme.DANGER,
+    "L2": theme.PRIMARY,
+    "L3": theme.INK_MUTED,
 }
 
 
@@ -67,12 +70,7 @@ class MemoryWindow(QWidget):
 
         self._setup_window()
         self._setup_ui()
-        self.setStyleSheet(
-            WINDOW_QSS + PANEL_QSS + BUTTON_QSS +
-            BUTTON_PRIMARY_QSS + BUTTON_DANGER_QSS +
-            TEXTEDIT_QSS + COMBOBOX_QSS +
-            LIST_QSS + SCROLLBAR_QSS
-        )
+        self.setStyleSheet(app_stylesheet())
 
         self._load_categories()
         self._refresh_data()
@@ -80,8 +78,8 @@ class MemoryWindow(QWidget):
     def _setup_window(self):
         self.setWindowTitle("记忆管理")
         self.setObjectName("FlatWindow")
-        self.setMinimumSize(850, 650)
-        self.resize(850, 650)
+        self.setMinimumSize(920, 660)
+        self.resize(1000, 700)
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.Window
@@ -110,28 +108,22 @@ class MemoryWindow(QWidget):
 
     def _setup_ui(self):
         root = QVBoxLayout(self)
-        root.setContentsMargins(6, 2, 6, 4)
-        root.setSpacing(2)
+        root.setContentsMargins(14, 6, 14 + theme.SHADOW_WINDOW,
+                                14 + theme.SHADOW_WINDOW)
+        root.setSpacing(4)
 
         # 标题栏
         header = QWidget()
         header.setObjectName("LogHeader")
-        header.setFixedHeight(38)
+        header.setFixedHeight(theme.TITLE_BAR_H)
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(12, 0, 6, 0)
-        header_layout.setSpacing(6)
+        header_layout.setContentsMargins(3, 0, 0, 0)
+        header_layout.setSpacing(8)
 
-        try:
-            icon_lbl = QLabel()
-            icon_lbl.setPixmap(QIcon(ICON_PATH).pixmap(18, 18))
-            header_layout.addWidget(icon_lbl)
-        except Exception:
-            pass
+        header_layout.addWidget(make_icon_badge(MEMORY_ICON_PATH))
 
         title_lbl = QLabel("记忆管理")
-        title_lbl.setStyleSheet(
-            f"font-size:13px; color:{_COLOR_TEXT_TITLE}; font-weight:bold; background:transparent;"
-        )
+        title_lbl.setStyleSheet(TITLE_LABEL_QSS)
         header_layout.addWidget(title_lbl)
         header_layout.addStretch()
         header_layout.addWidget(make_minimize_button(self))
@@ -148,8 +140,8 @@ class MemoryWindow(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.Shape.NoFrame)
         scroll.setStyleSheet(
-            f"QScrollArea {{ background: {_COLOR_BG}; border: none; }}"
-            f"QWidget#ScrollInner {{ background: {_COLOR_BG}; }}"
+            "QScrollArea { background: transparent; border: none; }"
+            "QWidget#ScrollInner { background: transparent; }"
             + SCROLLBAR_QSS
         )
 
@@ -180,14 +172,14 @@ class MemoryWindow(QWidget):
 
         # 级别筛选按钮组
         self._label_level = QLabel("级别:")
-        self._label_level.setStyleSheet("font-size: 12px; color: #333;")
+        self._label_level.setStyleSheet(f"font-size: 12px; color: {theme.INK};")
         row1.addWidget(self._label_level)
         self._level_btns: dict[str, QPushButton] = {}
         for label in ("全部", "L1", "L2", "L3"):
             key = "" if label == "全部" else label
-            btn = QPushButton(label)
+            btn = InkButton(label, pressed_when_checked=True)
             btn.setCheckable(True)
-            btn.setFixedWidth(48)
+            btn.setFixedWidth(54)
             btn.setFont(QFont("", 12))
             btn.setChecked(key == self._filter_level)
             btn.clicked.connect(lambda checked, k=key: self._on_filter_level(k))
@@ -198,14 +190,14 @@ class MemoryWindow(QWidget):
 
         # 重要性筛选
         self._label_imp = QLabel("重要性:")
-        self._label_imp.setStyleSheet("font-size: 12px; color: #333;")
+        self._label_imp.setStyleSheet(f"font-size: 12px; color: {theme.INK};")
         row1.addWidget(self._label_imp)
         self._imp_btns: dict[int, QPushButton] = {}
         for val in [0, 1, 2, 3, 4, 5]:
             label = "全部" if val == 0 else str(val)
-            btn = QPushButton(label)
+            btn = InkButton(label, pressed_when_checked=True)
             btn.setCheckable(True)
-            btn.setFixedWidth(48)
+            btn.setFixedWidth(54)
             btn.setFont(QFont("", 12))
             btn.setChecked(val == self._filter_importance)
             btn.clicked.connect(lambda checked, v=val: self._on_filter_importance(v))
@@ -213,10 +205,11 @@ class MemoryWindow(QWidget):
             row1.addWidget(btn)
 
         row1.addSpacing(12)
+        row1.addStretch()
 
-        # 类别筛选
+        # 类别筛选：与第二行「每页」右对齐
         self._label_cat = QLabel("类别:")
-        self._label_cat.setStyleSheet("font-size: 12px; color: #333;")
+        self._label_cat.setStyleSheet(f"font-size: 12px; color: {theme.INK};")
         row1.addWidget(self._label_cat)
         self._category_combo = NoWheelComboBox()
         self._category_combo.setFixedWidth(120)
@@ -224,7 +217,6 @@ class MemoryWindow(QWidget):
         self._category_combo.currentIndexChanged.connect(self._on_filter_category)
         row1.addWidget(self._category_combo)
 
-        row1.addStretch()
         layout.addLayout(row1)
 
         # 第二行：日期范围 + 搜索 + 每页条数
@@ -250,12 +242,7 @@ class MemoryWindow(QWidget):
         row2.addWidget(QLabel("搜索:"))
         self._search_input = QLineEdit()
         self._search_input.setPlaceholderText("输入关键词搜索记忆内容…")
-        self._search_input.setStyleSheet(
-            "QLineEdit {"
-            "  border: 1px solid #ddd; border-radius: 6px;"
-            "  padding: 2px 8px; font-size: 12px;"
-            "}"
-        )
+        self._search_input.setStyleSheet(INPUT_QSS)
         self._search_debounce = QTimer(self)
         self._search_debounce.setSingleShot(True)
         self._search_debounce.setInterval(300)
@@ -267,6 +254,7 @@ class MemoryWindow(QWidget):
 
         row2.addWidget(QLabel("每页:"))
         self._page_size_combo = NoWheelComboBox()
+        self._page_size_combo.setFixedWidth(120)
         self._page_size_combo.addItems([str(s) for s in _PAGE_SIZES])
         self._page_size_combo.setCurrentText(str(_DEFAULT_PAGE_SIZE))
         self._page_size_combo.currentTextChanged.connect(self._on_page_size_changed)
@@ -290,22 +278,15 @@ class MemoryWindow(QWidget):
         self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
-        self._table.setColumnWidth(0, 30)
+        self._table.setColumnWidth(0, 34)
         self._table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self._table.setColumnWidth(2, 50)
-        self._table.setColumnWidth(3, 50)
-        self._table.setColumnWidth(4, 100)
-        self._table.setColumnWidth(5, 50)
+        self._table.setColumnWidth(2, 64)
+        self._table.setColumnWidth(3, 64)
+        self._table.setColumnWidth(4, 120)
+        self._table.setColumnWidth(5, 80)
         self._table.verticalHeader().setVisible(False)
         self._table.setAlternatingRowColors(True)
-        self._table.setStyleSheet(
-            "QTableWidget {"
-            "  alternate-background-color: #fafafa;"
-            "  gridline-color: #eee;"
-            "  selection-background-color: #d6eaf8;"
-            "  selection-color: #333;"
-            "}"
-        )
+        self._table.setStyleSheet(TABLE_QSS)
         self._table.itemSelectionChanged.connect(self._on_table_selection_changed)
 
         layout.addWidget(self._table)
@@ -317,13 +298,13 @@ class MemoryWindow(QWidget):
         layout.setContentsMargins(0, 2, 0, 2)
         layout.setSpacing(8)
 
-        self._btn_delete = QPushButton("删除选中")
+        self._btn_delete = InkButton("删除选中")
         self._btn_delete.setStyleSheet(BUTTON_DANGER_QSS)
         self._btn_delete.clicked.connect(self._on_delete)
         self._btn_delete.setEnabled(False)
         layout.addWidget(self._btn_delete)
 
-        self._btn_refresh = QPushButton("刷新")
+        self._btn_refresh = InkButton("刷新")
         self._btn_refresh.setStyleSheet(BUTTON_PRIMARY_QSS)
         self._btn_refresh.clicked.connect(self._refresh_data)
         layout.addWidget(self._btn_refresh)
@@ -331,7 +312,8 @@ class MemoryWindow(QWidget):
         layout.addStretch()
 
         self._memory_count_label = QLabel()
-        self._memory_count_label.setStyleSheet("font-size: 12px; color: #888; padding-right: 4px;")
+        self._memory_count_label.setStyleSheet(
+            f"font-size: 12px; color: {theme.INK_MUTED}; padding-right: 4px;")
         layout.addWidget(self._memory_count_label)
         parent_layout.addWidget(wrapper)
 
@@ -376,7 +358,7 @@ class MemoryWindow(QWidget):
 
         save_row = QHBoxLayout()
         save_row.addStretch()
-        self._btn_save = QPushButton("保存")
+        self._btn_save = InkButton("保存")
         self._btn_save.setStyleSheet(BUTTON_PRIMARY_QSS)
         self._btn_save.clicked.connect(self._on_save)
         self._btn_save.setEnabled(False)
@@ -398,26 +380,27 @@ class MemoryWindow(QWidget):
 
         self._page_btns: list[QPushButton] = []
 
-        self._btn_prev = QPushButton("<")
+        self._btn_prev = InkButton("<")
         self._btn_prev.setFixedWidth(32)
         self._btn_prev.clicked.connect(self._on_prev_page)
         layout.addWidget(self._btn_prev)
 
         for i in range(7):
-            btn = QPushButton()
+            btn = InkButton()
             btn.setFixedWidth(32)
             btn.setVisible(False)
             btn.clicked.connect(lambda checked, idx=i: self._on_goto_page(idx))
             self._page_btns.append(btn)
             layout.addWidget(btn)
 
-        self._btn_next = QPushButton(">")
+        self._btn_next = InkButton(">")
         self._btn_next.setFixedWidth(32)
         self._btn_next.clicked.connect(self._on_next_page)
         layout.addWidget(self._btn_next)
 
         self._page_info_label = QLabel()
-        self._page_info_label.setStyleSheet("font-size: 12px; color: #888; padding: 0 6px;")
+        self._page_info_label.setStyleSheet(
+            f"font-size: 12px; color: {theme.INK_MUTED}; padding: 0 6px;")
         layout.addWidget(self._page_info_label)
 
         layout.addStretch()
@@ -481,7 +464,7 @@ class MemoryWindow(QWidget):
 
             lvl_item = QTableWidgetItem(lookup.get("level", "L2"))
             lvl = lookup.get("level", "L2")
-            lvl_item.setForeground(QColor(_LEVEL_COLORS.get(lvl, "#333")))
+            lvl_item.setForeground(QColor(_LEVEL_COLORS.get(lvl, theme.INK)))
             self._table.setItem(i, 2, lvl_item)
 
             self._table.setItem(i, 3, QTableWidgetItem(str(lookup.get("importance", 3))))
@@ -554,12 +537,7 @@ class MemoryWindow(QWidget):
         de.setSpecialValueText("不限")
         de.setDate(de.minimumDate())
         de.setFixedWidth(110)
-        de.setStyleSheet(
-            "QDateEdit {"
-            "  border: 1px solid #ddd; border-radius: 6px;"
-            "  padding: 2px 8px; font-size: 12px;"
-            "}"
-        )
+        de.setStyleSheet(INPUT_QSS)
         return de
 
     def _date_filter_value(self, edit: QDateEdit) -> str:
@@ -744,7 +722,7 @@ class MemoryWindow(QWidget):
             self._reselect_memory(memory_id)
             logger.info(f"[MemoryWindow] 编辑记忆 #{memory_id}")
         except Exception as e:
-            QMessageBox.warning(self, "编辑失败", str(e))
+            notify(self, title="编辑失败", text=str(e), warning=True)
 
     def _reselect_memory(self, memory_id: int):
         """根据 memory_id 在表格中查找对应的行并填充详情。"""
@@ -760,12 +738,11 @@ class MemoryWindow(QWidget):
             return
 
         count = len(self._selected_ids)
-        reply = QMessageBox.question(
-            self, "确认删除",
-            f"确定要删除选中的 {count} 条记忆吗？\n此操作不可撤销。",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
+        answer = ask(
+            self, title="确认删除",
+            text=f"确定要删除选中的 {count} 条记忆吗？\n此操作不可撤销。",
+            accept="是", reject="否")
+        if answer is not Answer.ACCEPT:
             return
 
         try:
@@ -775,7 +752,7 @@ class MemoryWindow(QWidget):
             self._clear_detail()
             self._refresh_data()
         except Exception as e:
-            QMessageBox.warning(self, "删除失败", str(e))
+            notify(self, title="删除失败", text=str(e), warning=True)
 
     # 窗口拖拽
 
@@ -791,11 +768,4 @@ class MemoryWindow(QWidget):
     # 圆角背景
 
     def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        path = QPainterPath()
-        path.addRoundedRect(self.rect().adjusted(0, 0, -1, -1), 10, 10)
-        painter.fillPath(path, QColor(_COLOR_BG))
-        painter.setPen(QPen(QColor(_COLOR_BORDER_DARK), 1))
-        painter.drawPath(path)
-        painter.end()
+        paint_ink_frame(self)

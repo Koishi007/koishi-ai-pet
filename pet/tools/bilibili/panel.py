@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import io
 import logging
-from pathlib import Path
 
 import qrcode
 from PySide6.QtCore import Qt, QThread, QTimer, Signal
@@ -24,14 +23,15 @@ from pet.tools.bilibili.core import (
     credential_invalid,
     credential_path,
 )
+from pet.tools.bilibili.style import (BASE_QSS, BUTTON_QSS, CHECKBOX_QSS,
+                                      CLOSE_QSS, HELP_QSS, HINT_QSS, INPUT_QSS,
+                                      PANEL_QSS, QR_QSS, SECTION_QSS, STATE_QSS)
+from pet import theme
 
 logger = logging.getLogger(__name__)
 
 _W = 360
 _H = 780
-
-_ROOT = Path(__file__).resolve().parents[3]
-_CHECKMARK_FILE = str(_ROOT / "assets" / "icon" / "checkmark.svg").replace("\\", "/")
 
 _STATE_TEXT = {
     "pending": "用 B 站 App 扫码",
@@ -50,99 +50,6 @@ _SWITCHES = (
     ("schedule_enabled", "定时任务", "按频率自动触发；只在允许触发时段内运行，夜间自动顺延"),
     ("mention_enabled", "回应 @", "定时任务触发前检查主人的 @，把对应视频写进提示词"),
 )
-
-_PANEL_QSS = """
-QWidget#biliBg {
-    background: #f0f0f0;
-    border-radius: 8px;
-    font-size: 12px;
-}
-"""
-
-_CLOSE_QSS = """
-QPushButton {
-    background: transparent;
-    border: none;
-    border-radius: 14px;
-    font-size: 14px;
-    color: #999;
-}
-QPushButton:hover {
-    background: #e81123;
-    color: #fff;
-}
-"""
-
-_SECTION_QSS = "font-size: 13px; font-weight: bold; color: #333;"
-
-_QR_QSS = """
-QLabel {
-    background: #ffffff;
-    border: 1px solid #ddd;
-    border-radius: 6px;
-    color: #999;
-    font-size: 12px;
-}
-"""
-
-_INPUT_QSS = """
-QLineEdit {
-    background: #ffffff;
-    border: 1px solid #ddd;
-    border-radius: 6px;
-    padding: 6px 10px;
-    font-size: 12px;
-    color: #333;
-}
-QLineEdit:focus {
-    border-color: #4a90d9;
-}
-"""
-
-_CHECKBOX_QSS = f"""
-QCheckBox {{
-    font-size: 12px;
-    color: #333;
-    spacing: 6px;
-}}
-QCheckBox::indicator {{
-    width: 14px;
-    height: 14px;
-    border: 1px solid #ccc;
-    border-radius: 3px;
-    background: #ffffff;
-}}
-QCheckBox::indicator:hover {{
-    border-color: #4a90d9;
-}}
-QCheckBox::indicator:checked {{
-    background: #ffffff;
-    image: url("{_CHECKMARK_FILE}");
-    border: 2px solid #4a90d9;
-}}
-"""
-
-_BUTTON_QSS = """
-QPushButton {
-    background: #ffffff;
-    border: 1px solid #ddd;
-    border-radius: 6px;
-    padding: 6px 12px;
-    font-size: 12px;
-    color: #333;
-}
-QPushButton:hover {
-    background: #e8e8e8;
-}
-QPushButton:pressed {
-    background: #d8d8d8;
-}
-QPushButton:disabled {
-    background: #f0f0f0;
-    color: #bbb;
-    border-color: #e0e0e0;
-}
-"""
 
 _current: "AccountPanel | None" = None
 
@@ -164,9 +71,7 @@ def _help_label(tip: str) -> QLabel:
     label.setFixedSize(14, 14)
     label.setAlignment(Qt.AlignmentFlag.AlignCenter)
     label.setCursor(Qt.CursorShape.WhatsThisCursor)
-    label.setStyleSheet(
-        "QLabel { color: #999; border: 1px solid #ccc; border-radius: 7px; font-size: 10px; }"
-    )
+    label.setStyleSheet(HELP_QSS)
     label.setToolTip(tip)
     return label
 
@@ -258,6 +163,7 @@ class AccountPanel(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
         self._build()
+        self.setStyleSheet(BASE_QSS + PANEL_QSS)
         self.refresh_login_state()
 
     def _build(self):
@@ -267,25 +173,25 @@ class AccountPanel(QWidget):
 
         bg = QWidget()
         bg.setObjectName("biliBg")
-        bg.setStyleSheet(_PANEL_QSS)
+        bg.setStyleSheet(PANEL_QSS)
         layout = QVBoxLayout(bg)
-        layout.setContentsMargins(16, 0, 16, 16)
+        layout.setContentsMargins(14, 4, 14, 12)
         layout.setSpacing(8)
         root.addWidget(bg)
 
         title_bar = QWidget()
-        title_bar.setFixedHeight(40)
+        title_bar.setFixedHeight(theme.TITLE_BAR_H)
         title_row = QHBoxLayout(title_bar)
-        title_row.setContentsMargins(0, 0, 0, 0)
+        title_row.setContentsMargins(2, 0, 0, 0)
 
         title = QLabel("B 站设置")
-        title.setStyleSheet("font-size: 16px; font-weight: bold; color: #333;")
+        title.setStyleSheet(
+            f"font-size: 14px; font-weight: 800; color: {theme.INK};")
         title_row.addWidget(title)
         title_row.addStretch()
-
-        btn_close = QPushButton("×")
-        btn_close.setFixedSize(28, 28)
-        btn_close.setStyleSheet(_CLOSE_QSS)
+        btn_close = QPushButton("✕")
+        btn_close.setFixedSize(34, 34)
+        btn_close.setStyleSheet(CLOSE_QSS)
         btn_close.clicked.connect(self.close)
         title_row.addWidget(btn_close)
         layout.addWidget(title_bar)
@@ -293,18 +199,18 @@ class AccountPanel(QWidget):
         self._qr = _QrLabel("点这里扫码登录")
         self._qr.setFixedSize(328, 220)
         self._qr.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._qr.setStyleSheet(_QR_QSS)
+        self._qr.setStyleSheet(QR_QSS)
         self._qr.setCursor(Qt.CursorShape.PointingHandCursor)
         self._qr.clicked.connect(self._on_qr_clicked)
         layout.addWidget(self._qr)
 
         self._state = QLabel("")
         self._state.setWordWrap(True)
-        self._state.setStyleSheet("font-size: 12px; color: #333;")
+        self._state.setStyleSheet(STATE_QSS)
         layout.addWidget(self._state)
 
         switches = QLabel("功能开关")
-        switches.setStyleSheet(_SECTION_QSS)
+        switches.setStyleSheet(SECTION_QSS)
         layout.addWidget(switches)
 
         cfg = duty.load_config()
@@ -316,7 +222,7 @@ class AccountPanel(QWidget):
         grid.setColumnStretch(1, 1)
         for index, (key, text, tip) in enumerate(_SWITCHES):
             box = QCheckBox(text)
-            box.setStyleSheet(_CHECKBOX_QSS)
+            box.setStyleSheet(CHECKBOX_QSS)
             box.setChecked(bool(cfg.get(key)))
             box.toggled.connect(lambda checked, k=key: self._on_toggle(k, checked))
             grid.addWidget(_with_help(box, tip), index // 2, index % 2)
@@ -325,24 +231,24 @@ class AccountPanel(QWidget):
 
         hide_hint = QLabel("评论与回应 @ 有概率被 B 站隐藏（仅自己可见、对方收不到通知），建议不启用")
         hide_hint.setWordWrap(True)
-        hide_hint.setStyleSheet("font-size: 11px; color: #999;")
+        hide_hint.setStyleSheet(HINT_QSS)
         layout.addWidget(hide_hint)
 
         window_hint = QLabel(f"定时任务在夜间休息段（{cfg['schedule_active_hours']} 之外）自动停止")
-        window_hint.setStyleSheet("font-size: 11px; color: #999;")
+        window_hint.setStyleSheet(HINT_QSS)
         layout.addWidget(window_hint)
 
         interval_row = QHBoxLayout()
         interval_row.setSpacing(4)
         interval_title = QLabel("定时任务间隔（分钟）")
-        interval_title.setStyleSheet(_SECTION_QSS)
+        interval_title.setStyleSheet(SECTION_QSS)
         interval_row.addWidget(interval_title)
         interval_row.addWidget(_help_label("两次定时任务的最小间隔，10-1440，留空恢复 180；桌宠在忙时按退避顺延"))
         interval_row.addStretch()
         layout.addLayout(interval_row)
 
         self._interval = QLineEdit()
-        self._interval.setStyleSheet(_INPUT_QSS)
+        self._interval.setStyleSheet(INPUT_QSS)
         self._interval.setPlaceholderText("10-1440，默认 180")
         self._interval.setText(str(cfg["schedule_interval_minutes"]))
         self._interval.editingFinished.connect(self._save_interval)
@@ -351,14 +257,14 @@ class AccountPanel(QWidget):
         pause_row = QHBoxLayout()
         pause_row.setSpacing(4)
         pause_title = QLabel("定时任务禁用时段")
-        pause_title.setStyleSheet(_SECTION_QSS)
+        pause_title.setStyleSheet(SECTION_QSS)
         pause_row.addWidget(pause_title)
         pause_row.addWidget(_help_label("填写的区间内不触发；多个区间用逗号分隔，留空表示不暂停"))
         pause_row.addStretch()
         layout.addLayout(pause_row)
 
         self._pause_hours = QLineEdit()
-        self._pause_hours.setStyleSheet(_INPUT_QSS)
+        self._pause_hours.setStyleSheet(INPUT_QSS)
         self._pause_hours.setPlaceholderText("如 09:00-12:00,14:00-18:00")
         self._pause_hours.setText(cfg["schedule_pause_hours"])
         self._pause_hours.editingFinished.connect(self._save_pause_hours)
@@ -367,7 +273,7 @@ class AccountPanel(QWidget):
         trigger_row = QHBoxLayout()
         trigger_row.setSpacing(4)
         self._btn_trigger = QPushButton("触发定时任务")
-        self._btn_trigger.setStyleSheet(_BUTTON_QSS)
+        self._btn_trigger.setStyleSheet(BUTTON_QSS)
         self._btn_trigger.clicked.connect(self._trigger_now)
         trigger_row.addWidget(self._btn_trigger)
         trigger_row.addWidget(_help_label("不检查开关与时段，直接发起一次定时任务；不改变下一次定时"))
@@ -375,33 +281,33 @@ class AccountPanel(QWidget):
         layout.addLayout(trigger_row)
 
         kw_title = QLabel("搜索关键词")
-        kw_title.setStyleSheet(_SECTION_QSS)
+        kw_title.setStyleSheet(SECTION_QSS)
         layout.addWidget(kw_title)
 
         self._keywords = QLineEdit()
-        self._keywords.setStyleSheet(_INPUT_QSS)
+        self._keywords.setStyleSheet(INPUT_QSS)
         self._keywords.setPlaceholderText("用逗号分隔，留空用默认")
         self._keywords.setText("，".join(cfg["keywords"]))
         self._keywords.editingFinished.connect(self._save_keywords)
         layout.addWidget(self._keywords)
 
         uid_title = QLabel("私信收件人 UID")
-        uid_title.setStyleSheet(_SECTION_QSS)
+        uid_title.setStyleSheet(SECTION_QSS)
         layout.addWidget(uid_title)
 
         self._dm_uid = QLineEdit()
-        self._dm_uid.setStyleSheet(_INPUT_QSS)
+        self._dm_uid.setStyleSheet(INPUT_QSS)
         self._dm_uid.setPlaceholderText("不填则不发私信")
         self._dm_uid.setText(str(cfg["dm_uid"]) if cfg["dm_uid"] else "")
         self._dm_uid.editingFinished.connect(self._save_dm_uid)
         layout.addWidget(self._dm_uid)
 
         self._hint = QLabel("")
-        self._hint.setStyleSheet("font-size: 11px; color: #666;")
+        self._hint.setStyleSheet(HINT_QSS)
         layout.addWidget(self._hint)
 
         self._btn_logout = QPushButton("退出登录")
-        self._btn_logout.setStyleSheet(_BUTTON_QSS)
+        self._btn_logout.setStyleSheet(BUTTON_QSS)
         self._btn_logout.clicked.connect(self._logout)
         layout.addWidget(self._btn_logout)
 
