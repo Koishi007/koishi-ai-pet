@@ -11,20 +11,24 @@
 - **视觉感知**：截图分析 + 窗口探测，理解屏幕上正在发生什么
 - **物理交互**：模拟重力下落，可站立在其他窗口顶部；可拖拽、点击；松手或甩飞撞边时贴到屏幕左右边缘
 - **主动对话**：可以键盘输入、语音输入（需要配置讯飞API），与恋恋对话
+- **文件投递**：把文件拖到恋恋身上，可让它尝一口、看一看，文本文件还能收进知识库
 - **持久记忆**：使用SQLite实现持久记忆，带可视化记忆管理窗口（浏览/搜索/筛选/编辑）；部分近期事件会注入上下文
 - **宠物状态**：有生理（饱食、精力）和心理（好感、愉悦、理智）参数，会影响恋恋的行为
 - **互动游戏**：内置猜数字、猜拳、井字棋、二十问、猜高低，可以和恋恋游玩
 - **自主觅食**：饿了会自己寻找食物、跳起来吃掉
 - **音乐控制**：悬停恋恋可控制系统媒体播放/暂停、切歌、音量与静音
-- **工具系统**：内置浏览器、天气、待办、文件操作、系统监控、知识库等工具，参照指南可以自行拓展
+- **终端**：右键打开终端窗口执行命令，模型发起的命令按策略弹确认卡片，与恋恋共用工作目录
+- **工具系统**：内置网页搜索、浏览器、天气、待办、定时器、文件操作、系统监控、知识库、B 站、像素画等工具，参照指南可以自行拓展
 
 ## 项目结构
 
 ```
-KoishiAI/
+koishi-ai-pet/
 ├── pyproject.toml              # 项目配置 & 依赖
 ├── tests/                      # 单元测试（pytest，dev 可选依赖）
-├── assets/actions/             # 帧动画素材（idle、walk、sit、sleep…）
+├── scripts/                    # 文档与变更记录生成脚本
+├── docs/                       # 开发文档（索引见 docs/README.md）
+├── assets/actions/             # 帧动画素材（idle、walk_left、sit、sleep…）
 └── pet/
     ├── app.py                  # 主入口
     ├── config.py               # 全局配置
@@ -34,8 +38,11 @@ KoishiAI/
     ├── pulse/                  # 心理数值引擎：Mood（好感/愉悦/理智）、Vitals（饱食/精力）
     ├── food/                   # 觅食系统：食物生成、过期、自主进食
     ├── game/                   # 回合制游戏：GameBase 容器 + 猜数字/猜拳/井字棋/二十问/猜高低
+    ├── terminal/               # 终端执行核心：策略判定、确认队列、进程输出捕获
+    ├── cli/                    # 终端本地命令：命令目录、分发、补全与输出格式
+    ├── file_intake/            # 拖入文件：类型嗅探、解码链、额度与拒绝名单
     ├── tools/                  # 工具系统：Registry、Executor、内置工具
-    ├── ui/                     # Qt 界面：宠物窗口、气泡、聊天框、托盘、设置
+    ├── ui/                     # Qt 界面：宠物窗口、气泡、聊天框、托盘、设置、终端与游戏面板
     └── voice/                  # 语音输入：麦克风采集、讯飞 STT
 ```
 
@@ -184,6 +191,7 @@ chmod +x update.sh && ./update.sh
 | `productivity` | `timer` | `set` / `list` / `cancel` / `cancel_all` | 倒计时定时器，到时恋恋主动提醒 |
 | `productivity` | `todo` | `add` / `list` / `toggle` / `delete` / `update` | 待办事项管理 |
 | `knowledge` | `knowledge` | `search` / `list` | RAG 知识库：语义检索、知识条目管理 |
+| `creative` | `pixel_art` | `create` / `open` / `list` / `rename` / `delete` / `set` / `paint` / `postprocess` / `preview` / `export` / `palette` | 像素画：建画布、矩阵与算子落笔、后处理、预览与导出 |
 
 ### food
 
@@ -243,11 +251,18 @@ chmod +x update.sh && ./update.sh
 | 字段 | 类型 | 默认 | 说明 |
 |---|---|---|---|
 | `keywords` | list | `东方Project`、`古明地觉`、`古明地恋`、`猫`、`狗`、`动物` | 关注关键词，面板里可编辑，留空回退默认；填 BV 号时直接读取该视频 |
+| `per_run` | int | 2 | 一轮刷到的视频条数 |
+| `scan_days` | int | 30 | 只取最近多少天内发布的视频 |
+| `order` | str | `"totalrank"` | 搜索排序：`totalrank` 综合 / `click` 播放量 / `pubdate` 最新 |
 | `allow_browse` | bool | `true` | 刷视频总开关 |
 | `allow_like` / `allow_coin` / `allow_comment` / `allow_dm` | bool | `false` | 四个写操作开关 |
 | `comment_per_day` | int | 7 | 每日评论上限 |
+| `comment_max_chars` | int | 100 | 单条评论字数上限 |
+| `comment_blocklist` | list | `[]` | 内容黑名单，评论与私信命中即拦下 |
 | `coin_per_day` | int | 2 | 每日投币上限 |
+| `coin_floor` | int | 1 | 硬币余额低于或等于该值时不再投币 |
 | `dm_uid` | int | 0 | 私信收件人 UID，面板里填写，0 表示不发 |
+| `dm_max_chars` | int | 400 | 单条私信字数上限 |
 | `schedule_enabled` | bool | `false` | 定时提醒总开关 |
 | `schedule_interval_minutes` | int | 180 | 两次提醒的最小间隔，面板里可改，范围 10-1440 |
 | `schedule_active_hours` | str | `09:00-23:00` | 允许触发的作息窗口 |
@@ -257,6 +272,7 @@ chmod +x update.sh && ./update.sh
 | `mention_enabled` | bool | `false` | 每次提醒前同步主人的 @，未回复的会一直带出；评论可能被 B 站折叠，默认关闭 |
 | `mention_per_day` | int | 3 | 每轮带出的未回复 @ 上限 |
 | `min_interval_s` | float | 3.0 | 两次请求的最小间隔 |
+| `timeout_s` | float | 15.0 | 单次接口请求超时（秒） |
 
 定时任务的执行内容写在 `pet/tools/bilibili/schedule.md`：可用工具、@ 处理与这一轮必做的事都在这里，可直接编辑，每次触发时重新读取，不需要重启；文件读不到时只保留工具发现与必做任务。
 
@@ -325,6 +341,21 @@ RAG 知识库，支持语义检索。可配置向量嵌入以启用语义搜索�
 | `embedding_model` | str | `""` | Embedding 模型名 |
 | `embedding_dim` | int | `256` | 向量维度（需与模型匹配） |
 
+### pixel_art
+
+点阵画：有限色板 + 矩阵与算子两套落笔，画布按 id 存库，重启后可继续编辑。右键恋恋 → 工具 → `pixel_art` → **画布** 打开只读画布窗口，跟着每次落笔刷新，窗口内不提供编辑操作。
+
+- `create(name, size, preset, palette, background)`：新建画布，边长取 `16` / `32` / `64`。`preset` 可选 `pico8`（16 色）、`gameboy`（4 色）、`nes`（16 色）、`db32`（32 色），也可用 `palette` 传自定义色板（最多 32 色，`#RRGGBB`），两者互斥
+- `set(rows, rle, region, revision)`：提交像素矩阵。字符 `0-9a-v` 为色索引，`.` 透明，`?` 保留原值；16 档可整图给 `rows`，32/64 档必须带 `region`（面积不超过 1024），也可用 `rle` 整图覆盖
+- `paint(ops, revision)`：批量落笔，单次最多 200 条。图元 `point` / `line` / `rect` / `ellipse` / `polygon` / `path` / `erase` / `clear`，过程式 `gradient` / `noise` / `pattern` / `mask` / `scatter`
+- `postprocess(op, region, params)`：`outline`、`dither`、`mirror_x` / `mirror_y`、`rotate90`、`shade`、`cleanup`、`invert`
+- `preview(mode, region, scale)`：文本矩阵自检；开启视觉时可附最近邻放大的图片
+- `export(format, path, scale, transparent, grid_overlay)`：导出 `png` / `svg` / `json` / `rle`，默认落桌面，路径只允许桌面与文档目录
+- `palette(action, colors)`：查看、替换色板，或 `quantize` 按最近色重映射已有像素
+- `list` / `open` / `rename` / `delete`：按 id 管理画布，名字允许重名
+
+写入类方法都接受 `revision` 做乐观锁，省略则不校验。名字只作标识，引用画布一律用 `list` 查到的 id。
+
 ### weather
 
 基于 [Open-Meteo](https://open-meteo.com/) 免费 API，无需 API Key。支持中英文城市名。
@@ -365,6 +396,25 @@ RAG 知识库，支持语义检索。可配置向量嵌入以启用语义搜索�
 - **喂食**：点击弹出喂食气泡，输入想喂的食物
 - **音乐**：点击展开音乐控制条 - 上一首 / 播放·暂停 / 下一首、音量加减、静音
 
+### 拖入文件
+
+把文件直接拖到恋恋身上，落下后弹出文件气泡，按动作按钮决定恋恋怎么处理：
+
+- **尝一口**：轻量判断「这是什么」：文本只取开头 300 字，图片在开启视觉时送入一张
+- **看一看**：读文件内容交给恋恋分析（单文件默认上限 1500 字），图片走视觉通道
+- **收进知识库**：文本类文件的工具动作，由 `knowledge` 工具提供，需启用该工具
+
+图片的「尝一口」「看一看」需要开启视觉（设置 → 行为 → 视觉），关闭时两个按钮置灰并标注原因。
+
+限制与规则：
+
+- 单次最多 5 项，单文件不超过 10 MB；目录按一层摘要处理，不递归
+- 文件名命中拒收名单时拒收，默认名单是密钥类文件（`.env*`、`*.key`、`*.pem`、`id_rsa*` 等），配置项为 `FILE_DROP_DENY_PATTERNS`
+- 放下的文件只读：不移动、不改名、不删除、不写回原文件
+- 数量、体积、名单不通过时不弹气泡，恋恋直接做出即时反应
+
+上述额度与开关位于高级设置（`settings.json`）的 `FILE_DROP_*` 项，默认值见 [docs/reference/config.md](https://github.com/Koishi007/koishi-ai-pet/blob/master/docs/reference/config.md)。
+
 ### 恋恋身体右键
 
 右键点击恋恋本体，弹出完整功能菜单：
@@ -377,7 +427,7 @@ RAG 知识库，支持语义检索。可配置向量嵌入以启用语义搜索�
 | **日志** | 打开运行日志窗口，实时查看 LLM 调用、工具执行、错误等信息 | 排查问题或了解内部发生了什么 |
 | **终端** | 打开命令行终端，直接输入并执行命令 | 跑脚本、查目录；与恋恋共用同一把执行闸门 |
 | **对话历史** | 查看与 LLM 的完整对话记录 | 回顾之前的互动；了解模型如何理解上下文 |
-| **记忆管理** | 打开记忆管理面板，查看、搜索、删除已存储的记忆条目 | 清理不准确的记忆；搜索"恋恋记住了什么" |
+| **记忆管理** | 打开记忆管理面板，按级别、重要性、类别与日期筛选，查看、搜索、编辑、删除已存储的记忆条目 | 清理不准确的记忆；搜索"恋恋记住了什么" |
 | **设置** | 打开设置窗口，配置模型连接、提示词、语音等 | 同托盘"设置"入口 |
 
 **工具子菜单**：展开后列出所有已注册的工具，每个工具旁边有**勾选框**，可随时启用或禁用某个工具。
@@ -388,6 +438,7 @@ RAG 知识库，支持语义检索。可配置向量嵌入以启用语义搜索�
 |------|----------|------|
 | `knowledge` | **知识库管理** | 手动添加/删除/搜索知识条目，管理 RAG 知识库 |
 | `bilibili` | **设置** | 扫码登录 B 站账号，编辑关注关键词与功能开关、定时提醒间隔 |
+| `pixel_art` | **画布** | 打开只读画布窗口，查看当前画布与每次落笔后的画面 |
 | `todo` | **查看待办** | 打开待办面板，查看、添加、勾选、删除待办事项 |
 
 底部控制项：
