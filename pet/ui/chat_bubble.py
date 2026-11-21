@@ -21,6 +21,9 @@ _COLLAPSE_ICON_PATH = str(BASE_DIR / "assets" / "icon" / "collapse.png")
 _RECORDING_ICON_PATH = str(BASE_DIR / "assets" / "icon" / "audio_recording.png")
 _SEND_ICON_PATH = str(BASE_DIR / "assets" / "icon" / "ink" / "arrow_right.svg")
 
+_HINT_IDLE = "Enter 发送 · Esc 收起"
+_HINT_BUSY = "正在思考，稍后再发"
+
 
 class ChatBubble(QWidget):
     """聊天交互气泡 - 悬停桌宠时显示，点击展开输入框。"""
@@ -105,7 +108,7 @@ class ChatBubble(QWidget):
         self._send.hide()
         self._layout.addWidget(self._send)
 
-        self._hint = QLabel("Enter 发送 · Esc 收起")
+        self._hint = QLabel(_HINT_IDLE)
         self._hint.setStyleSheet(
             f"font-size: 10.5px; color: {theme.INK_MUTED}; background: transparent;")
         self._hint.setIndent(36)
@@ -135,6 +138,9 @@ class ChatBubble(QWidget):
                 self._collapse_timer.stop()
             elif (event.type() == QEvent.Type.KeyPress
                   and event.key() == Qt.Key.Key_Escape):
+                # Esc 只是收起，撤销语音编辑期开的回车拦截
+                self._voice_auto_collapse.stop()
+                self.enter_intercept.emit(False)
                 self._collapse()
                 self.hide_bubble()
                 return True
@@ -210,11 +216,16 @@ class ChatBubble(QWidget):
         self._voice_auto_collapse.stop()
         self.enter_intercept.emit(False)
         text = self._input.text().strip()
-        if text:
-            self.chat_submitted.emit(text)
-            self._input.clear()
-            self._collapse()
-            self.hide_bubble()
+        if not text:
+            return
+        if self._busy:
+            # 忙碌时上游不接收请求，草稿留在输入框
+            self._hint.setText(_HINT_BUSY)
+            return
+        self.chat_submitted.emit(text)
+        self._input.clear()
+        self._collapse()
+        self.hide_bubble()
 
     def set_recording_icon(self, recording: bool):
         """切换按钮图标：录音中显示 audio_recording 图标。"""
@@ -304,6 +315,7 @@ class ChatBubble(QWidget):
             self._input.setEnabled(True)
             self._input.setStyleSheet(BUBBLE_INPUT_QSS)
             self._input.setPlaceholderText("说点什么...")
+            self._hint.setText(_HINT_IDLE)
 
     def hide_bubble(self):
         if not self.isVisible():

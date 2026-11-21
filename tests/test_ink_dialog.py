@@ -51,3 +51,11 @@ def test_reject_returns_default_role(qt_app):
     dlg = _dialog(default=Answer.REJECT)
     dlg.reject()
     assert dlg.answer() is Answer.REJECT
+
+
+def test_enter_ignores_focused_role_button(qt_app):
+    dlg = _dialog(default=Answer.REJECT)
+    accept = dlg.button(Answer.ACCEPT)
+    accept.setFocus()
+    QTest.keyClick(accept._inner, Qt.Key.Key_Return)
+    assert dlg.answer() is Answer.REJECT

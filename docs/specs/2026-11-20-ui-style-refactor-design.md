@@ -172,7 +172,7 @@ def tinted_icon(path: str, color: str, size: int = 28) -> QIcon:
 | 圆角与胶囊 | 支持 | `border-radius`，胶囊取高度的一半 |
 | 窗口硬投影 | 不支持 `box-shadow` | `paint_ink_frame()` 画偏移路径 |
 | 控件硬投影 | QSS 不支持 | `pet/ui/ink_button.py` 自绘偏移墨影，QSS 只管颜色与描边 |
-| 按下反馈 | QSS 无 `transform` | `InkButton` 按压下沉 2px 并收起投影，松开回弹 |
+| 按下反馈 | QSS 无 `transform` | `InkButton` 按压时墨影收向按钮面，面本身不动，松开回弹 |
 | 焦点光晕 | 不支持 | 描边换 `PRIMARY`，底色提亮到 `SURFACE`，不加光晕 |
 | 分组标题骑在边框上 | 部分支持 | `QGroupBox::title` 只给 `PAPER_DEEP` 底与内边距，无法给标题描边 |
 | 图标染色 | 不支持 | `icons.tinted_icon()` |
@@ -296,7 +296,7 @@ def tinted_icon(path: str, color: str, size: int = 28) -> QIcon:
 | 令牌位置 | `pet/ui/theme.py` | `pet/theme.py` | ARCH001 禁止工具目录顶层 import `pet.ui` |
 | 窗口投影 | 外扩 3px | 卡片内缩，窗口外框尺寸不变 | 不改变宠物相对定位与气泡坐标计算 |
 | 工具窗口投影 | 与主窗口一致 | QSS 圆角边框，无投影 | 工具不得 import `pet.ui.frame`，保持目录自包含 |
-| 控件投影 | 统一零模糊投影 | `InkButton` 自绘墨影与按压下沉，QSS 描边仍四边等宽 | 边框加厚模拟在圆角处有接缝，投影改自绘 |
+| 控件投影 | 统一零模糊投影 | `InkButton` 自绘墨影与按压收影，QSS 描边仍四边等宽 | 边框加厚模拟在圆角处有接缝，投影改自绘；移动按钮面会让鼠标命中区域跟着变，按压只动墨影 |
 | 按钮投影覆盖 | 全部按钮 | 气泡、确认卡、游戏面板、设置窗与设置页、标题栏圆钮已接 `InkButton`；内容窗口其余按钮、工具面板、终端仍 QSS | 工具目录自包含、终端保持暗色，内容窗口第二批 |
 | 分组标题 | 描边胶囊 | 只给 `PAPER_DEEP` 底与内边距，不描边 | `QGroupBox::title` 不支持边框 |
 | 标签页 | 全圆胶囊 | 圆角 13px | 与 28px 标签高度匹配，避免 Qt 对超大半径的裁剪差异 |

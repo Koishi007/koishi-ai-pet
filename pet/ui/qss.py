@@ -230,7 +230,7 @@ QTextEdit, QPlainTextEdit {{
     border: {theme.BORDER}px solid {theme.INK};
     border-radius: {theme.RADIUS_LG}px;
     padding: 6px 8px;
-    font-family: "{_MONO_FONT}", monospace;
+    font-family: {_MONO_FONT}, monospace;
     font-size: 12px;
     color: {theme.INK};
     selection-background-color: {theme.PRIMARY_SOFT};
@@ -303,7 +303,7 @@ QListWidget {{
     border: {theme.BORDER}px solid {theme.INK};
     border-radius: {theme.RADIUS_LG}px;
     padding: 4px;
-    font-family: "{_MONO_FONT}", monospace;
+    font-family: {_MONO_FONT}, monospace;
     font-size: 11px;
     color: {theme.INK};
     outline: none;
@@ -423,7 +423,7 @@ LABEL_SECONDARY_QSS = f"""
 """
 
 LABEL_MONO_QSS = f"""
-    font-family: "{_MONO_FONT}", monospace;
+    font-family: {_MONO_FONT}, monospace;
     font-size: 12px;
     color: {theme.INK};
 """

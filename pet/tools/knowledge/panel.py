@@ -14,9 +14,9 @@ from PySide6.QtCore import Qt
 
 from pet.tools.knowledge.storage import KnowledgeStorage
 from pet.tools.knowledge.style import (BASE_QSS, BUTTON_QSS, CLOSE_QSS,
-                                       HINT_QSS, INPUT_QSS, LIST_QSS,
-                                       PANEL_QSS, PRIMARY_BUTTON_QSS,
-                                       TITLE_QSS)
+                                       DIALOG_QSS, HINT_QSS, INPUT_QSS,
+                                       LIST_QSS, PANEL_QSS,
+                                       PRIMARY_BUTTON_QSS, TITLE_QSS)
 from pet import theme
 
 logger = logging.getLogger(__name__)
@@ -182,7 +182,7 @@ class KnowledgePanel(QWidget):
         """弹出添加对话框 — 标题 + 正文 + 标签。"""
         dlg = QDialog(self)
         dlg.setWindowTitle("添加知识")
-        dlg.setStyleSheet(BASE_QSS)
+        dlg.setStyleSheet(DIALOG_QSS)
         dlg.resize(500, 400)
         form = QFormLayout(dlg)
         form.setSpacing(10)

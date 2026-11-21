@@ -17,7 +17,7 @@ def paint_ink_shadow(painter, rect: QRectF, radius: int,
 
 
 class InkButton(QWidget):
-    """包住 QPushButton：外层画墨色硬投影，按下时内层下沉、松开回弹"""
+    """包住 QPushButton：外层画墨色硬投影，按下时墨影收向按钮面、松开回弹"""
 
     def __init__(self, text: str = "", parent=None, *,
                  radius: int = theme.RADIUS_MD,
@@ -100,8 +100,8 @@ class InkButton(QWidget):
         painter.end()
 
     def _on_anim(self, value) -> None:
+        # 只动墨影，内层按钮几何固定：按下时鼠标命中区域不会跟着移动
         self._press = max(0.0, min(1.0, float(value)))
-        self._inner.move(round(self._dx * self._press), round(self._dy * self._press))
         self.update()
 
     def _on_released(self) -> None:
