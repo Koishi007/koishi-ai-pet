@@ -1,7 +1,7 @@
 """带墨色硬投影与按压反馈的按钮：外层画影，内层按钮沿用 QSS 呈现。"""
 
-from PySide6.QtCore import (QEasingCurve, QRectF, QSize, QVariantAnimation,
-                            Qt)
+from PySide6.QtCore import (QEasingCurve, QPoint, QRect, QRectF, QSize,
+                            QVariantAnimation, Qt)
 from PySide6.QtGui import QColor, QPainter, QPainterPath
 from PySide6.QtWidgets import QPushButton, QWidget
 
@@ -16,8 +16,27 @@ def paint_ink_shadow(painter, rect: QRectF, radius: int,
     painter.fillPath(shadow, QColor(theme.INK))
 
 
+class _InnerButton(QPushButton):
+    """按下时随墨影下沉的按钮本体。
+
+    下沉后按钮面整体位移，光标落在原来按下的位置反而在按钮面之外；
+    命中判定把这一段补回来，否则按下即松开会丢失 clicked。
+    """
+
+    def __init__(self, text: str, parent, sink: tuple):
+        super().__init__(text, parent)
+        self._sink_x, self._sink_y = sink
+
+    def hitButton(self, pos: QPoint) -> bool:
+        if super().hitButton(pos):
+            return True
+        original = QRect(-self._sink_x, -self._sink_y,
+                         self.width() + self._sink_x, self.height() + self._sink_y)
+        return original.contains(pos)
+
+
 class InkButton(QWidget):
-    """包住 QPushButton：外层画墨色硬投影，按下时墨影收向按钮面、松开回弹"""
+    """包住 QPushButton：外层画墨色硬投影，按下时内层下沉、松开回弹"""
 
     def __init__(self, text: str = "", parent=None, *,
                  radius: int = theme.RADIUS_MD,
@@ -28,7 +47,7 @@ class InkButton(QWidget):
         self._dx, self._dy = shadow_offset
         self._press = 0.0
         self._pressed_when_checked = pressed_when_checked
-        self._inner = QPushButton(text, self)
+        self._inner = _InnerButton(text, self, shadow_offset)
         self._anim = QVariantAnimation(self)
         self._anim.valueChanged.connect(self._on_anim)
         self._inner.pressed.connect(lambda: self._animate(1.0, 70))
@@ -100,8 +119,8 @@ class InkButton(QWidget):
         painter.end()
 
     def _on_anim(self, value) -> None:
-        # 只动墨影，内层按钮几何固定：按下时鼠标命中区域不会跟着移动
         self._press = max(0.0, min(1.0, float(value)))
+        self._inner.move(round(self._dx * self._press), round(self._dy * self._press))
         self.update()
 
     def _on_released(self) -> None:
