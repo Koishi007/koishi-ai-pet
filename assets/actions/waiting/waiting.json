@@ -1,0 +1,8 @@
+{
+  "desc": "举着沙漏等待",
+  "tick_counts": 60,
+  "frame_ratios": [0.9, 0.1],
+  "loop": true,
+  "breath": { "amplitude": 2, "period_ticks": 40 },
+  "note": "睁眼等待 + 眨眼两帧，循环播放"
+}

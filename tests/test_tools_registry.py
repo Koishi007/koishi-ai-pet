@@ -429,3 +429,53 @@ class TestToolContextVision:
         ctx = ToolContext()
         ctx.bind(SimpleNamespace(behavior=SimpleNamespace(has_vision=enabled)))
         assert ctx.has_vision() is enabled
+
+
+class TestBuiltinToolActionFrames:
+    """内置（meta）工具 handler 切动作帧的契约。"""
+
+    @pytest.fixture(autouse=True)
+    def _record(self, monkeypatch):
+        self.frames: list[str] = []
+        monkeypatch.setattr(registry_module.TOOL_CTX, "play_action_frame",
+                            lambda name, index=0: self.frames.append(name))
+
+    def test_tool_search_reads(self, registry):
+        registry._tool_search_list_groups()
+        registry._tool_search_search("天气")
+        assert self.frames == ["read", "read"]
+
+    def test_food(self, registry, monkeypatch):
+        food = SimpleNamespace(spawn=lambda *a, **k: {}, status=lambda *a, **k: {})
+        monkeypatch.setattr("pet.food.food.FOOD", food)
+        registry._food_spawn()
+        registry._food_status()
+        assert self.frames == ["operate", "read"]
+
+    def test_game(self, registry, monkeypatch):
+        game = SimpleNamespace(list_games=lambda: {}, init=lambda n: {},
+                               stop=lambda n: {})
+        monkeypatch.setattr("pet.game.gamebase.GAME", game)
+        registry._game_list()
+        registry._game_init("x")
+        registry._game_stop("x")
+        assert self.frames == ["read", "operate", "operate"]
+
+    def test_recall(self, registry, monkeypatch):
+        TestRecallOutput._patch(monkeypatch, [])
+        registry._recall_search("猫")
+        registry._recall_browse()
+        assert self.frames == ["read", "read"]
+
+    def test_terminal(self, monkeypatch):
+        from pet.config import config
+
+        monkeypatch.setattr(config, "TERMINAL_ENABLED", True)
+        fake_runner = SimpleNamespace(set_confirm=lambda fn: None,
+                                      run=lambda **kw: {}, list=lambda: {},
+                                      method_timeout=60)
+        monkeypatch.setattr(registry_module, "get_runner", lambda: fake_runner)
+        reg = ToolRegistry()
+        reg.get_method("terminal__run").handler(command="echo hi")
+        reg.get_method("terminal__list").handler()
+        assert self.frames == ["operate", "read"]

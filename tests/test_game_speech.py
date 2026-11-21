@@ -25,6 +25,9 @@ class _CtxSpy:
     def is_model_aside_pending(self):
         return False
 
+    def play_action_frame(self, action_name, index=0):
+        pass
+
     def game_board(self, game_name, payload):
         pass
 

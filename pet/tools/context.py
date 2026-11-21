@@ -86,6 +86,17 @@ class ToolContext:
         if self._check_agent():
             self._agent.action_requested.emit(name, args, kwargs or {})
 
+    def play_action_frame(self, action_name: str, index: int = 0):
+        """切到动作的第 index 帧。"""
+        if not action_name or not self._check_agent():
+            return
+        try:
+            index = int(index)
+        except (TypeError, ValueError):
+            logger.warning(f"[ToolContext] 帧序不是整数: {action_name} {index!r}")
+            return
+        self._agent.tool_frame_requested.emit(action_name, index)
+
     def add_context(self, text: str):
         if self._check_agent():
             self._agent.behavior.add_context(role="system", content=text)
@@ -204,6 +215,7 @@ class ToolContext:
         if sink is None:
             logger.warning("[ToolContext] 确认接收者未注册，按拒绝处理")
             return False
+        self.play_action_frame("waiting", 0)
         countdown = max(0.0, float(request.timeout_s))
         try:
             sink(request)

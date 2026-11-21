@@ -1,11 +1,17 @@
 """游戏对局基类与全局对局容器 GAME。"""
 
 import logging
+import threading
 import time
 
 from pet.tools.context import TOOL_CTX
 
 logger = logging.getLogger(__name__)
+
+# 等玩家动作的姿态：开局切 operate，等超过阈值仍未落子再切 waiting
+_PLAY_FRAME = "operate"
+_WAIT_FRAME = "waiting"
+_WAIT_FRAME_DELAY_S = 5.0
 
 # 面向模型的推进指令
 _MODEL_HINT_ENDED = (
@@ -270,6 +276,11 @@ class GameBase:
             result.setdefault("game_name", game_name)
             self._emit_speech(game, result)
             return result
+        TOOL_CTX.play_action_frame(_PLAY_FRAME, 0)
+        wait_timer = threading.Timer(_WAIT_FRAME_DELAY_S, TOOL_CTX.play_action_frame,
+                                     args=(_WAIT_FRAME, 0))
+        wait_timer.daemon = True
+        wait_timer.start()
         try:
             result = game.play(state, **params)
         except Exception as e:
@@ -281,6 +292,8 @@ class GameBase:
                 "hint": _MODEL_HINT_ABORT,
                 "data": {"ended": True},
             }
+        finally:
+            wait_timer.cancel()
         # 明确告知游戏已结束，避免模型继续调用 game__play/game__stop
         if result.get("ended"):
             if self._sessions.get(game_name) is state:

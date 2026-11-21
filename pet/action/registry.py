@@ -34,6 +34,7 @@ _DURATION_ACTION_DEFS = {
     "calling":      ( 5, 0.2),
     "finger_heart": ( 1, 0.01),
     "bathing":      ( 20, 0.5),
+    "waiting":      ( 5, 0.2),
 }
 
 # 动作序列总时长占调度间隔的比例
@@ -185,6 +186,20 @@ def _build_duration_registry() -> dict[str, ActionDef]:
             params=[],
             usage_example="Action: hug",
         ),
+        "stare": ActionDef(
+            name="stare",
+            category="驻留",
+            description="盯着看，专注地注视某处",
+            params=[],
+            usage_example="Action: stare",
+        ),
+        "cheer": ActionDef(
+            name="cheer",
+            category="驻留",
+            description="给用户加油打气",
+            params=[],
+            usage_example="Action: cheer",
+        ),
     }
 
     # 动态生成带 duration 参数的动作
@@ -198,6 +213,7 @@ def _build_duration_registry() -> dict[str, ActionDef]:
             "calling": "给用户打电话，也许能让用户注意你关心你陪你玩",
             "finger_heart": "表达喜欢的比心",
             "bathing": "放松地泡澡",
+            "waiting": "举着沙漏等待，等人回复或等一段时间过去",
         }
         result[name] = ActionDef(
             name=name,

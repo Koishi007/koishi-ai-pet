@@ -53,6 +53,7 @@ def _search(query: str, limit: int = 3) -> dict:
     """LLM 调用入口：语义检索知识库。"""
     if not _instance:
         return {"error": "知识库未初始化"}
+    TOOL_CTX.play_action_frame("read", 0)
     TOOL_CTX.speech_random(["让我想想…", "翻翻笔记…", "我记得…", "查一下…"])
     limit = max(1, min(limit, 10))
     results = _instance.search(query, limit=limit)
@@ -72,6 +73,7 @@ def _list(page: int = 1) -> dict:
     """LLM 调用入口：列出知识条目。"""
     if not _instance:
         return {"error": "知识库未初始化"}
+    TOOL_CTX.play_action_frame("read", 0)
     TOOL_CTX.speech_random(["看看有什么…", "翻翻知识库…", "都记了些什么…"])
     data = _instance.list_documents(page=page, page_size=20)
     docs = data["documents"]

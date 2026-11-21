@@ -459,6 +459,12 @@ class PetActions(QObject):
     def thinking(self, duration=None):
         self._anim.play(self._asset("thinking"), duration=duration)
 
+    def play_frame(self, action: str, index: int = 0) -> bool:
+        """切到动作的第 index 帧。"""
+        if self._dock_side:  # 动作帧没有贴边素材
+            return False
+        return self._anim.play_frame(action, index)
+
     def grim(self, *_, **_kw):
         self._anim.play(self._asset("grim"))
 
@@ -495,6 +501,15 @@ class PetActions(QObject):
 
     def hug(self, *_, **_kw):
         self._anim.play("hug")
+
+    def stare(self, *_, **_kw):
+        self._anim.play("stare")
+
+    def cheer(self, *_, **_kw):
+        self._anim.play("cheer")
+
+    def waiting(self, duration=None):
+        self._anim.play("waiting", duration=duration)
 
     def unconsciousness(self, *_, **_kw):
         """无意识化，动作名 `unconsciousness`（系统动画，不进 registry）。"""

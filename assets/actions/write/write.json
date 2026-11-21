@@ -1,0 +1,8 @@
+{
+  "desc": "落笔写字",
+  "tick_counts": 30,
+  "frame_ratios": [1],
+  "loop": false,
+  "breath": { "amplitude": 2, "period_ticks": 40 },
+  "note": "工具调用时的姿态，单帧"
+}

@@ -1,0 +1,7 @@
+{
+  "desc": "给用户加油",
+  "tick_counts": 45,
+  "frame_ratios": [1],
+  "loop": false,
+  "note": "单次播放"
+}

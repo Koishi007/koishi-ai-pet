@@ -200,6 +200,7 @@ def alert() -> dict:
 | `speech(text, duration=5000)` | 让桌宠说话 |
 | `speech_random(texts, duration=3000)` | 随机挑一句；模型本轮已带 `aside` 时自动跳过 |
 | `action(name, args, kwargs)` | 触发动作，动作名须在 `pet/action/registry.py` 注册表内 |
+| `play_action_frame(action_name, index=0)` | 切到动作的第 `index` 帧（素材帧序从 0 起），不进动作队列 |
 | `add_context(text)` | 往上下文追加一条 system 备注 |
 | `has_vision()` | 当前模型是否具备视觉能力；未绑定或视觉关闭时为 `False` |
 | `pet_geometry()` | 桌宠窗口几何 `{visible, rect, available}`，矩形为 `{x, y, width, height}` 数值；`available` 在无屏幕时为 `None`；未绑定、窗口未建立或采集失败时返回空字典 |
@@ -208,6 +209,8 @@ def alert() -> dict:
 | `request_interact(hint, delay_ms, cooldown_ms, thinking, enable_tools)` | 请求一次即时交互（会占用脑线程）；`cooldown_ms` 默认 15000，同一 hint 在窗口内会被合并，传 0 关闭 |
 | `register_tick(name, callback)` | 注册随调度器执行的周期回调 |
 | `register_alarm(timestamp_ms, callback, key=None)` | 注册一次性闹钟（只存内存，重启即丢；timer 工具能跨重启是它自己落库、启动时重新注册的） |
+
+按内容挑帧：翻查资料用 `read`，落笔写东西用 `write`，操作电脑上的工具用 `operate`。
 
 宿主能力（视觉、数据库路径、调度器）统一由 `TOOL_CTX` 提供；`pet.config` 里属于其他功能的开关不由工具直接读取。
 共享的纯逻辑（类型嗅探、解码、分页）用 `pet/file_intake` 这类下层模块，工具私有配置放自己的 `config.json`。

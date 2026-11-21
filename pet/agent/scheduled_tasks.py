@@ -18,6 +18,7 @@ _MERGE_MIN_NEW_ITEMS = 6
 _ACTION_PARTICLES: dict[str, tuple[str, int]] = {
     "shake_arms":   ("stars", 2),
     "rotate":       ("stars", 2),
+    "cheer":        ("stars", 2),
     "finger_heart": ("hearts", 2),
     "shy":          ("hearts", 2),
     "hug":          ("hearts", 2),

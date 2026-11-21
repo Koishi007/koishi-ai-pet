@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 
+from pet.tools.context import TOOL_CTX
 from pet.tools.output import IMAGES_SCHEMA, PAGINATION_SCHEMA, ToolOutputDefinition
 from pet.tools.pixel_art.canvas import PixelArtError
 from pet.tools.pixel_art.core import (create, delete, list_canvases, open_canvas,
@@ -123,10 +124,11 @@ EXPORT_OUTPUT = {
 }
 
 
-def guarded(handler):
-    """把业务异常转成统一错误返回值。"""
+def guarded(handler, frame: str = "operate"):
+    """把业务异常转成统一错误返回值；进 handler 前先切动作帧。"""
 
     def wrapped(**kwargs):
+        TOOL_CTX.play_action_frame(frame, 0)
         try:
             return handler(**kwargs)
         except PixelArtError as e:
@@ -167,7 +169,7 @@ def register(registry):
 
     registry.add_method(
         TOOL_NAME, "list", "分页列举已有画布：id、名字、尺寸、revision、更新时间",
-        handler=guarded(list_canvases), timeout=15.0,
+        handler=guarded(list_canvases, "read"), timeout=15.0,
         args={
             "page": {"type": "int", "default": 1, "desc": "页码，从 1 起"},
             "page_size": {"type": "int", "default": 20, "desc": "每页条数，1-50"},
@@ -250,7 +252,7 @@ def register(registry):
     registry.add_method(
         TOOL_NAME, "preview",
         "自检预览：默认返回 16 列字符矩阵，有视觉能力时可附最近邻放大的图片",
-        handler=guarded(preview), timeout=15.0,
+        handler=guarded(preview, "read"), timeout=15.0,
         args={
             "canvas_id": {"type": "str", "desc": "画布 id；省略时作用于当前画布"},
             "mode": {"type": "str", "enum": ["text", "image", "both"], "default": "text",

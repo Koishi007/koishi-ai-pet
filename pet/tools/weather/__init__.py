@@ -29,11 +29,13 @@ FORECAST_OUTPUT = {
 
 
 def _get_current(**kw):
+    TOOL_CTX.play_action_frame("read", 0)
     TOOL_CTX.speech_random(["查查天气…", "看看天气…", "天气怎么样…", "今天冷不冷…"])
     return get_current(**kw)
 
 
 def _get_forecast(**kw):
+    TOOL_CTX.play_action_frame("read", 0)
     TOOL_CTX.speech_random(["看看未来天气…", "查查后面几天…", "看看预报…", "之后天气如何…"])
     return get_forecast(**kw)
 

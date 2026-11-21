@@ -1,0 +1,7 @@
+{
+  "desc": "操作电脑",
+  "tick_counts": 30,
+  "frame_ratios": [1],
+  "loop": false,
+  "note": "工具调用时的姿态，单帧"
+}
