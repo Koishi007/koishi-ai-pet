@@ -86,14 +86,16 @@ def hex_of(rgb: tuple[int, int, int]) -> str:
     return "#{:02X}{:02X}{:02X}".format(*rgb)
 
 
+_HEX_DIGITS = frozenset("0123456789abcdefABCDEF")
+
+
 def parse_hex(value: str) -> tuple[int, int, int]:
     text = value.strip().lstrip("#")
     if len(text) != 6:
         raise PixelArtError("bad_color", f"颜色 {value!r} 不是 #RRGGBB 形式")
-    try:
-        return (int(text[0:2], 16), int(text[2:4], 16), int(text[4:6], 16))
-    except ValueError as e:
-        raise PixelArtError("bad_color", f"颜色 {value!r} 含非法十六进制位") from e
+    if any(ch not in _HEX_DIGITS for ch in text):
+        raise PixelArtError("bad_color", f"颜色 {value!r} 含非法十六进制位")
+    return int(text[0:2], 16), int(text[2:4], 16), int(text[4:6], 16)
 
 
 def nearest_index(rgb: tuple[int, int, int], palette: list[tuple[int, int, int]]) -> int:
@@ -147,10 +149,9 @@ def parse_region(region, size: int) -> tuple[int, int, int, int]:
         return 0, 0, size, size
     if not isinstance(region, (list, tuple)) or len(region) != 4:
         raise PixelArtError("bad_param", "region 必须是 [x, y, w, h] 四个整数")
-    try:
-        x, y, w, h = (int(v) for v in region)
-    except (TypeError, ValueError) as e:
-        raise PixelArtError("bad_param", f"region 含非整数项: {region!r}") from e
+    if any(isinstance(v, bool) or not isinstance(v, int) for v in region):
+        raise PixelArtError("bad_param", f"region 必须是四个整数，收到 {region!r}")
+    x, y, w, h = region
     if w <= 0 or h <= 0:
         raise PixelArtError("bad_region", f"region 宽高必须为正，收到 {w}×{h}")
     if x < 0 or y < 0 or x + w > size or y + h > size:
@@ -288,6 +289,7 @@ def render_text_matrix(index: np.ndarray, region=None) -> str:
 
     sub = index[y:y + h, x:x + w]
     if w <= 16 and h <= 16:
+        step = 1
         block = sub
     else:
         step = max(1, -(-max(w, h) // 16))
@@ -296,7 +298,7 @@ def render_text_matrix(index: np.ndarray, region=None) -> str:
     lines = []
     for row_idx in range(block.shape[0]):
         chars = "".join(char_of(int(v)) for v in block[row_idx])
-        lines.append(f"{y + row_idx:02d} {chars}")
+        lines.append(f"{y + row_idx * step:02d} {chars}")
     return "\n".join(lines)
 
 

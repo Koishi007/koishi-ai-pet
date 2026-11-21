@@ -96,7 +96,7 @@ def resolve_path(path: str | None, fmt: str, size: int) -> str:
     """省略 path 落桌面；给了 path 走白名单校验。"""
     extension = _EXTENSIONS[fmt]
     if path:
-        candidate = path.strip()
+        candidate = os.path.expanduser(path.strip())
         if not candidate.lower().endswith(extension):
             raise PixelArtError("unsupported_format",
                                 f"扩展名与 format={fmt} 不一致: {candidate}",

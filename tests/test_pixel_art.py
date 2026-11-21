@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -334,8 +335,11 @@ def test_export_svg_crisp(art):
 def test_export_rejects_outside_roots(art, monkeypatch):
     core.create("图", "16")
     monkeypatch.undo()
-    from pet.file_intake.paths import check_write_path
-    monkeypatch.setattr(export, "check_write_path", check_write_path)
+    from pet.file_intake import paths
+    allowed = art / "allowed"
+    allowed.mkdir()
+    monkeypatch.setattr(paths, "_ROOTS", [str(allowed)])
+    monkeypatch.setattr(export, "check_write_path", paths.check_write_path)
     monkeypatch.setattr(export, "desktop_dir", lambda: str(art))
     with pytest.raises(PixelArtError) as exc:
         core.export(format="png")
@@ -490,3 +494,69 @@ def test_refresh_view_pushes_current_canvas(art, monkeypatch):
     assert pushed and pushed[0]["name"] == created["data"]["name"]
     assert pushed[0]["revision"] == created["data"]["revision"]
     assert pushed[0]["force_show"] is True
+
+
+def test_parse_hex_rejects_signed_digits():
+    with pytest.raises(PixelArtError) as exc:
+        art_canvas.parse_hex("#-10000")
+    assert exc.value.code == "bad_color"
+    assert art_canvas.parse_hex("#000000") == (0, 0, 0)
+    assert art_canvas.parse_hex("#FFFFFF") == (255, 255, 255)
+
+
+def test_parse_region_rejects_fractional_and_bool():
+    for region in ([0.9, 0, 1, 1], [True, 0, 1, 1], [0, 0, 1.5, 1]):
+        with pytest.raises(PixelArtError) as exc:
+            art_canvas.parse_region(region, 16)
+        assert exc.value.code == "bad_param"
+    assert art_canvas.parse_region([0, 0, 2, 3], 16) == (0, 0, 2, 3)
+
+
+def test_preview_lines_follow_aggregate_step(art):
+    core.create("图", "32")
+    core.paint(ops=[{"op": "rect", "x": 0, "y": 0, "w": 32, "h": 32, "c": 4}])
+    lines = core.preview()["body"].splitlines()
+    assert [int(line[:2]) for line in lines] == list(range(0, 32, 2))
+
+
+def test_mirror_interleaves_each_op(art):
+    core.create("图", "16")
+    core.paint(ops=[{"op": "point", "x": 1, "y": 0, "c": 1},
+                    {"op": "point", "x": 14, "y": 0, "c": 2}], mirror_x=True)
+    index = core._store().cache["1"].index
+    assert index[0, 1] == 2
+    assert index[0, 14] == 2
+
+
+def test_mirror_pattern_is_symmetric(art):
+    core.create("图", "16")
+    core.paint(ops=[{"op": "pattern", "region": [0, 0, 4, 16],
+                     "tile": "checker", "c": 5}], mirror_x=True)
+    index = core._store().cache["1"].index
+    assert np.array_equal(index[:, :8], np.fliplr(index[:, 8:]))
+
+
+def test_mirror_mask_keeps_both_sides(art):
+    core.create("图", "16")
+    core.paint(ops=[{"op": "rect", "x": 0, "y": 0, "w": 16, "h": 16, "c": 6}])
+    core.paint(ops=[{"op": "mask", "region": [0, 0, 8, 16], "shape": "rect"}],
+               mirror_x=True)
+    index = core._store().cache["1"].index
+    assert index[0, 0] == 6
+    assert index[0, 15] == 6
+
+
+def test_clip_segment_cuts_to_canvas():
+    from pet.tools.pixel_art.ops import _clip_segment
+
+    assert _clip_segment(0, 0, 10 ** 12, 0, 16) == (0, 0, 15, 0)
+    assert _clip_segment(-8, -8, -1, -1, 16) is None
+    assert _clip_segment(3, 3, 9, 9, 16) == (3, 3, 9, 9)
+
+
+def test_export_tilde_path_goes_to_home(art, monkeypatch):
+    core.create("图", "16")
+    monkeypatch.setenv("HOME", str(art))
+    monkeypatch.setenv("USERPROFILE", str(art))
+    path = core.export(format="png", path="~/画.png")["data"]["path"]
+    assert Path(path) == art / "画.png"

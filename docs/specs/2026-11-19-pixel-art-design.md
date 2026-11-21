@@ -303,7 +303,7 @@ CREATE INDEX IF NOT EXISTS idx_pixel_canvases_updated
 
 - 过程式 op 必须有 `region`，图元 op 不用。
 - `seed` 缺省时取 `hash(canvas_id, op 序号, op 其余字段)`，只依赖参数本身，不依赖 `revision`；同一份 `ops` 重放得到同一图案，重试幂等。
-- `mirror_x` 为真时每个 op 执行两次，第二次按 `x' = size - 1 - x` 反射；`region` 同步反射。
+- `mirror_x` 为真时每个 op 落笔后立刻补一次镜像：图元 op 按 `x' = size - 1 - x` 反射重绘，过程式 op 把该 `region` 落笔后的内容整体翻到镜像区域。过程式图案按绝对坐标判定，反射 `region` 重跑会错格，翻内容才能左右对称；`mask` 因此两侧都按原落笔结果保留。
 - 单次 `ops` 上限 200 条，超出报 `bad_param` 并给出一条建议：拆成多次调用。
 - op 按数组顺序执行，后写覆盖先写。
 

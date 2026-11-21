@@ -242,3 +242,21 @@ def test_bridge_lands_on_main_thread(qt_app, monkeypatch):
         if module._current is not None:
             module._current.hide()
             module._current = None
+
+
+def test_merge_keeps_force_show(qt_app):
+    from pet.tools.pixel_art.panel import PixelArtPanel
+
+    panel = PixelArtPanel()
+    panel.render({**PAYLOAD, "force_show": True})
+    panel._apply()
+    panel._close_by_user()
+
+    panel.render({**PAYLOAD, "force_show": True})
+    panel.render({**PAYLOAD, "revision": 3})
+    panel._apply()
+    try:
+        assert panel.isVisible()
+        assert panel._revision == 3
+    finally:
+        panel.hide()

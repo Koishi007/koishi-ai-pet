@@ -18,7 +18,7 @@ from pet.tools.pixel_art.canvas import (MAX_COLORS, PRESETS, TRANSPARENT, Canvas
                                         new_index, parse_color, parse_hex,
                                         parse_region, parse_rows, render_text_matrix)
 from pet.tools.pixel_art.export import default_scale, normalize_scale, save, to_png_bytes
-from pet.tools.pixel_art.ops import apply_op, apply_postprocess, mirror_op
+from pet.tools.pixel_art.ops import apply_mirror_x, apply_op, apply_postprocess
 from pet.tools.pixel_art.storage import PixelArtStorage
 
 logger = logging.getLogger(__name__)
@@ -355,13 +355,11 @@ def paint(ops=None, mirror_x=False, revision=None, canvas_id=None):
         canvas = _resolve(store, canvas_id)
         _check_revision(canvas, revision)
         new_index = canvas.copy_index()
-        sequence = list(ops)
-        if mirror_x:
-            mirrored = (mirror_op(op, canvas.size) for op in ops)
-            sequence += [item for item in mirrored if item]
-        for index, op in enumerate(sequence):
+        for op in ops:
             seed = zlib.crc32(json.dumps(op, sort_keys=True, default=str).encode())
             apply_op(new_index, op, canvas.palette, default_seed=seed)
+            if mirror_x:
+                apply_mirror_x(new_index, op, canvas.palette, default_seed=seed)
         data = _commit(store, canvas, new_index)
         return {"headline": _write_headline(canvas, data), "data": data}
 
@@ -387,20 +385,28 @@ def preview(mode="text", region=None, scale=None, canvas_id=None):
     with store.lock:
         canvas = _resolve(store, canvas_id)
         parsed = parse_region(region, canvas.size) if region is not None else None
-        matrix = render_text_matrix(canvas.index, parsed)
+        # 一次取全字段快照：矩阵、标题与 PNG 必须来自同一版本
+        index = canvas.copy_index()
+        palette = list(canvas.palette)
         size = canvas.size
+        name = canvas.name
+        revision = canvas.revision
+        filled = canvas.filled_cells
+        matrix = render_text_matrix(index, parsed)
+        wants_image = mode in ("image", "both")
+        png = None
+        if wants_image and TOOL_CTX.has_vision():
+            png = to_png_bytes(index, palette,
+                               scale=normalize_scale(scale, size, 32))
 
-    headline = (f"「{canvas.name}」{size}×{size}，revision {canvas.revision}，"
-                f"画面 {canvas.filled_cells}/{size * size}")
+    headline = (f"「{name}」{size}×{size}，revision {revision}，"
+                f"画面 {filled}/{size * size}")
     result = {"headline": headline}
-    wants_image = mode in ("image", "both")
-    if wants_image and TOOL_CTX.has_vision():
-        data = to_png_bytes(canvas.index, canvas.palette,
-                            scale=normalize_scale(scale, size, 32))
+    if png is not None:
         result["images"] = [{
-            "base64": base64.b64encode(data).decode("ascii"),
+            "base64": base64.b64encode(png).decode("ascii"),
             "mime": "image/png",
-            "caption": f"画布「{canvas.name}」{size}×{size}",
+            "caption": f"画布「{name}」{size}×{size}",
         }]
         if mode == "both":
             result["body"] = matrix

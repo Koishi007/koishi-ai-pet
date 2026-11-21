@@ -90,8 +90,34 @@ def apply_op(index: np.ndarray, op: dict, palette, default_seed: int = 0) -> Non
         raise PixelArtError("bad_op", f"未实现的 op {name!r}")
 
 
+def apply_mirror_x(index: np.ndarray, op: dict, palette, default_seed: int = 0) -> bool:
+    """按画布中线镜像该 op 的落笔效果；无坐标可镜像时返回 False。
+
+    图元算子按 x' = size - 1 - x 反射后重绘；过程式算子的落笔依赖绝对坐标，
+    反射后重跑会画错位置，因此把该区域落笔后的内容整体翻到镜像区域。
+    """
+    size = index.shape[0]
+    name = op.get("op")
+    if name in PROCEDURAL_OPS:
+        if not isinstance(op.get("region"), (list, tuple)):
+            return False
+        x, y, w, h = _region(op, size)
+        mirrored_x = size - x - w
+        index[y:y + h, mirrored_x:mirrored_x + w] = np.fliplr(
+            index[y:y + h, x:x + w])
+        return True
+    mirrored = mirror_op(op, size)
+    if mirrored is None:
+        return False
+    apply_op(index, mirrored, palette, default_seed=default_seed)
+    return True
+
+
 def mirror_op(op: dict, size: int) -> dict | None:
-    """返回按画布中线左右反射的副本；无坐标可镜像时返回 None。"""
+    """返回按画布中线左右反射的副本；图元以外的 op 返回 None。
+
+    过程式 op 的镜像不走这里，见 `apply_mirror_x`。
+    """
     name = op.get("op")
     mirrored = dict(op)
     if name in PRIMITIVE_OPS:
@@ -106,13 +132,6 @@ def mirror_op(op: dict, size: int) -> dict | None:
             mirrored["points"] = [[size - 1 - x, y] for x, y in _points(op)]
         else:
             return None
-        return mirrored
-    if name in PROCEDURAL_OPS:
-        region = op.get("region")
-        if not isinstance(region, (list, tuple)) or len(region) != 4:
-            return None
-        x, y, w, h = region
-        mirrored["region"] = [size - int(x) - int(w), int(y), int(w), int(h)]
         return mirrored
     return None
 
@@ -211,6 +230,11 @@ def _set(index: np.ndarray, x: int, y: int, color: int) -> None:
 
 
 def _line(index: np.ndarray, x1: int, y1: int, x2: int, y2: int, color: int) -> None:
+    # 先裁到画布内：端点可能在画布外很远，按原线段迭代会空转上亿次
+    clipped = _clip_segment(x1, y1, x2, y2, index.shape[0])
+    if clipped is None:
+        return
+    x1, y1, x2, y2 = clipped
     dx = abs(x2 - x1)
     dy = -abs(y2 - y1)
     sx = 1 if x1 < x2 else -1
@@ -227,6 +251,34 @@ def _line(index: np.ndarray, x1: int, y1: int, x2: int, y2: int, color: int) -> 
         if e2 <= dx:
             err += dx
             y1 += sy
+
+
+def _clip_segment(x1: int, y1: int, x2: int, y2: int, size: int):
+    """Liang–Barsky：把线段裁到 [0, size-1] 方格，返回整数端点；完全在外返回 None。"""
+    dx = x2 - x1
+    dy = y2 - y1
+    lo, hi = 0.0, 1.0
+    for p, q in ((-dx, x1), (dx, (size - 1) - x1),
+                 (-dy, y1), (dy, (size - 1) - y1)):
+        if p == 0:
+            if q < 0:
+                return None
+            continue
+        t = q / p
+        if p < 0:
+            if t > hi:
+                return None
+            lo = max(lo, t)
+        else:
+            if t < lo:
+                return None
+            hi = min(hi, t)
+    last = size - 1
+    xa = min(last, max(0, round(x1 + lo * dx)))
+    ya = min(last, max(0, round(y1 + lo * dy)))
+    xb = min(last, max(0, round(x1 + hi * dx)))
+    yb = min(last, max(0, round(y1 + hi * dy)))
+    return xa, ya, xb, yb
 
 
 def _rect(index, x, y, w, h, color, fill: bool) -> None:

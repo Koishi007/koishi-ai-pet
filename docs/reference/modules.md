@@ -117,7 +117,7 @@
 | `pet/tools/pixel_art/canvas.py` | 像素画数据模型：色板、矩阵解析、RLE 编解码、文本预览。 | `PixelArtError` `Canvas` `new_index()` `rgb_of()` `hex_of()` `parse_hex()` |
 | `pet/tools/pixel_art/core.py` | 像素画工具核心：画布缓存、revision 校验与十一个方法的 handler。 | `_Store` `_Bootstrap` `reset_store()` `create()` `open_canvas()` `list_canvases()` |
 | `pet/tools/pixel_art/export.py` | 像素画导出：PNG / SVG / JSON / RLE 渲染与落点处理。 | `default_scale()` `to_png_bytes()` `to_svg()` `to_json()` `to_rle()` `resolve_path()` |
-| `pet/tools/pixel_art/ops.py` | 像素画算子：图元栅格化、过程式填充与后处理。 | `apply_op()` `mirror_op()` `apply_postprocess()` |
+| `pet/tools/pixel_art/ops.py` | 像素画算子：图元栅格化、过程式填充与后处理。 | `apply_op()` `apply_mirror_x()` `mirror_op()` `apply_postprocess()` |
 | `pet/tools/pixel_art/panel.py` | 像素画只读面板：跟随每次落笔刷新，展示画布内容与 revision。 | `CanvasView` `PixelArtPanel` `_ViewBridge` `push_view()` |
 | `pet/tools/pixel_art/storage.py` | 画布持久化：pixel_canvases 表的读写。 | `PixelArtStorage` |
 | `pet/tools/pixel_art/style.py` | 像素画面板样式：选择器留在工具内，取值集中在本模块。 |  |
