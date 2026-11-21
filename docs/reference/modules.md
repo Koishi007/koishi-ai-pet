@@ -155,7 +155,7 @@
 | `pet/ui/game_panel.py` | 游戏面板基类 — 通用无边框窗口框架 + 统一渲染入口 + 用户手动收场。 | `GamePanelBase` |
 | `pet/ui/higher_lower_panel.py` | 猜高低面板 — 继承 GamePanelBase，负责牌堆展示与下注提交。 | `HigherLowerPanel` |
 | `pet/ui/icons.py` | 单色图标：把灰阶 PNG 染成墨色并缓存。 | `tinted_icon()` |
-| `pet/ui/ink_button.py` | 带墨色硬投影与按压反馈的按钮：外层画影，内层按钮沿用 QSS 呈现。 | `paint_ink_shadow()` `InkButton` |
+| `pet/ui/ink_button.py` | 带墨色硬投影与按压反馈的按钮：外层画影，内层按钮沿用 QSS 呈现。 | `paint_ink_shadow()` `_InnerButton` `InkButton` |
 | `pet/ui/ink_dialog.py` | UI 层确认对话框：自绘标题栏，按钮用 InkButton。 | `Answer` `InkDialog` `ask()` `notify()` |
 | `pet/ui/log_window.py` | 日志窗口 | `LogRelay` `LogWindowHandler` `LogWindow` |
 | `pet/ui/memory_window.py` | 记忆管理窗口 | `MemoryWindow` |
