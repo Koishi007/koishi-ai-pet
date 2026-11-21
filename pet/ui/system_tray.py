@@ -5,10 +5,11 @@ import sys
 
 import psutil
 
-from PySide6.QtWidgets import QMessageBox, QSystemTrayIcon, QMenu
-from PySide6.QtGui import (QAction, QColor, QCursor, QGuiApplication, QIcon,
+from PySide6.QtWidgets import QSystemTrayIcon, QMenu
+from PySide6.QtGui import (QAction, QColor, QCursor, QIcon,
                            QPainter, QPainterPath, QPen)
 from PySide6.QtCore import QObject, QTimer, Qt
+from pet.ui.ink_dialog import Answer, ask, notify
 from pet.ui.styles import ICON_PATH, MENU_QSS, MENU_SOLID_QSS
 from pet.ui.settings_window import SettingsWindow
 
@@ -197,35 +198,26 @@ class SystemTrayManager(QObject):
         """确认后切换到新会话，结束当前会话并回收旧事件。"""
         if self._agent is None:
             return
-        if self._ask_new_session() != QMessageBox.StandardButton.Yes:
+        if self._ask_new_session() is not Answer.ACCEPT:
             return
         try:
             self._agent.behavior.clear_context()
         except Exception as e:
             logger.exception(f"[Tray] 切换会话失败: {e}")
             parent = self.pet if self.pet.isVisible() else None
-            QMessageBox.warning(parent, "切换失败", str(e))
+            notify(parent, title="切换失败", text=str(e), warning=True)
             return
         logger.info("[Tray] 已切换到新会话")
 
-    def _ask_new_session(self) -> QMessageBox.StandardButton:
+    def _ask_new_session(self) -> Answer:
         """屏幕居中的确认框；返回用户选择。"""
         parent = self.pet if self.pet.isVisible() else None
-        box = QMessageBox(parent)
-        box.setWindowTitle("切到新会话")
-        box.setText(
-            "切到一个新会话，当前会话的上下文会被丢弃，不可恢复。\n\n"
-            "不影响长期记忆\n\n"
-            "确定切到新会话吗？"
-        )
-        box.setStandardButtons(
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-        box.setDefaultButton(QMessageBox.StandardButton.No)
-        screen = QGuiApplication.screenAt(QCursor.pos()) or QGuiApplication.primaryScreen()
-        if screen is not None:
-            box.adjustSize()
-            box.move(screen.availableGeometry().center() - box.rect().center())
-        return box.exec()
+        return ask(
+            parent, title="切到新会话",
+            text=("切到一个新会话，当前会话的上下文会被丢弃，不可恢复。\n\n"
+                  "不影响长期记忆\n\n"
+                  "确定切到新会话吗？"),
+            accept="是", reject="否", center_on_screen=True)
 
     def _on_activated(self, reason):
         if reason == QSystemTrayIcon.ActivationReason.Context:

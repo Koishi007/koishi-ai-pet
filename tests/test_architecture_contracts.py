@@ -877,6 +877,35 @@ def _side_effect_violation(rel, node):
     )
 
 
+# 工具包之外的模块可 import 的工具层框架模块
+_TOOL_FRAMEWORK = {"pet.tools", "pet.tools.context", "pet.tools.registry",
+                   "pet.tools.output", "pet.tools.executor"}
+
+
+def rule_arch010(scanner: Scanner):
+    """§11.18：工具包之外不写死工具，工具贡献经注册表登记。"""
+    for path in scanner.paths:
+        rel = scanner.rel(path)
+        if rel.startswith("pet/tools/"):
+            continue
+        nodes = list(scanner.module_imports(path))
+        nodes += [n for _, n in scanner.deferred_imports(path)]
+        for node in nodes:
+            for target in scanner.import_targets(path, node):
+                if not target.startswith("pet.tools") or target in _TOOL_FRAMEWORK:
+                    continue
+                yield ContractViolation(
+                    rule="ARCH010", title="Runtime module must not import concrete tools",
+                    file=rel, line=node.lineno, evidence=f"import {target}",
+                    violation="工具包之外的模块不得 import 具体工具包，工具的界面与接线经注册表登记。",
+                    why="模块写死工具包后，删除工具目录会让启动失败，工具不再是可插拔单元。",
+                    fix="界面与接线放回工具包，经 registry.add_menu_action 这类通用登记暴露入口。",
+                    example="pet/tools/todo/__init__.py 用 add_menu_action 登记面板入口",
+                    reference=f"{ARCH_DOC} §11.18",
+                    key=(rel, target),
+                )
+
+
 RULE_FUNCS = {
     "ARCH001": rule_arch001,
     "ARCH002": rule_arch002,
@@ -887,6 +916,7 @@ RULE_FUNCS = {
     "ARCH007": rule_arch007,
     "ARCH008": rule_arch008,
     "ARCH009": rule_arch009,
+    "ARCH010": rule_arch010,
 }
 
 
@@ -1012,6 +1042,7 @@ ALLOWLIST: dict[str, list[Debt]] = {
         Debt(("pet/tools/registry.py", "TOOL_REGISTRY"),
              "TOOL_REGISTRY 单例（ADR 0009 装配模式），构造无副作用", f"{ARCH_DOC} §11.12; {ADR_LAYERING}"),
     ],
+    "ARCH010": [],
 }
 
 
@@ -1073,6 +1104,10 @@ def test_arch008_import_cycles():
 
 def test_arch009_import_side_effects():
     _fail(_run_rule("ARCH009", Ledger(ALLOWLIST)))
+
+
+def test_arch010_assembler_tool_imports():
+    _fail(_run_rule("ARCH010", Ledger(ALLOWLIST)))
 
 
 def test_arch000_allowlist_not_stale():

@@ -1,4 +1,4 @@
-﻿"""工具上下文 — 暴露宠物能力供工具主动调用。"""
+"""工具上下文 — 暴露宠物能力供工具主动调用。"""
 
 from __future__ import annotations
 
@@ -7,6 +7,12 @@ import threading
 from typing import Callable
 
 logger = logging.getLogger(__name__)
+
+
+def _rect_dict(rect) -> dict:
+    """QRect 转 {x, y, width, height} 数值字典，工具契约不暴露 Qt 对象。"""
+    return {"x": rect.x(), "y": rect.y(),
+            "width": rect.width(), "height": rect.height()}
 
 
 class ToolContext:
@@ -147,10 +153,25 @@ class ToolContext:
         if self._check_agent():
             self._agent.game_board_requested.emit(game_name, {"action": "close"})
 
-    def show_canvas(self, payload: dict):
-        """把画布画面推给只读窗口（Qt 队列连接，跨线程安全）。"""
-        if self._agent is not None:
-            self._agent.canvas_view_requested.emit(payload)
+    def pet_geometry(self) -> dict:
+        """桌宠窗口几何 {visible, rect, available}；矩形为 {x, y, width, height} 数值。
+
+        未绑定、窗口未建立或采集失败时返回空字典。
+        """
+        if not self._check_agent():
+            return {}
+        try:
+            window = self._agent.pet_window
+            if window is None:
+                return {}
+            screen = window.screen()
+            available = screen.availableGeometry() if screen is not None else None
+            return {"visible": window.isVisible(),
+                    "rect": _rect_dict(window.geometry()),
+                    "available": _rect_dict(available) if available is not None else None}
+        except Exception:
+            logger.exception("[ToolContext] pet geometry failed")
+            return {}
 
     def register_tick(self, name: str, callback: Callable[[], None]):
         if self._check_agent():

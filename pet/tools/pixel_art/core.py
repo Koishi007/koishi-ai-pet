@@ -165,7 +165,7 @@ def _commit(store: _Store, canvas: Canvas, new_index: np.ndarray,
 def _push(store: _Store, canvas: Canvas, changed: int = 0,
           force_show: bool = False) -> None:
     try:
-        TOOL_CTX.show_canvas({
+        _emit({
             "canvas_id": canvas.id,
             "name": canvas.name,
             "size": canvas.size,
@@ -179,6 +179,12 @@ def _push(store: _Store, canvas: Canvas, changed: int = 0,
         })
     except Exception:
         logger.debug("[pixel_art] canvas push failed", exc_info=True)
+
+
+def _emit(payload: dict) -> None:
+    """画面交给面板。panel 是 Qt 重依赖且回指 core，import 延迟到调用时。"""
+    from pet.tools.pixel_art.panel import push_view
+    push_view(payload)
 
 
 def _clean_name(name) -> str:
@@ -487,7 +493,7 @@ def palette(action="get", colors=None, revision=None, canvas_id=None):
 def _push_empty() -> None:
     """没有画布时推空态：窗口显示占位文案并禁用导出。"""
     try:
-        TOOL_CTX.show_canvas({"empty": True, "force_show": True})
+        _emit({"empty": True, "force_show": True})
     except Exception:
         logger.debug("[pixel_art] canvas push failed", exc_info=True)
 

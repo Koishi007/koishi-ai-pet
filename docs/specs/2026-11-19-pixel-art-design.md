@@ -369,7 +369,7 @@ CREATE INDEX IF NOT EXISTS idx_pixel_canvases_updated
 
 目的是让落笔过程可见：线条与色块逐步出现，而不是只在最后看到一张成品文件。窗口不参与绘制，只提供关闭与导出两个动作。
 
-形态参照 `pet/ui/game_panel.py` 的 `GamePanelBase`：无边框、`WindowStaysOnTopHint` 加 `Qt.Tool`、半透明背景与圆角卡片、标题栏带关闭按钮、首次显示定位在桌宠右侧（屏幕放不下时放左侧）、按住可拖动。定位前先 `adjustSize()`：窗口未显示时布局未生效，直接用 `width()` / `height()` 会按 640×480 判断边界。窗口单独实现为 `pet/ui/pixel_art_window.py`，不继承 `GamePanelBase`，后者带游戏倒计时与弃权语义。
+形态参照 `pet/ui/game_panel.py` 的 `GamePanelBase`：无边框、`WindowStaysOnTopHint` 加 `Qt.Tool`、半透明背景与圆角卡片、标题栏带关闭按钮、首次显示定位在桌宠右侧（屏幕放不下时放左侧）、按住可拖动。定位前先 `adjustSize()`：窗口未显示时布局未生效，直接用 `width()` / `height()` 会按 640×480 判断边界。窗口单独实现为 `pet/tools/pixel_art/panel.py`，不继承 `GamePanelBase`，后者带游戏倒计时与弃权语义。
 
 导出按钮取当前显示的那张画布，直接调用 `export.py` 的纯函数：`format="png"`、`scale=256 // size`、`transparent=True`、`grid_overlay=False`、`path` 省略（落桌面）。这条链路不经模型，也不经 `ToolExecutor`：`executor` 服务于模型调用的参数校验、超时与输出投影，而按钮是本地操作，参数固定、没有模型参数可校验。导出在毫秒级完成，直接在 UI 线程执行；异常被捕获后写状态行，不抛到事件循环。
 
@@ -389,9 +389,9 @@ CREATE INDEX IF NOT EXISTS idx_pixel_canvases_updated
 
 ~~~text
 handler 写入成功
-  → TOOL_CTX.show_canvas(payload)        # 新方法，emit Qt 信号（跨线程安全）
-  → PetAgent.canvas_view_requested(dict)
-  → app.py 转给 PixelArtWindow.render(payload)
+  → core._emit(payload)
+  → panel.push_view(payload)             # 工具私有信号桥，排到主线程
+  → PixelArtPanel.render(payload)
   → 60ms 合并，重绘
 ~~~
 
@@ -406,7 +406,7 @@ handler 写入成功
 | 关闭语义 | 用户关窗不中断绘制，也不再自动弹出，直到下一次 `create` |
 | 推送范围 | `create`、`open`、`set`、`paint`、`postprocess`、`palette` 的 `set` / `quantize`、`rename` 都推一次完整 payload；`palette set` 只改色板不改 `index`，不推会让窗口停在旧颜色 |
 | 不推送 | `preview`、`export`、`list`、`delete` 不改变画面，不推 |
-| 无 UI 环境 | `TOOL_CTX` 未绑定或窗口未创建时 `show_canvas` 直接返回，无头测试不受影响 |
+| 无 UI 环境 | 无 QApplication 时 `push_view` 直接返回；PySide6 缺席时 `_emit` 的 import 失败由 `_push` 吞掉，纯逻辑测试不需要 Qt |
 | 只读 | 窗口不改像素，也不改变 `revision`；导出只读当前快照 |
 
 ## §9 导出
@@ -464,10 +464,10 @@ handler 写入成功
 | `pet/tools/pixel_art/export.py` | 新增 | PNG / SVG / JSON / RLE 编码、落点处理、窗口用的 PNG 编码 |
 | `pet/file_intake/paths.py` | 新增 | 桌面与文档根目录解析（含 Windows 已知文件夹）、目录白名单加 `realpath` 校验，供 `file_ops` 与 `export` 共用 |
 | `pet/tools/file_ops/core.py` | 修改 | `_check_path` 改为调用共享函数，行为不变 |
-| `pet/ui/pixel_art_window.py` | 新增 | 只读窗口：NEAREST 渲染、棋盘底、状态行、导出按钮、置顶与拖动、60ms 合并刷新 |
-| `pet/tools/context.py` | 修改 | 新增 `show_canvas(payload)`，从工具线程经信号投递 |
-| `pet/agent/pet_agent.py` | 修改 | 新增 `canvas_view_requested = Signal(object)` |
-| `pet/app.py` | 修改 | 实例化 `PixelArtWindow`，连接 `canvas_view_requested` |
+| `pet/tools/pixel_art/panel.py` | 新增 | 只读窗口：NEAREST 渲染、棋盘底、状态行、导出按钮、置顶与拖动、60ms 合并刷新 |
+| `pet/tools/context.py` | 修改 | 新增 `pet_geometry()`，供面板贴桌宠定位 |
+| `pet/agent/pet_agent.py` | 修改 | 删去 `canvas_view_requested` 信号，跨线程画面投递收进工具包 |
+| `pet/app.py` | 修改 | 删去像素画窗口的实例化与接线，工具界面只经注册表登记 |
 | `pet/brain/tool_loop.py` | 修改 | 串行前缀由 `game__` 字符串改为元组常量 |
 | `docs/README.md` | 修改 | 文档地图登记本文 |
 | `docs/architecture.md` | 修改 | 模块职责表补 `pixel_art` 包（`tests/test_docs.py` 检查覆盖） |
@@ -508,7 +508,7 @@ handler 写入成功
 | 导出 JSON | 读回后与内存 `index` 一致 |
 | 文本预览 | 三档均为 16 列，行数与内容符合采样规则 |
 | 后处理 | `outline` 只在透明邻接处新增像素；`cleanup` 不删除成块笔画 |
-| 窗口 payload | 用假 sink 接收 `show_canvas`，断言字段齐全、`png` 为可解码 PNG、未绑定 agent 时不抛异常 |
+| 窗口 payload | 用假 sink 接收 `push_view`，断言字段齐全、`png` 为可解码 PNG |
 | 窗口渲染 | 离屏构造 `QImage` 后逐格比对颜色，确认放大为整数倍且无中间色 |
 | 按钮导出 | 用按钮的固定参数调用导出函数，落桌面且文件名符合规则；无画布时返回可读错误而不是抛异常 |
 
@@ -549,15 +549,15 @@ handler 写入成功
 | 阶段 | 内容 | 前置 |
 |---|---|---|
 | 1 | `create` / `open` / `list` / `rename` / `delete` / 落库 / `set` / `paint`（图元）/ `export png` / `preview text` | 无 |
-| 2 | 只读画布窗口（含导出按钮；`context.py` / `pet_agent.py` / `app.py` 三处接线） | 阶段 1 |
+| 2 | 只读画布窗口（含导出按钮；非工具文件只动 `context.py` 的 `pet_geometry()`） | 阶段 1 |
 | 3 | 过程式算子、`postprocess`、`palette`、`export svg/json/rle` | 阶段 2 |
 | 4 | `preview image`、网格与坐标、16 档整图快捷路径的提示词调优 | 阶段 3 |
 
-阶段 1 是纯逻辑闭环，可独立验收；窗口要动三个非工具文件，单独成阶段便于回滚。用户在阶段 2 之后就能在绘制过程中看到画面。
+阶段 1 是纯逻辑闭环，可独立验收；窗口收在工具包内，非工具文件只有 `context.py` 的 `pet_geometry()`，单独成阶段便于回滚。用户在阶段 2 之后就能在绘制过程中看到画面。
 
 ## §15 落地结论
 
-按 §14 的阶段 1 与阶段 2 落地，`pet/tools/pixel_art/` 下六个模块，窗口在 `pet/ui/pixel_art_window.py`，单测见 `tests/test_pixel_art.py` 与 `tests/test_pixel_art_window.py`。
+按 §14 的阶段 1 与阶段 2 落地，`pet/tools/pixel_art/` 下八个模块，窗口在 `pet/tools/pixel_art/panel.py`，单测见 `tests/test_pixel_art.py` 与 `tests/test_pixel_art_panel.py`。
 
 | 项 | 实现 | 与设计的差异 |
 |---|---|---|

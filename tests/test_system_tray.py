@@ -1,8 +1,7 @@
 """通知开关测试：总开关关闭后所有通知都不再发送。"""
 
-from PySide6.QtWidgets import QMessageBox
-
 from pet.config import config
+from pet.ui.ink_dialog import Answer
 from pet.ui.system_tray import SystemTrayManager
 
 
@@ -86,7 +85,7 @@ def _new_session_manager() -> SystemTrayManager:
 def test_new_session_cancelled(monkeypatch):
     mgr = _new_session_manager()
     monkeypatch.setattr(mgr, "_ask_new_session",
-                        lambda: QMessageBox.StandardButton.No)
+                        lambda: Answer.REJECT)
 
     mgr._confirm_new_session()
 
@@ -96,7 +95,7 @@ def test_new_session_cancelled(monkeypatch):
 def test_new_session_confirmed(monkeypatch):
     mgr = _new_session_manager()
     monkeypatch.setattr(mgr, "_ask_new_session",
-                        lambda: QMessageBox.StandardButton.Yes)
+                        lambda: Answer.ACCEPT)
 
     mgr._confirm_new_session()
 

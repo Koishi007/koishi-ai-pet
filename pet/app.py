@@ -8,12 +8,13 @@ import sys
 import threading
 from logging.handlers import TimedRotatingFileHandler
 
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QIcon
 from PySide6.QtCore import QObject, QTimer, Qt, Signal, Slot
 
 from pet.ui.log_window import LogRelay, LogWindowHandler
 from pet.ui import settings_hooks
+from pet.ui.ink_dialog import notify
 from pet.ui.qss import ui_font
 from pet.ui.styles import ICON_PATH
 from pet.ui.pet_window import PetWindow
@@ -158,15 +159,10 @@ def _warn_already_running() -> None:
     try:
         _app = QApplication.instance() or QApplication(sys.argv)
         _app.setQuitOnLastWindowClosed(False)
-        _box = QMessageBox(
-            QMessageBox.Icon.Warning,
-            "Koishi AI Pet",
-            "已检测到另一个 Koishi AI Pet 正在运行。\n"
-            "请从系统托盘退出当前实例后重试。",
-            QMessageBox.StandardButton.Ok,
-        )
-        _box.setWindowIcon(QIcon(ICON_PATH))
-        _box.exec()
+        notify(None, title="Koishi AI Pet",
+               text=("已检测到另一个 Koishi AI Pet 正在运行。\n"
+                     "请从系统托盘退出当前实例后重试。"),
+               warning=True)
     except Exception as e:
         logger.error("[Main] 单实例提示失败: %s", e)
 
@@ -333,12 +329,6 @@ def main():
             handler(game_name, payload)
     agent.game_board_requested.connect(_dispatch_game_board)
 
-    # 像素画窗口：只读展示，由 pixel_art 的写入跨线程推送画面
-    from pet.ui.pixel_art_window import PixelArtWindow
-    pixel_art_window = PixelArtWindow()
-    pixel_art_window.set_pet_window(window)
-    agent.canvas_view_requested.connect(pixel_art_window.render)
-
     agent.action_requested.connect(window.queue_enqueue_action)
     agent.action_batch_started.connect(window.on_action_batch_started)
     agent.emotion_requested.connect(
@@ -470,7 +460,8 @@ def main():
         except Exception as e:
             logger.warning(f"shutdown: tray restart notice failed: {e}")
         try:
-            QMessageBox.critical(None, "重启失败", "没能启动新的实例，请手动启动 Koishi。")
+            notify(None, title="重启失败",
+                   text="没能启动新的实例，请手动启动 Koishi。", warning=True)
         except Exception as e:
             logger.warning(f"shutdown: restart failure dialog failed: {e}")
 

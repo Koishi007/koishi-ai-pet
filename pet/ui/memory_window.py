@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QGroupBox, QLabel, QLineEdit,
     QFormLayout, QTableWidget, QTableWidgetItem,
     QHeaderView, QAbstractItemView, QCheckBox,
-    QScrollArea, QTextEdit, QMessageBox,
+    QScrollArea, QTextEdit,
     QSizePolicy, QSpacerItem, QDateEdit,
 )
 from datetime import datetime
@@ -19,6 +19,7 @@ from pet.brain.memory import MEMORY_CATEGORIES
 from pet import theme
 from pet.ui.frame import paint_ink_frame
 from pet.ui.ink_button import InkButton
+from pet.ui.ink_dialog import Answer, ask, notify
 from pet.ui.qss import TITLE_LABEL_QSS, app_stylesheet
 from pet.ui.widgets import NoWheelComboBox, make_icon_badge
 from pet.ui.styles import (
@@ -721,7 +722,7 @@ class MemoryWindow(QWidget):
             self._reselect_memory(memory_id)
             logger.info(f"[MemoryWindow] 编辑记忆 #{memory_id}")
         except Exception as e:
-            QMessageBox.warning(self, "编辑失败", str(e))
+            notify(self, title="编辑失败", text=str(e), warning=True)
 
     def _reselect_memory(self, memory_id: int):
         """根据 memory_id 在表格中查找对应的行并填充详情。"""
@@ -737,12 +738,11 @@ class MemoryWindow(QWidget):
             return
 
         count = len(self._selected_ids)
-        reply = QMessageBox.question(
-            self, "确认删除",
-            f"确定要删除选中的 {count} 条记忆吗？\n此操作不可撤销。",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if reply != QMessageBox.StandardButton.Yes:
+        answer = ask(
+            self, title="确认删除",
+            text=f"确定要删除选中的 {count} 条记忆吗？\n此操作不可撤销。",
+            accept="是", reject="否")
+        if answer is not Answer.ACCEPT:
             return
 
         try:
@@ -752,7 +752,7 @@ class MemoryWindow(QWidget):
             self._clear_detail()
             self._refresh_data()
         except Exception as e:
-            QMessageBox.warning(self, "删除失败", str(e))
+            notify(self, title="删除失败", text=str(e), warning=True)
 
     # 窗口拖拽
 

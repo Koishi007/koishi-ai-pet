@@ -217,7 +217,7 @@ system 动作表换成 `EDGE_ACTION_NAMES` 的八个贴边动作；调度器、�
 | `pet/tools/` | 工具层：注册表（含终端命令登记）、执行器、上下文、输出契约、加载器，以及各工具子包 | `registry.py`、`executor.py`、`context.py`、`output.py` |
 | `pet/terminal/` | 终端能力：命令解析与内建路由、执行核心、策略与沙箱、两个入口共用的 `TerminalRunner`，不依赖 Qt | `core.py`、`policy.py`、`runner.py`、`confirm.py` |
 | `pet/cli/` | 终端本地命令：冒号前缀分发、内建命令、输出排版与帮助；工具命令来自注册表登记，不写死具体工具，不依赖 Qt | `__init__.py`、`catalog.py`、`dispatch.py`、`builtins.py`、`format.py`、`types.py` |
-| `pet/ui/` | 界面层：宠物窗口、各类气泡、表情、粒子、拖拽惯性钟摆、贴边几何、设置/调试/记忆面板、托盘、终端窗口与命令确认卡片、像素画只读窗口 | `pet_window.py`、`particle.py`、`swing.py`、`edge_dock.py`、`settings_window.py`、`terminal_window.py`、`confirm_card.py`、`pixel_art_window.py` |
+| `pet/ui/` | 界面层：宠物窗口、各类气泡、表情、粒子、拖拽惯性钟摆、贴边几何、设置/调试/记忆面板、托盘、终端窗口与命令确认卡片 | `pet_window.py`、`particle.py`、`swing.py`、`edge_dock.py`、`settings_window.py`、`terminal_window.py`、`confirm_card.py` |
 | `pet/food/` | 觅食：需求驱动的地面食物生成与食用 | `food.py` |
 | `pet/game/` | 小游戏：猜数字、猜拳、井字棋、二十问、猜高低 | `gamebase.py` 与各游戏 |
 | `pet/voice/` | 语音输入：热键、麦克风采集、讯飞听写 | `voice_session.py` |
@@ -315,6 +315,9 @@ system 动作表换成 `EDGE_ACTION_NAMES` 的八个贴边动作；调度器、�
 17. **终端命令由工具自己登记**：`:timer`、`:todo`、`:knowledge` 这类命令在工具的 `register(registry)` 里
     用 `add_command()` 声明，`pet/cli` 只聚合 `TOOL_REGISTRY.commands()`，不写死任何工具命令；
     命令只翻译参数，实际调用仍走 `ToolExecutor`。加工具不需要改 `pet/cli`。
+18. **工具包之外不写死工具**：`pet/app.py` 等工具包之外的模块不得 import 具体工具包（`pet/tools/<name>/`），
+    工具的界面与专属接线通过 `registry.add_*`（`add_menu_action` / `add_file_action` /
+    `add_command`）登记后由装配层通用消费；删除整个工具目录不得影响启动。
 
 ### ARCH 规则清单
 
@@ -333,6 +336,7 @@ system 动作表换成 `EDGE_ACTION_NAMES` 的八个贴边动作；调度器、�
 | `ARCH007` | 第 9 条素材成对 |
 | `ARCH008` | 包内不得出现模块级 import 环（见 §14） |
 | `ARCH009` | 第 12 条模块级副作用：只留常量、类型、定义与注册表登记 |
+| `ARCH010` | 第 18 条工具包之外不写死工具（工具贡献经注册表登记） |
 | `ARCH000` | 元规则：债还清后忘删 allowlist 条目时报出 |
 
 既有设计债登记在该测试的 allowlist 里（每条写明原因、文档依据与跟踪 issue），

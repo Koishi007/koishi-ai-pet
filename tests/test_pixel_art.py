@@ -477,15 +477,16 @@ def test_postprocess_region_scope(art):
 
 def test_refresh_view_without_canvas_pushes_empty(art, monkeypatch):
     pushed = []
-    monkeypatch.setattr(core.TOOL_CTX, "show_canvas", pushed.append)
+    monkeypatch.setattr(core, "_emit", pushed.append)
     core.refresh_view()
     assert pushed == [{"empty": True, "force_show": True}]
 
 
 def test_refresh_view_pushes_current_canvas(art, monkeypatch):
     pushed = []
-    core.create("苹果", "16")
-    monkeypatch.setattr(core.TOOL_CTX, "show_canvas", pushed.append)
+    created = core.create("苹果", "16")
+    monkeypatch.setattr(core, "_emit", pushed.append)
     core.refresh_view()
-    assert pushed and pushed[0]["name"] == "苹果"
+    assert pushed and pushed[0]["name"] == created["data"]["name"]
+    assert pushed[0]["revision"] == created["data"]["revision"]
     assert pushed[0]["force_show"] is True

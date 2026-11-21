@@ -191,7 +191,7 @@ def tinted_icon(path: str, color: str, size: int = 28) -> QIcon:
 | `memory_window.py` | 14 处 `setStyleSheet`、5 处色值 | 列表、筛选、详情、按钮换 `qss` 与令牌 |
 | `log_window.py` | 6 处 `setStyleSheet`、1 处色值 | 同上，等宽字体保留 |
 | `debug_window.py` | 6 处 `setStyleSheet` | 同上，JSON 区换 `TEXTEDIT_QSS` |
-| `pixel_art_window.py` | 5 处 `setStyleSheet`、4 处色值 | 画布区保持中性底，避免影响取色；工具栏与按钮换令牌 |
+| `pixel_art/panel.py` | 5 处 `setStyleSheet`、4 处色值 | 画布区保持中性底，避免影响取色；工具栏与按钮换令牌 |
 | `system_tray.py` | 菜单 2 处色值 | 菜单与动作项换 `MENU_QSS` |
 | `pet_window.py` | 拖拽高亮 2 处色值 | 高亮色换 `ACCENT_SOFT` |
 

@@ -3,7 +3,7 @@
 import random
 from pathlib import Path
 
-from PySide6.QtWidgets import QWidget, QHBoxLayout, QPushButton, QBoxLayout, QProgressBar
+from PySide6.QtWidgets import QWidget, QHBoxLayout, QBoxLayout, QProgressBar
 from PySide6.QtCore import Qt, QSize, QTimer, QPoint, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup
 from pet import theme
 from pet.ui.icons import tinted_icon
@@ -130,9 +130,9 @@ class MusicBubble(QWidget):
         self._panel.setStyleSheet(MUSIC_PANEL_QSS)
         panel_layout = QHBoxLayout(self._panel)
         panel_layout.setContentsMargins(4, 0, 4, 0)
-        panel_layout.setSpacing(0)
+        panel_layout.setSpacing(4)
 
-        self._btn_prev = QPushButton()
+        self._btn_prev = InkButton(radius=theme.RADIUS_SM, shadow_offset=(1, 2))
         self._btn_prev.setFixedSize(32, 32)
         self._btn_prev.setIcon(_icon("music_previous.png", 20))
         self._btn_prev.setIconSize(QSize(20, 20))
@@ -140,7 +140,7 @@ class MusicBubble(QWidget):
         self._btn_prev.clicked.connect(lambda: (self._send_media_key(_KEY_PREV), self._say(_PREV_RESPONSES)))
         panel_layout.addWidget(self._btn_prev)
 
-        self._btn_play = QPushButton()
+        self._btn_play = InkButton(radius=theme.RADIUS_SM, shadow_offset=(1, 2))
         self._btn_play.setFixedSize(32, 32)
         self._btn_play.setIcon(_icon("music_pause.png", 20))
         self._btn_play.setIconSize(QSize(20, 20))
@@ -148,7 +148,7 @@ class MusicBubble(QWidget):
         self._btn_play.clicked.connect(self._on_play_clicked)
         panel_layout.addWidget(self._btn_play)
 
-        self._btn_next = QPushButton()
+        self._btn_next = InkButton(radius=theme.RADIUS_SM, shadow_offset=(1, 2))
         self._btn_next.setFixedSize(32, 32)
         self._btn_next.setIcon(_icon("music_next.png", 20))
         self._btn_next.setIconSize(QSize(20, 20))
@@ -156,7 +156,7 @@ class MusicBubble(QWidget):
         self._btn_next.clicked.connect(lambda: (self._send_media_key(_KEY_NEXT), self._say(_NEXT_RESPONSES)))
         panel_layout.addWidget(self._btn_next)
 
-        self._btn_vol_down = QPushButton()
+        self._btn_vol_down = InkButton(radius=theme.RADIUS_SM, shadow_offset=(1, 2))
         self._btn_vol_down.setFixedSize(32, 32)
         self._btn_vol_down.setIcon(_icon("volume_down.png", 20))
         self._btn_vol_down.setIconSize(QSize(20, 20))
@@ -165,7 +165,7 @@ class MusicBubble(QWidget):
         panel_layout.addWidget(self._btn_vol_down)
 
         # 静音切换按钮（图标随 _is_muted 状态切换）
-        self._btn_mute = QPushButton()
+        self._btn_mute = InkButton(radius=theme.RADIUS_SM, shadow_offset=(1, 2))
         self._btn_mute.setFixedSize(32, 32)
         self._btn_mute.setIcon(_icon("volume_mute.png" if self._is_muted else "volume.png", 20))
         self._btn_mute.setIconSize(QSize(20, 20))
@@ -173,7 +173,7 @@ class MusicBubble(QWidget):
         self._btn_mute.clicked.connect(self._on_mute_clicked)
         panel_layout.addWidget(self._btn_mute)
 
-        self._btn_vol_up = QPushButton()
+        self._btn_vol_up = InkButton(radius=theme.RADIUS_SM, shadow_offset=(1, 2))
         self._btn_vol_up.setFixedSize(32, 32)
         self._btn_vol_up.setIcon(_icon("volume_up.png", 20))
         self._btn_vol_up.setIconSize(QSize(20, 20))

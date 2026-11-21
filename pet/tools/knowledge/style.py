@@ -1,6 +1,9 @@
-"""知识库面板样式：只引用令牌，选择器留在工具内。"""
+"""知识库面板样式：选择器留在工具内，取值集中在本模块。"""
 
 from pet import theme
+
+# 34px 关闭钮的胶囊半径，取高度一半
+CLOSE_RADIUS = 17
 
 PANEL_QSS = f"""
 QWidget#kbBg {{
@@ -31,7 +34,7 @@ CLOSE_QSS = f"""
 QPushButton {{
     background: transparent;
     border: {theme.BORDER}px solid transparent;
-    border-radius: 17px;
+    border-radius: {CLOSE_RADIUS}px;
     font-size: 14px;
     color: {theme.INK_MUTED};
 }}

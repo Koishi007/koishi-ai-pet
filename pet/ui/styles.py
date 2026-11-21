@@ -6,7 +6,6 @@ import sys
 
 from PySide6.QtCore import QEvent, QSize
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import QPushButton
 
 from pet import theme
 from pet.ui.icons import tinted_icon
@@ -86,7 +85,7 @@ def bubble_column_y(pet_top: int, row_offset: int, height: int, geo) -> int:
 def _title_button_qss(hover_color: str, base_color: str,
                       text_color: str = "#fff", font_size: str = "18px") -> str:
     return f"""
-        QPushButton {{ background: transparent; border: {theme.BORDER}px solid transparent;
+        QPushButton {{ background: {theme.SURFACE}; border: {theme.BORDER}px solid {theme.INK};
                      border-radius: 17px; font-size: {font_size}; color: {base_color}; }}
         QPushButton:hover {{ background: {hover_color}; border-color: {theme.INK};
                      color: {text_color}; }}
@@ -132,9 +131,9 @@ class _IconTitleButton(InkButton):
 def make_title_button(text: str, hover_color: str,
                       base_color: str = _COLOR_TEXT_MUTED,
                       text_color: str = "#fff",
-                      font_size: str = "18px") -> QPushButton:
+                      font_size: str = "18px") -> InkButton:
     """创建无边框面板窗口标题栏上的圆形按钮（关闭 / 最小化）。"""
-    btn = QPushButton(text)
+    btn = InkButton(text, radius=17, shadow_offset=(1, 2))
     btn.setFixedSize(34, 34)
     btn.setStyleSheet(_title_button_qss(hover_color, base_color, text_color, font_size))
     return btn

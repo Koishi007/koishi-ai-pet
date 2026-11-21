@@ -68,9 +68,11 @@ QPushButton {{
 }}
 QPushButton:hover {{
     background: {theme.SURFACE_WARM};
+    color: {theme.INK};
 }}
 QPushButton:pressed {{
     background: {theme.PAPER_DEEP};
+    color: {theme.INK};
 }}
 QPushButton:checked {{
     background: {theme.PRIMARY};
@@ -95,9 +97,11 @@ QPushButton {{
 }}
 QPushButton:hover {{
     background: {theme.PRIMARY_HOVER};
+    color: {theme.TEXT_ON_PRIMARY};
 }}
 QPushButton:pressed {{
     background: {theme.PRIMARY_DEEP};
+    color: {theme.TEXT_ON_PRIMARY};
 }}
 QPushButton:disabled {{
     background: {theme.PAPER_DEEP};
@@ -608,9 +612,9 @@ QWidget#musicPanel {{
 
 MUSIC_ICON_BUTTON_QSS = f"""
 QPushButton {{
-    background: transparent;
-    border: none;
-    border-radius: 6px;
+    background: {theme.SURFACE};
+    border: {theme.BORDER}px solid {theme.INK};
+    border-radius: {theme.RADIUS_SM}px;
 }}
 QPushButton:hover {{
     background: {theme.PRIMARY_SOFT};

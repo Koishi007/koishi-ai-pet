@@ -111,14 +111,16 @@
 | `pet/tools/knowledge/chunker.py` | 轻量文本分块器 — 按段落 + 字数窗口切分。 | `chunk_text()` |
 | `pet/tools/knowledge/panel.py` | 知识库管理面板 — 添加、导入文件、搜索、删除。 | `KnowledgePanel` `show_panel()` |
 | `pet/tools/knowledge/storage.py` | 知识库存储层 — SQLite + sqlite-vec 向量检索。 | `KnowledgeStorage` |
-| `pet/tools/knowledge/style.py` | 知识库面板样式：只引用令牌，选择器留在工具内。 |  |
+| `pet/tools/knowledge/style.py` | 知识库面板样式：选择器留在工具内，取值集中在本模块。 |  |
 | `pet/tools/output.py` | 工具输出的声明与投影：schema 约束规范值，render 产出内部内容块，由编码层压平成 wire 格式。 | `TextBlock` `ImageBlock` `ToolOutputDefinition` `validate()` `render_turn()` `render_text()` |
 | `pet/tools/pixel_art/__init__.py` | pixel_art 工具 — 点阵绘画：有限色板、矩阵与算子落笔、落库与导出 | `guarded()` `register()` |
 | `pet/tools/pixel_art/canvas.py` | 像素画数据模型：色板、矩阵解析、RLE 编解码、文本预览。 | `PixelArtError` `Canvas` `new_index()` `rgb_of()` `hex_of()` `parse_hex()` |
 | `pet/tools/pixel_art/core.py` | 像素画工具核心：画布缓存、revision 校验与十一个方法的 handler。 | `_Store` `_Bootstrap` `reset_store()` `create()` `open_canvas()` `list_canvases()` |
 | `pet/tools/pixel_art/export.py` | 像素画导出：PNG / SVG / JSON / RLE 渲染与落点处理。 | `default_scale()` `to_png_bytes()` `to_svg()` `to_json()` `to_rle()` `resolve_path()` |
 | `pet/tools/pixel_art/ops.py` | 像素画算子：图元栅格化、过程式填充与后处理。 | `apply_op()` `mirror_op()` `apply_postprocess()` |
+| `pet/tools/pixel_art/panel.py` | 像素画只读面板：跟随每次落笔刷新，展示画布内容与 revision。 | `CanvasView` `PixelArtPanel` `_ViewBridge` `push_view()` |
 | `pet/tools/pixel_art/storage.py` | 画布持久化：pixel_canvases 表的读写。 | `PixelArtStorage` |
+| `pet/tools/pixel_art/style.py` | 像素画面板样式：选择器留在工具内，取值集中在本模块。 |  |
 | `pet/tools/registry.py` | 工具注册表 — 自动发现、注册、描述可用工具，并聚合工具登记的终端命令。 | `ToolMethod` `ToolDef` `ToolCommand` `ToolRegistry` `food_tool_available()` |
 | `pet/tools/system_monitor/__init__.py` | （模块未提供 docstring） | `register()` |
 | `pet/tools/system_monitor/core.py` | （模块未提供 docstring） | `get_overview()` `get_top_processes()` `get_memory_detail()` `get_network()` |
@@ -130,7 +132,7 @@
 | `pet/tools/todo/panel.py` | Todo 管理面板 | `TodoPanel` `show_panel()` |
 | `pet/tools/todo/storage.py` | Todo 持久化存储 — SQLite 数据层。 | `TodoStorage` |
 | `pet/tools/todo/store.py` | todo 工具实例的持有者 — 工具入口与面板共享同一实例，避免面板回指工具包。 | `init_instance()` `get_instance()` |
-| `pet/tools/todo/style.py` | 待办面板样式：只引用令牌，选择器留在工具内。 |  |
+| `pet/tools/todo/style.py` | 待办面板样式：选择器留在工具内，取值集中在本模块。 |  |
 | `pet/tools/weather/__init__.py` | （模块未提供 docstring） | `register()` |
 | `pet/tools/weather/core.py` | 通过 Open-Meteo 免费 API 获取实时天气和预报。 | `get_current()` `get_forecast()` |
 | `pet/tools/web_search/__init__.py` | 支持 SearXNG（自建）、DeepSeek 搜索 API、Tavily 和 Bing Web Search API。 | `register()` |
@@ -154,13 +156,13 @@
 | `pet/ui/higher_lower_panel.py` | 猜高低面板 — 继承 GamePanelBase，负责牌堆展示与下注提交。 | `HigherLowerPanel` |
 | `pet/ui/icons.py` | 单色图标：把灰阶 PNG 染成墨色并缓存。 | `tinted_icon()` |
 | `pet/ui/ink_button.py` | 带墨色硬投影与按压反馈的按钮：外层画影，内层按钮沿用 QSS 呈现。 | `paint_ink_shadow()` `InkButton` |
+| `pet/ui/ink_dialog.py` | UI 层确认对话框：自绘标题栏，按钮用 InkButton。 | `Answer` `InkDialog` `ask()` `notify()` |
 | `pet/ui/log_window.py` | 日志窗口 | `LogRelay` `LogWindowHandler` `LogWindow` |
 | `pet/ui/memory_window.py` | 记忆管理窗口 | `MemoryWindow` |
 | `pet/ui/music_bubble.py` | 桌宠音乐控制气泡 - 操控系统媒体播放 | `MusicBubble` |
 | `pet/ui/particle.py` | 桌宠粒子特效 | `Particle` `_SpiralGlyph` `ParticleWidget` |
 | `pet/ui/pet_animations.py` | 桌宠帧动画模块 —— 基于 JSON 配置的帧序列播放。 | `PetAnimator` |
 | `pet/ui/pet_window.py` | 扁平圆角菜单基类 — Windows 下自绘圆角背景，macOS 走原生。 | `_FlatMenuBase` `StickyMenu` `_SpriteLabel` `PetWindow` |
-| `pet/ui/pixel_art_window.py` | 像素画只读窗口 — 跟随每次落笔刷新，展示画布内容与 revision。 | `CanvasView` `PixelArtWindow` |
 | `pet/ui/qss.py` | 由令牌拼装的公共控件样式。 | `bubble_button_qss()` `chip_qss()` `ui_font()` `app_stylesheet()` |
 | `pet/ui/rps_panel.py` | 猜拳面板 — 继承 GamePanelBase，负责出拳展示与点击提交。 | `RpsPanel` |
 | `pet/ui/settings_actions.py` | 设置页的后台动作：连通性测试、模型列表、记忆汇总与热键录制 | `apply_pet_scale()` `SettingsActions` |
@@ -188,4 +190,4 @@
 | `pet/voice/voice_session.py` | 语音会话编排：麦克风采集 → 讯飞识别 | `VoiceSession` |
 | `pet/voice/xunfei_stt.py` | 讯飞语音听写 (iat) WebSocket API 封装 | `XunfeiSTT` |
 
-共 180 个模块。
+共 182 个模块。

@@ -6,7 +6,7 @@ import logging
 
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import (QApplication, QHBoxLayout, QLabel, QMessageBox,
+from PySide6.QtWidgets import (QApplication, QHBoxLayout, QLabel,
                                QTabWidget, QVBoxLayout, QWidget)
 
 from pet.auto_start import set_auto_start
@@ -15,6 +15,7 @@ from pet import theme
 from pet.ui.frame import paint_ink_frame
 from pet.ui.icons import tinted_icon
 from pet.ui.ink_button import InkButton
+from pet.ui.ink_dialog import Answer, ask, notify
 from pet.ui.qss import (CHECKMARK_SVG, TAB_PILL_QSS, TITLE_LABEL_QSS,
                         app_stylesheet)
 from pet.ui.settings_actions import SettingsActions, apply_pet_scale
@@ -164,15 +165,8 @@ class SettingsWindow(QWidget):
         for i, btn in enumerate(self._tab_buttons):
             btn.setChecked(i == index)
 
-    def _msg(self, title: str, text: str, *,
-             icon: QMessageBox.Icon = QMessageBox.Icon.NoIcon,
-             warning: bool = False):
-        box = QMessageBox(self)
-        box.setWindowTitle(title)
-        box.setText(text)
-        box.setIcon(icon if warning else QMessageBox.Icon.NoIcon)
-        box.addButton("确定", QMessageBox.ButtonRole.AcceptRole)
-        box.exec()
+    def _msg(self, title: str, text: str, *, warning: bool = False):
+        notify(self, title=title, text=text, warning=warning)
 
     def load_values(self):
         """从 config 填充各控件，每次打开窗口时调用。"""
@@ -227,22 +221,16 @@ class SettingsWindow(QWidget):
     def closeEvent(self, event):
         """关闭前检查未保存修改，清理后台线程。"""
         if self.form.is_dirty():
-            box = QMessageBox(self)
-            box.setWindowTitle("未保存")
-            box.setText("有修改尚未保存，是否保存？")
-            box.setIcon(QMessageBox.Icon.NoIcon)
-            btn_save = box.addButton("保存", QMessageBox.ButtonRole.AcceptRole)
-            btn_discard = box.addButton("不保存", QMessageBox.ButtonRole.DestructiveRole)
-            btn_cancel = box.addButton("取消", QMessageBox.ButtonRole.RejectRole)
-            box.setDefaultButton(btn_cancel)
-            box.exec()
-            clicked = box.clickedButton()
-            if clicked == btn_save:
+            answer = ask(
+                self, title="未保存", text="有修改尚未保存，是否保存？",
+                accept="保存", destructive="不保存", reject="取消",
+                default=Answer.REJECT)
+            if answer is Answer.ACCEPT:
                 self._on_save()
                 if self.form.is_dirty():
                     event.ignore()
                     return
-            elif clicked == btn_cancel:
+            elif answer is Answer.REJECT:
                 event.ignore()
                 return
         self.actions.shutdown()

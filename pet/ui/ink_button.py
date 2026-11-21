@@ -79,6 +79,10 @@ class InkButton(QWidget):
     def focusPolicy(self):
         return self._inner.focusPolicy()
 
+    def setFocus(self, *args) -> None:
+        # 焦点落点属于按钮本体
+        self._inner.setFocus(*args)
+
     def resizeEvent(self, event):
         self._inner.setGeometry(
             0, 0, max(1, self.width() - self._dx), max(1, self.height() - self._dy))
