@@ -110,22 +110,15 @@ def _literal_ip_reject_reason(host: str) -> str:
     return "" if _is_public_ip(ip) else _REJECT_PRIVATE
 
 
-def _resolved_reject_reason(host: str, port) -> str:
-    """域名解析出非公网地址时返回原因。
-
-    只用于本地抓取：请求把连接发到解析出的地址，需要拦内网。
-    远端 API 抓取由服务方发起连接，本机 DNS 结果不构成风险。
-    """
-    if port is None:
-        return ""
+def _resolved_reject_reason(host: str, port: int) -> str:
+    """域名解析出非公网地址时返回原因，用于本地抓取前。"""
     return "" if _resolve_public_ips(host, port) else _REJECT_PRIVATE
 
 
 def _url_reject_reason(url: str) -> str:
     """URL 不可抓取时返回原因，可抓取返回空字符串。
 
-    只校验协议、主机名与字面 IP。域名解析校验在本地抓取前单独做，
-    代理的 fake-ip 把域名解析到保留段时不影响远端 API 抓取。
+    校验协议、主机名与字面 IP，不解析域名。
     """
     try:
         parts = urlsplit(url)
