@@ -98,20 +98,44 @@ def _pin_target(url: str) -> tuple[str, str]:
     return pinned, host
 
 
+_REJECT_PRIVATE = "url 指向内网或本机地址，已拒绝"
+
+
+def _literal_ip_reject_reason(host: str) -> str:
+    """主机名是字面 IP 且非公网时返回原因；域名返回空字符串。"""
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return ""
+    return "" if _is_public_ip(ip) else _REJECT_PRIVATE
+
+
+def _resolved_reject_reason(host: str, port) -> str:
+    """域名解析出非公网地址时返回原因。
+
+    只用于本地抓取：请求把连接发到解析出的地址，需要拦内网。
+    远端 API 抓取由服务方发起连接，本机 DNS 结果不构成风险。
+    """
+    if port is None:
+        return ""
+    return "" if _resolve_public_ips(host, port) else _REJECT_PRIVATE
+
+
 def _url_reject_reason(url: str) -> str:
-    """URL 不可抓取时返回原因，可抓取返回空字符串。"""
+    """URL 不可抓取时返回原因，可抓取返回空字符串。
+
+    只校验协议、主机名与字面 IP。域名解析校验在本地抓取前单独做，
+    代理的 fake-ip 把域名解析到保留段时不影响远端 API 抓取。
+    """
     try:
         parts = urlsplit(url)
-        port = parts.port or (443 if parts.scheme == "https" else 80)
     except ValueError:
         return "url 格式无效"
     if parts.scheme not in ("http", "https"):
         return "url 必须是以 http:// 或 https:// 开头的地址"
     if not parts.hostname:
         return "url 缺少主机名"
-    if not _resolve_public_ips(parts.hostname, port):
-        return "url 指向内网或本机地址，已拒绝"
-    return ""
+    return _literal_ip_reject_reason(parts.hostname)
 
 
 def _download_html(url: str, timeout: int = 20) -> str:
@@ -626,6 +650,15 @@ def fetch(url: str, max_chars: int = 10000) -> dict:
                 "headline": f"抓取网页「{title or url}」（{len(text)} 字符）",
                 "body": text,
             }
+
+    try:
+        parts = urlsplit(url)
+        port = parts.port or (443 if parts.scheme == "https" else 80)
+    except ValueError:
+        return {"error": "抓取失败：url 格式无效"}
+    resolved = _resolved_reject_reason(parts.hostname, port)
+    if resolved:
+        return {"error": f"抓取失败：{resolved}"}
 
     text = _extract_text(url, max_chars)
     if not text:
