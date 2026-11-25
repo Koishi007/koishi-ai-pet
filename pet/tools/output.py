@@ -30,7 +30,7 @@ class TextBlock:
 
 @dataclass(frozen=True)
 class ImageBlock:
-    """图片块；由编码层转成 user 消息里的 image_url，不进 tool 消息。"""
+    """图片块；由编码层转成 user 消息里的图片片段，不进 tool 消息。"""
     base64: str
     mime: str
     caption: str = ""

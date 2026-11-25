@@ -57,6 +57,8 @@
 | [specs/2026-11-04-terminal-plan.md](specs/2026-11-04-terminal-plan.md) | 实施计划 | 手写 | 该改动拆成的七个任务：纯逻辑包与策略、执行核心、元工具注册、确认通道、界面、本地命令、文档收尾 | 执行时逐项勾选 |
 | [specs/2026-11-19-pixel-art-design.md](specs/2026-11-19-pixel-art-design.md) | 设计文档 | 手写 | 点阵画工具：三档画布与有限色板、矩阵与算子两套落笔、revision 乐观锁与并行串行化、文本矩阵自检、只读画布窗口与最近邻导出 | 动手前写，落地后补齐结论 |
 | [specs/2026-11-20-ui-style-refactor-design.md](specs/2026-11-20-ui-style-refactor-design.md) | 设计文档 | 手写 | 手绘风 UI 样式改造：令牌分层、QSS 表达边界、28 个文件的内联样式收敛、工具样式自包含约定 | 动手前写，落地后补齐结论 |
+| [specs/2026-11-23-llm-provider-abstraction-design.md](specs/2026-11-23-llm-provider-abstraction-design.md) | 设计文档 | 手写 | 模型供应商抽象：中性消息与错误类型、provider 协议与工厂、OpenAI 与 Gemini 的编码映射、配置面与界面派生 | 改供应商边界或新增通道时对照 |
+| [specs/2026-11-25-reasoning-effort-design.md](specs/2026-11-25-reasoning-effort-design.md) | 设计文档 | 手写 | 通用推理强度：中性档位词表、模型预设与端点清单、通道协议值映射、逐字段降级阶梯、界面派生 | 改推理强度或新增通道的档位时对照 |
 | [../CHANGELOG.md](../CHANGELOG.md) | 事实参考 | 生成 | 按版本分组的变更记录 | `python scripts/gen_changelog.py` |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | 操作指南 | 手写 | 开发流程、测试、提交与 PR 规范 | 流程变化时人工更新 |
 

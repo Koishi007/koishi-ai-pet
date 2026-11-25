@@ -21,7 +21,6 @@ class Profile:
     """模型能力：只影响投影形态，不影响存储。"""
     name: str = "native"
     tool_channel: str = "native"
-    supports_image: bool = False
     replay_args_mode: str = "minimal"
 
     def __post_init__(self):
@@ -163,7 +162,7 @@ def _call_aside(call: Event) -> str:
 def _message_aside(call: dict) -> str:
     """从已投影的 tool_call 参数取 aside；缺失或损坏时返回空。"""
     try:
-        args = json.loads((call.get("function") or {}).get("arguments") or "{}")
+        args = json.loads(call.get("arguments") or "{}")
     except (json.JSONDecodeError, TypeError):
         return ""
     value = args.get("aside")
@@ -505,12 +504,13 @@ def _render_group(group: _Group, profile: Profile) -> list[dict]:
         message = {"role": "assistant", "content": content}
         message["tool_calls"] = [
             {"id": c.refs.get("tool_call_id", f"call_{c.seq}"),
-             "type": "function",
-             "function": {"name": c.payload.get("name", ""),
-                          "arguments": replay_args(c, profile.replay_args_mode)}}
+             "name": c.payload.get("name", ""),
+             "arguments": replay_args(c, profile.replay_args_mode)}
             for c in group.calls
         ]
         out = [message]
+        # 结果必须按 calls 的顺序输出：Gemini 的 function_response 按顺序与
+        # function_call 配对，同名并行调用只能靠此顺序区分
         for call in group.calls:
             result = group.result_for(call)
             out.append({

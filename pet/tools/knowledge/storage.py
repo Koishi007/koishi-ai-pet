@@ -341,5 +341,9 @@ class KnowledgeStorage:
         }
 
     def close(self):
+        """释放数据库连接与嵌入客户端。"""
         with self._lock:
             self._conn.close()
+        close = getattr(self._embedder, "close", None)
+        if close is not None:
+            close()

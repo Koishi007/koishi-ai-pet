@@ -8,15 +8,23 @@ from PySide6.QtWidgets import (QFormLayout, QGroupBox, QHBoxLayout, QLabel,
                                QLineEdit, QScrollArea, QTextEdit,
                                QVBoxLayout, QWidget)
 
+from pet.brain.providers.registry import (channel_choices, config_keys,
+                                           config_keys_for, reasoning_efforts,
+                                           url_placeholder)
+from pet.brain.reasoning import effective_efforts
 from pet.config import PET_SCALE_STEPS, config
 from pet import theme
 from pet.ui.ink_button import InkButton
 from pet.ui.settings_fields import SettingsForm, SettingsWidgets
-from pet.ui.settings_spec import TAB_SPECS
+from pet.ui.settings_spec import EFFORT_HINT, TAB_SPECS, effort_items
 from pet.ui.styles import (BUTTON_PRIMARY_QSS, INPUT_HIGHLIGHT_QSS,
                            SCROLLBAR_QSS, TEXTEDIT_QSS,
                            _COLOR_TEXT_MUTED, _COLOR_TEXT_SEC)
 from pet.ui.widgets import NoWheelComboBox
+
+
+_EFFORT_UNSUPPORTED = "当前模型不支持推理强度设置"
+_EFFORT_THINKING_OFF = "关闭思考时不下发推理强度"
 
 
 def _hint(text: str) -> QLabel:
@@ -41,6 +49,8 @@ class SettingsTabs:
     def __init__(self, form: SettingsForm):
         self.form = form
         self.widgets = SettingsWidgets()
+        # 各档位下拉上次写入的选项，输入过程中不重复重建
+        self._effort_cache: dict[int, tuple] = {}
 
     def build(self) -> tuple[tuple[str, QWidget], ...]:
         builders = {
@@ -54,6 +64,11 @@ class SettingsTabs:
     def bind(self, actions) -> None:
         w = self.widgets
         w.brain_combo.currentTextChanged.connect(self.on_mode_changed)
+        w.provider_combo.currentTextChanged.connect(self._apply_provider_visibility)
+        w.provider_alt_combo.currentIndexChanged.connect(self._apply_provider_visibility)
+        w.thinking_check.toggled.connect(self._sync_effort_enabled)
+        for edit in (w.model_edit, w.alt_model_edit):
+            edit.textChanged.connect(lambda _text: self._refresh_effort_options())
         w.btn_switch_profile.clicked.connect(actions.switch_profile)
         w.btn_fetch_models.clicked.connect(lambda: actions.fetch_models("primary"))
         w.btn_fetch_models_alt.clicked.connect(
@@ -90,7 +105,6 @@ class SettingsTabs:
             inner.setSpacing(spacing)
         return content, inner
 
-    # ------------------------------------------------------------------
 
     def _connection(self) -> QWidget:
         f, w = self.form, self.widgets
@@ -104,8 +118,12 @@ class SettingsTabs:
         f.fields["BRAIN"] = w.brain_combo
         form.addRow("调用模式:", w.brain_combo)
 
+        w.provider_combo = f.combo_with_data("LLM_PROVIDER", list(channel_choices()))
+        form.addRow("首选通道:", w.provider_combo)
+
         w.url_edit = f.line("LLM_URL", "https://api.example.com/v1")
         form.addRow("首选 API 地址:", w.url_edit)
+        w.url_label = form.labelForField(w.url_edit)
 
         w.ollama_url_edit = f.line("OLLAMA_BASE_URL", "http://localhost:11434/v1")
         form.addRow("Ollama 地址:", w.ollama_url_edit)
@@ -126,6 +144,14 @@ class SettingsTabs:
         model_row.addWidget(w.btn_fetch_models)
         form.addRow("首选模型名称:", model_row)
 
+        w.effort_combo = f.combo_with_data(
+            "LLM_REASONING_EFFORT",
+            effort_items(reasoning_efforts(w.provider_combo.currentData()), "由模型决定"))
+        form.addRow("推理强度:", w.effort_combo)
+        w.effort_label = form.labelForField(w.effort_combo)
+        w.effort_hint = _hint(EFFORT_HINT)
+        form.addRow("", w.effort_hint)
+
         w.temperature_edit = f.line("LLM_TEMPERATURE", "0.7", QDoubleValidator(0, 2, 2))
         w.temperature_edit.setMaxLength(4)
         form.addRow("采样温度:", w.temperature_edit)
@@ -135,9 +161,6 @@ class SettingsTabs:
 
         w.tool_rounds_edit = f.line("LLM_TOOL_MAX_ROUNDS", "99", QIntValidator(10, 99))
         form.addRow("工具调用最大轮次:", w.tool_rounds_edit)
-
-        w.cache_check = f.check("LLM_CACHE_PROMPT", "Prompt 缓存")
-        form.addRow("", w.cache_check)
 
         w.thinking_check = f.check("LLM_THINKING_DISABLED", "关闭思考模式")
         form.addRow("", w.thinking_check)
@@ -170,8 +193,12 @@ class SettingsTabs:
 
         alt_form = QFormLayout()
         alt_form.setSpacing(8)
+        w.provider_alt_combo = f.combo_with_data(
+            "LLM_PROVIDER_ALT", list(channel_choices()))
+        alt_form.addRow("备选通道:", w.provider_alt_combo)
         w.alt_url_edit = f.line("LLM_URL_ALT", "https://api.example.com/v1")
         alt_form.addRow("备选 API 地址:", w.alt_url_edit)
+        w.alt_url_label = alt_form.labelForField(w.alt_url_edit)
         alt_key_row = f.secret_row("LLM_KEY_ALT", "sk-...")
         w.alt_key_edit = f.fields["LLM_KEY_ALT"]
         w.alt_key_toggle = alt_key_row.itemAt(1).widget()
@@ -187,6 +214,13 @@ class SettingsTabs:
         w.btn_fetch_models_alt.setFixedWidth(84)
         alt_model_row.addWidget(w.btn_fetch_models_alt)
         alt_form.addRow("备选模型名称:", alt_model_row)
+
+        alt_channel = w.provider_alt_combo.currentData() or w.provider_combo.currentData()
+        w.alt_effort_combo = f.combo_with_data(
+            "LLM_REASONING_EFFORT_ALT",
+            effort_items(reasoning_efforts(alt_channel), "沿用首选"))
+        alt_form.addRow("备选推理强度:", w.alt_effort_combo)
+        w.alt_effort_label = alt_form.labelForField(w.alt_effort_combo)
         switch_layout.addLayout(alt_form)
         inner.addWidget(switch_group)
 
@@ -209,28 +243,118 @@ class SettingsTabs:
         """根据调用模式启用/禁用对应字段。"""
         w = self.widgets
         llm_fields = [w.url_edit, w.llm_key_edit, w.key_toggle,
-                      w.alt_url_edit, w.alt_key_edit, w.alt_key_toggle,
-                      w.cache_check]
+                      w.alt_url_edit, w.alt_key_edit, w.alt_key_toggle]
         ollama_fields = [w.ollama_url_edit]
         common_fields = [w.model_edit, w.btn_fetch_models,
                          w.alt_model_edit, w.btn_fetch_models_alt,
                          w.btn_switch_profile, w.fallback_check,
                          w.temperature_edit, w.tool_rounds_edit,
                          w.thinking_check, w.thinking_hint,
-                         w.btn_test, w.label_test, w.test_output]
+                         w.btn_test, w.label_test, w.test_output,
+                         w.provider_alt_combo, w.effort_combo, w.effort_hint,
+                         w.alt_effort_combo]
         if mode == "local":
-            for widget in llm_fields + ollama_fields + common_fields:
+            for widget in llm_fields + ollama_fields + common_fields + [w.provider_combo]:
                 widget.setEnabled(False)
         elif mode == "ollama":
             for widget in llm_fields:
                 widget.setEnabled(False)
             for widget in ollama_fields + common_fields:
                 widget.setEnabled(True)
+            # Ollama 固定走 OpenAI 兼容接口，不选通道
+            w.provider_combo.setEnabled(False)
         else:
             for widget in ollama_fields:
                 widget.setEnabled(False)
             for widget in llm_fields + common_fields:
                 widget.setEnabled(True)
+            w.provider_combo.setEnabled(True)
+        self._apply_provider_visibility()
+        self._sync_effort_enabled()
+
+    def _fill_effort_combo(self, combo, efforts: tuple, empty_label: str) -> None:
+        """按端点可用档位重建下拉项；选项未变时保留当前选中。"""
+        if self._effort_cache.get(id(combo)) == efforts:
+            return
+        current = combo.currentData()
+        combo.blockSignals(True)
+        combo.clear()
+        for label, value in effort_items(efforts, empty_label):
+            combo.addItem(label, value)
+        combo.setCurrentIndex(max(combo.findData(current), 0))
+        combo.blockSignals(False)
+        self._effort_cache[id(combo)] = efforts
+
+    def _effort_channels(self) -> tuple[str, str]:
+        """两套方案实际会用的通道；Ollama 固定走 OpenAI 兼容通道。"""
+        w = self.widgets
+        primary = w.provider_combo.currentData()
+        alt_data = w.provider_alt_combo.currentData()
+        alt = primary if alt_data in (None, "") else alt_data
+        if w.brain_combo.currentText() == "ollama":
+            return "openai", "openai"
+        return primary, alt
+
+    def _refresh_effort_options(self) -> None:
+        """按通道声明、端点配置与模型名重建两个档位下拉；端点无档位时灰置并提示。"""
+        w = self.widgets
+        primary_channel, alt_channel = self._effort_channels()
+        # 每行：下拉、下拉标签、提示行、模型输入框、通道、端点配置、首项文案
+        for combo, combo_label, hint, model_edit, channel, override, empty_label in (
+            (w.effort_combo, w.effort_label, w.effort_hint, w.model_edit,
+             primary_channel, config.LLM_REASONING_EFFORTS, "由模型决定"),
+            (w.alt_effort_combo, w.alt_effort_label, None, w.alt_model_edit,
+             alt_channel, config.LLM_REASONING_EFFORTS_ALT, "沿用首选"),
+        ):
+            declared = reasoning_efforts(channel)
+            efforts = effective_efforts(declared, override, model_edit.text())
+            self._fill_effort_combo(combo, efforts, empty_label)
+            combo.setVisible(bool(declared))
+            combo_label.setVisible(bool(declared))
+            if hint is not None:
+                hint.setVisible(bool(declared) and bool(efforts))
+        self._sync_effort_enabled()
+
+    def _sync_effort_enabled(self) -> None:
+        """关闭思考或端点没有档位时禁用两个下拉，并说明原因。"""
+        w = self.widgets
+        ready = w.brain_combo.currentText() != "local"
+        thinking_off = w.thinking_check.isChecked()
+        for combo, label in ((w.effort_combo, w.effort_label),
+                             (w.alt_effort_combo, w.alt_effort_label)):
+            supported = bool(self._effort_cache.get(id(combo)))
+            combo.setEnabled(ready and supported and not thinking_off)
+            if not supported:
+                text = _EFFORT_UNSUPPORTED
+            elif thinking_off:
+                text = _EFFORT_THINKING_OFF
+            else:
+                text = ""
+            combo.setToolTip(text)
+            label.setToolTip(text)
+
+    def _apply_provider_visibility(self) -> None:
+        """按登记表的 config_keys 显隐通道专属键；标签随控件一起显隐。"""
+        w = self.widgets
+        primary_name = w.provider_combo.currentData()
+        # 空串表示沿用首选通道；用 currentData 而不是文案
+        alt_data = w.provider_alt_combo.currentData()
+        alt_name = primary_name if alt_data in (None, "") else alt_data
+        shown = set(config_keys(primary_name))
+        alt_shown = set(config_keys_for(alt_name, "alternative"))
+        w.url_edit.setPlaceholderText(url_placeholder(primary_name))
+        w.alt_url_edit.setPlaceholderText(url_placeholder(alt_name))
+        # 每行一项：控件、随行的标签、对应的配置键、该键按哪套方案的通道决定显隐
+        for widget, label, key, scope in (
+            (w.url_edit, w.url_label, "LLM_URL", "primary"),
+            (w.alt_url_edit, w.alt_url_label, "LLM_URL_ALT", "alternative"),
+        ):
+            pool = {"primary": shown, "alternative": alt_shown}[scope]
+            visible = key in pool
+            widget.setVisible(visible)
+            if label is not None:
+                label.setVisible(visible)
+        self._refresh_effort_options()
 
     def update_profile_ui(self) -> None:
         """刷新「当前启用方案」的按钮文案与状态标签。"""
@@ -245,7 +369,6 @@ class SettingsTabs:
             model = config.LLM_MODEL or "未配置"
             w.label_active_profile.setText(f"当前启用：首选模型（{model}）")
 
-    # ------------------------------------------------------------------
 
     def _behavior(self) -> QWidget:
         f, w = self.form, self.widgets
@@ -286,6 +409,9 @@ class SettingsTabs:
         memory_layout = QVBoxLayout(memory_group)
         memory_layout.setSpacing(8)
         memory_layout.addWidget(f.check("EMBEDDING_ENABLED", "启用向量记忆"))
+        vector_hint = _hint("仅支持 OpenAI 兼容的 Embedding 接口")
+        vector_hint.setWordWrap(True)
+        memory_layout.addWidget(vector_hint)
 
         memory_form = QFormLayout()
         memory_form.setSpacing(8)
@@ -368,7 +494,6 @@ class SettingsTabs:
         inner.addStretch()
         return self._scroll_page(content)
 
-    # ------------------------------------------------------------------
 
     def _personality(self) -> QWidget:
         f = self.form
@@ -402,7 +527,6 @@ class SettingsTabs:
 
         return self._scroll_page(content)
 
-    # ------------------------------------------------------------------
 
     def _appearance(self) -> QWidget:
         f, w = self.form, self.widgets

@@ -3,14 +3,17 @@
 import threading
 from types import SimpleNamespace
 
-import httpx
 import pytest
-from openai import AuthenticationError, BadRequestError, RateLimitError
 
 from pet.brain import llm_client as llm_client_mod
-from pet.brain import llm_gateway as llm_gateway_mod
+from pet.brain.llm_errors import (ProviderAuthError, ProviderBadRequest,
+                                  ProviderConnection, ProviderNotFound,
+                                  ProviderRateLimit, ProviderServerError,
+                                  ProviderTimeout)
+from pet.brain.llm_types import Completion
 from pet.brain.llm_client import (
-    LLMClient, normalize_profile, other_profile, resolve_llm_profile,
+    LLMClient, normalize_profile, other_profile, resolve_connection,
+    resolve_llm_profile, resolve_provider_name,
 )
 from pet.brain.llm_gateway import LlmGateway
 from pet.brain.llm_stats import LlmStats
@@ -18,13 +21,8 @@ from pet.brain.llm_retry import (
     CreateStreamTimeout, _create_with_watchdog, is_retryable,
     llm_retry, llm_stream_with_retry,
 )
+from pet.brain.tool_channel import ToolChannelState
 from pet.config import config
-
-
-def _http_error(exc_type, status: int):
-    request = httpx.Request("POST", "https://api.example.com/v1/chat/completions")
-    response = httpx.Response(status, request=request)
-    return exc_type("boom", response=response, body=None)
 
 
 class TestIsRetryable:
@@ -32,17 +30,19 @@ class TestIsRetryable:
         ConnectionError("net"),
         TimeoutError("slow"),
         OSError("io"),
-        httpx.ReadTimeout("read"),
-        httpx.RemoteProtocolError("reset"),
-        _http_error(RateLimitError, 429),
+        ProviderConnection("reset"),
+        ProviderTimeout("read"),
+        ProviderRateLimit("429", status_code=429),
+        ProviderServerError("500", status_code=500),
     ])
     def test_retryable_exceptions(self, exc):
         assert is_retryable(exc) is True
 
     @pytest.mark.parametrize("exc", [
         ValueError("bad"),
-        _http_error(AuthenticationError, 401),
-        _http_error(BadRequestError, 400),
+        ProviderAuthError("401", status_code=401),
+        ProviderBadRequest("400", status_code=400),
+        ProviderNotFound("404", status_code=404),
     ])
     def test_non_retryable_exceptions(self, exc):
         assert is_retryable(exc) is False
@@ -123,10 +123,12 @@ class TestCreateWithWatchdog:
         assert _create_with_watchdog(lambda: "stream", 1.0) == "stream"
 
     def test_propagates_create_exception_unchanged(self):
-        def boom():
-            raise RateLimitError("slow down", response=_http_error(RateLimitError, 429).response, body=None)
+        error = ProviderRateLimit("slow down", status_code=429)
 
-        with pytest.raises(RateLimitError):
+        def boom():
+            raise error
+
+        with pytest.raises(ProviderRateLimit):
             _create_with_watchdog(boom, 1.0)
 
     def test_timeout_raises_create_stream_timeout(self):
@@ -193,49 +195,41 @@ class TestStreamWithRetry:
         assert len(calls) == 2
 
 
-class TestGatewayCompletionRetry:
+class TestGatewayCompleteRetry:
     """非流式补全的重试契约：重试前必须通知调用方切换备选方案。"""
 
-    class _Completions:
+    class _Provider:
         def __init__(self, owner):
             self._owner = owner
+            self.model = "m1"
 
-        def create(self, **kwargs):
+        def complete(self, messages, **kwargs):
             self._owner.calls.append(kwargs)
             if len(self._owner.calls) <= self._owner.fail_times:
-                raise ConnectionError("flaky")
+                raise ProviderConnection("flaky")
             return self._owner.response
-
-    class _Chat:
-        def __init__(self, owner):
-            self.completions = TestGatewayCompletionRetry._Completions(owner)
-
-    class _Client:
-        def __init__(self, owner):
-            self.chat = TestGatewayCompletionRetry._Chat(owner)
 
     class _Llm:
         def __init__(self, owner):
-            self.model = "m1"
-            self.client = TestGatewayCompletionRetry._Client(owner)
+            self.provider = TestGatewayCompleteRetry._Provider(owner)
 
     def _gateway(self, fail_times: int, on_retry):
         owner = type("Owner", (), {})()
         owner.calls, owner.fail_times = [], fail_times
-        owner.response = type("Resp", (), {"choices": [], "usage": None})()
+        owner.response = Completion(content="ok")
         gateway = LlmGateway(self._Llm(owner), LlmStats(), on_retry=on_retry)
         return gateway, owner
 
     def test_retry_notifies_on_retry_hook(self, fast_retry):
         notified = []
         gateway, owner = self._gateway(1, lambda exc: notified.append(exc) or True)
-        gateway.completion([{"role": "user", "content": "hi"}])
+        gateway.complete([{"role": "user", "content": "hi"}])
         assert len(owner.calls) == 2
         assert len(notified) == 1
 
     def test_retry_continues_when_hook_returns_false(self, fast_retry):
         gateway, owner = self._gateway(1, lambda _exc: False)
-        gateway.completion([{"role": "user", "content": "hi"}])
+        gateway.complete([{"role": "user", "content": "hi"}])
         assert len(owner.calls) == 2
 
     def test_hook_exception_does_not_break_retry(self, fast_retry):
@@ -243,69 +237,60 @@ class TestGatewayCompletionRetry:
             raise RuntimeError("hook 挂了")
 
         gateway, owner = self._gateway(1, boom)
-        gateway.completion([{"role": "user", "content": "hi"}])
+        gateway.complete([{"role": "user", "content": "hi"}])
         assert len(owner.calls) == 2
 
     def test_no_retry_on_success(self, fast_retry):
         notified = []
         gateway, owner = self._gateway(0, lambda exc: notified.append(exc) or True)
-        gateway.completion([{"role": "user", "content": "hi"}])
+        gateway.complete([{"role": "user", "content": "hi"}])
         assert len(owner.calls) == 1
         assert notified == []
 
 
-def _bad_request(message: str, param: str = ""):
-    request = httpx.Request("POST", "https://api.example.com/v1/chat/completions")
-    response = httpx.Response(400, request=request)
-    body = {"error": {"code": "400", "message": message, "param": param, "type": ""}}
-    return BadRequestError(message, response=response, body=body)
+def _bad_request(message: str) -> ProviderBadRequest:
+    return ProviderBadRequest(message, status_code=400,
+                              body=f'{{"error": {{"message": "{message}"}}}}')
 
 
 class TestGatewayBadRequestDowngrade:
-    """400 的降级范围：只有指向 thinking 的才摘掉 extra_body 重试一次。"""
+    """400 的处理范围：工具协议被拒才降档；thinking 由 provider 自己负责。"""
 
-    class _Completions:
+    class _Provider:
         def __init__(self, owner):
             self._owner = owner
+            self.model = "m1"
 
-        def create(self, **kwargs):
+        def complete(self, messages, **kwargs):
             self._owner.calls.append(kwargs)
             if len(self._owner.calls) <= self._owner.fail_times:
                 raise self._owner.error
             return self._owner.response
 
     def _gateway(self, error, fail_times=1):
-        owner = SimpleNamespace(
-            calls=[], fail_times=fail_times, error=error,
-            response=SimpleNamespace(choices=[], usage=None),
-        )
-        client = SimpleNamespace(chat=SimpleNamespace(completions=self._Completions(owner)))
-        return LlmGateway(SimpleNamespace(model="m1", client=client), LlmStats()), owner
+        owner = SimpleNamespace(calls=[], fail_times=fail_times, error=error,
+                                response=Completion(content="ok"))
+        llm = SimpleNamespace(provider=self._Provider(owner))
+        return LlmGateway(llm, LlmStats()), owner
 
-    def test_message_structure_400_is_not_retried(self, monkeypatch):
-        # 400 指向请求体结构：重试是同样结果，不该伪装成 thinking 不支持
-        monkeypatch.setattr(llm_gateway_mod, "_thinking_unsupported", False)
-        gateway, owner = self._gateway(
-            _bad_request("Param Incorrect", "messages[17].tool_calls[0] is missing a function name"))
-        with pytest.raises(BadRequestError):
-            gateway.completion([{"role": "user", "content": "hi"}])
+    def test_message_structure_400_is_not_retried(self):
+        # 400 指向请求体结构而非工具字段：不降档，原样抛出
+        gateway, owner = self._gateway(_bad_request("messages[17] is invalid"))
+        with pytest.raises(ProviderBadRequest):
+            gateway.complete([{"role": "user", "content": "hi"}])
         assert len(owner.calls) == 1
-        assert "extra_body" in owner.calls[0]
 
-    def test_thinking_400_drops_extra_body_and_retries(self, monkeypatch):
-        monkeypatch.setattr(llm_gateway_mod, "_thinking_unsupported", False)
-        gateway, owner = self._gateway(_bad_request("Param Incorrect", "thinking"))
-        gateway.completion([{"role": "user", "content": "hi"}])
+    def test_tool_field_400_downgrades_channel(self, monkeypatch):
+        # 命中工具字段且明确不支持：降一档后重试
+        channel = ToolChannelState(lambda: ("openai", "m1"))
+        gateway, owner = self._gateway(
+            ProviderBadRequest("bad", status_code=400,
+                               body="unsupported tool_calls in messages"))
+        gateway._channel = channel
+        result = gateway.complete([{"role": "user", "content": "hi"}])
+        assert result.content == "ok"
         assert len(owner.calls) == 2
-        assert "extra_body" in owner.calls[0]
-        assert "extra_body" not in owner.calls[1]
-
-    def test_400_without_detail_still_downgrades(self, monkeypatch):
-        # 拿不到拒绝原因时无从判断，保持原有的降级重试
-        monkeypatch.setattr(llm_gateway_mod, "_thinking_unsupported", False)
-        gateway, owner = self._gateway(_http_error(BadRequestError, 400))
-        gateway.completion([{"role": "user", "content": "hi"}])
-        assert len(owner.calls) == 2
+        assert channel.resolve() == "user-note"
 
 
 class TestProfileResolution:
@@ -350,14 +335,20 @@ class TestProfileResolution:
         assert resolve_llm_profile("alternative") == ("k1", "u1", "m1")
 
 
-def _bare_client(clients: dict, models: dict, effective: str) -> LLMClient:
+def _bare_client(providers: dict, effective: str) -> LLMClient:
     """绕过 __init__，只装配切换逻辑所需的字段。"""
     obj = LLMClient.__new__(LLMClient)
-    obj._clients = clients
-    obj._models = models
+    obj._providers = providers
     obj._effective = effective
     obj._lock = threading.RLock()
     return obj
+
+
+class _FakeProvider:
+    """只带 model 属性的 provider 替身。"""
+
+    def __init__(self, model: str):
+        self.model = model
 
 
 @pytest.fixture
@@ -374,22 +365,23 @@ def dual_profile(monkeypatch):
 
 class TestActivateFallback:
     def test_switches_to_alternative(self, dual_profile):
-        client = _bare_client({"primary": "c1", "alternative": "c2"},
-                              {"primary": "m1", "alternative": "m2"}, "primary")
+        alt = _FakeProvider("m2")
+        client = _bare_client({"primary": _FakeProvider("m1"), "alternative": alt},
+                              "primary")
         assert client.activate_fallback() is True
         assert client.effective_profile == "alternative"
         assert client.using_fallback is True
         assert client.model == "m2"
 
     def test_no_switch_when_already_on_alternative(self, dual_profile):
-        client = _bare_client({"primary": "c1", "alternative": "c2"},
-                              {"primary": "m1", "alternative": "m2"}, "alternative")
+        client = _bare_client({"primary": _FakeProvider("m1"),
+                               "alternative": _FakeProvider("m2")}, "alternative")
         assert client.activate_fallback() is False
         assert client.using_fallback is True
 
     def test_no_switch_when_alternative_unavailable(self, dual_profile):
-        client = _bare_client({"primary": "c1", "alternative": None},
-                              {"primary": "m1", "alternative": None}, "primary")
+        client = _bare_client({"primary": _FakeProvider("m1"), "alternative": None},
+                              "primary")
         assert client.activate_fallback() is False
         assert client.using_fallback is False
 
@@ -397,13 +389,13 @@ class TestActivateFallback:
         # 备选留空 → 解析后与首选相同，切换没有意义
         for name in ("LLM_KEY_ALT", "LLM_URL_ALT", "LLM_MODEL_ALT"):
             monkeypatch.setattr(config, name, "")
-        client = _bare_client({"primary": "c1", "alternative": "c2"},
-                              {"primary": "m1", "alternative": "m1"}, "primary")
+        client = _bare_client({"primary": _FakeProvider("m1"),
+                               "alternative": _FakeProvider("m1")}, "primary")
         assert client.activate_fallback() is False
 
     def test_reset_returns_to_user_choice(self, dual_profile):
-        client = _bare_client({"primary": "c1", "alternative": "c2"},
-                              {"primary": "m1", "alternative": "m2"}, "primary")
+        client = _bare_client({"primary": _FakeProvider("m1"),
+                               "alternative": _FakeProvider("m2")}, "primary")
         client.activate_fallback()
         client.reset_effective()
         assert client.effective_profile == "primary"
@@ -412,60 +404,120 @@ class TestActivateFallback:
 
     def test_switches_when_primary_unavailable(self, dual_profile):
         # 首选不可用、备选可用时仍应切换（这正是需要容灾的场景）
-        client = _bare_client({"primary": None, "alternative": "c2"},
-                              {"primary": None, "alternative": "m2"}, "primary")
-        assert client.client is None
+        alt = _FakeProvider("m2")
+        client = _bare_client({"primary": None, "alternative": alt}, "primary")
+        assert client.provider is None
         assert bool(client) is False
         assert client.activate_fallback() is True
-        assert client.client == "c2"
+        assert client.provider is alt
         assert client.model == "m2"
         assert bool(client) is True
 
 
-class TestBuildProfile:
-    def test_local_brain_yields_no_client(self, monkeypatch):
+class TestConnectionAssembly:
+    """既有配置到连接参数的映射：BRAIN 三档、通道归属与备选回落。"""
+
+    def test_local_brain_yields_no_provider(self, monkeypatch):
         monkeypatch.setattr(config, "BRAIN", "local")
         obj = LLMClient.__new__(LLMClient)
-        assert obj._build_profile("primary") == (None, None)
+        assert obj._build_profile("primary") is None
 
-    def test_api_brain_without_key_yields_no_client(self, monkeypatch):
+    def test_api_brain_without_any_value_yields_no_provider(self, monkeypatch):
         monkeypatch.setattr(config, "BRAIN", "api")
-        monkeypatch.setattr(config, "LLM_KEY", "")
+        for name in ("LLM_KEY", "LLM_URL", "LLM_MODEL"):
+            monkeypatch.setattr(config, name, "")
         obj = LLMClient.__new__(LLMClient)
-        assert obj._build_profile("primary") == (None, None)
+        assert obj._build_profile("primary") is None
 
-    def test_api_brain_builds_client_with_resolved_model(self, monkeypatch):
-        monkeypatch.setattr(config, "BRAIN", "api")
-        monkeypatch.setattr(config, "LLM_KEY", "k1")
-        monkeypatch.setattr(config, "LLM_URL", "u1")
-        monkeypatch.setattr(config, "LLM_MODEL", "m1")
-        captured = {}
-
-        class FakeOpenAI:
-            def __init__(self, **kwargs):
-                captured.update(kwargs)
-
-        monkeypatch.setattr(llm_client_mod, "OpenAI", FakeOpenAI)
-        obj = LLMClient.__new__(LLMClient)
-        client, model = obj._build_profile("primary")
-        assert isinstance(client, FakeOpenAI)
-        assert model == "m1"
-        assert captured["api_key"] == "k1"
-        assert captured["base_url"] == "u1"
-        assert captured["max_retries"] == 0
-
-    def test_ollama_brain_uses_default_local_model(self, monkeypatch):
+    def test_ollama_brain_uses_openai_channel_and_default_model(self, monkeypatch):
         monkeypatch.setattr(config, "BRAIN", "ollama")
         monkeypatch.setattr(config, "LLM_MODEL", "")
         monkeypatch.setattr(config, "OLLAMA_BASE_URL", "http://localhost:11434/v1")
-        captured = {}
 
-        class FakeOpenAI:
-            def __init__(self, **kwargs):
-                captured.update(kwargs)
+        connection = resolve_connection("primary")
 
-        monkeypatch.setattr(llm_client_mod, "OpenAI", FakeOpenAI)
-        obj = LLMClient.__new__(LLMClient)
-        _, model = obj._build_profile("primary")
-        assert model == "llama3.2"
-        assert captured["base_url"] == "http://localhost:11434/v1"
+        assert connection.provider == "openai"
+        assert connection.key == llm_client_mod.OLLAMA_API_KEY
+        assert connection.url == "http://localhost:11434/v1"
+        assert connection.model == "llama3.2"
+
+    def test_ollama_ignores_provider_config(self, monkeypatch):
+        monkeypatch.setattr(config, "BRAIN", "ollama")
+        monkeypatch.setattr(config, "LLM_PROVIDER", "gemini")
+        assert resolve_connection("primary").provider == "openai"
+
+    def test_api_brain_keeps_configured_channel(self, monkeypatch):
+        monkeypatch.setattr(config, "BRAIN", "api")
+        monkeypatch.setattr(config, "LLM_PROVIDER", "gemini")
+        monkeypatch.setattr(config, "LLM_KEY", "k1")
+        monkeypatch.setattr(config, "LLM_MODEL", "gemini-2.5-flash")
+
+        connection = resolve_connection("primary")
+
+        assert connection.provider == "gemini"
+        assert connection.key == "k1"
+
+    def test_alternative_channel_falls_back_to_primary(self, monkeypatch):
+        monkeypatch.setattr(config, "LLM_PROVIDER", "gemini")
+        monkeypatch.setattr(config, "LLM_PROVIDER_ALT", "")
+        assert resolve_provider_name("alternative") == "gemini"
+
+    def test_alternative_channel_overrides(self, monkeypatch):
+        monkeypatch.setattr(config, "LLM_PROVIDER", "gemini")
+        monkeypatch.setattr(config, "LLM_PROVIDER_ALT", "openai")
+        monkeypatch.setattr(config, "LLM_KEY", "k1")
+        monkeypatch.setattr(config, "LLM_MODEL", "m1")
+        monkeypatch.setattr(config, "LLM_KEY_ALT", "k2")
+        monkeypatch.setattr(config, "LLM_MODEL_ALT", "m2")
+        assert resolve_provider_name("alternative") == "openai"
+        assert resolve_connection("alternative").key == "k2"
+
+
+class TestClientLifecycle:
+    """连接池由 LLMClient 持有，退出流程负责关闭。"""
+
+    def test_close_releases_both_providers(self):
+        closed = []
+
+        class _P:
+            def __init__(self, name):
+                self.name, self.model = name, "m"
+
+            def close(self):
+                closed.append(self.name)
+
+        client = _bare_client({"primary": _P("p"), "alternative": _P("a")}, "primary")
+        client.close()
+
+        assert sorted(closed) == ["a", "p"]
+        assert client.provider is None
+        assert bool(client) is False
+
+    def test_close_twice_does_not_close_again(self):
+        closed = []
+
+        class _P:
+            name, model = "p", "m"
+
+            def close(self):
+                closed.append(1)
+
+        client = _bare_client({"primary": _P(), "alternative": None}, "primary")
+        client.close()
+        client.close()
+
+        assert len(closed) == 1
+
+    def test_tool_channel_follows_effective_profile(self, dual_profile):
+        """降档缓存的键取当前生效方案：回退后是另一条记录。"""
+        primary = SimpleNamespace(name="openai", model="m1")
+        alternative = SimpleNamespace(name="gemini", model="m2")
+        client = _bare_client({"primary": primary, "alternative": alternative},
+                              "primary")
+        client.tool_channel = ToolChannelState(client._scope_key)
+
+        assert client.tool_channel.mark_downgraded("native") == "user-note"
+        client.activate_fallback()
+
+        assert client.tool_channel.resolve() == "native"
+        assert client.provider_name() == "gemini"

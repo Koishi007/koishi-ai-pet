@@ -1,4 +1,4 @@
-﻿"""工具注册表 — 自动发现、注册、描述可用工具，并聚合工具登记的终端命令。"""
+"""工具注册表 — 自动发现、注册、描述可用工具，并聚合工具登记的终端命令。"""
 
 import logging
 import os
@@ -936,9 +936,9 @@ class ToolRegistry:
         "any": "string",
     }
 
-    def to_openai_tools(self, groups: set[str] | None = None) -> list[dict]:
-        """将已注册工具转换为 OpenAI function calling 格式。
-        
+    def to_tool_specs(self, groups: set[str] | None = None) -> list[dict]:
+        """把已注册工具转换成与协议无关的工具声明。
+
         Args:
             groups: 指定分组集合，None 表示返回全部已启用工具。
         """
@@ -977,18 +977,16 @@ class ToolRegistry:
                     "description": "（可选）调用此工具时的自言自语，按你的人格口吻说一句，只让用户理解你正在做什么，不会作为对用户的正式回复；不想说可不填",
                 }
                 tools.append({
-                    "type": "function",
-                    "function": {
-                        "name": f"{tool.name}__{method_name}",
-                        "description": method.description,
-                        "parameters": {
-                            "type": "object",
-                            "properties": properties,
-                            "required": required,
-                        },
+                    "name": f"{tool.name}__{method_name}",
+                    "description": method.description,
+                    "parameters": {
+                        "type": "object",
+                        "properties": properties,
+                        "required": required,
                     },
                 })
         return tools
+
 
 TOOL_REGISTRY = ToolRegistry()
 

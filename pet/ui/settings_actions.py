@@ -13,6 +13,11 @@ from pet.ui.styles import MENU_SOLID_QSS
 
 from pet.config import config
 from pet.ui.settings_fields import SettingsForm, SettingsWidgets
+from pet.brain.llm_errors import ProviderUnavailable
+from pet.brain.providers import LLMConnection
+from pet.brain.providers.registry import (build_provider, normalize_provider,
+                                          reasoning_efforts)
+from pet.brain.reasoning import effective_efforts
 from pet.ui.settings_workers import (EmbeddingTestWorker, LLMTestWorker,
                                       MemoryMergeWorker, ModelsFetchWorker,
                                       ProbeRegistry, VoiceTestWorker)
@@ -95,18 +100,39 @@ class SettingsActions(QObject):
             return primary
         return (alt[0] or primary[0], alt[1] or primary[1], alt[2] or primary[2])
 
+    def effort_for_test(self, profile: str) -> str:
+        """界面当前档位；测备选且留空时取首选值，端点不支持的取值不下发。"""
+        w = self.widgets
+        primary = w.effort_combo.currentData() or ""
+        if profile != "alternative":
+            return primary
+        value = w.alt_effort_combo.currentData() or primary
+        channel = ("openai" if w.brain_combo.currentText() == "ollama"
+                   else self._provider_name_for(profile))
+        allowed = effective_efforts(reasoning_efforts(channel),
+                                    config.LLM_REASONING_EFFORTS_ALT,
+                                    w.alt_model_edit.text())
+        return value if value in allowed else ""
+
     def models_button(self, profile: str = "primary"):
         w = self.widgets
         return w.btn_fetch_models_alt if profile == "alternative" else w.btn_fetch_models
+
+    def _provider_name_for(self, profile: str) -> str:
+        """指定方案要连的通道；备选留空表示沿用首选。"""
+        w = self.widgets
+        primary = normalize_provider(w.provider_combo.currentData())
+        alt = w.provider_alt_combo.currentData()
+        if profile != "alternative" or not alt:
+            return primary
+        return normalize_provider(alt)
 
     def set_model_value(self, profile: str, model_id: str) -> None:
         w = self.widgets
         edit = w.alt_model_edit if profile == "alternative" else w.model_edit
         edit.setText(model_id)
 
-    # ------------------------------------------------------------------
     # LLM 连通性
-    # ------------------------------------------------------------------
 
     def test_llm(self) -> None:
         w = self.widgets
@@ -121,9 +147,12 @@ class SettingsActions(QObject):
 
         profile = getattr(config, "LLM_ACTIVE_PROFILE", "primary") or "primary"
         key, url, model = self.profile_form_values(profile)
+        provider_name = self._provider_name_for(profile)
         if brain_cfg == "ollama":
             url = self.form.fields["OLLAMA_BASE_URL"].text().strip()
             key = "ollama"
+            # Ollama 的服务端是 OpenAI 兼容接口
+            provider_name = "openai"
         profile_name = "备选" if profile == "alternative" else "首选"
 
         if not model:
@@ -134,11 +163,13 @@ class SettingsActions(QObject):
 
         timeout = float(config.LLM_TIMEOUT or 30)
         w.test_output.clear()
-        w.test_output.append(f"测试中...（{profile_name}模型）")
+        w.test_output.append(f"测试中...（{profile_name}模型，通道 {provider_name}）")
         w.btn_test.setEnabled(False)
         w.label_test.setText("测试中...")
         worker = LLMTestWorker(url, key, model, timeout,
-                               thinking=not w.thinking_check.isChecked())
+                               thinking=not w.thinking_check.isChecked(),
+                               provider=provider_name,
+                               reasoning_effort=self.effort_for_test(profile))
         self.probes.start("llm", worker, self.on_llm_test_result)
 
     def on_llm_test_result(self, success: bool, content: str, elapsed: float) -> None:
@@ -154,10 +185,6 @@ class SettingsActions(QObject):
             w.label_test.setText("❌ 失败")
         w.btn_test.setEnabled(True)
 
-    # ------------------------------------------------------------------
-    # Embedding 与汇总模型连通性（共用输出框，一次只跑一个）
-    # ------------------------------------------------------------------
-
     def test_embedding(self) -> None:
         w, f = self.widgets, self.form.fields
         if self.probes.running("embedding"):
@@ -172,7 +199,7 @@ class SettingsActions(QObject):
             w.conn_test_output.clear()
             w.conn_test_output.append("⚠ 向量维度格式无效")
             return
-        if not url or not key or not model:
+        if not model or not url or not key:
             w.conn_test_output.clear()
             w.conn_test_output.append("⚠ 请先填写 API 地址、Key 和模型名")
             w.label_mem_test.setText("未配置")
@@ -183,7 +210,8 @@ class SettingsActions(QObject):
         w.btn_mem_test.setEnabled(False)
         w.btn_merge_test.setEnabled(False)
         w.label_mem_test.setText("测试中...")
-        self.probes.start("embedding", EmbeddingTestWorker(url, key, model, dim),
+        self.probes.start("embedding",
+                          EmbeddingTestWorker(url, key, model, dim),
                           self.on_embedding_test_result)
 
     def on_embedding_test_result(self, success: bool, content: str,
@@ -248,9 +276,7 @@ class SettingsActions(QObject):
         w.btn_mem_test.setEnabled(True)
         w.btn_merge_test.setEnabled(True)
 
-    # ------------------------------------------------------------------
     # 手动汇总事件记忆
-    # ------------------------------------------------------------------
 
     def manual_merge(self) -> None:
         w = self.widgets
@@ -308,9 +334,7 @@ class SettingsActions(QObject):
             self._msg("汇总完成",
                       f"没有写入任何分组。\n{note}" if note else "没有写入任何分组。")
 
-    # ------------------------------------------------------------------
     # 热键录制
-    # ------------------------------------------------------------------
 
     def capture_hotkey(self) -> None:
         from pynput import keyboard
@@ -351,9 +375,7 @@ class SettingsActions(QObject):
         self.widgets.hotkey_display.setText(key_name)
         self.widgets.capture_btn.setText("录制")
 
-    # ------------------------------------------------------------------
     # 语音连接测试
-    # ------------------------------------------------------------------
 
     def test_voice_connection(self) -> None:
         w, f = self.widgets, self.form.fields
@@ -385,9 +407,7 @@ class SettingsActions(QObject):
             w.voice_label_test.setText("❌ 失败")
         w.voice_btn_test.setEnabled(True)
 
-    # ------------------------------------------------------------------
     # 模型列表
-    # ------------------------------------------------------------------
 
     def fetch_models(self, profile: str = "primary") -> None:
         w, f = self.widgets, self.form.fields
@@ -402,20 +422,39 @@ class SettingsActions(QObject):
         if brain == "ollama":
             base_url = ollama_url or config.OLLAMA_BASE_URL
             api_key = "ollama"
+            provider_name = "openai"
         else:
             base_url = url
             api_key = key
-        if not base_url or (brain != "ollama" and not api_key):
+            provider_name = self._provider_name_for(profile)
+        if not base_url and provider_name == "openai":
+            self._msg("提示", "请先填写 API 地址。")
+            return
+        if provider_name == "openai" and not api_key:
             self._msg("提示", "请先填写 API 地址和 Key。")
             return
 
-        from openai import OpenAI
-        client = OpenAI(api_key=api_key, base_url=base_url, timeout=config.LLM_TIMEOUT)
+        try:
+            provider = build_provider(
+                LLMConnection(provider=provider_name, key=api_key, url=base_url,
+                              model=_model or ""),
+                config.LLM_TIMEOUT)
+        except ProviderUnavailable as e:
+            self._msg("提示", str(e))
+            return
+        if not provider.capabilities.model_list:
+            provider.close()
+            self._msg("提示", f"通道 {provider_name!r} 不支持获取模型列表。")
+            return
         btn = self.models_button(profile)
         btn.setEnabled(False)
         btn.setText("获取中…")
-        self.probes.start("models", ModelsFetchWorker(client, profile),
-                          self.on_models_fetched)
+        if not self.probes.start("models", ModelsFetchWorker(provider, profile),
+                                 self.on_models_fetched):
+            # 未排上线程时 worker 不会运行，provider 由这里关闭
+            provider.close()
+            btn.setEnabled(True)
+            btn.setText("获取列表")
 
     def on_models_fetched(self, success: bool, model_ids: list, error_msg: str,
                           target: str | None = None) -> None:
@@ -443,15 +482,23 @@ class SettingsActions(QObject):
             return
         url = f["EMBEDDING_URL"].text().strip()
         key = f["EMBEDDING_KEY"].text().strip()
+        model = f["EMBEDDING_MODEL"].text().strip()
         if not url or not key:
             self._msg("提示", "请先填写向量 API 地址和 Key。")
             return
-        from openai import OpenAI
-        client = OpenAI(api_key=key, base_url=url, timeout=30.0)
+        try:
+            provider = build_provider(
+                LLMConnection(provider="openai", key=key, url=url, model=model), 30.0)
+        except ProviderUnavailable as e:
+            self._msg("提示", f"向量接口不可用：{e}")
+            return
         w.btn_fetch_mem_models.setEnabled(False)
         w.btn_fetch_mem_models.setText("获取中…")
-        self.probes.start("mem_models", ModelsFetchWorker(client),
-                          self.on_mem_models_fetched)
+        if not self.probes.start("mem_models", ModelsFetchWorker(provider),
+                                 self.on_mem_models_fetched):
+            provider.close()
+            w.btn_fetch_mem_models.setEnabled(True)
+            w.btn_fetch_mem_models.setText("获取列表")
 
     def on_mem_models_fetched(self, success: bool, model_ids: list,
                                error_msg: str) -> None:

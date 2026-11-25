@@ -51,12 +51,19 @@ def _msg_brief(message: dict) -> str:
         # 工具调用的 assistant 消息 content 为 null，属协议允许
         parts.append(f"content={content!r}")
     for k, call in enumerate(message.get("tool_calls") or []):
-        fn = call.get("function") or {}
-        args = str(fn.get("arguments") or "")
+        args = str(call.get("arguments") or "")
         if len(args) > _ARGS_LOG_LIMIT:
             args = f"{args[:_ARGS_LOG_LIMIT]}…(+{len(args) - _ARGS_LOG_LIMIT})"
-        parts.append(f"call[{k}]={fn.get('name', '')} id={call.get('id', '')} args={args}")
+        parts.append(f"call[{k}]={call.get('name', '')} id={call.get('id', '')} args={args}")
     return " | ".join(parts)
+
+
+def _describe_provider(llm) -> str:
+    """日志用的 provider 描述。"""
+    provider = getattr(llm, "provider", None) if llm else None
+    if provider is None:
+        return "None (local)"
+    return f"{type(provider).__name__}(model={getattr(provider, 'model', None)})"
 
 
 class Behavior(BrainMixin):
@@ -67,6 +74,7 @@ class Behavior(BrainMixin):
         db_path = memory_store.db_path if memory_store else None
         super().__init__(db_path=db_path)
         self._llm = LLMClient()
+        self._channel_state = self._llm.tool_channel
         self._dock_side_fn = dock_side_fn or (lambda: "")
         # 进展心跳回调：每产生一次实质进展（chunk / 工具轮次 / LLM 返回）通知一次，
         # 供看门狗区分「跑得慢」与「挂死」，避免长流程被误判
@@ -93,15 +101,17 @@ class Behavior(BrainMixin):
         self._active_tool_groups: set[str] = {"default"}
 
         t = datetime.now().strftime("%H:%M:%S")
-        client_type = "None (local)" if not self._llm else f"{type(self._llm.client).__name__}(model={self._llm.model})"
-        logger.info(f"[{t}] [Behavior] init: client={client_type}")
+        logger.info(f"[{t}] [Behavior] init: client={_describe_provider(self._llm)}")
 
     def rebuild_client(self):
         """运行时重建 LLM 客户端（设置界面修改连接配置后调用）。"""
         with self._lock:
             self._llm.rebuild()
-        client_type = "None (local)" if not self._llm else f"{type(self._llm.client).__name__}(model={self._llm.model})"
-        logger.info(f"[Behavior] rebuild_client: {client_type}")
+        logger.info(f"[Behavior] rebuild_client: {_describe_provider(self._llm)}")
+
+    def close_llm(self):
+        """释放 LLM 连接池；退出流程调用。"""
+        self._llm.close()
 
     def _on_llm_retry(self, exc: BaseException | None = None) -> bool:
         """重试前切换到备选模型方案；返回是否发生了切换。
@@ -181,7 +191,7 @@ class Behavior(BrainMixin):
             return None
         if enable_tools is None and not config.LLM_TOOLS_ENABLED:
             return None
-        return TOOL_REGISTRY.to_openai_tools(groups=self._active_tool_groups)
+        return TOOL_REGISTRY.to_tool_specs(groups=self._active_tool_groups)
 
     def _activate_tool_groups_from_search(self, groups: list[str]):
         """根据搜索命中的分组名激活分组。"""
@@ -421,25 +431,24 @@ class Behavior(BrainMixin):
         try:
             tools_param = self._build_tools_param(enable_tools)
             max_tokens = output_budget(mode, thinking=thinking, has_tools=bool(tools_param))
-            resp = self.gateway.completion(messages, max_tokens=max_tokens, tools=tools_param,
+            resp = self.gateway.complete(messages, max_tokens=max_tokens, tools=tools_param,
                                            thinking=thinking,
                                            temperature=RETRY_TEMPERATURE if repair else None)
-            msg = resp.choices[0].message
-            content = msg.content or ""
+            content = resp.content or ""
             self._last_unparsed = content[:_REPAIR_SAMPLE_LIMIT]
-            self._last_finish_reason = resp.choices[0].finish_reason or ""
+            self._last_finish_reason = resp.finish_reason or ""
             logger.info(f"[{t}] [Behavior] === LLM RESPONSE ({tag}) ===")
             logger.info(f"[{t}] [Behavior]   finish_reason: {self._last_finish_reason}")
             if content:
                 logger.info(f"[{t}] [Behavior]   raw: {content}")
 
-            if msg.tool_calls:
+            if resp.tool_calls:
                 tool_calls_map = {}
-                for i, tc in enumerate(msg.tool_calls):
+                for i, tc in enumerate(resp.tool_calls):
                     tool_calls_map[i] = {
                         "id": tc.id,
-                        "name": tc.function.name,
-                        "arguments": tc.function.arguments,
+                        "name": tc.name,
+                        "arguments": tc.arguments,
                     }
                 return self._handle_tool_calls(
                     messages, tool_calls_map, content,
@@ -482,7 +491,7 @@ class Behavior(BrainMixin):
             logger.info(f"[Behavior] {tag} tools={len(tools_param or [])} "
                         f"groups={sorted(self._active_tool_groups)}")
             max_tokens = output_budget(mode, thinking=thinking, has_tools=bool(tools_param))
-            stream = self.gateway.stream_chat(messages, max_tokens=max_tokens, tools=tools_param,
+            stream = self.gateway.stream(messages, max_tokens=max_tokens, tools=tools_param,
                                               thinking=thinking,
                                               temperature=RETRY_TEMPERATURE if repair else None)
             chunk_sent = [False]
@@ -598,15 +607,14 @@ class Behavior(BrainMixin):
         messages = self.ctx.build_summary_messages(items)
         return summarize_with_llm(
             messages, len(items),
-            lambda msgs, max_tokens: self.gateway.completion(msgs, max_tokens=max_tokens),
+            lambda msgs, max_tokens: self.gateway.complete(msgs, max_tokens=max_tokens),
         )
 
     def _apply_cache_control(self, messages: list):
-        """为 system prompt 添加缓存标记（Anthropic 兼容 API 使用）。
+        """给 system 消息加上 provider 扩展键 cache_control。
 
-        仅在 config.LLM_CACHE_PROMPT 启用时生效。
-        将 system 消息的字符串 content 包装为带 cache_control 的结构化格式。
-        OpenAI 原生 API 会忽略该字段，Anthropic 兼容端点则会缓存。
+        仅在 config.LLM_CACHE_PROMPT 启用时生效。键随中性片段保留，
+        是否透传由 provider 决定：忽略该键的端点不受影响。
         """
         if not config.LLM_CACHE_PROMPT:
             return
@@ -685,7 +693,7 @@ class _BehaviorToolSession:
         return ToolExecutor()
 
     def stream(self, messages, max_tokens, tools, thinking, *, tag, on_chunk=None, on_stream_end=None):
-        stream = self._behavior.gateway.stream_chat(
+        stream = self._behavior.gateway.stream(
             messages, max_tokens=max_tokens, tools=tools, thinking=thinking)
         return parse_stream_chunks(
             stream, config.LLM_STREAM_TIMEOUT, self._behavior,

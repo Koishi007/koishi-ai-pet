@@ -92,7 +92,7 @@ python -m pet
 | 模式 | 说明 | 适合 |
 |------|------|------|
 | `local` | 离线模式，不调用 LLM，随机执行预设动作 + 固定台词 | 无需 API 配置，快速体验恋恋的交互和动作 |
-| `api` | 调用 LLM，连接 OpenAI 兼容接口（填 `LLM_URL` + `LLM_KEY`） | 正常使用，选购第三方 API（Mimo、硅基流动、DeepSeek 等） |
+| `api` | 调用 LLM，按「首选通道」连接（`LLM_PROVIDER`：OpenAI 兼容接口或 Google Gemini） | 正常使用，选购第三方 API（Mimo、硅基流动、DeepSeek 等）或使用 Gemini |
 | `ollama` | 调用 LLM，连接本机 Ollama 服务（填 `OLLAMA_BASE_URL`，默认 `http://localhost:11434/v1`） | 已有 Ollama 本地部署的用户 |
 
 > 需要完整对话与智能交互时选 `api` 或 `ollama`；只需看恋恋跑起来的样子时选 `local`，无需任何配置。
@@ -100,7 +100,7 @@ python -m pet
 ### 配置步骤
 
 1. 启动恋恋，打开托盘菜单 → **设置**
-2. **「连接」页签**：填入**首选 API 地址**（Base URL）和**首选 API Key**（密钥），首选模型名称设为供应商对应的模型名，如 `mimo-v2.6-flash`
+2. **「连接」页签**：确认**首选通道**（默认 OpenAI 兼容接口），填入**首选 API 地址**（Base URL）和**首选 API Key**（密钥），首选模型名称设为供应商对应的模型名，如 `mimo-v2.6-flash`。选 Gemini 时填 API Key 与模型名，API 地址留空用官方端点
 3. 点「测试连接」验证，成功后右下角保存
 
 > 推荐方案：**deepseek-flash** - 支持视觉的多模态模型，推荐首选（查看 [DeepSeek 开放平台](https://platform.deepseek.com/) 获取 API 信息）
@@ -115,6 +115,7 @@ python -m pet
 
 | 配置项 | 首选 | 备选（留空则沿用首选对应项） |
 |--------|------|------------------------------|
+| 通道 | `LLM_PROVIDER` | `LLM_PROVIDER_ALT` |
 | API 地址 | `LLM_URL` | `LLM_URL_ALT` |
 | API Key | `LLM_KEY` | `LLM_KEY_ALT` |
 | 模型名称 | `LLM_MODEL` | `LLM_MODEL_ALT` |
@@ -130,7 +131,7 @@ python -m pet
 - **语音输入**：如需语音对话，在「通用」页签填讯飞听写 API 并开启语音输入（热键默认 F8）
 - **通知**：不需要系统弹窗时，在「通用」页签取消「允许发送通知」。
 
-> 模型兼容 OpenAI 格式接口，硅基流动、DeepSeek 等均可直接填入。Ollama 本地部署理论上也支持。
+> 默认通道是 OpenAI 兼容接口，硅基流动、DeepSeek 等均可直接填入。切到 Google Gemini 填 AI Studio 的 API Key 与模型名即可，API 地址留空用官方端点。Ollama 本地部署同样支持，固定走 OpenAI 兼容接口。
 
 ## 开发与测试
 

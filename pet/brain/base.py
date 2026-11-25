@@ -14,7 +14,7 @@ from pet.brain.events import (ARTIFACT_INLINE_LIMIT, ASSISTANT_TEXT_LIMIT,
                               ASSISTANT_TURN_VERSION, EventStore, truncate_bytes)
 from pet.brain.output import sanitize_assistant_fields
 from pet.brain.projection import Budget, project
-from pet.brain.tool_channel import current_profile
+from pet.brain.tool_channel import default_state
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +135,10 @@ class BrainMixin:
             self._reported_groups.add(group["group_id"])
             logger.warning(f"[BrainMixin] 未闭合工具组 {group['group_id']}: "
                            f"calls={group['calls']} results={group['results']}，不重放")
+
+    def _tool_channel(self):
+        """投影用的工具通道状态：优先取本对象持有的实例，未接时用模块级默认。"""
+        return getattr(self, "_channel_state", None) or default_state()
 
     def close_events(self):
         """关闭事件日志连接。"""
@@ -418,7 +422,7 @@ class BrainMixin:
                 now=now,
                 skip_last=skip_last,
             )
-            profile = current_profile()
+            profile = self._tool_channel().profile()
             events = self._events.load()
             self._hydrate_call_args(events)
             messages = project(events, profile, budget, stats)

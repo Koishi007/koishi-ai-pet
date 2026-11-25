@@ -5,11 +5,11 @@ import sqlite3
 
 from pet.brain.base import BrainMixin
 from pet.brain.events import ASSISTANT_TEXT_LIMIT, HISTORY_SUMMARY_PREFIX
-from pet.brain.tool_channel import reset_cache
+from pet.brain.tool_channel import default_state
 
 
 def _brain(tmp_path) -> BrainMixin:
-    reset_cache()
+    default_state().reset()
     return BrainMixin(str(tmp_path / "pet.db"))
 
 
@@ -95,7 +95,7 @@ class TestProjectionEntry:
             [{"tool_call_id": "c1", "ok": True, "brief": "点赞成功"}],
         )
         messages = brain.get_multi_turn_messages()
-        assert messages[0]["tool_calls"][0]["function"]["name"] == "bilibili__like"
+        assert messages[0]["tool_calls"][0]["name"] == "bilibili__like"
         assert messages[1]["role"] == "tool"
 
     def test_full_args_survive_projection(self, tmp_path):
@@ -109,7 +109,7 @@ class TestProjectionEntry:
         )
         messages = brain.get_multi_turn_messages()
         arguments = json.loads(
-            messages[0]["tool_calls"][0]["function"]["arguments"])
+            messages[0]["tool_calls"][0]["arguments"])
         assert arguments["ops"] == ops
 
     def test_large_args_restored_from_artifact(self, tmp_path):
@@ -125,7 +125,7 @@ class TestProjectionEntry:
         assert "args_artifact" in call["refs"]
         messages = brain.get_multi_turn_messages()
         arguments = json.loads(
-            messages[0]["tool_calls"][0]["function"]["arguments"])
+            messages[0]["tool_calls"][0]["arguments"])
         assert arguments["ops"] == ops
 
     def test_oversize_args_roundtrip_from_artifact(self, tmp_path):
@@ -141,7 +141,7 @@ class TestProjectionEntry:
         assert "args_artifact" in call["refs"]
         messages = brain.get_multi_turn_messages()
         arguments = json.loads(
-            messages[0]["tool_calls"][0]["function"]["arguments"])
+            messages[0]["tool_calls"][0]["arguments"])
         assert arguments["note"] == text
 
     def test_tool_group_records_only_call_and_result(self, tmp_path):
@@ -228,7 +228,7 @@ class TestSnapshotRestore:
         first.add_assistant_turn({"summary": "记住了"}, "Summary: 记住了")
         first.close_events()
 
-        reset_cache()
+        default_state().reset()
         second = BrainMixin(db)
         entries = second.context_entries()
         assert [e.role for e in entries] == ["user", "assistant"]
@@ -242,7 +242,7 @@ class TestSnapshotRestore:
         first.add_context("system", HISTORY_SUMMARY_PREFIX + "之前聊过天气", is_summary=True)
         first.close_events()
 
-        reset_cache()
+        default_state().reset()
         second = BrainMixin(db)
         entries = second.context_entries()
         assert len(entries) == 1
@@ -255,7 +255,7 @@ class TestSnapshotRestore:
         count = first._events.count()
         first.close_events()
 
-        reset_cache()
+        default_state().reset()
         second = BrainMixin(db)
         assert second._events.count() == count
 

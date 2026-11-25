@@ -234,17 +234,24 @@ class TestRecallOutput:
         assert result["pagination"]["has_next"] is False
 
 
-class TestOpenAiSchema:
+class TestToolSpecs:
+    """工具声明是与协议无关的结构，外层包装由各 provider 负责。"""
+
     def test_schema_types_and_required(self, registry):
-        tools = registry.to_openai_tools(groups={"test"})
-        by_name = {t["function"]["name"]: t["function"] for t in tools}
+        tools = registry.to_tool_specs(groups={"test"})
+        by_name = {t["name"]: t for t in tools}
         count_schema = by_name["demo__count"]["parameters"]
         assert count_schema["properties"]["n"]["type"] == "integer"
         assert count_schema["properties"]["mode"]["type"] == "string"
 
+    def test_specs_carry_no_protocol_wrapper(self, registry):
+        tools = registry.to_tool_specs(groups={"test"})
+        assert all("type" not in t or t["type"] == "object" for t in tools)
+        assert all("function" not in t for t in tools)
+
     def test_default_and_enum_preserved(self, registry):
-        tools = registry.to_openai_tools(groups={"test"})
-        by_name = {t["function"]["name"]: t["function"] for t in tools}
+        tools = registry.to_tool_specs(groups={"test"})
+        by_name = {t["name"]: t for t in tools}
         mode = by_name["demo__count"]["parameters"]["properties"]["mode"]
         assert mode["enum"] == ["fast", "slow"]
         assert mode["default"] == "fast"
@@ -256,8 +263,8 @@ class TestOpenAiSchema:
                           "items": {"type": "object", "required": ["op"],
                                     "properties": {"op": {"type": "string"}}}}},
             output=_OUTPUT)
-        tools = registry.to_openai_tools(groups={"test"})
-        by_name = {t["function"]["name"]: t["function"] for t in tools}
+        tools = registry.to_tool_specs(groups={"test"})
+        by_name = {t["name"]: t for t in tools}
         ops = by_name["demo__batch"]["parameters"]["properties"]["ops"]
         assert ops["items"]["required"] == ["op"]
         assert ops["items"]["properties"]["op"]["type"] == "string"
@@ -266,7 +273,7 @@ class TestOpenAiSchema:
         registry.register("other", "其他工具", group="other")
         registry.add_method("other", "ping", "ping", handler=lambda: {"summary": "pong"},
                                 output=_OUTPUT)
-        names = {t["function"]["name"] for t in registry.to_openai_tools(groups={"test"})}
+        names = {t["name"] for t in registry.to_tool_specs(groups={"test"})}
         assert "other__ping" not in names
         assert "demo__echo" in names
 

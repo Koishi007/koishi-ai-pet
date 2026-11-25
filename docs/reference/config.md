@@ -16,19 +16,22 @@
 | 键 | 类型 | 默认 | 需重启 | 说明 |
 |---|---|---|---|---|
 | `BRAIN` | str | `"local"` |  | LLM 调用模式（可选：local / api / ollama） |
-| `LLM_URL` | str | `""` |  | 首选 API 地址(需兼容 OpenAI 格式) |
+| `LLM_PROVIDER` | str | `"openai"` |  | 首选通道（可选：openai / gemini） |
+| `LLM_URL` | str | `""` |  | 首选 API 地址；gemini 通道留空用官方端点，自建代理可填根地址 |
 | `OLLAMA_BASE_URL` | str | `"http://localhost:11434/v1"` |  | Ollama 服务地址 |
 | `LLM_KEY` | str | `""` |  | 首选 API Key |
 | `LLM_MODEL` | str | `""` |  | 首选 LLM 模型名称 |
+| `LLM_REASONING_EFFORT` | str | `""` |  | 首选推理强度：留空交给模型默认，可选值受端点支持范围限制（可选： / minimal / low / medium / high / xhigh / max） |
 | `LLM_TEMPERATURE` | float | 0.7 |  | LLM 采样温度 |
 | `LLM_TOOLS_ENABLED` | bool | true |  | 是否可使用工具 |
 | `LLM_TOOL_MAX_ROUNDS` | int | 99 |  | 工具调用最大轮次（二十问等长流程游戏需要 ≥22 轮）（≥10, ≤99） |
-| `LLM_CACHE_PROMPT` | bool | false |  | 启用 Prompt 缓存 |
 | `LLM_THINKING_DISABLED` | bool | false |  | 关闭思考模式 |
 | `LLM_FALLBACK_ENABLED` | bool | true |  | 调用报错或超时重试时自动切换到备选模型 |
-| `LLM_URL_ALT` | str | `""` |  | 备选 API 地址(需兼容 OpenAI 格式)，留空则沿用首选 |
+| `LLM_PROVIDER_ALT` | str | `""` |  | 备选通道，留空沿用首选（可选： / openai / gemini） |
+| `LLM_URL_ALT` | str | `""` |  | 备选 API 地址，留空则沿用首选；gemini 通道留空用官方端点，自建代理可填根地址 |
 | `LLM_KEY_ALT` | str | `""` |  | 备选 API Key，留空则沿用首选 |
 | `LLM_MODEL_ALT` | str | `""` |  | 备选 LLM 模型名称，留空则沿用首选 |
+| `LLM_REASONING_EFFORT_ALT` | str | `""` |  | 备选推理强度，留空沿用首选（可选： / minimal / low / medium / high / xhigh / max） |
 
 ### 行为
 
@@ -154,8 +157,11 @@
 | 键 | 类型 | 默认 | 高级 | 需重启 | 说明 |
 |---|---|---|---|---|---|
 | `LLM_ACTION_MIN_DIVISOR` | int | 25 | 是 |  | 动作权重最小除数 |
+| `LLM_CACHE_PROMPT` | bool | false | 是 |  | 启用 Prompt 缓存标记：给 system 段加 cache_control，供识别该键的端点使用 |
 | `LLM_CREATE_TIMEOUT` | float | 30 | 是 |  | 建流超时(秒)：等待响应头超过该时长即放弃，避免服务端无响应时卡死 |
 | `LLM_MAX_RETRIES` | int | 2 | 是 |  | LLM 最大重试次数 |
+| `LLM_REASONING_EFFORTS` | str | `""` | 是 |  | 首选端点支持的推理档位，逗号分隔；留空按模型预设 |
+| `LLM_REASONING_EFFORTS_ALT` | str | `""` | 是 |  | 备选端点支持的推理档位，逗号分隔；留空按模型预设 |
 | `LLM_RETRY_DELAY` | float | 1 | 是 |  | 重试延迟(秒) |
 | `LLM_RETRY_MAX_DELAY` | float | 4 | 是 |  | 最大重试延迟(秒) |
 | `LLM_STREAM_TIMEOUT` | float | 120 | 是 |  | 流式调用总超时(秒)，超过后降级到本地决策 |
@@ -184,4 +190,4 @@
 - `hidden`：`true` 表示不在界面显示，只能直接编辑 `settings.json`
 - `enum` / `minimum` / `maximum`：取值约束，会写进 `settings-schema.json`
 
-共 121 项（其中 64 项未在界面列出）。
+共 127 项（其中 67 项未在界面列出）。

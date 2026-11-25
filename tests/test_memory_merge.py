@@ -6,6 +6,7 @@ import pytest
 
 from pet.brain import memory_merge
 from pet.brain.memory import MemoryStore
+from pet.brain.providers import LLMConnection
 from pet.config import config
 
 
@@ -63,23 +64,38 @@ class TestParseGroups:
 
 
 class TestConnection:
+    """汇总连接：三项齐全用独立配置，否则整段沿用当前对话方案。"""
+
     def test_independent_when_all_set(self, monkeypatch):
         monkeypatch.setattr(config, "MEMORY_MERGE_URL", "https://merge.example/v1")
         monkeypatch.setattr(config, "MEMORY_MERGE_KEY", "merge-key")
         monkeypatch.setattr(config, "MEMORY_MERGE_MODEL", "merge-model")
-        assert memory_merge._resolve_connection() == (
-            "merge-key", "https://merge.example/v1", "merge-model")
+        monkeypatch.setattr(config, "LLM_PROVIDER", "openai")
+        assert memory_merge._resolve_connection() == LLMConnection(
+            provider="openai", key="merge-key",
+            url="https://merge.example/v1", model="merge-model")
+
+    def test_independent_keeps_dialog_channel(self, monkeypatch):
+        """独立配置只覆盖地址与模型，通道沿用对话通道。"""
+        monkeypatch.setattr(config, "MEMORY_MERGE_URL", "https://merge.example/v1")
+        monkeypatch.setattr(config, "MEMORY_MERGE_KEY", "merge-key")
+        monkeypatch.setattr(config, "MEMORY_MERGE_MODEL", "merge-model")
+        monkeypatch.setattr(config, "LLM_PROVIDER", "gemini")
+        assert memory_merge._resolve_connection().provider == "gemini"
 
     def test_partial_falls_back(self, monkeypatch):
         monkeypatch.setattr(config, "MEMORY_MERGE_URL", "https://merge.example/v1")
         monkeypatch.setattr(config, "MEMORY_MERGE_KEY", "")
         monkeypatch.setattr(config, "MEMORY_MERGE_MODEL", "merge-model")
+        monkeypatch.setattr(config, "LLM_PROVIDER", "openai")
+        monkeypatch.setattr(config, "BRAIN", "api")
         monkeypatch.setattr(config, "LLM_URL", "https://primary.example/v1")
         monkeypatch.setattr(config, "LLM_KEY", "primary-key")
         monkeypatch.setattr(config, "LLM_MODEL", "primary-model")
         monkeypatch.setattr(config, "LLM_ACTIVE_PROFILE", "primary")
-        assert memory_merge._resolve_connection() == (
-            "primary-key", "https://primary.example/v1", "primary-model")
+        assert memory_merge._resolve_connection() == LLMConnection(
+            provider="openai", key="primary-key",
+            url="https://primary.example/v1", model="primary-model")
 
 
 class TestFormatRecords:

@@ -10,6 +10,7 @@ dist/
 
 # 测试
 .pytest_cache/
+/.pytest-tmp/
 
 # 虚拟环境
 .env

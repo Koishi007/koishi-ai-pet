@@ -279,6 +279,10 @@ class PetAgent(QObject):
                 self.behavior.close_events()
             except Exception:
                 logger.warning("[PetAgent] close event store failed")
+            try:
+                self.behavior.close_llm()
+            except Exception:
+                logger.warning("[PetAgent] close llm client failed")
         logger.info("[PetAgent] stopped")
 
     def trigger(self, intent: str, **kwargs):

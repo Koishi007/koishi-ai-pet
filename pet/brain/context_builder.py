@@ -109,7 +109,7 @@ class ContextBuilder:
             mime = self._image_mime()
             content = [
                 {"type": "text", "text": prompt},
-                {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{base64_img}"}},
+                {"type": "image", "mime": mime, "data": base64_img},
             ]
         return [
             {"role": "system", "content": system},
@@ -300,7 +300,7 @@ class ContextBuilder:
             mime = self._image_mime()
             messages.append({"role": "user", "content": [
                 {"type": "text", "text": current_prompt},
-                {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{base64_img}"}},
+                {"type": "image", "mime": mime, "data": base64_img},
             ]})
         else:
             messages.append({"role": "user", "content": current_prompt})
@@ -338,7 +338,7 @@ class ContextBuilder:
             mime = self._image_mime()
             messages.append({"role": "user", "content": [
                 {"type": "text", "text": current_prompt},
-                {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{base64_img}"}},
+                {"type": "image", "mime": mime, "data": base64_img},
             ]})
         else:
             messages.append({"role": "user", "content": current_prompt})

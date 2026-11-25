@@ -31,13 +31,15 @@
 | `pet/brain/budget.py` | 单次请求的输出预算：统一硬上限 + 动态配额（基线 / 思考预留 / 工具预留） | `thinking_active()` `output_budget()` |
 | `pet/brain/context_builder.py` | LLM 请求上下文的构建 | `ContextBuilder` |
 | `pet/brain/conversation_store.py` | 对话历史持久化存储 — 记录所有 speech 输出和用户 chat 输入，按天切分，至多保存 7 天。 | `ConversationStore` |
-| `pet/brain/embedding_client.py` | OpenAI 兼容的嵌入向量客户端。 | `EmbeddingError` `EmbeddingClient` |
+| `pet/brain/embedding_client.py` | 嵌入向量客户端：按 OpenAI 兼容接口构建 provider，对结果做 L2 归一化。 | `EmbeddingError` `EmbeddingClient` |
 | `pet/brain/events.py` | 会话事件日志：只追加的事件存储，`Message[]` 由 `projection.project` 从这里投影。 | `Event` `truncate_bytes()` `new_group_id()` `EventStore` |
 | `pet/brain/linux_detector.py` | Linux X11 窗口枚举 —— 基于 python-xlib + EWMH，与 Win32/macOS 版保持相同接口。 | `is_window_alive()` `get_window_rect()` `is_window_occluded()` `get_visible_windows()` |
-| `pet/brain/llm_client.py` | OpenAI-compatible LLM client（支持首选/备选两套模型方案） | `normalize_profile()` `active_llm_profile()` `other_profile()` `resolve_llm_profile()` `LLMClient` |
+| `pet/brain/llm_client.py` | LLM 客户端：维护首选 / 备选两套方案，每套方案持有一个 provider 实例。 | `normalize_profile()` `active_llm_profile()` `other_profile()` `resolve_llm_profile()` `resolve_provider_name()` `resolve_reasoning_efforts()` |
+| `pet/brain/llm_errors.py` | 供应商边界的异常族；各 provider 在边界处把 SDK 异常映射到这里。 | `ProviderError` `ProviderAuthError` `ProviderBadRequest` `ProviderNotFound` `ProviderRateLimit` `ProviderServerError` |
 | `pet/brain/llm_gateway.py` | LLM 调用封装：补全请求、流式建流与重试参数，供决策编排直接调用。 | `LlmGateway` |
 | `pet/brain/llm_retry.py` | LLM 调用重试与异常分类。 | `is_retryable()` `retryer_for()` `llm_retry()` `CreateStreamTimeout` `llm_stream_with_retry()` |
 | `pet/brain/llm_stats.py` | LLM 调用计数器 | `LlmStats` |
+| `pet/brain/llm_types.py` | 供应商边界的中性类型：工具调用、用量、补全结果与流式增量。 | `ToolCall` `ToolCallDelta` `Usage` `Completion` `StreamEvent` |
 | `pet/brain/local_fallback.py` | 本地兜底决策：LLM 不可用或抢锁失败时的降级产出。 | `decide_local()` `interact_decide_local()` `chat_decide_local()` |
 | `pet/brain/mac_detector.py` | macOS 窗口枚举 —— 基于 Quartz CGWindow API，与 Win32 版保持相同接口。 | `is_window_alive()` `get_window_rect()` `is_window_occluded()` `get_visible_windows()` |
 | `pet/brain/memory.py` | SQLite 持久化记忆存储 | `LightweightDeduplicator` `_MemoryRetriever` `KeywordRetriever` `VectorRetriever` `MemoryStore` `get_memory_store()` |
@@ -46,9 +48,14 @@
 | `pet/brain/parsing.py` | LLM 输出解析：把文本行 / 流式 chunk 收敛成 BehaviorOutput。 | `BehaviorSink` `parse_deltas()` `parse_mood_line()` `parse_vitals_line()` `parse_action_line()` `InlineTagNormalizer` |
 | `pet/brain/projection.py` | 事件日志到 `Message[]` 的投影：纯函数，只依赖事件、Profile 与 Budget。 | `Profile` `Budget` `_Group` `_Item` `project()` `degrade_messages()` |
 | `pet/brain/prompts.py` | 系统提示词分层组装 | `_Lazy` `invalidate_action_section()` `action_range()` `history_note()` `build_attention_hint()` `build_system_prompt()` |
+| `pet/brain/providers/__init__.py` | 供应商边界：对话协议、能力声明与连接参数。 | `Capabilities` `LLMConnection` `ChatProvider` |
+| `pet/brain/providers/gemini_provider.py` | Google Gemini 通道：消息编码、流式解码、异常映射与思考强度。 | `encode_contents()` `encode_tools()` `GeminiProvider` `_GeminiStream` |
+| `pet/brain/providers/openai_provider.py` | OpenAI 兼容通道：消息编码、流式解码、异常映射与思考降级判据。 | `encode_messages()` `encode_tools()` `OpenAIProvider` `connection_timeout()` `_OpenAIStream` |
+| `pet/brain/providers/registry.py` | 通道登记表：有哪些通道、每个通道读哪些配置键。 | `provider_names()` `channel_choices()` `url_placeholder()` `normalize_provider()` `config_keys()` `shared_keys()` |
+| `pet/brain/reasoning.py` | 推理强度的中性档位：取值域、端点预设与归一化。 | `normalize()` `parse_efforts()` `preset_efforts()` `effective_efforts()` |
 | `pet/brain/repair.py` | 格式修复重试：缺少必填字段时改写 messages 再跑一次。 | `action_bounds()` `action_requirement()` `missing_required()` `retry_if_incomplete()` `repair_messages()` |
 | `pet/brain/summary.py` | 摘要流水线的执行端：把上下文淘汰产生的待摘要条目压成一句写回上下文。 | `SummaryHooks` `flush_summaries()` `summarize_with_llm()` |
-| `pet/brain/tool_channel.py` | 工具通道选择：默认 native，端点明确拒绝时逐档降级并缓存结果。 | `is_tool_rejection()` `next_channel()` `channel_for()` `mark_downgraded()` `reset_cache()` `current_profile()` |
+| `pet/brain/tool_channel.py` | 工具通道选择：默认 native，端点明确拒绝时逐档降级并缓存结果。 | `ToolChannelState` `default_state()` `is_tool_rejection()` `next_channel()` `replay_args_mode()` `override_for()` |
 | `pet/brain/tool_loop.py` | 工具轮次：执行 LLM 请求的工具并循环，直到模型不再请求工具。 | `ToolSession` `run_tool_loop()` |
 | `pet/brain/win_detector.py` | Win32 窗口枚举 | `is_window_alive()` `get_window_rect()` `is_window_occluded()` `get_visible_windows()` |
 | `pet/brain/window_detector.py` | 窗口枚举 — 根据平台分发到 Win32 / Quartz / X11 后端 |  |
@@ -168,7 +175,7 @@
 | `pet/ui/settings_actions.py` | 设置页的后台动作：连通性测试、模型列表、记忆汇总与热键录制 | `apply_pet_scale()` `SettingsActions` |
 | `pet/ui/settings_fields.py` | 设置页的控件工厂、表单模型与跨模块共享的控件引用 | `MarkdownEdit` `SettingsWidgets` `SettingsForm` |
 | `pet/ui/settings_hooks.py` | 设置页可选能力的注入点：装配层在启动时绑定真实实现 | `bind()` `make_embedding_client()` `invalidate_action_section()` |
-| `pet/ui/settings_spec.py` | 设置界面的纯数据：页签归属与单位换算 | `display_value()` `stored_value()` |
+| `pet/ui/settings_spec.py` | 设置界面的纯数据：页签归属、推理强度档位与单位换算 | `effort_items()` `effort_label()` `display_value()` `stored_value()` |
 | `pet/ui/settings_tabs.py` | 设置页的四个页签：只负责搭建控件并登记到 SettingsForm | `SettingsTabs` |
 | `pet/ui/settings_window.py` | 设置界面 — 用户配置的图形界面 | `SettingsWindow` |
 | `pet/ui/settings_workers.py` | 设置页的后台任务：QObject worker 与 QThread 登记 | `LLMTestWorker` `EmbeddingTestWorker` `MemoryMergeWorker` `ModelsFetchWorker` `VoiceTestWorker` `ProbeRegistry` |
@@ -190,4 +197,4 @@
 | `pet/voice/voice_session.py` | 语音会话编排：麦克风采集 → 讯飞识别 | `VoiceSession` |
 | `pet/voice/xunfei_stt.py` | 讯飞语音听写 (iat) WebSocket API 封装 | `XunfeiSTT` |
 
-共 182 个模块。
+共 189 个模块。

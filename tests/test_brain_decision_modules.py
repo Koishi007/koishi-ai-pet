@@ -9,6 +9,8 @@ import threading
 import time
 from types import SimpleNamespace
 
+from pet.brain.llm_types import StreamEvent, ToolCallDelta, Usage
+
 import pytest
 
 import pet.brain.behavior as behavior_module
@@ -169,11 +171,11 @@ class TestRepairMessages:
         assert repaired[-1]["role"] == "user"
 
     def test_hint_offers_protocol_and_tool_call_paths(self):
-        """提示要模型先确认是输出协议字段，还是发起 OpenAI 格式的函数调用。"""
+        """提示要模型先确认是输出协议字段，还是直接发起函数调用。"""
         hint = repair_module._FORMAT_RETRY_HINT
 
         assert "Speech:" in hint and "Summary:" in hint
-        assert "OpenAI" in hint and "schema" in hint
+        assert "schema" in hint
 
     def test_sample_asks_to_keep_previous_fields(self):
         """有原文时提示只补缺失字段，不重新推理。"""
@@ -551,6 +553,41 @@ class TestStrictValidation:
         assert "期望 string" in out[2].error_message
 
 
+class TestToolLoopMessageShape:
+    """工具轮次写回的 assistant 消息必须是中性结构，编码由 provider 负责。"""
+
+    def test_assistant_tool_calls_are_neutral(self):
+        session = _FakeSession([("Speech: 来了\n", {})])
+        run_tool_loop([], _tool_calls("game__init", '{"game_name": "rps"}'), "",
+                      session, max_rounds=3)
+
+        assistant = next(m for m in session.last_messages
+                         if m.get("role") == "assistant")
+        call = assistant["tool_calls"][0]
+        assert call["name"] == "game__init"
+        assert call["arguments"] == '{"game_name": "rps"}'
+        assert "function" not in call
+        assert "type" not in call
+
+    def test_tool_result_keeps_call_id(self):
+        session = _FakeSession([("Speech: 来了\n", {})])
+        run_tool_loop([], _tool_calls("game__init"), "", session, max_rounds=3)
+
+        result = next(m for m in session.last_messages if m.get("role") == "tool")
+        assert result["tool_call_id"] == "call_game__init"
+
+    def test_message_brief_reads_neutral_tool_calls(self):
+        """日志摘要从中性 tool_calls 取名字与参数。"""
+        brief = behavior_module._msg_brief({
+            "role": "assistant", "content": None,
+            "tool_calls": [{"id": "call_1", "name": "game__init",
+                            "arguments": '{"game_name": "rps"}'}],
+        })
+        assert "game__init" in brief
+        assert '{"game_name": "rps"}' in brief
+        assert "call_1" in brief
+
+
 class TestToolLoopImages:
     """工具图片只在这轮请求里可见：tool 消息只放文本，图片紧随其后作为 user 内容。"""
 
@@ -558,7 +595,7 @@ class TestToolLoopImages:
         for message in session.last_messages:
             content = message.get("content")
             if isinstance(content, list) and any(
-                part.get("type") == "image_url" for part in content
+                part.get("type") == "image" for part in content
             ):
                 return content
         return []
@@ -568,7 +605,7 @@ class TestToolLoopImages:
                                caption="查看图片 图.png")
         run_tool_loop([], _tool_calls("file_ops__read_file"), "", session, max_rounds=3)
         content = self._image_message(session)
-        assert {"type": "image_url", "image_url": {"url": "data:image/png;base64,QUJD"}} in content
+        assert {"type": "image", "mime": "image/png", "data": "QUJD"} in content
         assert {"type": "text", "text": "来源：查看图片 图.png"} in content
 
     def test_image_result_dropped_without_vision(self):
@@ -724,24 +761,16 @@ class TestFlushSummaries:
         assert rec.added_covers == [(3, 9)]
 
 
-class _Usage:
-    prompt_tokens = 1
-    completion_tokens = 1
-    total_tokens = 2
-
-
 class _StreamStub:
-    """消费侧只用到 choices / delta.content / usage / finish_reason。"""
+    """按顺序回放的 StreamEvent 序列。"""
 
     def __init__(self, text, with_usage=True, finish_reason=None):
-        delta = SimpleNamespace(content=text, tool_calls=None)
-        choice = SimpleNamespace(delta=delta, finish_reason=finish_reason)
-        self._chunks = [SimpleNamespace(choices=[choice], usage=None)]
+        self._events = [StreamEvent(content=text, finish_reason=finish_reason)]
         if with_usage:
-            self._chunks.append(SimpleNamespace(choices=[], usage=_Usage()))
+            self._events.append(StreamEvent(usage=Usage(1, 1, 2)))
 
     def __iter__(self):
-        return iter(self._chunks)
+        return iter(self._events)
 
 
 class _FakeStreamLlm:
@@ -755,7 +784,7 @@ class _FakeStreamLlm:
         self.max_tokens = []
         self.messages_log = []
         self.model = "fake-model"
-        self.client = None  # stream_chat 被替换，不经过真实 client
+        self.provider = None  # gateway.stream 被替换，不经过真实 provider
 
     def __bool__(self):
         return True
@@ -775,7 +804,7 @@ def _stream_behavior(monkeypatch, texts, stream_factory=None):
     behavior._llm = fake
     behavior.gateway._llm = fake
 
-    def fake_stream_chat(messages, max_tokens=4000, tools=None, thinking=None, temperature=None):
+    def fake_stream(messages, max_tokens=4000, tools=None, thinking=None, temperature=None):
         fake.tags.append("stream")
         fake.messages_log.append(list(messages))
         fake.thinkings.append(thinking)
@@ -783,7 +812,7 @@ def _stream_behavior(monkeypatch, texts, stream_factory=None):
         fake.max_tokens.append(max_tokens)
         return (stream_factory or _StreamStub)(fake.texts.pop(0))
 
-    behavior.gateway.stream_chat = fake_stream_chat
+    behavior.gateway.stream = fake_stream
     return behavior, fake
 
 
@@ -946,8 +975,10 @@ class _CompletionResponse:
     """非流式补全的最小返回：choices[0] 的 message 与 finish_reason。"""
 
     def __init__(self, content="", finish_reason="stop"):
-        message = SimpleNamespace(content=content, tool_calls=None)
-        self.choices = [SimpleNamespace(message=message, finish_reason=finish_reason)]
+        self.content = content
+        self.tool_calls = ()
+        self.finish_reason = finish_reason or "stop"
+        self.usage = None
 
 
 class TestNonStreamDecide:
@@ -962,7 +993,7 @@ class TestNonStreamDecide:
             seen.append((thinking, max_tokens))
             return responses.pop(0)
 
-        behavior.gateway.completion = fake_completion
+        behavior.gateway.complete = fake_completion
         return behavior, seen
 
     def test_length_truncation_retries_without_thinking(self, monkeypatch):
@@ -984,30 +1015,26 @@ class TestNonStreamDecide:
         assert [(a.name, a.kwargs) for a in out.actions] == [("sit", {"duration": 5})]
         assert len(seen) == 2
 
-    def test_truncation_warning_names_budget(self, monkeypatch, caplog):
-        behavior, _seen = self._behavior(monkeypatch, [
+    def test_truncation_retry_disables_thinking(self, monkeypatch):
+        """被预算截断时，重试轮的思考开关必须关掉且输出上限下调。"""
+        behavior, seen = self._behavior(monkeypatch, [
             _CompletionResponse("", "length"),
             _CompletionResponse("", "length"),
         ])
-        with caplog.at_level(logging.WARNING):
-            behavior.chat_decide("在吗")
-        warnings = [r for r in caplog.records if r.levelno >= logging.WARNING]
-        assert warnings
-        assert any("length" in r.getMessage() for r in warnings)
+        behavior.chat_decide("在吗")
+        assert [thinking for thinking, _ in seen] == [None, False]
+        assert seen[1][1] < seen[0][1]
 
 
 class _ToolCallStream:
-    """首轮流只产出一条 tool_calls，把编排推进工具轮次。"""
+    """首轮流只产出一条工具调用事件，把编排推进工具轮次。"""
 
     def __init__(self, _text=None):
-        function = SimpleNamespace(name="timer__set", arguments="{}")
-        delta = SimpleNamespace(content=None,
-                                tool_calls=[SimpleNamespace(index=0, id="call_1", function=function)])
-        self._chunks = [SimpleNamespace(choices=[SimpleNamespace(delta=delta, finish_reason=None)],
-                                        usage=None)]
+        self._events = [StreamEvent(tool_call=ToolCallDelta(
+            index=0, id="call_1", name="timer__set", arguments="{}", complete=True))]
 
     def __iter__(self):
-        return iter(self._chunks)
+        return iter(self._events)
 
 
 class _HangingStream:
