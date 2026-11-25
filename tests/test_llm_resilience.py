@@ -317,14 +317,18 @@ class TestProfileResolution:
         monkeypatch.setattr(config, "LLM_MODEL_ALT", "m2")
         assert resolve_llm_profile("alternative") == ("k2", "u2", "m2")
 
-    def test_alternative_falls_back_per_field(self, monkeypatch):
+    @pytest.mark.parametrize("missing", ["LLM_KEY_ALT", "LLM_URL_ALT",
+                                         "LLM_MODEL_ALT"])
+    def test_alternative_needs_all_three(self, monkeypatch, missing):
+        """备选缺任一项即整方案沿用首选，不再逐字段拼接。"""
         monkeypatch.setattr(config, "LLM_KEY", "k1")
         monkeypatch.setattr(config, "LLM_URL", "u1")
         monkeypatch.setattr(config, "LLM_MODEL", "m1")
-        monkeypatch.setattr(config, "LLM_KEY_ALT", "")
+        monkeypatch.setattr(config, "LLM_KEY_ALT", "k2")
         monkeypatch.setattr(config, "LLM_URL_ALT", "u2")
-        monkeypatch.setattr(config, "LLM_MODEL_ALT", "")
-        assert resolve_llm_profile("alternative") == ("k1", "u2", "m1")
+        monkeypatch.setattr(config, "LLM_MODEL_ALT", "m2")
+        monkeypatch.setattr(config, missing, "")
+        assert resolve_llm_profile("alternative") == ("k1", "u1", "m1")
 
     def test_empty_alternative_uses_primary(self, monkeypatch):
         monkeypatch.setattr(config, "LLM_KEY", "k1")
@@ -468,6 +472,7 @@ class TestConnectionAssembly:
         monkeypatch.setattr(config, "LLM_KEY", "k1")
         monkeypatch.setattr(config, "LLM_MODEL", "m1")
         monkeypatch.setattr(config, "LLM_KEY_ALT", "k2")
+        monkeypatch.setattr(config, "LLM_URL_ALT", "u2")
         monkeypatch.setattr(config, "LLM_MODEL_ALT", "m2")
         assert resolve_provider_name("alternative") == "openai"
         assert resolve_connection("alternative").key == "k2"

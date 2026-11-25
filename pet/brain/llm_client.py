@@ -37,21 +37,29 @@ def other_profile(profile: str) -> str:
     return PROFILE_ALTERNATIVE if normalize_profile(profile) == PROFILE_PRIMARY else PROFILE_PRIMARY
 
 
+def is_complete(key: str, url: str, model: str) -> bool:
+    """地址、Key 与模型名都填写，才算一套独立连接。"""
+    return all((value or "").strip() for value in (key, url, model))
+
+
+def has_own_connection(profile: str) -> bool:
+    """该方案是否配齐了独立连接；备选缺任一项时整个方案沿用首选。"""
+    if normalize_profile(profile) != PROFILE_ALTERNATIVE:
+        return True
+    return is_complete(config.LLM_KEY_ALT, config.LLM_URL_ALT, config.LLM_MODEL_ALT)
+
+
 def resolve_llm_profile(profile: str) -> tuple[str, str, str]:
-    """返回指定方案实际生效的 (key, url, model)，备选空项回退到首选。"""
-    primary = (config.LLM_KEY, config.LLM_URL, config.LLM_MODEL)
-    if normalize_profile(profile) == PROFILE_ALTERNATIVE:
-        alt = (config.LLM_KEY_ALT, config.LLM_URL_ALT, config.LLM_MODEL_ALT)
-        if not any(alt):
-            return primary
-        return (alt[0] or primary[0], alt[1] or primary[1], alt[2] or primary[2])
-    return primary
+    """返回指定方案实际生效的 (key, url, model)；备选未配齐时整方案沿用首选。"""
+    if normalize_profile(profile) == PROFILE_ALTERNATIVE and has_own_connection(profile):
+        return (config.LLM_KEY_ALT, config.LLM_URL_ALT, config.LLM_MODEL_ALT)
+    return (config.LLM_KEY, config.LLM_URL, config.LLM_MODEL)
 
 
 def resolve_provider_name(profile: str) -> str:
-    """指定方案实际生效的通道名；备选留空时沿用首选，未知值回落到默认通道。"""
+    """指定方案实际生效的通道名；备选未配齐或未选通道时沿用首选，未知值回落到默认通道。"""
     primary = normalize_provider(config.LLM_PROVIDER)
-    if normalize_profile(profile) != PROFILE_ALTERNATIVE:
+    if not has_own_connection(profile):
         return primary
     alt = (config.LLM_PROVIDER_ALT or "").strip().lower()
     return normalize_provider(alt) if alt else primary
@@ -59,6 +67,8 @@ def resolve_provider_name(profile: str) -> str:
 
 def resolve_reasoning_efforts(profile: str) -> tuple[str, ...]:
     """该方案端点可用的档位：配置清单优先，其次模型预设，否则通道声明。"""
+    if not has_own_connection(profile):
+        return resolve_reasoning_efforts(PROFILE_PRIMARY)
     declared = reasoning_efforts(resolve_provider_name(profile))
     if not declared:
         return ()
@@ -70,13 +80,12 @@ def resolve_reasoning_efforts(profile: str) -> tuple[str, ...]:
 
 
 def resolve_reasoning_effort(profile: str) -> str:
-    """指定方案实际生效的推理强度；备选留空沿用首选，端点不支持的取值不下发。"""
-    primary = normalize_effort(config.LLM_REASONING_EFFORT)
-    if normalize_profile(profile) == PROFILE_ALTERNATIVE:
-        value = normalize_effort(config.LLM_REASONING_EFFORT_ALT) or primary
-    else:
-        value = primary
-    return value if value in resolve_reasoning_efforts(profile) else ""
+    """指定方案实际生效的推理强度；备选未配齐时跟随首选，端点不支持的取值不下发。"""
+    target = normalize_profile(profile) if has_own_connection(profile) else PROFILE_PRIMARY
+    alternative = target == PROFILE_ALTERNATIVE
+    value = normalize_effort(config.LLM_REASONING_EFFORT_ALT if alternative
+                             else config.LLM_REASONING_EFFORT)
+    return value if value in resolve_reasoning_efforts(target) else ""
 
 
 def resolve_connection(profile: str) -> LLMConnection:

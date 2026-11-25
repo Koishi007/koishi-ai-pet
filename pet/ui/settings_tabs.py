@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (QFormLayout, QGroupBox, QHBoxLayout, QLabel,
                                QLineEdit, QScrollArea, QTextEdit,
                                QVBoxLayout, QWidget)
 
+from pet.brain.llm_client import is_complete, resolve_llm_profile
 from pet.brain.providers.registry import (channel_choices, config_keys,
                                            config_keys_for, reasoning_efforts,
                                            url_placeholder)
@@ -25,6 +26,7 @@ from pet.ui.widgets import NoWheelComboBox
 
 _EFFORT_UNSUPPORTED = "当前模型不支持推理强度设置"
 _EFFORT_THINKING_OFF = "关闭思考时不下发推理强度"
+_EFFORT_BORROWED = "备选连接未填完整时沿用首选，推理强度不可单独设置"
 
 
 def _hint(text: str) -> QLabel:
@@ -49,8 +51,10 @@ class SettingsTabs:
     def __init__(self, form: SettingsForm):
         self.form = form
         self.widgets = SettingsWidgets()
-        # 各档位下拉上次写入的选项，输入过程中不重复重建
+        # 各档位下拉上次写入的选项与状态，输入过程中不重复重建
         self._effort_cache: dict[int, tuple] = {}
+        # 每行不可用的原因：空串可用，unsupported 端点无档位，borrowed 模型沿用首选
+        self._effort_reason: dict[int, str] = {}
 
     def build(self) -> tuple[tuple[str, QWidget], ...]:
         builders = {
@@ -67,7 +71,7 @@ class SettingsTabs:
         w.provider_combo.currentTextChanged.connect(self._apply_provider_visibility)
         w.provider_alt_combo.currentIndexChanged.connect(self._apply_provider_visibility)
         w.thinking_check.toggled.connect(self._sync_effort_enabled)
-        for edit in (w.model_edit, w.alt_model_edit):
+        for edit in (w.model_edit, w.alt_model_edit, w.alt_url_edit, w.alt_key_edit):
             edit.textChanged.connect(lambda _text: self._refresh_effort_options())
         w.btn_switch_profile.clicked.connect(actions.switch_profile)
         w.btn_fetch_models.clicked.connect(lambda: actions.fetch_models("primary"))
@@ -187,7 +191,7 @@ class SettingsTabs:
             "LLM_FALLBACK_ENABLED", "调用报错/超时重试时自动切换到备选模型")
         switch_layout.addWidget(w.fallback_check)
 
-        fallback_hint = _hint("备选方案的地址/Key/模型名留空时，自动沿用首选方案对应项")
+        fallback_hint = _hint("备选方案的地址、Key、模型名任一留空时，备选方案不生效，沿用首选")
         fallback_hint.setWordWrap(True)
         switch_layout.addWidget(fallback_hint)
 
@@ -218,7 +222,7 @@ class SettingsTabs:
         alt_channel = w.provider_alt_combo.currentData() or w.provider_combo.currentData()
         w.alt_effort_combo = f.combo_with_data(
             "LLM_REASONING_EFFORT_ALT",
-            effort_items(reasoning_efforts(alt_channel), "沿用首选"))
+            effort_items(reasoning_efforts(alt_channel), "由模型决定"))
         alt_form.addRow("备选推理强度:", w.alt_effort_combo)
         w.alt_effort_label = alt_form.labelForField(w.alt_effort_combo)
         switch_layout.addLayout(alt_form)
@@ -274,7 +278,7 @@ class SettingsTabs:
 
     def _fill_effort_combo(self, combo, efforts: tuple, empty_label: str) -> None:
         """按端点可用档位重建下拉项；选项未变时保留当前选中。"""
-        if self._effort_cache.get(id(combo)) == efforts:
+        if self._effort_cache.get(id(combo)) == (efforts, empty_label):
             return
         current = combo.currentData()
         combo.blockSignals(True)
@@ -283,7 +287,7 @@ class SettingsTabs:
             combo.addItem(label, value)
         combo.setCurrentIndex(max(combo.findData(current), 0))
         combo.blockSignals(False)
-        self._effort_cache[id(combo)] = efforts
+        self._effort_cache[id(combo)] = (efforts, empty_label)
 
     def _effort_channels(self) -> tuple[str, str]:
         """两套方案实际会用的通道；Ollama 固定走 OpenAI 兼容通道。"""
@@ -295,36 +299,50 @@ class SettingsTabs:
             return "openai", "openai"
         return primary, alt
 
+    def _alt_ready(self) -> bool:
+        """界面上备选方案是否配齐了地址、Key 与模型名。"""
+        w = self.widgets
+        return is_complete(w.alt_key_edit.text(), w.alt_url_edit.text(),
+                           w.alt_model_edit.text())
+
     def _refresh_effort_options(self) -> None:
-        """按通道声明、端点配置与模型名重建两个档位下拉；端点无档位时灰置并提示。"""
+        """按通道声明、端点配置与模型名重建两个档位下拉；不可用时灰置并提示。"""
         w = self.widgets
         primary_channel, alt_channel = self._effort_channels()
-        # 每行：下拉、下拉标签、提示行、模型输入框、通道、端点配置、首项文案
-        for combo, combo_label, hint, model_edit, channel, override, empty_label in (
+        # 每行：下拉、下拉标签、提示行、模型输入框、通道、端点配置、方案是否独立
+        for combo, combo_label, hint, model_edit, channel, override, own in (
             (w.effort_combo, w.effort_label, w.effort_hint, w.model_edit,
-             primary_channel, config.LLM_REASONING_EFFORTS, "由模型决定"),
+             primary_channel, config.LLM_REASONING_EFFORTS, True),
             (w.alt_effort_combo, w.alt_effort_label, None, w.alt_model_edit,
-             alt_channel, config.LLM_REASONING_EFFORTS_ALT, "沿用首选"),
+             alt_channel, config.LLM_REASONING_EFFORTS_ALT, self._alt_ready()),
         ):
             declared = reasoning_efforts(channel)
-            efforts = effective_efforts(declared, override, model_edit.text())
-            self._fill_effort_combo(combo, efforts, empty_label)
+            if not own:
+                self._fill_effort_combo(combo, (), "跟随首选")
+                reason = "borrowed"
+            else:
+                efforts = effective_efforts(declared, override, model_edit.text())
+                self._fill_effort_combo(combo, efforts, "由模型决定")
+                reason = "" if efforts else "unsupported"
+            self._effort_reason[id(combo)] = reason
             combo.setVisible(bool(declared))
             combo_label.setVisible(bool(declared))
             if hint is not None:
-                hint.setVisible(bool(declared) and bool(efforts))
+                hint.setVisible(bool(declared) and not reason)
         self._sync_effort_enabled()
 
     def _sync_effort_enabled(self) -> None:
-        """关闭思考或端点没有档位时禁用两个下拉，并说明原因。"""
+        """关闭思考、端点没有档位或方案沿用首选时禁用两个下拉，并说明原因。"""
         w = self.widgets
         ready = w.brain_combo.currentText() != "local"
         thinking_off = w.thinking_check.isChecked()
         for combo, label in ((w.effort_combo, w.effort_label),
                              (w.alt_effort_combo, w.alt_effort_label)):
-            supported = bool(self._effort_cache.get(id(combo)))
-            combo.setEnabled(ready and supported and not thinking_off)
-            if not supported:
+            reason = self._effort_reason.get(id(combo), "")
+            combo.setEnabled(ready and not thinking_off and not reason)
+            if reason == "borrowed":
+                text = _EFFORT_BORROWED
+            elif reason == "unsupported":
                 text = _EFFORT_UNSUPPORTED
             elif thinking_off:
                 text = _EFFORT_THINKING_OFF
@@ -360,13 +378,12 @@ class SettingsTabs:
         """刷新「当前启用方案」的按钮文案与状态标签。"""
         w = self.widgets
         active = getattr(config, "LLM_ACTIVE_PROFILE", "primary") or "primary"
+        model = resolve_llm_profile(active)[2] or "未配置"
         if active == "alternative":
             w.btn_switch_profile.setText("切换回首选模型")
-            model = config.LLM_MODEL_ALT or config.LLM_MODEL or "未配置"
             w.label_active_profile.setText(f"当前启用：备选模型（{model}）")
         else:
             w.btn_switch_profile.setText("切换到备选模型")
-            model = config.LLM_MODEL or "未配置"
             w.label_active_profile.setText(f"当前启用：首选模型（{model}）")
 
 

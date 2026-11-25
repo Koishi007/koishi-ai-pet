@@ -14,6 +14,7 @@ from pet.ui.styles import MENU_SOLID_QSS
 from pet.config import config
 from pet.ui.settings_fields import SettingsForm, SettingsWidgets
 from pet.brain.llm_errors import ProviderUnavailable
+from pet.brain.llm_client import is_complete
 from pet.brain.providers import LLMConnection
 from pet.brain.providers.registry import (build_provider, normalize_provider,
                                           reasoning_efforts)
@@ -88,25 +89,28 @@ class SettingsActions(QObject):
         logger.info(f"[Settings] active LLM profile switched to {target}")
 
     def profile_form_values(self, profile: str) -> tuple[str, str, str]:
-        """按方案读取界面当前填写值 (key, url, model)，备选空项回退到首选。"""
+        """按方案读取界面当前填写值 (key, url, model)；备选未配齐时整方案沿用首选。"""
         w = self.widgets
         primary = (w.llm_key_edit.text().strip(), w.url_edit.text().strip(),
                    w.model_edit.text().strip())
-        if profile != "alternative":
+        if not self.alt_ready():
             return primary
-        alt = (w.alt_key_edit.text().strip(), w.alt_url_edit.text().strip(),
-               w.alt_model_edit.text().strip())
-        if not any(alt):
-            return primary
-        return (alt[0] or primary[0], alt[1] or primary[1], alt[2] or primary[2])
+        return (w.alt_key_edit.text().strip(), w.alt_url_edit.text().strip(),
+                w.alt_model_edit.text().strip())
+
+    def alt_ready(self) -> bool:
+        """界面上备选方案是否配齐了地址、Key 与模型名。"""
+        w = self.widgets
+        return is_complete(w.alt_key_edit.text(), w.alt_url_edit.text(),
+                           w.alt_model_edit.text())
 
     def effort_for_test(self, profile: str) -> str:
-        """界面当前档位；测备选且留空时取首选值，端点不支持的取值不下发。"""
+        """界面当前档位；测备选且方案未配齐时跟随首选，端点不支持的取值不下发。"""
         w = self.widgets
         primary = w.effort_combo.currentData() or ""
-        if profile != "alternative":
+        if profile != "alternative" or not self.alt_ready():
             return primary
-        value = w.alt_effort_combo.currentData() or primary
+        value = w.alt_effort_combo.currentData() or ""
         channel = ("openai" if w.brain_combo.currentText() == "ollama"
                    else self._provider_name_for(profile))
         allowed = effective_efforts(reasoning_efforts(channel),
@@ -119,11 +123,11 @@ class SettingsActions(QObject):
         return w.btn_fetch_models_alt if profile == "alternative" else w.btn_fetch_models
 
     def _provider_name_for(self, profile: str) -> str:
-        """指定方案要连的通道；备选留空表示沿用首选。"""
+        """指定方案要连的通道；备选未配齐或未选通道时沿用首选。"""
         w = self.widgets
         primary = normalize_provider(w.provider_combo.currentData())
         alt = w.provider_alt_combo.currentData()
-        if profile != "alternative" or not alt:
+        if profile != "alternative" or not alt or not self.alt_ready():
             return primary
         return normalize_provider(alt)
 

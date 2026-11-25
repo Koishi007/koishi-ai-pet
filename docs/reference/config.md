@@ -28,10 +28,10 @@
 | `LLM_THINKING_DISABLED` | bool | false |  | 关闭思考模式 |
 | `LLM_FALLBACK_ENABLED` | bool | true |  | 调用报错或超时重试时自动切换到备选模型 |
 | `LLM_PROVIDER_ALT` | str | `""` |  | 备选通道，留空沿用首选（可选： / openai / gemini） |
-| `LLM_URL_ALT` | str | `""` |  | 备选 API 地址，留空则沿用首选；gemini 通道留空用官方端点，自建代理可填根地址 |
-| `LLM_KEY_ALT` | str | `""` |  | 备选 API Key，留空则沿用首选 |
-| `LLM_MODEL_ALT` | str | `""` |  | 备选 LLM 模型名称，留空则沿用首选 |
-| `LLM_REASONING_EFFORT_ALT` | str | `""` |  | 备选推理强度，留空沿用首选（可选： / minimal / low / medium / high / xhigh / max） |
+| `LLM_URL_ALT` | str | `""` |  | 备选 API 地址；备选连接缺任一项则整个方案沿用首选。gemini 通道留空用官方端点，自建代理可填根地址 |
+| `LLM_KEY_ALT` | str | `""` |  | 备选 API Key；备选连接缺任一项则整个方案沿用首选 |
+| `LLM_MODEL_ALT` | str | `""` |  | 备选 LLM 模型名称；备选地址、Key、模型名任一留空则整个方案沿用首选 |
+| `LLM_REASONING_EFFORT_ALT` | str | `""` |  | 备选推理强度；备选连接未填完整时跟随首选（可选： / minimal / low / medium / high / xhigh / max） |
 
 ### 行为
 

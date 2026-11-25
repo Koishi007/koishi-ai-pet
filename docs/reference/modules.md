@@ -34,7 +34,7 @@
 | `pet/brain/embedding_client.py` | 嵌入向量客户端：按 OpenAI 兼容接口构建 provider，对结果做 L2 归一化。 | `EmbeddingError` `EmbeddingClient` |
 | `pet/brain/events.py` | 会话事件日志：只追加的事件存储，`Message[]` 由 `projection.project` 从这里投影。 | `Event` `truncate_bytes()` `new_group_id()` `EventStore` |
 | `pet/brain/linux_detector.py` | Linux X11 窗口枚举 —— 基于 python-xlib + EWMH，与 Win32/macOS 版保持相同接口。 | `is_window_alive()` `get_window_rect()` `is_window_occluded()` `get_visible_windows()` |
-| `pet/brain/llm_client.py` | LLM 客户端：维护首选 / 备选两套方案，每套方案持有一个 provider 实例。 | `normalize_profile()` `active_llm_profile()` `other_profile()` `resolve_llm_profile()` `resolve_provider_name()` `resolve_reasoning_efforts()` |
+| `pet/brain/llm_client.py` | LLM 客户端：维护首选 / 备选两套方案，每套方案持有一个 provider 实例。 | `normalize_profile()` `active_llm_profile()` `other_profile()` `is_complete()` `has_own_connection()` `resolve_llm_profile()` |
 | `pet/brain/llm_errors.py` | 供应商边界的异常族；各 provider 在边界处把 SDK 异常映射到这里。 | `ProviderError` `ProviderAuthError` `ProviderBadRequest` `ProviderNotFound` `ProviderRateLimit` `ProviderServerError` |
 | `pet/brain/llm_gateway.py` | LLM 调用封装：补全请求、流式建流与重试参数，供决策编排直接调用。 | `LlmGateway` |
 | `pet/brain/llm_retry.py` | LLM 调用重试与异常分类。 | `is_retryable()` `retryer_for()` `llm_retry()` `CreateStreamTimeout` `llm_stream_with_retry()` |

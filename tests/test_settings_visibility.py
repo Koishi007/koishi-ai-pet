@@ -52,6 +52,14 @@ def _values(combo):
     return [combo.itemData(i) for i in range(combo.count())]
 
 
+def _own_alt(tabs, model: str = "mimo-v2.6-flash") -> None:
+    """把备选填成独立方案：地址、Key 与模型名都要有。"""
+    w = tabs.widgets
+    w.alt_url_edit.setText("https://alt.example.com/v1")
+    w.alt_key_edit.setText("sk-alt")
+    w.alt_model_edit.setText(model)
+
+
 def test_effort_row_visible_for_supported_channel(tabs):
     _select(tabs, "gemini")
     w = tabs.widgets
@@ -129,13 +137,32 @@ def test_effort_options_follow_primary_channel(tabs, name):
 def test_alt_effort_options_follow_alt_channel(tabs, name):
     _select(tabs, "openai")
     _select(tabs, name, alt=True)
+    _own_alt(tabs, "unknown-model")
     assert _values(tabs.widgets.alt_effort_combo) == [""] + list(reasoning_efforts(name))
+
+
+@pytest.mark.parametrize("missing", ["alt_url_edit", "alt_key_edit",
+                                     "alt_model_edit"])
+def test_alt_effort_greyed_when_connection_incomplete(tabs, missing):
+    """备选缺任一项即沿用首选，档位不可单独设置。"""
+    w = tabs.widgets
+    w.brain_combo.setCurrentText("api")
+    _select(tabs, "openai")
+    _own_alt(tabs)
+    assert w.alt_effort_combo.isEnabled() is True
+    assert _values(w.alt_effort_combo) == ["", "low", "medium", "high"]
+
+    getattr(w, missing).clear()
+    assert w.alt_effort_combo.isEnabled() is False
+    assert w.alt_effort_combo.toolTip() != ""
+    assert _values(w.alt_effort_combo) == [""]
 
 
 def test_effort_combos_disabled_when_thinking_off(tabs):
     """关闭思考时档位不下发，两个下拉一起禁用并给出提示。"""
     w = tabs.widgets
     w.brain_combo.setCurrentText("api")
+    _own_alt(tabs)
     w.thinking_check.setChecked(False)
     assert w.effort_combo.isEnabled() is True
     assert w.effort_combo.toolTip() == ""

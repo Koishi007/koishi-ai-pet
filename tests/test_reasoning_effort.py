@@ -54,18 +54,38 @@ def test_effort_keys_belong_to_every_channel(name):
     assert "LLM_REASONING_EFFORT_ALT" in config_keys_for(name, "alternative")
 
 
-def test_alternative_effort_inherits_primary(monkeypatch):
+def _own_alternative(monkeypatch, model: str = "gpt-5.2") -> None:
+    """给备选配齐地址、Key 与模型，使其成为独立方案。"""
+    monkeypatch.setattr(config, "LLM_KEY_ALT", "k2")
+    monkeypatch.setattr(config, "LLM_URL_ALT", "https://alt.example.com/v1")
+    monkeypatch.setattr(config, "LLM_MODEL_ALT", model)
+
+
+@pytest.mark.parametrize("missing", ["LLM_KEY_ALT", "LLM_URL_ALT",
+                                     "LLM_MODEL_ALT"])
+def test_alternative_follows_primary_when_any_field_blank(monkeypatch, missing):
+    """备选缺任一项即整方案沿用首选，档位也跟随首选。"""
+    _own_alternative(monkeypatch)
+    monkeypatch.setattr(config, missing, "")
     monkeypatch.setattr(config, "LLM_REASONING_EFFORT", "high")
-    monkeypatch.setattr(config, "LLM_REASONING_EFFORT_ALT", "")
+    monkeypatch.setattr(config, "LLM_REASONING_EFFORT_ALT", "low")
     assert resolve_reasoning_effort("primary") == "high"
     assert resolve_reasoning_effort("alternative") == "high"
 
 
 def test_each_profile_keeps_its_own_effort(monkeypatch):
+    _own_alternative(monkeypatch)
     monkeypatch.setattr(config, "LLM_REASONING_EFFORT", "high")
     monkeypatch.setattr(config, "LLM_REASONING_EFFORT_ALT", "low")
     assert resolve_reasoning_effort("primary") == "high"
     assert resolve_reasoning_effort("alternative") == "low"
+
+
+def test_alternative_does_not_inherit_when_it_has_own_connection(monkeypatch):
+    _own_alternative(monkeypatch)
+    monkeypatch.setattr(config, "LLM_REASONING_EFFORT", "high")
+    monkeypatch.setattr(config, "LLM_REASONING_EFFORT_ALT", "")
+    assert resolve_reasoning_effort("alternative") == ""
 
 
 def test_unknown_effort_resolves_to_empty(monkeypatch):

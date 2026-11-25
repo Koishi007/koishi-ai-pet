@@ -207,7 +207,7 @@ class ProviderUnavailable(ProviderError)     # 通道名未知或依赖缺失
 
 协议签名是 `thinking: bool | None`，只表达两件事：`None` 跟随 `LLM_THINKING_DISABLED`，显式 `True` / `False` 覆盖全局开关；`True` 表示允许思考，`False` 表示关闭思考。判定复用 `pet/brain/budget.py` 的 `thinking_active()`，保证预算与请求参数对「这次带不带思考」的结论一致。
 
-推理强度按方案配置：`LLM_REASONING_EFFORT(S)` 与 `LLM_REASONING_EFFORT(S)_ALT`，存中性档位 `minimal` / `low` / `medium` / `high` / `xhigh` / `max`，空串表示不下发。备选留空沿用首选。通道声明、协议值映射与降级阶梯见 [通用推理强度设计](2026-11-25-reasoning-effort-design.md)。
+推理强度按方案配置：`LLM_REASONING_EFFORT(S)` 与 `LLM_REASONING_EFFORT(S)_ALT`，存中性档位 `minimal` / `low` / `medium` / `high` / `xhigh` / `max`，空串表示不下发。备选把地址、Key 与模型名填齐时独立取值，缺任一项时档位跟随首选。通道声明、协议值映射与降级阶梯见 [通用推理强度设计](2026-11-25-reasoning-effort-design.md)。
 
 档位只在 `thinking_active()` 为真时下发：`openai` 通道写进 `extra_body.reasoning_effort`，`gemini` 通道写进 `ThinkingConfig(thinking_level=...)`。界面选项由通道 `reasoning_efforts`、模型预设与端点清单共同收窄，不手写。
 
@@ -308,7 +308,9 @@ name = next((n for seen_at, n in reversed(calls.get(call_id, []))
 
 现有实现由四个配置项共同决定「用哪个客户端」：`BRAIN`、`OLLAMA_BASE_URL`、`LLM_ACTIVE_PROFILE`、`LLM_FALLBACK_ENABLED`。本设计不改它们的语义，只补一条绑定规则。
 
-**通道属于方案，不属于全局。** `LLM_PROVIDER` 描述首选方案，`LLM_PROVIDER_ALT` 描述备选方案，与 `LLM_URL` / `LLM_KEY` / `LLM_MODEL` 和 `LLM_URL_ALT` / `LLM_KEY_ALT` / `LLM_MODEL_ALT` 一一对应。`LLM_ACTIVE_PROFILE` 只决定两套方案里哪一套生效，不改变归属。`LLM_PROVIDER_ALT` 留空时沿用 `LLM_PROVIDER`。
+**通道属于方案，不属于全局。** `LLM_PROVIDER` 描述首选方案，`LLM_PROVIDER_ALT` 描述备选方案，与 `LLM_URL` / `LLM_KEY` / `LLM_MODEL` 和 `LLM_URL_ALT` / `LLM_KEY_ALT` / `LLM_MODEL_ALT` 一一对应。`LLM_ACTIVE_PROFILE` 只决定两套方案里哪一套生效，不改变归属。
+
+**备选是整方案生效或整方案沿用。** 三个备选键不逐项回退：地址、Key 与模型名都填了才算独立方案，缺任一项时整个备选方案读首选的三项，通道也沿用 `LLM_PROVIDER`。`LLM_PROVIDER_ALT` 只在备选配齐时生效。
 
 `BRAIN` 保持三档，作为通道之上的总开关：
 
@@ -345,7 +347,7 @@ def temporary_provider(...) -> Iterator[ChatProvider]
 
 未知通道与依赖缺失都抛 `ProviderUnavailable`，不返回 `None`：调用方要么降级、要么把可读原因报到界面，两条路径都不需要再猜「为什么没建成」。生命周期长于一次调用的调用方用 `build_provider` 并自己持有实例；一次性使用（记忆汇总、模型列表）用 `temporary_provider`，不写 `try/finally`。
 
-方案里的 provider 名留空时沿用首选方案的 provider，避免备选只填 key 时通道缺失。
+方案里的 provider 名留空时沿用首选方案的 provider；备选连接没填齐时通道也沿用首选。
 
 组装规则：`BRAIN=ollama` 时两套方案都组装成 `LLMConnection(provider="openai", url=OLLAMA_BASE_URL, key="ollama", model=model or "llama3.2")`；`BRAIN=api` 时按各自方案的通道键组装；`BRAIN=local` 时不组装。
 
@@ -435,7 +437,7 @@ class ProviderSpec:
 | `LLM_PROVIDER` | str | `openai` | 首选通道，取值 `openai` / `gemini` |
 | `LLM_PROVIDER_ALT` | str | `""` | 备选通道，留空沿用首选 |
 | `LLM_REASONING_EFFORT` | str | `""` | 首选推理强度，语义见 §5.2 与 [通用推理强度设计](2026-11-25-reasoning-effort-design.md) |
-| `LLM_REASONING_EFFORT_ALT` | str | `""` | 备选推理强度，留空沿用首选 |
+| `LLM_REASONING_EFFORT_ALT` | str | `""` | 备选推理强度；备选连接未填完整时跟随首选 |
 | `LLM_REASONING_EFFORTS` | str | `""` | 首选端点支持的档位，逗号分隔；留空按模型预设。仅 settings.json |
 | `LLM_REASONING_EFFORTS_ALT` | str | `""` | 备选端点支持的档位；留空按模型预设。仅 settings.json |
 
@@ -509,7 +511,7 @@ BRAIN == api     → 通道下拉启用，方案键按选中通道的 config_key
 | 模型方案 | 「当前启用」、切换按钮、回退开关 | 不变 |
 | | 「备选通道」下拉，`LLM_PROVIDER_ALT` | 位于备选分组首行，选项与首选一致 |
 | | `LLM_URL_ALT`、`LLM_KEY_ALT`、`LLM_MODEL_ALT` | 显隐与占位符随通道变化 |
-| | 「推理强度」，`LLM_REASONING_EFFORT_ALT` | 选项来自备选端点；首项为「沿用首选」 |
+| | 「推理强度」，`LLM_REASONING_EFFORT_ALT` | 选项来自备选端点；备选连接未填完整时显示「跟随首选」并灰置 |
 | 测试 | 「测试连接」按钮 | 走 provider 的 `complete()`，读界面当前档位，主动降级时在结果里说明原因 |
 
 `LLM_CACHE_PROMPT` 只读 settings.json：openai 兼容端点普遍自动缓存并忽略 `cache_control`，gemini 通道丢弃该键，界面上不提供开关。

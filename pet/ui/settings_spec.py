@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-# 推理强度：(显示文案, 存储值)。空串表示不下发，备选方案下表示沿用首选
+# 推理强度：(显示文案, 存储值)。空串表示不下发
 EFFORT_CHOICES: tuple[tuple[str, str], ...] = (
     ("由模型决定", ""),
     ("最省 (minimal)", "minimal"),
