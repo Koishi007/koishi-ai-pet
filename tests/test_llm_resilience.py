@@ -12,10 +12,11 @@ from pet.brain.llm_errors import (ProviderAuthError, ProviderBadRequest,
                                   ProviderTimeout)
 from pet.brain.llm_types import Completion
 from pet.brain.llm_client import (
-    LLMClient, normalize_profile, other_profile, resolve_connection,
-    resolve_llm_profile, resolve_provider_name,
+    LLMClient, connection_complete, is_complete, normalize_profile, other_profile,
+    profile_complete, resolve_connection, resolve_llm_profile, resolve_provider_name,
 )
 from pet.brain.llm_gateway import LlmGateway
+from pet.brain.providers import LLMConnection
 from pet.brain.llm_stats import LlmStats
 from pet.brain.llm_retry import (
     CreateStreamTimeout, _create_with_watchdog, is_retryable,
@@ -319,8 +320,8 @@ class TestProfileResolution:
 
     @pytest.mark.parametrize("missing", ["LLM_KEY_ALT", "LLM_URL_ALT",
                                          "LLM_MODEL_ALT"])
-    def test_alternative_needs_all_three(self, monkeypatch, missing):
-        """备选缺任一项即整方案沿用首选，不再逐字段拼接。"""
+    def test_alternative_reads_its_own_keys(self, monkeypatch, missing):
+        """备选只读自己的键，缺项不会拿首选的字段来补。"""
         monkeypatch.setattr(config, "LLM_KEY", "k1")
         monkeypatch.setattr(config, "LLM_URL", "u1")
         monkeypatch.setattr(config, "LLM_MODEL", "m1")
@@ -328,15 +329,69 @@ class TestProfileResolution:
         monkeypatch.setattr(config, "LLM_URL_ALT", "u2")
         monkeypatch.setattr(config, "LLM_MODEL_ALT", "m2")
         monkeypatch.setattr(config, missing, "")
-        assert resolve_llm_profile("alternative") == ("k1", "u1", "m1")
+        values = {"LLM_KEY_ALT": ("", "u2", "m2"),
+                  "LLM_URL_ALT": ("k2", "", "m2"),
+                  "LLM_MODEL_ALT": ("k2", "u2", "")}[missing]
+        assert resolve_llm_profile("alternative") == values
+        assert resolve_llm_profile("primary") == ("k1", "u1", "m1")
 
-    def test_empty_alternative_uses_primary(self, monkeypatch):
+    def test_empty_alternative_stays_empty(self, monkeypatch):
         monkeypatch.setattr(config, "LLM_KEY", "k1")
         monkeypatch.setattr(config, "LLM_URL", "u1")
         monkeypatch.setattr(config, "LLM_MODEL", "m1")
         for name in ("LLM_KEY_ALT", "LLM_URL_ALT", "LLM_MODEL_ALT"):
             monkeypatch.setattr(config, name, "")
-        assert resolve_llm_profile("alternative") == ("k1", "u1", "m1")
+        assert resolve_llm_profile("alternative") == ("", "", "")
+
+
+class TestConnectionCompleteness:
+    """连接完整性按通道判定：Gemini 允许地址留空，OpenAI 不允许。"""
+
+    def test_gemini_complete_without_url(self):
+        assert is_complete("gemini", "k", "", "gemini-2.5-flash") is True
+
+    def test_openai_requires_url(self):
+        assert is_complete("openai", "k", "", "m") is False
+
+    def test_model_is_always_required(self):
+        assert is_complete("gemini", "k", "", "") is False
+        assert is_complete("openai", "k", "u", "") is False
+
+    def test_alternative_gemini_without_url_is_complete(self, monkeypatch):
+        monkeypatch.setattr(config, "BRAIN", "api")
+        monkeypatch.setattr(config, "LLM_PROVIDER", "openai")
+        monkeypatch.setattr(config, "LLM_PROVIDER_ALT", "gemini")
+        monkeypatch.setattr(config, "LLM_KEY_ALT", "k2")
+        monkeypatch.setattr(config, "LLM_URL_ALT", "")
+        monkeypatch.setattr(config, "LLM_MODEL_ALT", "gemini-2.5-flash")
+
+        assert profile_complete("alternative") is True
+        assert resolve_connection("alternative") == LLMConnection(
+            provider="gemini", key="k2", url="", model="gemini-2.5-flash")
+
+    def test_alternative_openai_without_url_is_incomplete(self, monkeypatch):
+        """备选自身不完整时不建 provider，也不会拿首选的字段顶上。"""
+        monkeypatch.setattr(config, "BRAIN", "api")
+        monkeypatch.setattr(config, "LLM_PROVIDER", "openai")
+        monkeypatch.setattr(config, "LLM_PROVIDER_ALT", "openai")
+        monkeypatch.setattr(config, "LLM_KEY", "k1")
+        monkeypatch.setattr(config, "LLM_URL", "u1")
+        monkeypatch.setattr(config, "LLM_MODEL", "m1")
+        monkeypatch.setattr(config, "LLM_KEY_ALT", "k2")
+        monkeypatch.setattr(config, "LLM_URL_ALT", "")
+        monkeypatch.setattr(config, "LLM_MODEL_ALT", "m2")
+
+        assert profile_complete("alternative") is False
+        assert resolve_llm_profile("alternative") == ("k2", "", "m2")
+        assert profile_complete("primary") is True
+
+    def test_profiles_have_independent_channels(self, monkeypatch):
+        """两套方案的通道互不影响。"""
+        monkeypatch.setattr(config, "LLM_PROVIDER", "gemini")
+        monkeypatch.setattr(config, "LLM_PROVIDER_ALT", "openai")
+
+        assert resolve_provider_name("primary") == "gemini"
+        assert resolve_provider_name("alternative") == "openai"
 
 
 def _bare_client(providers: dict, effective: str) -> LLMClient:
@@ -389,10 +444,21 @@ class TestActivateFallback:
         assert client.activate_fallback() is False
         assert client.using_fallback is False
 
-    def test_no_switch_when_configs_identical(self, monkeypatch, dual_profile):
-        # 备选留空 → 解析后与首选相同，切换没有意义
+    def test_no_switch_when_alternative_incomplete(self, monkeypatch, dual_profile):
+        """备选未配置时不切换，即使某处塞进了一个 provider 实例。"""
         for name in ("LLM_KEY_ALT", "LLM_URL_ALT", "LLM_MODEL_ALT"):
             monkeypatch.setattr(config, name, "")
+        client = _bare_client({"primary": _FakeProvider("m1"),
+                               "alternative": _FakeProvider("m2")}, "primary")
+        assert client.activate_fallback() is False
+        assert client.effective_profile == "primary"
+
+    def test_no_switch_when_configs_identical(self, monkeypatch, dual_profile):
+        # 两套连接参数填成一样，切换过去还是同一条链路
+        monkeypatch.setattr(config, "LLM_KEY_ALT", config.LLM_KEY)
+        monkeypatch.setattr(config, "LLM_URL_ALT", config.LLM_URL)
+        monkeypatch.setattr(config, "LLM_MODEL_ALT", config.LLM_MODEL)
+        monkeypatch.setattr(config, "LLM_PROVIDER_ALT", config.LLM_PROVIDER)
         client = _bare_client({"primary": _FakeProvider("m1"),
                                "alternative": _FakeProvider("m1")}, "primary")
         assert client.activate_fallback() is False
@@ -417,6 +483,29 @@ class TestActivateFallback:
         assert client.model == "m2"
         assert bool(client) is True
 
+    def test_reset_lands_on_available_profile(self, dual_profile):
+        """请求链起点就落到可用方案：首选建不起来时不会有重试回调来切换。"""
+        alt = _FakeProvider("m2")
+        client = _bare_client({"primary": None, "alternative": alt}, "alternative")
+        client.reset_effective()
+        assert client.effective_profile == "alternative"
+        assert client.provider is alt
+        assert bool(client) is True
+
+    def test_reset_keeps_preference_when_both_unavailable(self, dual_profile):
+        client = _bare_client({"primary": None, "alternative": None}, "alternative")
+        client.reset_effective()
+        assert client.effective_profile == "primary"
+        assert bool(client) is False
+
+    def test_reset_prefers_configured_profile_when_usable(self, dual_profile):
+        primary = _FakeProvider("m1")
+        client = _bare_client({"primary": primary, "alternative": _FakeProvider("m2")},
+                              "primary")
+        client.reset_effective()
+        assert client.effective_profile == "primary"
+        assert client.provider is primary
+
 
 class TestConnectionAssembly:
     """既有配置到连接参数的映射：BRAIN 三档、通道归属与备选回落。"""
@@ -432,6 +521,28 @@ class TestConnectionAssembly:
             monkeypatch.setattr(config, name, "")
         obj = LLMClient.__new__(LLMClient)
         assert obj._build_profile("primary") is None
+
+    def test_ollama_profile_with_blank_model_keeps_default(self, monkeypatch):
+        """Ollama 档的地址与 Key 来自配置，模型名留空回落默认模型，方案仍可用。"""
+        monkeypatch.setattr(config, "BRAIN", "ollama")
+        monkeypatch.setattr(config, "LLM_MODEL", "")
+        monkeypatch.setattr(config, "OLLAMA_BASE_URL", "http://localhost:11434/v1")
+
+        assert profile_complete("primary") is True
+        assert resolve_connection("primary").model == llm_client_mod.OLLAMA_DEFAULT_MODEL
+
+    def test_ollama_blank_model_counts_as_default_for_connection(self):
+        """界面判据同运行期：Ollama 档留空模型名按默认模型算，不算缺项。"""
+        assert connection_complete("ollama", "openai", "", "http://h/v1", "") is True
+        assert connection_complete("ollama", "openai", "", "", "") is False
+
+    def test_ollama_blank_base_url_leaves_profile_incomplete(self, monkeypatch):
+        """Ollama 档的地址来自配置，清空后两套方案都不完整。"""
+        monkeypatch.setattr(config, "BRAIN", "ollama")
+        monkeypatch.setattr(config, "OLLAMA_BASE_URL", "")
+
+        assert profile_complete("primary") is False
+        assert profile_complete("alternative") is False
 
     def test_ollama_brain_uses_openai_channel_and_default_model(self, monkeypatch):
         monkeypatch.setattr(config, "BRAIN", "ollama")
@@ -461,10 +572,13 @@ class TestConnectionAssembly:
         assert connection.provider == "gemini"
         assert connection.key == "k1"
 
-    def test_alternative_channel_falls_back_to_primary(self, monkeypatch):
+    def test_alternative_channel_ignores_primary(self, monkeypatch):
+        """备选通道只读自己的键；留空回落到默认通道。"""
         monkeypatch.setattr(config, "LLM_PROVIDER", "gemini")
+        monkeypatch.setattr(config, "LLM_PROVIDER_ALT", "openai")
+        assert resolve_provider_name("alternative") == "openai"
         monkeypatch.setattr(config, "LLM_PROVIDER_ALT", "")
-        assert resolve_provider_name("alternative") == "gemini"
+        assert resolve_provider_name("alternative") == "openai"
 
     def test_alternative_channel_overrides(self, monkeypatch):
         monkeypatch.setattr(config, "LLM_PROVIDER", "gemini")

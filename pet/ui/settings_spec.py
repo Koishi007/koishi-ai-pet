@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+# 调用模式的取值顺序，即下拉项顺序
+MODE_ORDER = ("local", "api", "ollama")
+
+EFFORT_DEFAULT_LABEL = "模型默认推理强度"
+
 # 推理强度：(显示文案, 存储值)。空串表示不下发
 EFFORT_CHOICES: tuple[tuple[str, str], ...] = (
-    ("由模型决定", ""),
+    (EFFORT_DEFAULT_LABEL, ""),
     ("最省 (minimal)", "minimal"),
     ("低 (low)", "low"),
     ("中 (medium)", "medium"),
@@ -12,8 +17,6 @@ EFFORT_CHOICES: tuple[tuple[str, str], ...] = (
     ("极高 (xhigh)", "xhigh"),
     ("最高 (max)", "max"),
 )
-
-EFFORT_HINT = "仅对开启思考的请求生效；下拉只列当前端点接受的档位"
 
 
 def effort_items(efforts, empty_label: str) -> list[tuple[str, str]]:
@@ -34,12 +37,14 @@ def effort_label(value: str) -> str:
 # 页签顺序即界面顺序；每个键按在页签里出现的先后排列。
 TAB_SPECS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("连接", (
-        "BRAIN", "LLM_PROVIDER", "LLM_URL", "OLLAMA_BASE_URL", "LLM_KEY",
-        "LLM_MODEL", "LLM_REASONING_EFFORT",
-        "LLM_TEMPERATURE", "LLM_TOOLS_ENABLED",         "LLM_TOOL_MAX_ROUNDS",
-        "LLM_THINKING_DISABLED", "LLM_FALLBACK_ENABLED",
+        "BRAIN",
+        "LLM_PROVIDER", "LLM_URL", "LLM_KEY", "LLM_MODEL", "LLM_REASONING_EFFORT",
         "LLM_PROVIDER_ALT", "LLM_URL_ALT", "LLM_KEY_ALT", "LLM_MODEL_ALT",
         "LLM_REASONING_EFFORT_ALT",
+        "OLLAMA_BASE_URL", "OLLAMA_LLM_MODEL", "OLLAMA_LLM_REASONING_EFFORT",
+        "OLLAMA_LLM_MODEL_ALT", "OLLAMA_LLM_REASONING_EFFORT_ALT",
+        "LLM_TEMPERATURE", "LLM_THINKING_DISABLED", "LLM_TOOLS_ENABLED",
+        "LLM_TOOL_MAX_ROUNDS", "LLM_FALLBACK_ENABLED",
     )),
     ("行为", (
         "SCHEDULER_MID_MS", "SCHEDULER_AUTO_START_MID", "CONTEXT_HISTORY_ENTRIES",

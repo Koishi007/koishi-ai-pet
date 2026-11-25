@@ -14,7 +14,8 @@ from pet.ui.styles import MENU_SOLID_QSS
 from pet.config import config
 from pet.ui.settings_fields import SettingsForm, SettingsWidgets
 from pet.brain.llm_errors import ProviderUnavailable
-from pet.brain.llm_client import is_complete
+from pet.brain.llm_client import (OLLAMA_DEFAULT_MODEL, connection_complete,
+                                   is_complete)
 from pet.brain.providers import LLMConnection
 from pet.brain.providers.registry import (build_provider, normalize_provider,
                                           reasoning_efforts)
@@ -89,47 +90,51 @@ class SettingsActions(QObject):
         logger.info(f"[Settings] active LLM profile switched to {target}")
 
     def profile_form_values(self, profile: str) -> tuple[str, str, str]:
-        """按方案读取界面当前填写值 (key, url, model)；备选未配齐时整方案沿用首选。"""
+        """按方案读取界面当前填写值 (key, url, model)。"""
         w = self.widgets
-        primary = (w.llm_key_edit.text().strip(), w.url_edit.text().strip(),
-                   w.model_edit.text().strip())
-        if not self.alt_ready():
-            return primary
-        return (w.alt_key_edit.text().strip(), w.alt_url_edit.text().strip(),
-                w.alt_model_edit.text().strip())
-
-    def alt_ready(self) -> bool:
-        """界面上备选方案是否配齐了地址、Key 与模型名。"""
-        w = self.widgets
-        return is_complete(w.alt_key_edit.text(), w.alt_url_edit.text(),
-                           w.alt_model_edit.text())
+        if profile == "alternative":
+            return (w.alt_key_edit.text().strip(), w.alt_url_edit.text().strip(),
+                    w.alt_model_edit.text().strip())
+        return (w.llm_key_edit.text().strip(), w.url_edit.text().strip(),
+                w.model_edit.text().strip())
 
     def effort_for_test(self, profile: str) -> str:
-        """界面当前档位；测备选且方案未配齐时跟随首选，端点不支持的取值不下发。"""
+        """该方案界面当前档位；端点不支持的取值不下发。"""
         w = self.widgets
-        primary = w.effort_combo.currentData() or ""
-        if profile != "alternative" or not self.alt_ready():
-            return primary
-        value = w.alt_effort_combo.currentData() or ""
+        alternative = profile == "alternative"
+        value = (w.alt_effort_combo.currentData() if alternative
+                 else w.effort_combo.currentData()) or ""
+        if not value:
+            return ""
         channel = ("openai" if w.brain_combo.currentText() == "ollama"
                    else self._provider_name_for(profile))
-        allowed = effective_efforts(reasoning_efforts(channel),
-                                    config.LLM_REASONING_EFFORTS_ALT,
-                                    w.alt_model_edit.text())
+        allowed = effective_efforts(
+            reasoning_efforts(channel),
+            config.LLM_REASONING_EFFORTS_ALT if alternative
+            else config.LLM_REASONING_EFFORTS,
+            w.alt_model_edit.text() if alternative else w.model_edit.text())
         return value if value in allowed else ""
 
     def models_button(self, profile: str = "primary"):
         w = self.widgets
         return w.btn_fetch_models_alt if profile == "alternative" else w.btn_fetch_models
 
+    def _alt_channel(self) -> str:
+        return normalize_provider(self.widgets.provider_alt_combo.currentData())
+
     def _provider_name_for(self, profile: str) -> str:
-        """指定方案要连的通道；备选未配齐或未选通道时沿用首选。"""
-        w = self.widgets
-        primary = normalize_provider(w.provider_combo.currentData())
-        alt = w.provider_alt_combo.currentData()
-        if profile != "alternative" or not alt or not self.alt_ready():
-            return primary
-        return normalize_provider(alt)
+        combo = (self.widgets.provider_alt_combo if profile == "alternative"
+                 else self.widgets.provider_combo)
+        return normalize_provider(combo.currentData())
+
+    def form_connection_complete(self, profile: str, key: str, url: str,
+                                 model: str) -> bool:
+        """界面值是否构成一套完整连接；Ollama 档的服务地址取自其输入框。"""
+        brain = self.widgets.brain_combo.currentText()
+        if brain == "ollama":
+            url = self.form.fields["OLLAMA_BASE_URL"].text().strip()
+        return connection_complete(brain, self._provider_name_for(profile),
+                                   key, url, model)
 
     def set_model_value(self, profile: str, model_id: str) -> None:
         w = self.widgets
@@ -155,13 +160,14 @@ class SettingsActions(QObject):
         if brain_cfg == "ollama":
             url = self.form.fields["OLLAMA_BASE_URL"].text().strip()
             key = "ollama"
-            # Ollama 的服务端是 OpenAI 兼容接口
+            # Ollama 的服务端是 OpenAI 兼容接口；模型名留空按运行期的默认模型发
             provider_name = "openai"
+            model = model or OLLAMA_DEFAULT_MODEL
         profile_name = "备选" if profile == "alternative" else "首选"
 
-        if not model:
+        if not self.form_connection_complete(profile, key, url, model):
             w.test_output.clear()
-            w.test_output.append("⚠ 请先填写模型名称")
+            w.test_output.append(f"⚠ {profile_name}连接未填完整，请补齐该通道要求的字段")
             w.label_test.setText("未配置")
             return
 
@@ -230,19 +236,26 @@ class SettingsActions(QObject):
         key = f["MEMORY_MERGE_KEY"].text().strip()
         model = f["MEMORY_MERGE_MODEL"].text().strip()
         inherited = not (url and key and model)
+        brain_cfg = w.brain_combo.currentText()
+        profile = getattr(config, "LLM_ACTIVE_PROFILE", "primary") or "primary"
+        # 汇总复用对话通道：独立配置只覆盖地址、Key 与模型，见 pet/brain/memory_merge.py
+        provider_name = ("openai" if brain_cfg == "ollama"
+                         else self._provider_name_for(profile))
         if inherited:
-            brain_cfg = w.brain_combo.currentText()
             if brain_cfg == "local":
                 w.conn_test_output.clear()
                 w.conn_test_output.append("⚠ 当前为 local 模式，且未填写汇总连接")
                 w.label_merge_test.setText("未配置")
                 return
-            profile = getattr(config, "LLM_ACTIVE_PROFILE", "primary") or "primary"
             key, url, model = self.profile_form_values(profile)
             if brain_cfg == "ollama":
                 url = f["OLLAMA_BASE_URL"].text().strip()
                 key = "ollama"
-        if not (url and key and model):
+            complete = self.form_connection_complete(profile, key, url, model)
+        else:
+            # 独立汇总配置用自己的地址与 Key，不套用 Ollama 档的固定值
+            complete = is_complete(provider_name, key, url, model)
+        if not complete:
             w.conn_test_output.clear()
             w.conn_test_output.append(
                 "⚠ 请填写汇总模型 API 地址、Key 和模型名，或先配置当前对话模型")
@@ -256,8 +269,10 @@ class SettingsActions(QObject):
         w.btn_merge_test.setEnabled(False)
         w.btn_mem_test.setEnabled(False)
         w.label_merge_test.setText("测试中...")
+        # 汇总只发文本请求，不下发推理强度
         self.probes.start("merge_test",
-                          LLMTestWorker(url, key, model, timeout, thinking=False),
+                          LLMTestWorker(url, key, model, timeout, thinking=False,
+                                        provider=provider_name),
                           self.on_merge_test_result)
 
     def on_merge_test_result(self, success: bool, content: str,

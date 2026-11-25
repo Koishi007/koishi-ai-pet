@@ -119,13 +119,19 @@ flowchart TB
    维护首选/备选两套方案，每套方案持有一个 provider；通道的编码、异常映射与思考判据在
    `pet/brain/providers/` 下，见 [provider 抽象设计](specs/2026-11-23-llm-provider-abstraction-design.md)。
    重试与降级策略在 `pet/brain/llm_retry.py`，只针对中性错误族分类。
+   请求链开始时 `reset_effective()` 落到一套有 provider 的方案：首选建不起来时直接使用完整备选，
+   两套都不可用才走本地兜底。连接是否完整由 `llm_client.profile_complete` 读配置组装后判定，
+   规则来自 `PROVIDER_SPECS` 的 `url_optional`；设置页手里只有界面值，走同一规则的
+   `llm_client.connection_complete`。
 4. **输出解析**：按行前缀分派 - `Summary` / `Speech` / `Action` / `Memory` / `Emotion` / `Mood` / `Vitals`
    （`pet/brain/parsing.py`，流式与非流式共用一套行标签，聚合为 `BehaviorOutput`）。
    同一字段出现多行时，`Summary` / `Memory` / `Mood` / `Vitals` 只取第一条，`Speech` 全部保留且按换行分段。
    解析出的字段与原文一起写入会话事件日志（`BehaviorOutput.assistant_fields`）：字段供投影，
    原文（≤4KB）只作审计；投影按协议顺序还原字段行（见[投影设计](specs/2026-10-22-session-event-log-projection-design.md) §3.2）。
-   结束原因（`finish_reason`）由解析器回传给编排方；缺少必填字段（`Summary`、`Action`）时由
-   `pet/brain/repair.py` 的 `retry_if_incomplete` 重试一次：修复提示点明缺了哪个字段，并按任务给出 Action 数量要求，
+   结束原因（`finish_reason`）由解析器回传给编排方；本轮没有拿到可用输出时由
+   `pet/brain/repair.py` 的 `retry_if_incomplete` 重试一次，按原因分两条路：
+   `BehaviorOutput.call_failed`（调用异常、流式总超时）原样重发，不发格式修复提示；
+   缺必填字段（`Summary`、`Action`）走修复模式，修复提示点明缺了哪个字段，并按任务给出 Action 数量要求，
    上一轮原文（截断后）作为待修复数据回传，要求保留已符合协议的字段行、只补齐缺失字段；流式与非流式都回传；
    流式重试前先作废已流出的半截台词（`speak_stream_discard` → `SpeechBubble.discard_stream`），避免补写后重复播出；
    有副作用的工具轮次不重试。只有上一轮 `length`（上限被思考占满）才在修复轮关掉思考，其余失败保持调用方与用户设定。

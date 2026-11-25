@@ -254,6 +254,180 @@ def test_probe_registry_keeps_stuck_threads():
     assert registry.running("llm") is False
 
 
+class _CapturedProbe:
+    """记录 probes.start 收到的 worker，不真的起线程。"""
+
+    def __init__(self):
+        self.workers = {}
+
+    def running(self, name):
+        return False
+
+    def start(self, name, worker, on_finished, on_thread_finished=None):
+        self.workers[name] = worker
+        return True
+
+
+def _settings_actions(qt_app, monkeypatch):
+    form = SettingsForm()
+    tabs = SettingsTabs(form)
+    tabs.pages = tabs.build()
+    tabs.bind(_NoopActions())
+    tabs.on_mode_changed(tabs.widgets.brain_combo.currentText())
+    actions = SettingsActions(form, tabs.widgets, QWidget(), None,
+                              lambda *args, **kwargs: None, lambda: False, lambda: None)
+    captured = _CapturedProbe()
+    actions.probes = captured
+    return form, tabs, actions, captured
+
+
+class _NoopActions:
+    def __getattr__(self, name):
+        return lambda *args, **kwargs: None
+
+
+class TestConnectionTestTarget:
+    """「测试连接」测的是当前启用方案，不是填得最全的那一套。"""
+
+    @staticmethod
+    def _fill_alt(tabs):
+        w = tabs.widgets
+        w.alt_url_edit.setText("https://alt.example.com/v1")
+        w.alt_key_edit.setText("sk-alt")
+        w.alt_model_edit.setText("alt-model")
+
+    def test_primary_test_ignores_filled_alternative(self, qt_app, monkeypatch):
+        from pet.config import config
+        monkeypatch.setattr(config, "LLM_ACTIVE_PROFILE", "primary")
+        _form, tabs, actions, captured = _settings_actions(qt_app, monkeypatch)
+        w = tabs.widgets
+        w.brain_combo.setCurrentText("api")
+        w.model_edit.setText("primary-model")
+        w.url_edit.setText("https://primary.example/v1")
+        w.llm_key_edit.setText("sk-primary")
+        self._fill_alt(tabs)
+
+        actions.test_llm()
+
+        worker = captured.workers["llm"]
+        assert worker._model == "primary-model"
+        assert worker._key == "sk-primary"
+
+    def test_alternative_profile_tests_alternative(self, qt_app, monkeypatch):
+        from pet.config import config
+        monkeypatch.setattr(config, "LLM_ACTIVE_PROFILE", "alternative")
+        _form, tabs, actions, captured = _settings_actions(qt_app, monkeypatch)
+        w = tabs.widgets
+        w.brain_combo.setCurrentText("api")
+        w.model_edit.setText("primary-model")
+        w.url_edit.setText("https://primary.example/v1")
+        w.llm_key_edit.setText("sk-primary")
+        self._fill_alt(tabs)
+
+        actions.test_llm()
+
+        worker = captured.workers["llm"]
+        assert worker._model == "alt-model"
+        assert worker._key == "sk-alt"
+
+    def test_incomplete_connection_reports_and_skips_probe(self, qt_app, monkeypatch):
+        """连接未填完整时不建 worker，测试栏给出可读原因。"""
+        from pet.config import config
+        monkeypatch.setattr(config, "LLM_ACTIVE_PROFILE", "primary")
+        _form, tabs, actions, captured = _settings_actions(qt_app, monkeypatch)
+        w = tabs.widgets
+        w.brain_combo.setCurrentText("api")
+        w.provider_combo.setCurrentIndex(w.provider_combo.findData("openai"))
+        w.model_edit.setText("primary-model")
+        w.url_edit.setText("")
+
+        actions.test_llm()
+
+        assert captured.workers == {}
+        assert w.test_output.toPlainText() != ""
+        assert w.label_test.text() != ""
+
+    def test_ollama_completeness_follows_address_field(self, qt_app, monkeypatch):
+        """Ollama 档的地址以界面输入为准，清空后测试连接停在未配置。"""
+        from pet.config import config
+        monkeypatch.setattr(config, "LLM_ACTIVE_PROFILE", "primary")
+        _form, tabs, actions, captured = _settings_actions(qt_app, monkeypatch)
+        w = tabs.widgets
+        w.brain_combo.setCurrentText("ollama")
+        w.model_edit.setText("qwen2.5")
+        form = tabs.form
+        form.fields["OLLAMA_BASE_URL"].setText("")
+
+        actions.test_llm()
+
+        assert captured.workers == {}
+        assert w.test_output.toPlainText() != ""
+
+    def test_ollama_blank_model_tests_default_model(self, qt_app, monkeypatch):
+        """Ollama 档模型名留空时，测试连接发的是运行期的默认模型。"""
+        from pet.brain.llm_client import OLLAMA_DEFAULT_MODEL
+        from pet.config import config
+        monkeypatch.setattr(config, "LLM_ACTIVE_PROFILE", "primary")
+        _form, tabs, actions, captured = _settings_actions(qt_app, monkeypatch)
+        w = tabs.widgets
+        w.brain_combo.setCurrentText("ollama")
+        w.model_edit.setText("")
+        tabs.form.fields["OLLAMA_BASE_URL"].setText("http://127.0.0.1:11434/v1")
+
+        actions.test_llm()
+
+        worker = captured.workers["llm"]
+        assert worker._model == OLLAMA_DEFAULT_MODEL
+        assert worker._url == "http://127.0.0.1:11434/v1"
+
+    def test_merge_test_in_ollama_mode_uses_service_address(self, qt_app, monkeypatch):
+        """Ollama 档汇总沿用对话连接时，测的是服务地址输入框里的地址。"""
+        from pet.config import config
+        monkeypatch.setattr(config, "LLM_ACTIVE_PROFILE", "primary")
+        monkeypatch.setattr(config, "MEMORY_MERGE_URL", "")
+        monkeypatch.setattr(config, "MEMORY_MERGE_KEY", "")
+        monkeypatch.setattr(config, "MEMORY_MERGE_MODEL", "")
+        form, tabs, actions, captured = _settings_actions(qt_app, monkeypatch)
+        w = tabs.widgets
+        w.brain_combo.setCurrentText("ollama")
+        w.model_edit.setText("qwen2.5")
+        form.fields["OLLAMA_BASE_URL"].setText("http://127.0.0.1:11434/v1")
+        form.fields["MEMORY_MERGE_URL"].setText("")
+        form.fields["MEMORY_MERGE_KEY"].setText("")
+        form.fields["MEMORY_MERGE_MODEL"].setText("")
+
+        actions.test_merge_connection()
+
+        worker = captured.workers["merge_test"]
+        assert worker._url == "http://127.0.0.1:11434/v1"
+        assert worker._provider_name == "openai"
+
+    @pytest.mark.parametrize("merge_url", ["", "https://merge.example/v1"])
+    def test_merge_test_uses_dialog_channel(self, qt_app, monkeypatch, merge_url):
+        """汇总走对话通道：测试必须打在同一通道上，独立汇总配置也不例外。"""
+        from pet.config import config
+        monkeypatch.setattr(config, "LLM_ACTIVE_PROFILE", "primary")
+        monkeypatch.setattr(config, "LLM_PROVIDER", "gemini")
+        monkeypatch.setattr(config, "MEMORY_MERGE_URL", merge_url)
+        monkeypatch.setattr(config, "MEMORY_MERGE_KEY", "merge-key" if merge_url else "")
+        monkeypatch.setattr(config, "MEMORY_MERGE_MODEL",
+                            "merge-model" if merge_url else "")
+        form, tabs, actions, captured = _settings_actions(qt_app, monkeypatch)
+        w = tabs.widgets
+        w.brain_combo.setCurrentText("api")
+        w.provider_combo.setCurrentIndex(w.provider_combo.findData("gemini"))
+        w.model_edit.setText("gemini-2.5-flash")
+        w.llm_key_edit.setText("AIza-test")
+        w.url_edit.setText("")
+        form.fields["MEMORY_MERGE_URL"].setText(merge_url)
+        form.fields["MEMORY_MERGE_KEY"].setText("merge-key" if merge_url else "")
+        form.fields["MEMORY_MERGE_MODEL"].setText("merge-model" if merge_url else "")
+
+        actions.test_merge_connection()
+
+        assert captured.workers["merge_test"]._provider_name == "gemini"
+
+
 def test_actions_shutdown_stops_hotkey_listener(qt_app):
     class _Listener:
         def __init__(self):

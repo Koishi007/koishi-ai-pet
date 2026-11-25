@@ -135,8 +135,34 @@ class TestRetryIfIncomplete:
         def pipeline(repair=False):
             return _empty()
 
-        retry_if_incomplete(pipeline, "t", on_missing=seen.append)
+        retry_if_incomplete(pipeline, "t", on_before_retry=seen.append)
         assert seen == ["Summary、Action"]
+
+    def test_call_failed_resends_without_repair_hint(self):
+        """没拿到响应时原样重发，不当成格式问题。"""
+        flags = []
+
+        def pipeline(repair=False):
+            flags.append(repair)
+            if len(flags) == 1:
+                failed = _empty()
+                failed.call_failed = True
+                return failed
+            return _complete()
+
+        assert retry_if_incomplete(pipeline, "t").speech == "你好"
+        assert flags == [False, False]
+
+    def test_call_failed_reports_no_missing_fields(self):
+        seen = []
+
+        def pipeline(repair=False):
+            failed = _empty()
+            failed.call_failed = True
+            return failed
+
+        retry_if_incomplete(pipeline, "t", on_before_retry=seen.append)
+        assert seen == [""]
 
 
 class TestRepairMessages:
@@ -969,6 +995,50 @@ class TestEntrypointRetry:
         assert out.speech == "回来了"
         assert fake.thinkings == [None, False]
         assert fake.max_tokens[1] < fake.max_tokens[0]
+
+
+class TestEntryUsesUsableProfile:
+    """首选建不起来时，入口必须先落到备选再发请求，不能直接本地兜底。"""
+
+    @staticmethod
+    def _behavior(monkeypatch, alt_complete: bool = True):
+        monkeypatch.setattr(config, "BRAIN", "api")
+        monkeypatch.setattr(config, "LLM_PROVIDER", "openai")
+        monkeypatch.setattr(config, "LLM_PROVIDER_ALT", "openai")
+        monkeypatch.setattr(config, "LLM_ACTIVE_PROFILE", "primary")
+        for name in ("LLM_KEY", "LLM_URL", "LLM_MODEL"):
+            monkeypatch.setattr(config, name, "")
+        monkeypatch.setattr(config, "LLM_KEY_ALT", "k2" if alt_complete else "")
+        monkeypatch.setattr(config, "LLM_URL_ALT", "http://127.0.0.1:1/v1")
+        monkeypatch.setattr(config, "LLM_MODEL_ALT", "m2")
+        behavior = Behavior()
+        seen = []
+
+        def fake_stream(messages, max_tokens=4000, tools=None, thinking=None,
+                        temperature=None):
+            seen.append(behavior._llm.effective_profile)
+            return _StreamStub("Summary: 想\nSpeech: 好\nAction: sit 5\n")
+
+        behavior.gateway.stream = fake_stream
+        return behavior, seen
+
+    def test_request_goes_out_on_alternative(self, monkeypatch):
+        behavior, seen = self._behavior(monkeypatch)
+
+        out = behavior.chat_decide_stream("在吗", "")
+
+        assert seen == ["alternative"]
+        assert out.speech == "好"
+        assert behavior._llm.effective_profile == "alternative"
+
+    def test_local_fallback_only_when_both_unusable(self, monkeypatch):
+        behavior, seen = self._behavior(monkeypatch, alt_complete=False)
+
+        out = behavior.chat_decide_stream("在吗", "")
+
+        assert seen == []
+        assert out.speech_streamed is False
+        assert behavior._llm.effective_profile == "primary"
 
 
 class _CompletionResponse:

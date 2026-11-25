@@ -1,4 +1,5 @@
 """Google Gemini 通道：消息编码、流式解码、异常映射与思考强度。
+
 google-genai 属于必装依赖，仍只在构造时导入，避免模块级加载 SDK。
 """
 
@@ -387,12 +388,16 @@ def _map_error(exc: BaseException) -> ProviderError:
 
 
 class _GeminiStream:
-    """包装 SDK 流，按 part 产出 StreamEvent 并透传 close()。"""
+    """包装 SDK 流，按 part 产出 StreamEvent 并透传 close()。
+
+    一个响应块的多个 function_call 排队逐条交出；迭代期异常转成中性错误。
+    """
 
     def __init__(self, raw):
         self._raw = raw
         self._it = iter(raw)
         self._closed = False
+        self._pending: list[StreamEvent] = []
         # 序号从 1 起：0 留给非流式 complete()，两条路径的 id 不会撞
         self._index = 1
 
@@ -400,22 +405,31 @@ class _GeminiStream:
         return self
 
     def __next__(self) -> StreamEvent:
-        response = next(self._it)
-        return self._convert(response)
+        if not self._pending:
+            try:
+                response = next(self._it)
+            except StopIteration:
+                raise
+            except Exception as exc:
+                raise _map_error(exc) from exc
+            self._pending = self._convert(response)
+        return self._pending.pop(0)
 
-    def _convert(self, response) -> StreamEvent:
-        content, reasoning, tool_call = [], [], None
+    def _convert(self, response) -> list[StreamEvent]:
+        """一个响应块转成若干中性事件：全部正文与思考合成一条，每个函数调用各一条。"""
+        content, reasoning = [], []
+        calls: list[StreamEvent] = []
         for candidate in getattr(response, "candidates", None) or ():
             for part in getattr(getattr(candidate, "content", None), "parts", None) or ():
                 call = getattr(part, "function_call", None)
                 if call is not None:
-                    tool_call = ToolCallDelta(
+                    calls.append(StreamEvent(tool_call=ToolCallDelta(
                         index=self._index,
                         id=f"call_{self._index}",
                         name=getattr(call, "name", "") or "",
                         arguments=_dumps(getattr(call, "args", None)),
                         complete=True,
-                    )
+                    )))
                     self._index += 1
                     continue
                 text = getattr(part, "text", None)
@@ -429,13 +443,18 @@ class _GeminiStream:
         candidates = getattr(response, "candidates", None) or ()
         if candidates and getattr(candidates[0], "finish_reason", None):
             finish = _finish_of(candidates[0].finish_reason)
-        return StreamEvent(
-            content="".join(content),
-            reasoning="".join(reasoning),
-            tool_call=tool_call,
+        usage = _usage_of(getattr(response, "usage_metadata", None))
+        events = calls or [StreamEvent()]
+        # 正文、结束原因与用量挂在最后一条事件上，流结束的判定只在一处
+        last = events[-1]
+        events[-1] = StreamEvent(
+            content=last.content + "".join(content),
+            reasoning=last.reasoning + "".join(reasoning),
+            tool_call=last.tool_call,
             finish_reason=finish,
-            usage=_usage_of(getattr(response, "usage_metadata", None)),
+            usage=usage,
         )
+        return events
 
     def close(self):
         if self._closed:

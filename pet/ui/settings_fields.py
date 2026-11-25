@@ -89,10 +89,14 @@ class SettingsWidgets:
     """页签构建后仍被联动方法与后台动作引用的控件。"""
 
     brain_combo: object | None = None
+    mode_block: object | None = None
+    api_section: object | None = None
+    ollama_section: object | None = None
+    generate_block: object | None = None
+    local_hint: object | None = None
     provider_combo: object | None = None
     provider_alt_combo: object | None = None
     effort_combo: object | None = None
-    effort_hint: object | None = None
     effort_label: object | None = None
     url_edit: object | None = None
     url_label: object | None = None
@@ -100,6 +104,12 @@ class SettingsWidgets:
     llm_key_edit: object | None = None
     key_toggle: object | None = None
     model_edit: object | None = None
+    ollama_model_edit: object | None = None
+    ollama_model_alt_edit: object | None = None
+    ollama_effort_combo: object | None = None
+    ollama_effort_label: object | None = None
+    ollama_effort_alt_combo: object | None = None
+    ollama_effort_alt_label: object | None = None
     btn_fetch_models: object | None = None
     temperature_edit: object | None = None
     tool_rounds_edit: object | None = None

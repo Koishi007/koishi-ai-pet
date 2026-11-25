@@ -260,6 +260,70 @@ def test_stream_close_propagates():
     stream.close()
     assert raw.closed is True
 
+
+def test_stream_emits_every_parallel_function_call():
+    """同一块里的多个 function_call 各成一条事件，id 按顺序递增。"""
+    from pet.brain.providers.gemini_provider import _GeminiStream
+    parts = [_part(function_call=SimpleNamespace(name="timer__set", args={"s": 1})),
+             _part(function_call=SimpleNamespace(name="todo__add", args={"t": "x"}))]
+    stream = _GeminiStream(_FakeStream([_response(parts)]))
+
+    events = list(stream)
+
+    assert [e.tool_call.name for e in events] == ["timer__set", "todo__add"]
+    assert [e.tool_call.index for e in events] == [1, 2]
+    assert events[0].tool_call.id == "call_1"
+    assert events[1].tool_call.id == "call_2"
+
+
+def test_stream_text_shares_block_with_function_calls():
+    """正文与函数调用同块时，正文随最后一条事件交出，不重复。"""
+    from pet.brain.providers.gemini_provider import _GeminiStream
+    parts = [_part("好"),
+             _part(function_call=SimpleNamespace(name="timer__set", args={})),
+             _part(function_call=SimpleNamespace(name="todo__add", args={}))]
+    stream = _GeminiStream(_FakeStream([_response(parts, finish="STOP")]))
+
+    events = list(stream)
+
+    assert "".join(e.content for e in events) == "好"
+    assert events[-1].finish_reason == FINISH_STOP
+
+
+class _BrokenStream:
+    """首条数据正常，之后迭代抛异常。"""
+
+    def __init__(self, error):
+        self._rows = [_response([_part("a")])]
+        self._error = error
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self._rows:
+            return self._rows.pop(0)
+        raise self._error
+
+
+def test_stream_iteration_error_is_mapped():
+    """响应头成功、响应体读取失败时，异常在通道边界转换成中性错误。"""
+    from pet.brain.providers.gemini_provider import _GeminiStream
+    stream = _GeminiStream(_BrokenStream(RuntimeError("reset")))
+
+    assert next(iter(stream)).content == "a"
+    with pytest.raises(ProviderConnection):
+        next(iter(stream))
+
+
+def test_stream_stop_iteration_passes_through():
+    from pet.brain.providers.gemini_provider import _GeminiStream
+    stream = _GeminiStream(_FakeStream([]))
+
+    with pytest.raises(StopIteration):
+        next(iter(stream))
+
+
 class _FakeModels:
     """按调用记录参数并返回预置结果的 models 资源。"""
 

@@ -74,16 +74,28 @@ def missing_required(output: BehaviorOutput) -> str:
     return "、".join(missing)
 
 
-def retry_if_incomplete(pipeline, tag: str = "", on_missing=None) -> BehaviorOutput:
-    """缺少必填字段时按修复模式再跑一次；工具轮次不重试。"""
+def retry_if_incomplete(pipeline, tag: str = "", on_before_retry=None) -> BehaviorOutput:
+    """本轮没有拿到可用输出时再跑一次；工具轮次不重试。
+
+    call_failed 原样重发；缺必填字段走修复模式，回传原文补缺失字段。
+    """
     result = pipeline(repair=False)
+    if result.used_tools:
+        return result
+
+    if result.call_failed:
+        logger.warning(f"[Behavior] no LLM response this round, retrying once ({tag})")
+        if on_before_retry is not None:
+            on_before_retry("")
+        return pipeline(repair=False)
+
     missing = missing_required(result)
-    if not missing or result.used_tools:
+    if not missing:
         return result
     logger.warning(f"[Behavior] incomplete LLM response (missing {missing}), "
                    f"retrying once ({tag})")
-    if on_missing is not None:
-        on_missing(missing)
+    if on_before_retry is not None:
+        on_before_retry(missing)
     return pipeline(repair=True)
 
 

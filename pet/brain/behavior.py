@@ -134,6 +134,10 @@ class Behavior(BrainMixin):
     def has_vision(self) -> bool:
         return self._llm.has_vision
 
+    def _llm_available(self) -> bool:
+        self._llm.reset_effective()
+        return bool(self._llm)
+
     def _docked(self) -> bool:
         """当前是否贴边；供本地兜底选择动作池。"""
         try:
@@ -235,7 +239,7 @@ class Behavior(BrainMixin):
     
     def autonomous_decide(self, context: str = "", screenshot: bool = True) -> BehaviorOutput:
         t = datetime.now().strftime("%H:%M:%S")
-        if not self._llm:
+        if not self._llm_available():
             return decide_local(docked=self._docked())
 
         messages = self.ctx.build_autonomous_decide(context, screenshot=screenshot)
@@ -256,7 +260,7 @@ class Behavior(BrainMixin):
     def autonomous_decide_stream(self, context: str = "", screenshot: bool = True,
                       on_chunk=None, on_stream_end=None,
                       cancel_check: callable = None) -> BehaviorOutput:
-        if not self._llm:
+        if not self._llm_available():
             return decide_local(docked=self._docked())
         if not self._lock.acquire(timeout=0.5):
             logger.warning("[Behavior] autonomous_decide_stream: busy, skip")
@@ -282,7 +286,7 @@ class Behavior(BrainMixin):
             self._lock.release()
 
     def interact_decide(self, event_hint: str) -> BehaviorOutput:
-        if not self._llm:
+        if not self._llm_available():
             return interact_decide_local(event_hint, docked=self._docked())
         messages = self.ctx.build_interact(event_hint)
         return self._decide_with_repair(
@@ -299,7 +303,7 @@ class Behavior(BrainMixin):
                                cancel_check: callable = None,
                                attachment_text: str | None = None,
                                attachment_image=None) -> BehaviorOutput:
-        if not self._llm:
+        if not self._llm_available():
             return interact_decide_local(event_hint, docked=self._docked())
         if not self._lock.acquire(timeout=2):
             logger.warning("[Behavior] interact_decide_stream: busy, skip")
@@ -324,7 +328,7 @@ class Behavior(BrainMixin):
         t = datetime.now().strftime("%H:%M:%S")
         logger.info(f"[{t}] [Behavior] chat_decide(msg={user_message[:50]}, ctx={context[:30]})")
 
-        if not self._llm:
+        if not self._llm_available():
             return chat_decide_local(user_message, docked=self._docked())
 
         messages = self.ctx.build_chat_decide(user_message, context, screenshot=screenshot)
@@ -348,7 +352,7 @@ class Behavior(BrainMixin):
                            cancel_check: callable = None,
                            attachment_text: str | None = None,
                            attachment_image=None) -> BehaviorOutput:
-        if not self._llm:
+        if not self._llm_available():
             return chat_decide_local(user_message, docked=self._docked())
         if not self._lock.acquire(timeout=5):
             logger.warning("[Behavior] chat_decide_stream: busy, timeout")
@@ -385,7 +389,7 @@ class Behavior(BrainMixin):
                               cancel_check: callable = None,
                               attachment_text: str | None = None,
                               attachment_image=None) -> BehaviorOutput:
-        if not self._llm:
+        if not self._llm_available():
             return chat_decide_local(user_message, docked=self._docked())
         if not self._lock.acquire(timeout=5):
             logger.warning("[Behavior] analyze_decide_stream: busy, timeout")
@@ -464,7 +468,7 @@ class Behavior(BrainMixin):
         except Exception as e:
             logger.exception(f"[{t}] [Behavior]   {tag} LLM call failed: {type(e).__name__}: {e}")
             logger.warning(f"[{t}] [Behavior]   falling back to local")
-            return decide_local(docked=self._docked())
+            return self._failed_output()
 
     def _stream_and_build_output(self, messages: list, on_chunk=None, on_stream_end=None,
                                  tag: str = "", mode: str = "chat",
@@ -532,7 +536,7 @@ class Behavior(BrainMixin):
             raise
         except Exception as e:
             logger.exception(f"[{tag}] stream failed: {type(e).__name__}: {e}")
-            return decide_local(docked=self._docked())
+            return self._failed_output()
 
     def tool_session(self, cancel_check=None) -> "_BehaviorToolSession":
         """工具轮次需要的能力：按当前管线参数注入取消检查。"""
@@ -570,14 +574,23 @@ class Behavior(BrainMixin):
                            f"内容被思考占满 max_tokens")
         self.record_failed_turn(self._last_unparsed, self._last_finish_reason, tag)
 
+    def _failed_output(self) -> BehaviorOutput:
+        """调用失败后的本轮产出：本地兜底，并标记没拿到模型响应。
+
+        标记让重跑走原样重发而不是格式修复，见 pet/brain/repair.py。
+        """
+        output = decide_local(docked=self._docked())
+        output.call_failed = True
+        return output
+
     def _decide_with_repair(self, pipeline, tag: str, stream: bool = False) -> BehaviorOutput:
-        """缺 Summary/Action 时重跑一次，仍缺时补 sit 兜底。"""
-        def _on_missing(missing: str):
+        """本轮没有可用输出时重跑一次，仍无动作时补 sit 兜底。"""
+        def _on_retry(missing: str):
             self._repair_missing = missing
             if stream:
                 self._discard_stream_before_repair()
 
-        output = retry_if_incomplete(pipeline, tag, on_missing=_on_missing)
+        output = retry_if_incomplete(pipeline, tag, on_before_retry=_on_retry)
         if not output.actions:
             output.actions = [ActionStep("sit", kwargs={"duration": 5})]
             output.action_fallback = True
@@ -596,7 +609,7 @@ class Behavior(BrainMixin):
         """把上下文淘汰产生的待摘要条目统一处理（实现见 pet/brain/summary.py）。"""
         flush_summaries(SummaryHooks(
             drain=self.drain_pending_summaries,
-            summarize=self._llm_summarize if self._llm else None,
+            summarize=self._llm_summarize if self._llm_available() else None,
             add_context=self.add_context,
             fallback=self._build_fallback_summary,
         ))

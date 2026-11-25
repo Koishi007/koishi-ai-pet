@@ -44,10 +44,6 @@ def _select(tabs, provider: str, alt: bool = False) -> None:
     combo.setCurrentIndex(combo.findData(provider))
 
 
-def _pairs(combo):
-    return [(combo.itemText(i), combo.itemData(i)) for i in range(combo.count())]
-
-
 def _values(combo):
     return [combo.itemData(i) for i in range(combo.count())]
 
@@ -91,10 +87,78 @@ def test_switching_back_restores_url(tabs):
     assert w.url_label.isHidden() is False
 
 
-def test_channel_combos_share_choices(tabs):
-    """首选与备选通道的选项与顺序完全一致。"""
+@pytest.mark.parametrize("mode,api_visible,ollama_visible,block_visible", [
+    ("api", True, False, True),
+    ("ollama", False, True, True),
+    ("local", False, False, False),
+])
+def test_mode_change_renders_matching_section(tabs, mode, api_visible,
+                                              ollama_visible, block_visible):
+    """固定区块按调用模式渲染对应的连接段；local 档整块不渲染。"""
     w = tabs.widgets
-    assert _pairs(w.provider_alt_combo) == _pairs(w.provider_combo)
+    w.brain_combo.setCurrentText(mode)
+
+    assert w.api_section.isHidden() is not api_visible
+    assert w.ollama_section.isHidden() is not ollama_visible
+    assert w.mode_block.isHidden() is not block_visible
+    assert w.local_hint.isHidden() is block_visible
+
+
+def test_mode_combo_writes_config_value(tabs):
+    """调用模式下拉直接写回 BRAIN。"""
+    w = tabs.widgets
+    w.brain_combo.setCurrentText("ollama")
+
+    values, _invalid = tabs.form.collect()
+    assert values["BRAIN"] == "ollama"
+
+
+def test_alt_channel_selects_its_own_value(tabs, monkeypatch):
+    """备选通道按自己的配置选中，不跟首选联动。"""
+    from pet.config import config
+    w = tabs.widgets
+    monkeypatch.setattr(config, "LLM_PROVIDER", "gemini")
+    monkeypatch.setattr(config, "LLM_PROVIDER_ALT", "openai")
+    tabs.form.load(config)
+    assert w.provider_combo.currentData() == "gemini"
+    assert w.provider_alt_combo.currentData() == "openai"
+
+
+def test_alt_channel_does_not_follow_primary(tabs):
+    """切换首选通道不改备选通道。"""
+    w = tabs.widgets
+    _select(tabs, "openai", alt=True)
+    _select(tabs, "gemini")
+    assert w.provider_alt_combo.currentData() == "openai"
+    assert tabs._alt_channel() == "openai"
+
+
+def test_alt_effort_editable_while_unconfigured(tabs):
+    """备选是独立配置：连接没填齐也能先选档位，设值不依赖连接状态。"""
+    w = tabs.widgets
+    w.brain_combo.setCurrentText("api")
+    _select(tabs, "openai")
+    _select(tabs, "openai", alt=True)
+    for edit in (w.alt_url_edit, w.alt_key_edit, w.alt_model_edit):
+        edit.setText("")
+
+    assert w.alt_effort_combo.isEnabled() is True
+    # 模型名未知时列通道声明的全部档位，不因连接未填而收窄
+    assert _values(w.alt_effort_combo) == [""] + list(reasoning_efforts("openai"))
+    assert w.alt_effort_combo.toolTip() == ""
+
+
+def test_alt_effort_independent_of_primary_connection(tabs):
+    """首选配齐不改变备选档位状态，两侧各按自己的通道与模型算。"""
+    w = tabs.widgets
+    w.brain_combo.setCurrentText("api")
+    _select(tabs, "openai")
+    _select(tabs, "gemini", alt=True)
+    w.model_edit.setText("mimo-v2.6-flash")
+    w.alt_model_edit.setText("gemini-2.5-flash")
+
+    assert _values(w.effort_combo) == ["", "low", "medium", "high"]
+    assert _values(w.alt_effort_combo) == ["", "minimal", "low", "medium", "high"]
 
 
 @pytest.mark.parametrize("alt_name", list(PROVIDER_SPECS))
@@ -143,8 +207,8 @@ def test_alt_effort_options_follow_alt_channel(tabs, name):
 
 @pytest.mark.parametrize("missing", ["alt_url_edit", "alt_key_edit",
                                      "alt_model_edit"])
-def test_alt_effort_greyed_when_connection_incomplete(tabs, missing):
-    """备选缺任一项即沿用首选，档位不可单独设置。"""
+def test_alt_effort_keeps_options_when_connection_incomplete(tabs, missing):
+    """备选缺项只影响能否发起调用，档位选项不受连接状态影响。"""
     w = tabs.widgets
     w.brain_combo.setCurrentText("api")
     _select(tabs, "openai")
@@ -153,9 +217,12 @@ def test_alt_effort_greyed_when_connection_incomplete(tabs, missing):
     assert _values(w.alt_effort_combo) == ["", "low", "medium", "high"]
 
     getattr(w, missing).clear()
-    assert w.alt_effort_combo.isEnabled() is False
-    assert w.alt_effort_combo.toolTip() != ""
-    assert _values(w.alt_effort_combo) == [""]
+    assert w.alt_effort_combo.isEnabled() is True
+    assert w.alt_effort_combo.toolTip() == ""
+    # 选项只随通道与模型名变化：清掉模型名后列通道声明的全量档位
+    expected = ([""] + list(reasoning_efforts("openai")) if missing == "alt_model_edit"
+                else ["", "low", "medium", "high"])
+    assert _values(w.alt_effort_combo) == expected
 
 
 def test_effort_combos_disabled_when_thinking_off(tabs):

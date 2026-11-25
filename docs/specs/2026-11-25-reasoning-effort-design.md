@@ -124,7 +124,7 @@ def preset_efforts(model: str | None) -> tuple[str, ...] | None:
 |---|---|---|---|
 | `LLM_REASONING_EFFORT` | str | `""` | 首选方案的推理强度：留空交给模型默认 |
 | `LLM_REASONING_EFFORTS` | str | `""` | 首选端点支持的档位，逗号分隔；留空按模型预设。仅 settings.json，高级配置 |
-| `LLM_REASONING_EFFORT_ALT` | str | `""` | 备选方案的推理强度；备选连接未填完整时跟随首选 |
+| `LLM_REASONING_EFFORT_ALT` | str | `""` | 备选方案的推理强度，按备选自己的通道与模型算 |
 | `LLM_REASONING_EFFORTS_ALT` | str | `""` | 备选端点支持的档位；留空按模型预设。仅 settings.json，高级配置 |
 | `GEMINI_THINKING_LEVEL` | 无 | 无 | 从 `_KEY_META` 删除 |
 
@@ -136,7 +136,7 @@ def preset_efforts(model: str | None) -> tuple[str, ...] | None:
 
 两个端点清单键的 `hidden` 为真，只从 `settings.json` 生效，设置页不提供入口：取值集合是排障用的高级配置，摆到界面上会让普通用户面对一个没有上下文的输入框。
 
-**备选档位的归属**：备选的地址、Key 与模型名都填齐时是独立方案，档位按自己的通道与模型算，不沿用首选；缺任一项时整个方案沿用首选，档位也跟随首选，界面对应下拉显示「跟随首选」并灰置。首选与备选可以是不同通道的不同模型。
+**备选档位的归属**：两套方案各自取值，档位按自己的通道与模型算，互不读取对方的配置。备选未填齐时只是不参与调用，档位照常可选：连接是否完整与能选哪些档位是两件事。首选与备选可以是不同通道的不同模型。
 
 `LLM_REASONING_EFFORT` 不再属于 Gemini 的 `shared_keys`；该行 `shared_keys` 变空。
 
@@ -190,11 +190,11 @@ gemini 通道：`_level` 改名为 `_effort`，取值经同一结构的映射表
 | `ChatProvider.thinking_level_rejected()` | 改名 `reasoning_effort_rejected()`，语义：该实例是否已因端点拒绝而停发推理强度 |
 | `build_provider` / `temporary_provider` 的 `thinking_level=` | 改名 `reasoning_effort=`，缺省 `""` |
 | `llm_client.resolve_reasoning_efforts(profile)` | 新增：通道声明按端点清单或模型预设收窄 |
-| `llm_client.resolve_reasoning_effort(profile)` | 新增：首选按 `LLM_REASONING_EFFORT`，备选取 `LLM_REASONING_EFFORT_ALT`，备选连接未填完整时跟随首选；不在端点可用集合内返回空串 |
+| `llm_client.resolve_reasoning_effort(profile)` | 新增：首选按 `LLM_REASONING_EFFORT`，备选取 `LLM_REASONING_EFFORT_ALT`；不在端点可用集合内返回空串 |
 | `llm_client._build_profile` | 传 `resolve_reasoning_effort(profile)` |
 | `memory_merge._call_llm` | 传连接所属方案的档位；汇总沿用对话档位 |
 | `LLMTestWorker` | 参数改名；降级说明按档位文案生成 |
-| `SettingsActions.test_llm` | 读界面当前值，备选连接未填完整时按首选值，见 §4.7 |
+| `SettingsActions.test_llm` | 读当前启用方案的界面值，连接未填完整时停在「未配置」并给出原因，见 §4.7 |
 
 改名而不是新增参数：`thinking_level` 描述的是 Gemini 的字段名，通用之后这个名字会误导新增通道的维护者。
 
@@ -202,25 +202,22 @@ gemini 通道：`_level` 改名为 `_effort`，取值经同一结构的映射表
 
 | 位置 | 控件 | 约定 |
 |---|---|---|
-| 首选方案，模型名称之后 | 「推理强度」下拉，`LLM_REASONING_EFFORT` | 选项 = `("由模型决定", "")` + 端点可用档位 |
+| 首选方案，模型名称之后 | 「推理强度」下拉，`LLM_REASONING_EFFORT` | 选项 = `("模型默认推理强度", "")` + 端点可用档位 |
 | 备选方案，模型名称之后 | 「推理强度」下拉，`LLM_REASONING_EFFORT_ALT` | 选项按备选端点；首项文案与首选一致 |
-| 显隐 | 通道声明了档位即显示 | 端点没有档位时下拉灰置并提示；备选连接未填完整时显示「跟随首选」并灰置，提示行隐藏 |
+| 显隐 | 通道声明了档位即显示 | 端点没有档位时下拉灰置并提示；连接是否填齐不影响可用状态 |
 | 联动 | 勾选「关闭思考模式」时两个下拉都禁用，取消勾选恢复 | 悬停提示「关闭思考时不下发推理强度」 |
 
-- **选项重建时机**：切换首选或备选通道、修改首选或备选模型名时重算，两侧按各自的通道与模型算。当前值仍在新集合内就保持选中；不在则显示首项「由模型决定」；不写回配置，也不改动 `settings.json`。
-- **测试连接读界面值**：读该方案下拉的当前值；测备选且连接未填完整时取首选值，并按端点可用集合过滤，与运行期 `resolve_reasoning_effort` 一致。
-- 控件字段名：`effort_combo` / `effort_hint` / `effort_label`，备选侧加 `alt_` 前缀。
+- **选项重建时机**：切换首选或备选通道、修改首选或备选模型名时重算，两侧按各自的通道与模型算。当前值仍在新集合内就保持选中；不在则显示首项「模型默认推理强度」；不写回配置，也不改动 `settings.json`。
+- **测试连接读界面值**：读当前启用方案那份下拉的当前值，并按端点可用集合过滤，与运行期 `resolve_reasoning_effort` 一致；该方案连接未填完整时不发请求。
+- 控件字段名：`effort_combo` / `effort_label`，备选侧加 `alt_` 前缀。
 
 ### §4.8 文案
 
 | 用途 | 文案 |
 |---|---|
-| 首选下拉首项 | 由模型决定 |
-| 下拉首项 | 由模型决定 |
+| 首选下拉首项 | 模型默认推理强度 |
+| 下拉首项 | 模型默认推理强度 |
 | 档位项 | 最省 (minimal) / 低 (low) / 中 (medium) / 高 (high) / 极高 (xhigh) / 最高 (max) |
-| 行内提示 | 仅对开启思考的请求生效；下拉只列当前端点接受的档位 |
-| 备选连接未填完整时的下拉显示 | 跟随首选 |
-| 备选连接未填完整时的悬停提示 | 备选连接未填完整时沿用首选，推理强度不可单独设置 |
 | 端点无档位时的悬停提示 | 当前模型不支持推理强度设置 |
 | 关闭思考时的悬停提示 | 关闭思考时不下发推理强度 |
 | 关闭思考时 | 两个下拉禁用，不另加文案 |
@@ -250,7 +247,7 @@ gemini 通道：`_level` 改名为 `_effort`，取值经同一结构的映射表
 | `pet/brain/providers/gemini_provider.py` | 构造参数更名、映射表模块常量、方法更名 |
 | `pet/brain/llm_client.py` | `resolve_reasoning_efforts()`、`resolve_reasoning_effort()` 的端点过滤、`_build_profile` |
 | `pet/brain/memory_merge.py` | 传生效方案的档位 |
-| `pet/ui/settings_spec.py` | `THINKING_LEVEL_CHOICES` → `EFFORT_CHOICES`，含 xhigh 与 max；`EFFORT_HINT`、`effort_label()`、`TAB_SPECS` 换两个键 |
+| `pet/ui/settings_spec.py` | `THINKING_LEVEL_CHOICES` → `EFFORT_CHOICES`，含 xhigh 与 max；`effort_label()`、`TAB_SPECS` 换两个键 |
 | `pet/ui/settings_tabs.py` | 两个下拉、选项随通道与模型重建、显隐、与关闭思考的联动 |
 | `pet/ui/settings_fields.py` | `SettingsWidgets` 字段更名 |
 | `pet/ui/settings_actions.py`、`settings_workers.py` | 读界面档位并按端点集合过滤、降级说明 |
@@ -272,14 +269,14 @@ gemini 通道：`_level` 改名为 `_effort`，取值经同一结构的映射表
 | OpenAI 降级 | 档位被拒时只去掉 `reasoning_effort`，`thinking` 仍在，实例记住；思考被拒时只去掉 `thinking`；两个都被拒时调用次数为 3，且之后不再发这两个字段 |
 | 判据 | `thinking.effort is not supported` 归为档位拒绝而不是思考拒绝 |
 | Gemini 下发与降级 | 现有用例更名后语义不变 |
-| 方案取值 | 备选连接未填完整时跟随首选；填齐后独立取值，不继承首选 |
+| 方案取值 | 首选与备选各自取自己的键，互不读取对方的值 |
 | 端点预设 | 按模型前缀命中预设；未命中退回通道声明 |
 | 端点清单 | 配置清单优先于预设；与通道声明取交集；中文逗号与未知值；键为 hidden |
 | 端点过滤 | 预设外的档位解析为空串，不下发 |
-| 界面显隐 | 通道声明了档位即显示；端点没有档位或备选连接未填完整时下拉灰置、提示非空 |
+| 界面显隐 | 通道声明了档位即显示；端点没有档位时下拉灰置、悬停提示非空 |
 | 界面选项 | 选项按端点可用档位；改模型名或清单即重算；当前值不在集合内时回到首项 |
 | 联动 | 勾选「关闭思考模式」时两个下拉都禁用 |
-| 连接测试 | 使用下拉当前值；测备选且连接未填完整时用首选值 |
+| 连接测试 | 使用当前启用方案下拉的当前值；该方案连接未填完整时不发请求 |
 
 断言按契约标识写：档位 id、请求字段是否存在、调用次数、实例标志位。不断言下拉文案与提示文案。
 
@@ -291,5 +288,5 @@ gemini 通道：`_level` 改名为 `_effort`，取值经同一结构的映射表
 - **`extra_body` 的合并位置**依赖 openai SDK 的行为，升级 SDK 后需复测 `reasoning_effort` 是否仍在请求体顶层。判据：对兼容端点发一次请求，抓包或看服务端回显。
 - **Gemini 的档位支持按代际不同**：`minimal` 与 `medium` 在 2.5 代不合法。现状不按模型名推断，靠 400 降级；本文沿用，不新增代际表。
 - **降级是静默的**：只在连通性测试与日志里可见。自主决策期间被静默降级时，用户不会立刻知道；这是无人值守场景下与 dsh「前置拒绝」的取舍差异，记录在 §3。
-- **备选连接未填完整时档位跟随首选**：要独立设置备选档位，必须把地址、Key 与模型名都填上；只填其中一两项时整个方案按首选跑。
+- **备选未填完整时它不参与调用**：档位仍按备选自己的通道与模型算，只是没有 provider 可用；要让它生效必须把该通道要求的连接字段都填上。
 - **档位进入 openai 通道后请求体更大**，但只有键值对，不影响配额与缓存前缀。

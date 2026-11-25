@@ -5,7 +5,7 @@ from PySide6.QtWidgets import QApplication
 
 from pet.brain.reasoning import EFFORT_IDS
 from pet.ui.settings_fields import SettingsForm
-from pet.ui.settings_spec import EFFORT_CHOICES, effort_items
+from pet.ui.settings_spec import EFFORT_CHOICES, EFFORT_DEFAULT_LABEL, effort_items
 
 KEYS = ("LLM_REASONING_EFFORT", "LLM_REASONING_EFFORT_ALT")
 
@@ -28,7 +28,7 @@ def test_choices_cover_vocabulary():
 
 
 def test_items_drop_undeclared_efforts():
-    values = [value for _label, value in effort_items(("low", "high"), "由模型决定")]
+    values = [value for _label, value in effort_items(("low", "high"), EFFORT_DEFAULT_LABEL)]
     assert values == ["", "low", "high"]
 
 

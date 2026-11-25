@@ -45,7 +45,7 @@ def test_channel_enum_matches_registry():
     """
     expected = list(PROVIDER_SPECS)
     assert _KEY_META["LLM_PROVIDER"]["enum"] == expected
-    assert _KEY_META["LLM_PROVIDER_ALT"]["enum"] == [""] + expected
+    assert _KEY_META["LLM_PROVIDER_ALT"]["enum"] == expected
 
 
 def test_alt_keys_are_renamed_for_alternative_profile():
@@ -61,6 +61,24 @@ def test_every_profile_key_has_an_alt_name(name):
     """config_keys 里每一项都是方案键，备选侧逐个换成 _ALT 结尾。"""
     assert config_keys_for(name, "alternative") == tuple(
         key + "_ALT" for key in config_keys(name))
+
+
+def test_gemini_allows_blank_url():
+    """Gemini 留空地址走官方端点，OpenAI 兼容端点必须填地址。"""
+    from pet.brain.providers.registry import required_fields, url_optional
+
+    assert url_optional("gemini") is True
+    assert url_optional("openai") is False
+    assert url_optional("nope") is False
+    assert required_fields("gemini") == ("key", "model")
+    assert required_fields("openai") == ("key", "url", "model")
+
+
+def test_channel_choices_have_no_blank_value():
+    """通道下拉只有具体通道，两套方案各自选各自的。"""
+    from pet.brain.providers.registry import channel_choices
+
+    assert all(value for _label, value in channel_choices())
 
 
 def test_shared_keys_are_empty():

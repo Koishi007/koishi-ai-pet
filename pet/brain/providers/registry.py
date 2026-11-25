@@ -10,8 +10,9 @@ from pet.brain.providers import LLMConnection
 
 logger = logging.getLogger(__name__)
 
-# 每行七个字段：界面显示名、延迟导入的目标、随方案换算的配置键、方案无关的共用键、
-# 可选依赖、地址占位符、该通道提供的推理强度档位。键的类型与默认值仍在 pet/config.py 的 _KEY_META。
+# 每行八个字段：界面显示名、延迟导入的目标、随方案换算的配置键、方案无关的共用键、
+# 可选依赖、地址占位符、该通道提供的推理强度档位、地址是否可留空。
+# 键的类型与默认值仍在 pet/config.py 的 _KEY_META。
 PROVIDER_SPECS: dict = {
     "openai": {
         "name": "openai",
@@ -22,6 +23,7 @@ PROVIDER_SPECS: dict = {
         "shared_keys": (),
         "optional_deps": (),
         "reasoning_efforts": ("minimal", "low", "medium", "high", "xhigh", "max"),
+        "url_optional": False,
     },
     "gemini": {
         "name": "gemini",
@@ -32,6 +34,7 @@ PROVIDER_SPECS: dict = {
         "shared_keys": (),
         "optional_deps": ("google-genai>=3.6",),
         "reasoning_efforts": ("minimal", "low", "medium", "high"),
+        "url_optional": True,
     },
 }
 
@@ -80,6 +83,20 @@ def reasoning_efforts(name: str) -> tuple:
     """该通道提供的推理强度档位；未知通道返回空。"""
     entry = PROVIDER_SPECS.get(name) or {}
     return tuple(entry.get("reasoning_efforts") or ())
+
+
+def url_optional(name: str) -> bool:
+    """该通道的地址是否可留空；未知通道按必填处理。"""
+    entry = PROVIDER_SPECS.get(name) or {}
+    return bool(entry.get("url_optional"))
+
+
+def required_fields(name: str) -> tuple:
+    """该通道必须填写的连接字段；地址可留空的通道不含 url。"""
+    required = ["key", "url", "model"]
+    if url_optional(name):
+        required.remove("url")
+    return tuple(required)
 
 
 # 备选方案的键名与首选不同，按同一通道归属换算

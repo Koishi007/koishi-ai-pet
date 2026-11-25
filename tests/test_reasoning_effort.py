@@ -63,14 +63,14 @@ def _own_alternative(monkeypatch, model: str = "gpt-5.2") -> None:
 
 @pytest.mark.parametrize("missing", ["LLM_KEY_ALT", "LLM_URL_ALT",
                                      "LLM_MODEL_ALT"])
-def test_alternative_follows_primary_when_any_field_blank(monkeypatch, missing):
-    """备选缺任一项即整方案沿用首选，档位也跟随首选。"""
+def test_alternative_keeps_its_own_effort_when_field_blank(monkeypatch, missing):
+    """备选缺项只影响它能否建 provider，档位仍按自己的通道与模型算。"""
     _own_alternative(monkeypatch)
     monkeypatch.setattr(config, missing, "")
     monkeypatch.setattr(config, "LLM_REASONING_EFFORT", "high")
     monkeypatch.setattr(config, "LLM_REASONING_EFFORT_ALT", "low")
     assert resolve_reasoning_effort("primary") == "high"
-    assert resolve_reasoning_effort("alternative") == "high"
+    assert resolve_reasoning_effort("alternative") == "low"
 
 
 def test_each_profile_keeps_its_own_effort(monkeypatch):
@@ -81,7 +81,7 @@ def test_each_profile_keeps_its_own_effort(monkeypatch):
     assert resolve_reasoning_effort("alternative") == "low"
 
 
-def test_alternative_does_not_inherit_when_it_has_own_connection(monkeypatch):
+def test_alternative_effort_is_not_taken_from_primary(monkeypatch):
     _own_alternative(monkeypatch)
     monkeypatch.setattr(config, "LLM_REASONING_EFFORT", "high")
     monkeypatch.setattr(config, "LLM_REASONING_EFFORT_ALT", "")

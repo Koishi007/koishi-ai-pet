@@ -303,48 +303,62 @@ def connection_timeout(read: float):
     return httpx.Timeout(connect=10.0, read=read, write=10.0, pool=5.0)
 
 
+def _convert_chunk(chunk) -> list[StreamEvent]:
+    """一个 chunk 转成若干中性事件：正文、思考、结束原因、用量，以及每个工具调用各一条。"""
+    usage = _usage_of(getattr(chunk, "usage", None))
+    choices = getattr(chunk, "choices", None) or []
+    if not choices:
+        return [StreamEvent(usage=usage)] if usage else [StreamEvent()]
+    choice = choices[0]
+    delta = choice.delta
+    finish = _finish_of(choice.finish_reason) if choice.finish_reason else None
+    content = getattr(delta, "content", "") or ""
+    reasoning = getattr(delta, "reasoning_content", "") or ""
+    events = [StreamEvent(content=content, reasoning=reasoning)] if content or reasoning else []
+    events.extend(
+        StreamEvent(tool_call=ToolCallDelta(
+            index=getattr(tc, "index", 0) or 0,
+            id=getattr(tc, "id", "") or "",
+            name=getattr(getattr(tc, "function", None), "name", "") or "",
+            arguments=getattr(getattr(tc, "function", None), "arguments", "") or "",
+        ))
+        for tc in (getattr(delta, "tool_calls", None) or ())
+    )
+    if not events:
+        events.append(StreamEvent())
+    # 结束原因与用量挂在最后一条事件上，流结束的判定只在一处
+    last = events[-1]
+    events[-1] = StreamEvent(content=last.content, reasoning=last.reasoning,
+                             tool_call=last.tool_call, finish_reason=finish,
+                             usage=usage)
+    return events
+
+
 class _OpenAIStream:
-    """包装 OpenAI 流对象，产出 StreamEvent 并透传 close()。"""
+    """包装 OpenAI 流对象，产出 StreamEvent 并透传 close()。
+
+    一个 chunk 的多个工具调用排队逐条交出；迭代期异常转成中性错误。
+    """
 
     def __init__(self, raw):
         self._raw = raw
         self._it = iter(raw)
         self._closed = False
+        self._pending: list[StreamEvent] = []
 
     def __iter__(self):
         return self
 
     def __next__(self) -> StreamEvent:
-        chunk = next(self._it)
-        return self._convert(chunk)
-
-    @staticmethod
-    def _convert(chunk) -> StreamEvent:
-        usage = _usage_of(getattr(chunk, "usage", None))
-        choices = getattr(chunk, "choices", None) or []
-        if not choices:
-            return StreamEvent(usage=usage) if usage else StreamEvent()
-        choice = choices[0]
-        delta = choice.delta
-        tool_call = None
-        calls = getattr(delta, "tool_calls", None) or []
-        if calls:
-            tc = calls[0]
-            function = getattr(tc, "function", None)
-            tool_call = ToolCallDelta(
-                index=getattr(tc, "index", 0) or 0,
-                id=getattr(tc, "id", "") or "",
-                name=getattr(function, "name", "") or "",
-                arguments=getattr(function, "arguments", "") or "",
-            )
-        finish = _finish_of(choice.finish_reason) if choice.finish_reason else None
-        return StreamEvent(
-            content=getattr(delta, "content", "") or "",
-            reasoning=getattr(delta, "reasoning_content", "") or "",
-            tool_call=tool_call,
-            finish_reason=finish,
-            usage=usage,
-        )
+        if not self._pending:
+            try:
+                chunk = next(self._it)
+            except StopIteration:
+                raise
+            except Exception as exc:
+                raise _map_error(exc) from exc
+            self._pending = _convert_chunk(chunk)
+        return self._pending.pop(0)
 
     def close(self):
         if self._closed:

@@ -18,20 +18,24 @@
 | `BRAIN` | str | `"local"` |  | LLM 调用模式（可选：local / api / ollama） |
 | `LLM_PROVIDER` | str | `"openai"` |  | 首选通道（可选：openai / gemini） |
 | `LLM_URL` | str | `""` |  | 首选 API 地址；gemini 通道留空用官方端点，自建代理可填根地址 |
-| `OLLAMA_BASE_URL` | str | `"http://localhost:11434/v1"` |  | Ollama 服务地址 |
 | `LLM_KEY` | str | `""` |  | 首选 API Key |
 | `LLM_MODEL` | str | `""` |  | 首选 LLM 模型名称 |
 | `LLM_REASONING_EFFORT` | str | `""` |  | 首选推理强度：留空交给模型默认，可选值受端点支持范围限制（可选： / minimal / low / medium / high / xhigh / max） |
+| `LLM_PROVIDER_ALT` | str | `"openai"` |  | 备选通道（可选：openai / gemini） |
+| `LLM_URL_ALT` | str | `""` |  | 备选 API 地址；gemini 通道留空用官方端点，自建代理可填根地址 |
+| `LLM_KEY_ALT` | str | `""` |  | 备选 API Key；填齐该通道要求的字段后才参与调用 |
+| `LLM_MODEL_ALT` | str | `""` |  | 备选 LLM 模型名称；填齐该通道要求的字段后才参与调用 |
+| `LLM_REASONING_EFFORT_ALT` | str | `""` |  | 备选推理强度（可选： / minimal / low / medium / high / xhigh / max） |
+| `OLLAMA_BASE_URL` | str | `"http://localhost:11434/v1"` |  | Ollama 服务地址 |
+| `OLLAMA_LLM_MODEL` | str | `""` |  | Ollama 档首选模型名称；留空按默认模型 |
+| `OLLAMA_LLM_REASONING_EFFORT` | str | `""` |  | Ollama 档首选推理强度（可选： / minimal / low / medium / high / xhigh / max） |
+| `OLLAMA_LLM_MODEL_ALT` | str | `""` |  | Ollama 档备选模型名称；留空按默认模型 |
+| `OLLAMA_LLM_REASONING_EFFORT_ALT` | str | `""` |  | Ollama 档备选推理强度（可选： / minimal / low / medium / high / xhigh / max） |
 | `LLM_TEMPERATURE` | float | 0.7 |  | LLM 采样温度 |
+| `LLM_THINKING_DISABLED` | bool | false |  | 关闭思考模式 |
 | `LLM_TOOLS_ENABLED` | bool | true |  | 是否可使用工具 |
 | `LLM_TOOL_MAX_ROUNDS` | int | 99 |  | 工具调用最大轮次（二十问等长流程游戏需要 ≥22 轮）（≥10, ≤99） |
-| `LLM_THINKING_DISABLED` | bool | false |  | 关闭思考模式 |
 | `LLM_FALLBACK_ENABLED` | bool | true |  | 调用报错或超时重试时自动切换到备选模型 |
-| `LLM_PROVIDER_ALT` | str | `""` |  | 备选通道，留空沿用首选（可选： / openai / gemini） |
-| `LLM_URL_ALT` | str | `""` |  | 备选 API 地址；备选连接缺任一项则整个方案沿用首选。gemini 通道留空用官方端点，自建代理可填根地址 |
-| `LLM_KEY_ALT` | str | `""` |  | 备选 API Key；备选连接缺任一项则整个方案沿用首选 |
-| `LLM_MODEL_ALT` | str | `""` |  | 备选 LLM 模型名称；备选地址、Key、模型名任一留空则整个方案沿用首选 |
-| `LLM_REASONING_EFFORT_ALT` | str | `""` |  | 备选推理强度；备选连接未填完整时跟随首选（可选： / minimal / low / medium / high / xhigh / max） |
 
 ### 行为
 
@@ -170,6 +174,8 @@
 | `LLM_TOOL_ROLE_MODE` | str | `"auto"` | 是 |  | 历史工具记录通道：auto 默认 native，端点明确拒绝时逐档降级（可选：auto / native / user-note / system-note / minimal） |
 | `LLM_TOOL_ROLE_OVERRIDE` | str | `""` | 是 |  | 按模型前缀强制指定工具通道，形如 qwen2.5=system-note,glm=user-note |
 | `NATIVE_REPLAY_ARGS` | str | `"minimal"` | 是 |  | native 通道回放工具参数的还原方式（可选：minimal / empty） |
+| `OLLAMA_LLM_REASONING_EFFORTS` | str | `""` | 是 |  | Ollama 档首选端点支持的档位，逗号分隔；留空按模型预设 |
+| `OLLAMA_LLM_REASONING_EFFORTS_ALT` | str | `""` | 是 |  | Ollama 档备选端点支持的档位，逗号分隔；留空按模型预设 |
 
 ### category = `memory`
 
@@ -190,4 +196,4 @@
 - `hidden`：`true` 表示不在界面显示，只能直接编辑 `settings.json`
 - `enum` / `minimum` / `maximum`：取值约束，会写进 `settings-schema.json`
 
-共 127 项（其中 67 项未在界面列出）。
+共 133 项（其中 69 项未在界面列出）。

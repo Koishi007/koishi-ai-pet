@@ -287,6 +287,99 @@ def test_stream_returns_closable_iterator():
     assert provider._client.stream_rows[0].closed is True
 
 
+def _tool_delta(index: int, name: str = "", arguments: str = ""):
+    return type("TC", (), {
+        "index": index, "id": f"call_{index}",
+        "function": type("F", (), {"name": name, "arguments": arguments})(),
+    })()
+
+
+def _chunk(content="", tool_calls=None, finish_reason=None, usage=None):
+    delta = type("D", (), {"content": content, "reasoning_content": None,
+                           "tool_calls": tool_calls})()
+    choice = type("Ch", (), {"delta": delta, "finish_reason": finish_reason})()
+    return type("Chunk", (), {"choices": [choice], "usage": usage})()
+
+
+def test_stream_emits_every_parallel_tool_call():
+    """同一块里的并行工具调用要逐条交出，不能只留第一条。"""
+    calls = [_tool_delta(0, "timer__set", '{"s":1}'),
+             _tool_delta(1, "todo__add", '{"t":"x"}')]
+    provider = _provider(client=_StreamClient([_chunk(tool_calls=calls)]))
+    stream = provider.stream([{"role": "user", "content": "x"}], max_tokens=10)
+
+    events = list(stream)
+
+    assert [e.tool_call.name for e in events] == ["timer__set", "todo__add"]
+    assert [e.tool_call.index for e in events] == [0, 1]
+    assert [e.tool_call.arguments for e in events] == ['{"s":1}', '{"t":"x"}']
+
+
+def test_stream_keeps_text_with_tool_calls():
+    calls = [_tool_delta(0, "timer__set")]
+    provider = _provider(client=_StreamClient([_chunk(content="好", tool_calls=calls)]))
+    stream = provider.stream([{"role": "user", "content": "x"}], max_tokens=10)
+
+    events = list(stream)
+
+    assert events[0].content == "好"
+    assert events[-1].tool_call.name == "timer__set"
+
+
+def test_stream_finish_reason_after_tool_calls():
+    """结束原因挂在最后一条事件上，工具调用块不会把它挡住。"""
+    calls = [_tool_delta(0, "timer__set"), _tool_delta(1, "todo__add")]
+    provider = _provider(client=_StreamClient([
+        _chunk(tool_calls=calls, finish_reason="tool_calls")]))
+    stream = provider.stream([{"role": "user", "content": "x"}], max_tokens=10)
+
+    events = list(stream)
+
+    assert events[-1].finish_reason == "tool_calls"
+    assert all(e.finish_reason is None for e in events[:-1])
+
+
+class _BrokenStream:
+    """首条数据正常，之后迭代抛异常。"""
+
+    def __init__(self, error):
+        self._rows = [_chunk(content="a")]
+        self._error = error
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self._rows:
+            return self._rows.pop(0)
+        raise self._error
+
+
+def _raw_client(raw) -> "_StreamClient":
+    """让 stream() 直接拿到指定迭代对象，跳过按行回放的 _FakeStream。"""
+    client = _StreamClient([])
+    client.stream_rows = [raw]
+    return client
+
+
+def test_stream_iteration_error_is_mapped():
+    """响应头成功、响应体读取失败时，异常在通道边界转换成中性错误。"""
+    provider = _provider(client=_raw_client(_BrokenStream(RuntimeError("reset"))))
+    stream = provider.stream([{"role": "user", "content": "x"}], max_tokens=10)
+
+    assert next(iter(stream)).content == "a"
+    with pytest.raises(ProviderConnection):
+        next(iter(stream))
+
+
+def test_stream_stop_iteration_passes_through():
+    provider = _provider(client=_raw_client(iter(())))
+    stream = provider.stream([{"role": "user", "content": "x"}], max_tokens=10)
+
+    with pytest.raises(StopIteration):
+        next(iter(stream))
+
+
 def test_stream_emits_finish_and_usage():
     chunk = type("Chunk", (), {
         "choices": [type("Ch", (), {

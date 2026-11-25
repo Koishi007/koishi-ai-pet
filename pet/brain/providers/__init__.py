@@ -24,7 +24,7 @@ class Capabilities:
 
 @dataclass(frozen=True)
 class LLMConnection:
-    """一套连接参数；provider 留空表示沿用首选方案的通道。"""
+    """一套连接参数；两套方案各自持有完整的一份。"""
 
     provider: str
     key: str = ""
