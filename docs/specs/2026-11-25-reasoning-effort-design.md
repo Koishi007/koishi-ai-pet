@@ -126,6 +126,8 @@ def preset_efforts(model: str | None) -> tuple[str, ...] | None:
 | `LLM_REASONING_EFFORTS` | str | `""` | 首选端点支持的档位，逗号分隔；留空按模型预设。仅 settings.json，高级配置 |
 | `LLM_REASONING_EFFORT_ALT` | str | `""` | 备选方案的推理强度，按备选自己的通道与模型算 |
 | `LLM_REASONING_EFFORTS_ALT` | str | `""` | 备选端点支持的档位；留空按模型预设。仅 settings.json，高级配置 |
+| `OLLAMA_LLM_REASONING_EFFORT` / `_ALT` | str | `""` | Ollama 档首选 / 备选推理强度 |
+| `OLLAMA_LLM_REASONING_EFFORTS` / `_ALT` | str | `""` | Ollama 档端点支持的档位；仅 settings.json，高级配置 |
 | `GEMINI_THINKING_LEVEL` | 无 | 无 | 从 `_KEY_META` 删除 |
 
 改名原因：键名带通道名，在跨通道之后与事实矛盾。保留旧名会让「哪些通道读它」说不清。
@@ -204,11 +206,12 @@ gemini 通道：`_level` 改名为 `_effort`，取值经同一结构的映射表
 |---|---|---|
 | 首选方案，模型名称之后 | 「推理强度」下拉，`LLM_REASONING_EFFORT` | 选项 = `("模型默认推理强度", "")` + 端点可用档位 |
 | 备选方案，模型名称之后 | 「推理强度」下拉，`LLM_REASONING_EFFORT_ALT` | 选项按备选端点；首项文案与首选一致 |
+| Ollama 档，首选 / 备选模型名称之后 | 「推理强度」下拉，`OLLAMA_LLM_REASONING_EFFORT` / `OLLAMA_LLM_REASONING_EFFORT_ALT` | 仅 `BRAIN=ollama` 显示；选项按 OpenAI 通道声明与 Ollama 模型名算 |
 | 显隐 | 通道声明了档位即显示 | 端点没有档位时下拉灰置并提示；连接是否填齐不影响可用状态 |
 | 联动 | 勾选「关闭思考模式」时两个下拉都禁用，取消勾选恢复 | 悬停提示「关闭思考时不下发推理强度」 |
 
-- **选项重建时机**：切换首选或备选通道、修改首选或备选模型名时重算，两侧按各自的通道与模型算。当前值仍在新集合内就保持选中；不在则显示首项「模型默认推理强度」；不写回配置，也不改动 `settings.json`。
-- **测试连接读界面值**：读当前启用方案那份下拉的当前值，并按端点可用集合过滤，与运行期 `resolve_reasoning_effort` 一致；该方案连接未填完整时不发请求。
+- **选项重建时机**：切换首选或备选通道、修改任一侧模型名（含 Ollama 档）时重算，各档按所属模式、通道与模型算。当前值仍在新集合内就保持选中；不在则显示首项「模型默认推理强度」；不写回配置，也不改动 `settings.json`。
+- **测试连接读界面值**：读当前启用方案那份下拉的当前值；选项在重建下拉时已按端点集合过滤，不再二次校验。该方案连接未填完整时不发请求。
 - 控件字段名：`effort_combo` / `effort_label`，备选侧加 `alt_` 前缀。
 
 ### §4.8 文案
@@ -250,7 +253,7 @@ gemini 通道：`_level` 改名为 `_effort`，取值经同一结构的映射表
 | `pet/ui/settings_spec.py` | `THINKING_LEVEL_CHOICES` → `EFFORT_CHOICES`，含 xhigh 与 max；`effort_label()`、`TAB_SPECS` 换两个键 |
 | `pet/ui/settings_tabs.py` | 两个下拉、选项随通道与模型重建、显隐、与关闭思考的联动 |
 | `pet/ui/settings_fields.py` | `SettingsWidgets` 字段更名 |
-| `pet/ui/settings_actions.py`、`settings_workers.py` | 读界面档位并按端点集合过滤、降级说明 |
+| `pet/ui/settings_actions.py`、`settings_workers.py` | 读界面档位、降级说明 |
 | `tests/` | 见 §7。新增 `test_reasoning_effort.py`；`test_gemini_thinking_budget.py` → `test_provider_gemini_thinking.py`，`test_settings_thinking_budget.py` → `test_settings_reasoning_effort.py`；`test_settings_visibility.py`、`test_provider_registry.py`、`test_provider_openai.py` 同步 |
 | `docs/reference/config.md` | `python scripts/gen_docs.py` 重新生成 |
 | `docs/specs/2026-11-23-llm-provider-abstraction-design.md` | §5.2、§11、§11.3 的档位条目改成本文 |

@@ -318,7 +318,7 @@ name = next((n for seen_at, n in reversed(calls.get(call_id, []))
 |---|---|---|
 | `local` | 不建 provider，全走本地兜底 | 忽略全部通道配置 |
 | `api` | 按 `LLM_PROVIDER` / `LLM_PROVIDER_ALT` 建 provider | 通道在此档生效 |
-| `ollama` | 两套方案都建 OpenAI 通道，`url` 取 `OLLAMA_BASE_URL`，`key` 固定为 `ollama`，`model` 留空时回落 `llama3.2` | 通道固定为 `openai`，`LLM_PROVIDER` 被忽略 |
+| `ollama` | 两套方案都建 OpenAI 通道，`url` 取 `OLLAMA_BASE_URL`，`key` 固定为 `ollama`，`model` 取 `OLLAMA_LLM_MODEL` / `OLLAMA_LLM_MODEL_ALT`，留空时回落 `llama3.2` | 通道固定为 `openai`，`LLM_PROVIDER` 被忽略；连接与模型键与 API 档互不影响 |
 
 `ollama` 档复用 OpenAI 通道而不新增 provider：Ollama 的服务端就是 OpenAI 兼容接口，区别只在地址与占位 key。
 
@@ -349,9 +349,9 @@ def temporary_provider(...) -> Iterator[ChatProvider]
 
 两套方案各自的 provider 名来自各自的配置键，留空时回落到默认通道，不读对方的取值。
 
-组装规则：`BRAIN=ollama` 时两套方案都组装成 `LLMConnection(provider="openai", url=OLLAMA_BASE_URL, key="ollama", model=model or "llama3.2")`；`BRAIN=api` 时按各自方案的通道键组装；`BRAIN=local` 时不组装。
+组装规则：`BRAIN=ollama` 时两套方案都组装成 `LLMConnection(provider="openai", url=OLLAMA_BASE_URL, key="ollama", model=OLLAMA_LLM_MODEL(_ALT) or "llama3.2")`；`BRAIN=api` 时按各自方案的通道键组装；`BRAIN=local` 时不组装。
 
-`BRAIN=ollama` 下模型名留空由组装规则补成默认模型，不算缺项；服务地址清空时两套方案都不完整。
+`BRAIN=ollama` 下模型名留空由组装规则补成默认模型，不算缺项；服务地址清空时两套方案都不完整。Ollama 档不读 API 档的地址、模型与推理强度键，切回 `api` 时原值保持不变。
 
 **回退判据**：`activate_fallback` 用整个 `LLMConnection` 比较，两套配置完全相同才拒绝切换。只比 provider 名会让「首选与备选同为 openai、key 或模型不同」这一主要用法失去回退能力。
 
@@ -490,13 +490,13 @@ Vertex 的三个键（项目、区域、服务账号文件）随该通道一起�
 `on_mode_changed()` 的判定规则：
 
 ```
-BRAIN == local   → 通道下拉、方案键、测试按钮全部禁用
-BRAIN == ollama  → 通道下拉禁用，附提示「Ollama 固定走 OpenAI 兼容接口」
-                   方案键按 openai 的 config_keys 显示
-BRAIN == api     → 通道下拉启用，方案键按选中通道的 config_keys 显示
+BRAIN == local   → 连接区与测试按钮禁用
+BRAIN == ollama  → 显示 Ollama 专属区块（服务地址、模型、推理强度），API 档区块隐藏
+                   通道固定 openai
+BRAIN == api     → 显示 API 档区块，通道下拉启用，方案键按选中通道的 config_keys 显示
 ```
 
-`BRAIN` 从 `api` 切到 `ollama` 时 `LLM_PROVIDER` 的值保留不动，只禁用控件，切回时恢复。
+`BRAIN` 从 `api` 切到 `ollama` 时 `LLM_PROVIDER` 等 API 档取值保留不动，切回时恢复；两档的键与控件互不复用。
 
 #### §11.3.2 连接页签
 
@@ -504,17 +504,17 @@ BRAIN == api     → 通道下拉启用，方案键按选中通道的 config_key
 |---|---|---|
 | 调用模式 | `BRAIN` 下拉 | 不变 |
 | | 「首选通道」下拉，`LLM_PROVIDER` | 位于调用模式下方 |
-| 首选方案 | `LLM_URL` | 按通道显示，占位符随通道变化 |
-| | `OLLAMA_BASE_URL` | 仅 `BRAIN=ollama` 时可用 |
+| 首选方案（API 档） | `LLM_URL` | 按通道显示，占位符随通道变化 |
 | | `LLM_KEY` | 占位符随通道变化 |
 | | `LLM_MODEL` 与「获取列表」 | 按钮按 `capabilities.model_list` 显隐，见 §11.3.6 |
 | | `LLM_TEMPERATURE`、工具三件套、思考开关 | 不变 |
 | | 「推理强度」，`LLM_REASONING_EFFORT` | 选项来自端点可用档位；勾选关闭思考时禁用 |
+| Ollama 档 | `OLLAMA_BASE_URL`、`OLLAMA_LLM_MODEL` / `OLLAMA_LLM_MODEL_ALT`、「推理强度」`OLLAMA_LLM_REASONING_EFFORT` / `OLLAMA_LLM_REASONING_EFFORT_ALT` | 仅 `BRAIN=ollama` 显示；模型名留空回落 `llama3.2`，与 API 档的地址、模型与档位互不影响 |
 | 模型方案 | 「当前启用」、切换按钮、回退开关 | 不变 |
 | | 「备选通道」下拉，`LLM_PROVIDER_ALT` | 位于备选分组首行，选项与首选一致 |
 | | `LLM_URL_ALT`、`LLM_KEY_ALT`、`LLM_MODEL_ALT` | 显隐与占位符随通道变化 |
 | | 「推理强度」，`LLM_REASONING_EFFORT_ALT` | 选项来自备选端点，与连接是否填齐无关 |
-| 测试 | 「测试连接」按钮 | 走 provider 的 `complete()`，读界面当前档位，主动降级时在结果里说明原因 |
+| 测试 | 「测试连接」按钮 | 走 provider 的 `complete()`，读当前模式与启用方案的界面值，主动降级时在结果里说明原因 |
 
 `LLM_CACHE_PROMPT` 只读 settings.json：openai 兼容端点普遍自动缓存并忽略 `cache_control`，gemini 通道丢弃该键，界面上不提供开关。
 

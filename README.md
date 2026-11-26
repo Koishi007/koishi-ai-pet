@@ -34,7 +34,7 @@ koishi-ai-pet/
     ├── config.py               # 全局配置
     ├── action/                 # 动作系统：注册、ActionQueue、重力模拟
     ├── agent/                  # 调度层：PetAgent、Scheduler、StateMachine
-    ├── brain/                  # LLM 集成：Behavior、prompts、memory、window_detector
+    ├── brain/                  # LLM 集成：Behavior、prompts、memory、providers（通道抽象）
     ├── pulse/                  # 心理数值引擎：Mood（好感/愉悦/理智）、Vitals（饱食/精力）
     ├── food/                   # 觅食系统：食物生成、过期、自主进食
     ├── game/                   # 回合制游戏：GameBase 容器 + 猜数字/猜拳/井字棋/二十问/猜高低
@@ -87,13 +87,13 @@ python -m pet
 
 ### 三种调用模式
 
-在设置的「LLM 调用模式」中可选：
+在设置 →「连接」页的「调用模式」中可选：
 
 | 模式 | 说明 | 适合 |
 |------|------|------|
 | `local` | 离线模式，不调用 LLM，随机执行预设动作 + 固定台词 | 无需 API 配置，快速体验恋恋的交互和动作 |
 | `api` | 调用 LLM，按「首选通道」连接（`LLM_PROVIDER`：OpenAI 兼容接口或 Google Gemini） | 正常使用，选购第三方 API（Mimo、硅基流动、DeepSeek 等）或使用 Gemini |
-| `ollama` | 调用 LLM，连接本机 Ollama 服务（填 `OLLAMA_BASE_URL`，默认 `http://localhost:11434/v1`） | 已有 Ollama 本地部署的用户 |
+| `ollama` | 调用 LLM，连接本机 Ollama 服务（填 `OLLAMA_BASE_URL`，默认 `http://localhost:11434/v1`；模型名在 Ollama 区块单独填写，留空用默认 `llama3.2`） | 已有 Ollama 本地部署的用户 |
 
 > 需要完整对话与智能交互时选 `api` 或 `ollama`；只需看恋恋跑起来的样子时选 `local`，无需任何配置。
 
@@ -119,15 +119,21 @@ python -m pet
 | API 地址 | `LLM_URL` | `LLM_URL_ALT` |
 | API Key | `LLM_KEY` | `LLM_KEY_ALT` |
 | 模型名称 | `LLM_MODEL` | `LLM_MODEL_ALT` |
+| 推理强度 | `LLM_REASONING_EFFORT` | `LLM_REASONING_EFFORT_ALT` |
 
+- 推理强度下拉的选项由通道与模型名派生，留空用模型默认值；端点拒绝该档位时按默认档位重发
 - **模型方案**区可一键在首选与备选之间切换（`LLM_ACTIVE_PROFILE`），当前启用的方案与模型名实时显示
 - 勾选「调用报错/超时重试时自动切换到备选模型」（`LLM_FALLBACK_ENABLED`，默认开启）后，请求报错、读超时、建流超时时会在重试前自动换到备选模型继续，每条请求链结束后回到所选方案
+- Ollama 档使用独立的一套键：`OLLAMA_BASE_URL` 与 `OLLAMA_LLM_MODEL` / `OLLAMA_LLM_MODEL_ALT`、`OLLAMA_LLM_REASONING_EFFORT` / `OLLAMA_LLM_REASONING_EFFORT_ALT`，与 API 档的取值互不影响；固定走 OpenAI 兼容接口
 
 > 只有一套 API 时无需配置备选，留空即可，行为与只填首选时一致。
 
 ### 恋恋基本设置
 
 - **「提示词」页签**：设置角色人格（可参考项目目录下的 `预设人格提示词.md`），并填写「人格台词范例」 - 每行一句真实台词，注入后用于校准说话语感，只参考风格不照搬内容（抓起、释放、窗口消失等提示词有默认值，可选填）
+- **「连接」页生成设置**：采样温度、关闭思考模式、工具调用开关与最大轮次；「测试连接」按当前填写值与调用模式发请求，测通再保存
+- **「行为」页**：自主行动间隔、视觉理解与截图缩放、记忆容量与向量检索、事件汇总
+- **宠物大小**：「通用」页选 50%~200% 挡位，宽高按挡位推导，保存后立即生效
 - **语音输入**：如需语音对话，在「通用」页签填讯飞听写 API 并开启语音输入（热键默认 F8）
 - **通知**：不需要系统弹窗时，在「通用」页签取消「允许发送通知」。
 
@@ -227,7 +233,7 @@ chmod +x update.sh && ./update.sh
 
 ### terminal
 
-终端命令执行，`TERMINAL_ENABLED` 默认开启，`TERMINAL_MODE` 默认 `ask`；右键菜单的**终端**入口始终显示，不受上述开关影响。
+终端命令执行，`TERMINAL_ENABLED` 默认开启，`TERMINAL_MODE` 默认 `ask`；开关、放行策略、免确认清单与工作目录根在「通用」页的终端组，右键菜单的**终端**入口始终显示，不受上述开关影响。
 
 - `run(command, cwd, timeout, shell)`：执行一条命令，返回退出码与截断后的输出；模型发起的命令按 `TERMINAL_MODE` 判定，需确认时弹出确认卡片
 - `list()`：返回平台、共享工作目录、免确认命令与安装情况、解释器名单、危险模式类别
