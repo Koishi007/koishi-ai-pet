@@ -61,6 +61,25 @@ class TestParse:
         assert err == ""
         assert parsed.argv[1] == r"C:\a b\notes.txt"
 
+    @_WINDOWS
+    def test_quotes_mid_token_group_spaces(self):
+        """引号开在参数中间时，引号内的空格不分割。"""
+        parsed, err = core.parse_command('findstr /c:"a b" file.txt')
+        assert err == ""
+        assert parsed.argv == ["findstr", "/c:a b", "file.txt"]
+        assert parsed.routed == ["cmd", "/d", "/s", "/c", 'findstr "/c:a b" file.txt']
+
+    @_WINDOWS
+    def test_quote_attached_to_option_value(self):
+        parsed, err = core.parse_command('git commit -m "a b" --author="x y"')
+        assert err == ""
+        assert parsed.argv == ["git", "commit", "-m", "a b", "--author=x y"]
+
+    @_WINDOWS
+    def test_unclosed_single_quote_is_rejected(self):
+        _, err = core.parse_command("echo 'a b")
+        assert err == "bad_command"
+
 
 class TestBuiltin:
 

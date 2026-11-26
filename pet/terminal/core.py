@@ -66,10 +66,9 @@ def parse_command(command: str, shell: str = "") -> tuple[Parsed, str]:
         if not quotes_paired(text):
             return Parsed(), "bad_command"
         try:
-            argv = shlex.split(text, posix=False)
+            argv = split_windows_args(text)
         except ValueError:
             return Parsed(), "bad_command"
-        argv = [strip_wrapping_quotes(token) for token in argv]
     else:
         try:
             argv = shlex.split(text, posix=True)
@@ -129,11 +128,37 @@ def quotes_paired(text: str) -> bool:
     return not in_double
 
 
-def strip_wrapping_quotes(token: str) -> str:
-    """剥掉成对的包裹引号。"""
-    if len(token) >= 2 and token[0] == token[-1] and token[0] in ("'", '"'):
-        return token[1:-1]
-    return token
+def split_windows_args(text: str) -> list[str]:
+    """Windows 参数拆分：引号可开在参数中间，引号内空白不分割；未闭合时报错。"""
+    tokens: list[str] = []
+    current: list[str] = []
+    quote = ""
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if char == "\\" and index + 1 < len(text) and text[index + 1] in ("'", '"'):
+            current.extend((char, text[index + 1]))
+            index += 2
+            continue
+        if quote:
+            if char == quote:
+                quote = ""
+            else:
+                current.append(char)
+        elif char == '"' or (char == "'" and not current):
+            quote = char
+        elif char.isspace():
+            if current:
+                tokens.append("".join(current))
+                current = []
+        else:
+            current.append(char)
+        index += 1
+    if quote:
+        raise ValueError("No closing quotation")
+    if current:
+        tokens.append("".join(current))
+    return tokens
 
 
 def display_argv(argv: list[str]) -> str:
