@@ -380,8 +380,49 @@ class TestConnectionTestTarget:
         assert worker._model == OLLAMA_DEFAULT_MODEL
         assert worker._url == "http://127.0.0.1:11434/v1"
 
+    @pytest.mark.parametrize("profile, model_attr, other_attr", [
+        ("primary", "ollama_model_edit", "ollama_model_alt_edit"),
+        ("alternative", "ollama_model_alt_edit", "ollama_model_edit"),
+    ])
+    def test_ollama_test_reads_ollama_model_control(
+            self, qt_app, monkeypatch, profile, model_attr, other_attr):
+        """Ollama 档测试连接发的是该档模型控件里的值，与 API 档控件无关。"""
+        from pet.config import config
+        monkeypatch.setattr(config, "LLM_ACTIVE_PROFILE", profile)
+        _form, tabs, actions, captured = _settings_actions(qt_app, monkeypatch)
+        w = tabs.widgets
+        w.brain_combo.setCurrentText("ollama")
+        w.model_edit.setText("api-model")
+        w.alt_model_edit.setText("api-alt-model")
+        getattr(w, model_attr).setText("qwen2.5")
+        getattr(w, other_attr).setText("qwen3")
+        tabs.form.fields["OLLAMA_BASE_URL"].setText("http://127.0.0.1:11434/v1")
+
+        actions.test_llm()
+
+        worker = captured.workers["llm"]
+        assert worker._model == "qwen2.5"
+        assert worker._url == "http://127.0.0.1:11434/v1"
+        assert worker._provider_name == "openai"
+
+    def test_ollama_test_reads_ollama_effort_control(self, qt_app, monkeypatch):
+        """Ollama 档测试连接下发的是专属推理强度下拉框当前选中的档位。"""
+        from pet.config import config
+        monkeypatch.setattr(config, "LLM_ACTIVE_PROFILE", "primary")
+        _form, tabs, actions, captured = _settings_actions(qt_app, monkeypatch)
+        w = tabs.widgets
+        w.brain_combo.setCurrentText("ollama")
+        w.ollama_model_edit.setText("deepseek-chat")
+        tabs.form.fields["OLLAMA_BASE_URL"].setText("http://127.0.0.1:11434/v1")
+        combo = w.ollama_effort_combo
+        combo.setCurrentIndex(combo.findData("high"))
+
+        actions.test_llm()
+
+        assert captured.workers["llm"]._reasoning_effort == "high"
+
     def test_merge_test_in_ollama_mode_uses_service_address(self, qt_app, monkeypatch):
-        """Ollama 档汇总沿用对话连接时，测的是服务地址输入框里的地址。"""
+        """Ollama 档汇总沿用对话连接时，测的是服务地址与专属模型输入框。"""
         from pet.config import config
         monkeypatch.setattr(config, "LLM_ACTIVE_PROFILE", "primary")
         monkeypatch.setattr(config, "MEMORY_MERGE_URL", "")
@@ -390,7 +431,7 @@ class TestConnectionTestTarget:
         form, tabs, actions, captured = _settings_actions(qt_app, monkeypatch)
         w = tabs.widgets
         w.brain_combo.setCurrentText("ollama")
-        w.model_edit.setText("qwen2.5")
+        w.ollama_model_edit.setText("qwen2.5")
         form.fields["OLLAMA_BASE_URL"].setText("http://127.0.0.1:11434/v1")
         form.fields["MEMORY_MERGE_URL"].setText("")
         form.fields["MEMORY_MERGE_KEY"].setText("")
@@ -400,6 +441,7 @@ class TestConnectionTestTarget:
 
         worker = captured.workers["merge_test"]
         assert worker._url == "http://127.0.0.1:11434/v1"
+        assert worker._model == "qwen2.5"
         assert worker._provider_name == "openai"
 
     @pytest.mark.parametrize("merge_url", ["", "https://merge.example/v1"])

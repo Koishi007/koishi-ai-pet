@@ -17,9 +17,7 @@ from pet.brain.llm_errors import ProviderUnavailable
 from pet.brain.llm_client import (OLLAMA_DEFAULT_MODEL, connection_complete,
                                    is_complete)
 from pet.brain.providers import LLMConnection
-from pet.brain.providers.registry import (build_provider, normalize_provider,
-                                          reasoning_efforts)
-from pet.brain.reasoning import effective_efforts
+from pet.brain.providers.registry import build_provider, normalize_provider
 from pet.ui.settings_workers import (EmbeddingTestWorker, LLMTestWorker,
                                       MemoryMergeWorker, ModelsFetchWorker,
                                       ProbeRegistry, VoiceTestWorker)
@@ -89,31 +87,35 @@ class SettingsActions(QObject):
         self.rebuild_client()
         logger.info(f"[Settings] active LLM profile switched to {target}")
 
+    def _model_edit_for(self, profile: str):
+        """按调用模式取模型名控件。"""
+        w = self.widgets
+        if w.brain_combo.currentText() == "ollama":
+            return (w.ollama_model_alt_edit if profile == "alternative"
+                    else w.ollama_model_edit)
+        return w.alt_model_edit if profile == "alternative" else w.model_edit
+
     def profile_form_values(self, profile: str) -> tuple[str, str, str]:
         """按方案读取界面当前填写值 (key, url, model)。"""
         w = self.widgets
+        model = self._model_edit_for(profile).text().strip()
         if profile == "alternative":
             return (w.alt_key_edit.text().strip(), w.alt_url_edit.text().strip(),
-                    w.alt_model_edit.text().strip())
-        return (w.llm_key_edit.text().strip(), w.url_edit.text().strip(),
-                w.model_edit.text().strip())
+                    model)
+        return (w.llm_key_edit.text().strip(), w.url_edit.text().strip(), model)
 
-    def effort_for_test(self, profile: str) -> str:
-        """该方案界面当前档位；端点不支持的取值不下发。"""
+    def _effort_combo_for(self, profile: str):
+        """按调用模式取推理强度控件。"""
         w = self.widgets
         alternative = profile == "alternative"
-        value = (w.alt_effort_combo.currentData() if alternative
-                 else w.effort_combo.currentData()) or ""
-        if not value:
-            return ""
-        channel = ("openai" if w.brain_combo.currentText() == "ollama"
-                   else self._provider_name_for(profile))
-        allowed = effective_efforts(
-            reasoning_efforts(channel),
-            config.LLM_REASONING_EFFORTS_ALT if alternative
-            else config.LLM_REASONING_EFFORTS,
-            w.alt_model_edit.text() if alternative else w.model_edit.text())
-        return value if value in allowed else ""
+        if w.brain_combo.currentText() == "ollama":
+            return (w.ollama_effort_alt_combo if alternative
+                    else w.ollama_effort_combo)
+        return w.alt_effort_combo if alternative else w.effort_combo
+
+    def effort_for_test(self, profile: str) -> str:
+        """该方案界面下拉框当前选中的档位；选项在重建时已按端点过滤。"""
+        return self._effort_combo_for(profile).currentData() or ""
 
     def models_button(self, profile: str = "primary"):
         w = self.widgets
