@@ -17,6 +17,8 @@ _TAIL_HALF_W = 9    # 尾巴的根部半宽
 _TAIL_ROOT = 4      # 尾根压进本体的深度
 _SHADOW = (2, 3)    # 零模糊墨影
 _BADGE_LIFT = 9     # 顶部为第三只眼徽章让出的高度
+_BAND_H = 20        # 顶部黄绿渐变带的高度，向下渐隐
+_BAND_ALPHA = 190   # 渐变带上沿的不透明度
 _BADGE_R = 7.5      # 徽章半径
 
 _ROSE_PATH = Path(__file__).resolve().parent.parent.parent / "assets" / "icon" / "rose.webp"
@@ -132,21 +134,21 @@ class SpeechBubble(QLabel):
         return path.united(tail)
 
     def _paint_paper(self, painter: QPainter, bubble: QPainterPath) -> None:
-        """纸感：顶部一层淡淡的黄绿受光，加极浅的纸纹颗粒。"""
+        """纸感：顶部一条黄绿渐变带，加极浅的纸纹颗粒。"""
         w, h = self.width(), self.height()
         painter.save()
         painter.setClipPath(bubble)
         painter.setPen(Qt.PenStyle.NoPen)
 
-        light = QLinearGradient(0, _BADGE_LIFT, 0, _BADGE_LIFT + 13)
-        top = QColor(theme.ACCENT)
-        top.setAlpha(78)
-        clear = QColor(theme.ACCENT)
+        light = QLinearGradient(0, _BADGE_LIFT, 0, _BADGE_LIFT + _BAND_H)
+        top = QColor(theme.BUBBLE_SPEECH_LIGHT)
+        top.setAlpha(_BAND_ALPHA)
+        clear = QColor(theme.BUBBLE_SPEECH_LIGHT)
         clear.setAlpha(0)
         light.setColorAt(0.0, top)
         light.setColorAt(1.0, clear)
         painter.setBrush(QBrush(light))
-        painter.drawRect(QRectF(0, _BADGE_LIFT, w, 13))
+        painter.drawRect(QRectF(0, _BADGE_LIFT, w, _BAND_H))
 
         grain = QColor(theme.INK)
         grain.setAlpha(12)
