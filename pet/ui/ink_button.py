@@ -59,6 +59,11 @@ class InkButton(QWidget):
             raise AttributeError(name)
         return getattr(inner, name)
 
+    def setText(self, text: str) -> None:
+        """内层文字变化会改变 sizeHint，需要让外层布局重新量一次宽度。"""
+        self._inner.setText(text)
+        self.updateGeometry()
+
     def sizeHint(self) -> QSize:
         return self._inner.sizeHint() + QSize(self._dx, self._dy)
 

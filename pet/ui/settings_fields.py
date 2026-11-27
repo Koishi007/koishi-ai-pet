@@ -7,17 +7,17 @@ from dataclasses import dataclass
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QDoubleValidator, QIntValidator
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QHBoxLayout, QLabel,
-                               QLineEdit, QTextEdit, QVBoxLayout,
+                               QLineEdit, QSlider, QTextEdit, QVBoxLayout,
                                QWidget)
 
 from pet.config import _KEY_META
 from pet import theme
 from pet.ui.icons import tinted_icon
 from pet.ui.ink_button import InkButton
-from pet.ui.qss import HELP_BADGE_QSS
+from pet.ui.qss import HELP_BADGE_QSS, VOLUME_SLIDER_QSS
 from pet.ui.settings_spec import display_value, stored_value
 from pet.ui.styles import (BUTTON_PRIMARY_QSS, COMBOBOX_QSS, HIDE_ICON_PATH,
-                           INPUT_HIGHLIGHT_QSS, SHOW_ICON_PATH)
+                           INPUT_HIGHLIGHT_QSS, SHOW_ICON_PATH, _COLOR_TEXT_SEC)
 from pet.ui.widgets import NoWheelComboBox
 
 
@@ -207,6 +207,29 @@ class SettingsForm:
         self.fields[key] = cb
         return cb
 
+    def slider_row(self, key: str, minimum: int, maximum: int) -> QWidget:
+        """滑块加右侧数值：滑块的取值直接是配置值。"""
+        holder = QWidget()
+        row = QHBoxLayout(holder)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(8)
+        slider = QSlider(Qt.Orientation.Horizontal)
+        slider.setRange(minimum, maximum)
+        slider.setStyleSheet(VOLUME_SLIDER_QSS)
+        # QSlider 的 sizeHint 固定为 15px，圆形滑块需要额外高度才不被裁
+        slider.setMinimumHeight(20)
+        value_label = QLabel(str(slider.value()))
+        value_label.setFixedWidth(28)
+        value_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        value_label.setStyleSheet(f"color:{_COLOR_TEXT_SEC}; font-size:11px;")
+        slider.valueChanged.connect(lambda v: value_label.setText(str(v)))
+        row.addWidget(slider, 1)
+        row.addWidget(value_label)
+        self.fields[key] = slider
+        setattr(self, f"{key}_value_label", value_label)
+        holder.setMinimumWidth(180)
+        return holder
+
     def combo_with_data(self, key: str, items: list[tuple[str, object]]) -> QComboBox:
         """下拉项为 (显示文案, 存储值)；读取时用 currentData()，不用 currentText()。"""
         cb = NoWheelComboBox()
@@ -268,6 +291,8 @@ class SettingsForm:
                     self.select_combo_data(widget, value)
                 else:
                     self.select_combo(widget, value)
+            elif isinstance(widget, QSlider):
+                widget.setValue(int(value))
             elif isinstance(widget, (QTextEdit, MarkdownEdit)):
                 widget.setPlainText(str(value))
         self.take_snapshot()
@@ -291,6 +316,8 @@ class SettingsForm:
         if isinstance(widget, QComboBox):
             data = widget.currentData()
             return data if data is not None else widget.currentText()
+        if isinstance(widget, QSlider):
+            return widget.value()
         if isinstance(widget, (QTextEdit, MarkdownEdit)):
             return widget.toPlainText()
         return None
@@ -332,6 +359,8 @@ class SettingsForm:
             elif isinstance(widget, QComboBox):
                 data = widget.currentData()
                 result[key] = data if data is not None else widget.currentText()
+            elif isinstance(widget, QSlider):
+                result[key] = widget.value()
             elif isinstance(widget, (QTextEdit, MarkdownEdit)):
                 result[key] = widget.toPlainText()
         return result, invalid

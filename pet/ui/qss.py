@@ -645,6 +645,47 @@ QProgressBar::chunk {{
 """
 
 
+# 斜纹填充：QSS 没有重复渐变，按比例铺交替色带。槽是宽而扁的，横向归一化后
+# 斜向会被压成近似水平，故 x2 取很小的值，让条纹在真实像素里接近 45 度；
+# 条数过密会被抗锯齿平均成纯色，5 条是能看出条纹的上限。
+_VOLUME_FILL = (
+    "qlineargradient(x1:0, y1:0, x2:0.05, y2:1, "
+    f"stop:0.0000 {theme.ACCENT}, stop:0.2000 {theme.ACCENT}, "
+    f"stop:0.2000 {theme.ACCENT_DEEP}, stop:0.4000 {theme.ACCENT_DEEP}, "
+    f"stop:0.4000 {theme.ACCENT}, stop:0.6000 {theme.ACCENT}, "
+    f"stop:0.6000 {theme.ACCENT_DEEP}, stop:0.8000 {theme.ACCENT_DEEP}, "
+    f"stop:0.8000 {theme.ACCENT}, stop:1.0000 {theme.ACCENT})"
+)
+
+# 音量滑块：墨色凹槽 + 黄绿斜纹填充 + 圆形滑块，与 MUSIC_VOLUME_BAR_QSS 同一套语言
+VOLUME_SLIDER_QSS = f"""
+QSlider::groove:horizontal {{
+    height: 8px;
+    background: {theme.PAPER_DEEP};
+    border: {theme.BORDER}px solid {theme.INK};
+    border-radius: 4px;
+}}
+QSlider::sub-page:horizontal {{
+    border-radius: 3px;
+    background: {_VOLUME_FILL};
+}}
+QSlider::handle:horizontal {{
+    width: 12px;
+    height: 12px;
+    margin: -2px 0;
+    background: {theme.SURFACE_WARM};
+    border: {theme.BORDER}px solid {theme.INK};
+    border-radius: 6px;
+}}
+QSlider::handle:horizontal:hover {{
+    background: {theme.ACCENT_SOFT};
+}}
+QSlider::handle:horizontal:disabled {{
+    background: {theme.PAPER_DEEP};
+}}
+"""
+
+
 def ui_font(point_size: int = 9) -> QFont:
     """应用级界面字体：QSS 的 font-family 不保证按列表回退，统一在这里设置。"""
     font = QFont()

@@ -17,7 +17,9 @@ from pet.config import PET_SCALE_STEPS, config
 from pet import theme
 from pet.ui.ink_button import InkButton
 from pet.ui.settings_fields import SettingsForm, SettingsWidgets
-from pet.ui.settings_spec import EFFORT_DEFAULT_LABEL, MODE_ORDER, TAB_SPECS, effort_items
+from pet.ui.settings_spec import (EFFORT_DEFAULT_LABEL, MODE_ORDER, TAB_SPECS,
+                                   VOICE_PRESET_CHOICES, VOICE_TRIGGER_CHOICES,
+                                   effort_items)
 from pet.ui.styles import (BUTTON_PRIMARY_QSS, COMBOBOX_QSS, INPUT_HIGHLIGHT_QSS,
                            SCROLLBAR_QSS, TEXTEDIT_QSS,
                            _COLOR_TEXT_MUTED, _COLOR_TEXT_SEC)
@@ -710,6 +712,16 @@ class SettingsTabs:
         w.capture_btn.setStyleSheet(BUTTON_PRIMARY_QSS)
         hotkey_row.addWidget(w.capture_btn)
         voice_form.addRow("热键:", hotkey_row)
+        w.voice_trigger_combo = f.combo_with_data(
+            "VOICE_TRIGGER_MODE", [(label, value) for label, value in VOICE_TRIGGER_CHOICES],
+        )
+        voice_form.addRow(f.label_with_help(
+            "触发方式:",
+            "两种方式都是按住热键说话、松开结束识别。\n"
+            "· 单次长按：按下热键即开始录音\n"
+            "· 双击后长按：先短按一下，再按住才开始录音；短按后约 1.2 秒内按下才生效\n\n"
+            "双击模式用于避免误触：单独按住不会录音，按得更久也不算解除防备。"
+        ), w.voice_trigger_combo)
         voice_form.addRow("讯飞 APPID:", f.line("XF_APPID", ""))
         voice_form.addRow("讯飞 API Key:", f.secret_row("XF_API_KEY"))
         voice_form.addRow("讯飞 API Secret:", f.secret_row("XF_API_SECRET"))
@@ -729,6 +741,29 @@ class SettingsTabs:
         w.voice_test_output = _test_output()
         voice_layout.addWidget(w.voice_test_output)
         inner.addWidget(voice_group)
+
+        output_group = QGroupBox("语音输出")
+        output_layout = QVBoxLayout(output_group)
+        output_layout.setSpacing(8)
+        w.voice_output_enabled = f.check("VOICE_OUTPUT_ENABLED", "允许发出声音")
+        output_layout.addWidget(w.voice_output_enabled)
+
+        output_form = QFormLayout()
+        output_form.setSpacing(8)
+        output_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        w.voice_preset_combo = f.combo_with_data(
+            "VOICE_OUTPUT_PRESET",
+            [(label, value) for label, value in VOICE_PRESET_CHOICES],
+        )
+        output_form.addRow("音高:", w.voice_preset_combo)
+        output_form.addRow("音量:", f.slider_row("VOICE_OUTPUT_VOLUME", 0, 100))
+        output_layout.addLayout(output_form)
+
+        w.voice_output_hint = QLabel("首次发声需要初始化音频设备，第一句之前约有 1 秒静默")
+        w.voice_output_hint.setStyleSheet(f"color:{_COLOR_TEXT_SEC}; font-size:11px;")
+        w.voice_output_hint.setWordWrap(True)
+        output_layout.addWidget(w.voice_output_hint)
+        inner.addWidget(output_group)
 
         inner.addStretch()
         return self._scroll_page(content)
