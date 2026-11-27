@@ -242,7 +242,7 @@ class SpeechBubble(QLabel):
         self.setMinimumWidth(80)
         self.setMaximumWidth(config.BUBBLE_MAX_WIDTH)
         metrics = self.fontMetrics()
-        # CSS 左右内边距 + 12px 缓冲：QLabel 换行判定比字形宽多要几像素
+        # CSS 左右内边距 + 12px 缓冲
         text_w = metrics.horizontalAdvance(text) + _PAD_LEFT + _PAD_RIGHT + 12
         w = text_w if text_w <= config.BUBBLE_MAX_WIDTH else config.BUBBLE_MAX_WIDTH
         w = max(w, self.minimumWidth())
@@ -284,7 +284,7 @@ class SpeechBubble(QLabel):
 
     def append_stream(self, chunk: str):
         """追加流式文本片段。"""
-        chunk = chunk.replace("\r", "").replace("\n", "")  # 去掉换行符（某些 API 会发送 \r\n）
+        chunk = chunk.replace("\r", "").replace("\n", "")  # 去掉换行符
         if not chunk:
             return
         if not self._stream_open:
@@ -410,7 +410,7 @@ class SpeechBubble(QLabel):
         """收掉一句尚未收尾的流式台词，缓冲中的文本补进队列，不丢句。"""
         self._flush_buffered()
         if self._stream_open:
-            self._stream_ending = True  # 剩下的字打完再收尾，别被下一句抹掉
+            self._stream_ending = True  # 剩下的字打完再收尾
             if not self._type_timer.isActive():
                 self._type_timer.start(self._type_interval)
         self._stream_open = False
