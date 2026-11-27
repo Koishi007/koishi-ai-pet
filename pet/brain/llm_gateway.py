@@ -4,32 +4,25 @@ import logging
 import time
 from datetime import datetime
 
-from openai import BadRequestError, UnprocessableEntityError
-
 from pet.config import config
-from pet.brain.budget import thinking_active
+from pet.brain.llm_errors import ProviderBadRequest, ProviderError
 from pet.brain.llm_retry import llm_stream_with_retry, retryer_for
 from pet.brain.projection import degrade_messages, uses_native_tools
-from pet.brain.tool_channel import is_tool_rejection, mark_downgraded, resolve_channel
+from pet.brain.tool_channel import default_state, is_tool_rejection
 
 logger = logging.getLogger(__name__)
 
-# 服务商是否不支持 thinking 参数（首次 400 后自动降级，后续请求不再携带）
-_thinking_unsupported = False
-
 
 class LlmGateway:
-    """一次决策里的所有 LLM 请求都经这里：非流式补全与流式建流。
-
-    重试前切换备选模型由 on_retry 回调负责（实现留在编排方），
-    进展上报由 note_progress 负责。
-    """
+    """一次决策里的所有 LLM 请求都经这里；切换备选与进展上报由回调负责。"""
 
     def __init__(self, client, stats, on_retry=None, note_progress=None):
         self._llm = client
         self._stats = stats
         self._on_retry = on_retry
         self._note_progress = note_progress or (lambda: None)
+        self._channel = getattr(client, "tool_channel", None) or default_state()
+        self._provider_name = getattr(client, "provider_name", None)
 
     def _retry_hook(self, exc: BaseException | None = None) -> bool:
         """包装重试回调：回调异常不影响重试流程。"""
@@ -41,112 +34,90 @@ class LlmGateway:
             logger.exception("[Behavior] retry hook failed")
             return False
 
-    @staticmethod
-    def _apply_thinking_param(kwargs: dict, thinking: bool | None = None):
-        """按配置注入思考模式参数；thinking 非 None 时覆盖全局开关。"""
-        if _thinking_unsupported:
-            return
-        state = "enabled" if thinking_active(thinking) else "disabled"
-        kwargs.setdefault("extra_body", {})["thinking"] = {"type": state}
+    def _complete_once(self, messages: list, max_tokens: int = 4000, tools: list = None,
+                       thinking: bool | None = None, temperature: float | None = None):
+        self._stats.increment()
+        t0 = time.perf_counter()
+        provider = self._llm.provider
+        if provider is None:
+            raise ProviderError("没有可用的 provider")
+        kwargs = {"max_tokens": max_tokens, "tools": tools, "thinking": thinking,
+                  "temperature": (config.LLM_TEMPERATURE if temperature is None
+                                  else temperature)}
+        result = self._guard_tool_rejection(
+            lambda msgs=None: provider.complete(messages if msgs is None else msgs,
+                                                **kwargs),
+            messages)
+        self._note_progress()
+        elapsed = time.perf_counter() - t0
+        usage = result.usage
+        if usage:
+            logger.info(f"[Behavior] LLM call completed in {elapsed:.2f}s, "
+                        f"tokens: prompt={usage.prompt_tokens}, "
+                        f"completion={usage.completion_tokens}, total={usage.total_tokens}")
+        else:
+            logger.info(f"[Behavior] LLM call completed in {elapsed:.2f}s")
+        return result
 
-    @staticmethod
-    def _is_thinking_reject(exc: BaseException) -> bool:
-        """400 是否指向 thinking 参数"""
-        body = getattr(exc, "body", None)
-        if body is None:
-            return True
-        return "thinking" in f"{body}{exc}".lower()
-
-    def _create_completion(self, kwargs: dict):
-        """发起补全请求：thinking 参数或工具协议被拒时各降级重试一次。"""
-        global _thinking_unsupported
+    def _guard_tool_rejection(self, call, messages: list):
+        """发起请求；工具协议被拒时降一档重试一次。"""
         try:
-            return self._llm.client.chat.completions.create(**kwargs)
-        except (BadRequestError, UnprocessableEntityError) as e:
-            if (isinstance(e, BadRequestError) and "extra_body" in kwargs
-                    and self._is_thinking_reject(e)):
-                logger.warning("[Behavior] 请求被拒绝(400)，可能不支持 thinking 参数，自动降级重试")
-                kwargs.pop("extra_body", None)
-                resp = self._llm.client.chat.completions.create(**kwargs)
-                _thinking_unsupported = True
-                return resp
-            if is_tool_rejection(e):
-                return self._retry_without_tool_channel(kwargs, e)
+            return call()
+        except ProviderBadRequest as e:
+            if is_tool_rejection(e, self._current_provider()):
+                return self._retry_without_tool_channel(call, messages, e)
             raise
 
-    def _retry_without_tool_channel(self, kwargs: dict, exc: BaseException):
-        """工具协议被端点明确拒绝：降一档通道，改写消息体后重试一次。
+    def _current_provider(self) -> str:
+        """当前生效通道名；调用方没暴露通道查询时返回空串，判据同时匹配两张词表。"""
+        if self._provider_name is None:
+            return ""
+        try:
+            return self._provider_name() or ""
+        except Exception:
+            logger.debug("[Behavior] provider name unavailable", exc_info=True)
+            return ""
 
-        缓存通道已低于 native、而消息仍是 native 结构时，只按当前通道改写消息，
-        不再记降档，避免一次工具循环连降到底。
-        """
-        current = resolve_channel()
-        messages = kwargs.get("messages") or []
+    def _retry_without_tool_channel(self, call, messages: list, exc: BaseException):
+        """工具协议被拒：降一档通道后重试一次；缓存已低于 native 时只改写不记降档。"""
+        current = self._channel.resolve()
         stale_native = current != "native" and uses_native_tools(messages)
-        downgraded = current if stale_native else mark_downgraded(current)
+        downgraded = current if stale_native else self._channel.mark_downgraded(current)
         if downgraded == current and not stale_native:
             raise exc
         rewritten = degrade_messages(messages, downgraded)
         if not rewritten:
             raise exc
-        kwargs["messages"] = rewritten
         logger.warning(f"[Behavior] 端点拒绝工具协议，本次请求降级为 {downgraded} 重试")
-        return self._llm.client.chat.completions.create(**kwargs)
+        return call(rewritten)
 
-    def completion(self, messages: list, max_tokens: int = 4000, tools: list = None,
-                   thinking: bool | None = None, temperature: float | None = None):
-        """非流式补全（含重试与备选方案切换）。
-
-        temperature 非 None 时覆盖配置值。
-        """
-        return retryer_for(tag="Behavior", on_retry=self._retry_hook)(self._completion_once)(
+    def complete(self, messages: list, max_tokens: int = 4000, tools: list = None,
+                 thinking: bool | None = None, temperature: float | None = None):
+        """非流式补全，含重试与备选方案切换。"""
+        return retryer_for(tag="Behavior", on_retry=self._retry_hook)(self._complete_once)(
             messages, max_tokens=max_tokens, tools=tools, thinking=thinking,
             temperature=temperature)
 
-    def _completion_once(self, messages: list, max_tokens: int = 4000, tools: list = None,
-                         thinking: bool | None = None, temperature: float | None = None):
-        self._stats.increment()
-        t0 = time.perf_counter()
-        kwargs = {"model": self._llm.model, "messages": messages, "max_tokens": max_tokens,
-                  "temperature": config.LLM_TEMPERATURE if temperature is None else temperature}
-        if tools:
-            kwargs["tools"] = tools
-        self._apply_thinking_param(kwargs, thinking)
-        resp = self._create_completion(kwargs)
-        self._note_progress()
-        elapsed = time.perf_counter() - t0
-        usage = resp.usage
-        if usage:
-            logger.info(f"[Behavior] LLM call completed in {elapsed:.2f}s, "
-                        f"tokens: prompt={usage.prompt_tokens}, completion={usage.completion_tokens}, total={usage.total_tokens}")
-        else:
-            logger.info(f"[Behavior] LLM call completed in {elapsed:.2f}s")
-        return resp
+    def stream(self, messages: list, max_tokens: int = 4000, tools: list = None,
+               thinking: bool | None = None, temperature: float | None = None):
+        """建流，含建流看门狗与重试；返回的迭代器由解析器消费。"""
 
-    def stream_chat(self, messages: list, max_tokens: int = 4000, tools: list = None,
-                    thinking: bool | None = None, temperature: float | None = None):
-        """建流（含建流看门狗与重试）；返回的流由解析器消费。
-
-        temperature 非 None 时覆盖配置值。
-        """
-
-        def _build_kwargs() -> dict:
-            # 每次尝试都按当前生效方案重建参数，回退到备选后模型名随之更新
-            kwargs = {"model": self._llm.model, "messages": messages, "max_tokens": max_tokens,
-                      "temperature": (config.LLM_TEMPERATURE if temperature is None
-                                      else temperature),
-                      "stream": True, "stream_options": {"include_usage": True}}
-            if tools:
-                kwargs["tools"] = tools
-            self._apply_thinking_param(kwargs, thinking)
-            return kwargs
-
-        def _create():
-            return self._create_completion(_build_kwargs())
+        def _open_stream():
+            # 每次尝试都取当前生效的 provider，回退后通道与模型随之更新
+            provider = self._llm.provider
+            if provider is None:
+                raise ProviderError("没有可用的 provider")
+            return self._guard_tool_rejection(
+                lambda msgs=None: provider.stream(
+                    messages if msgs is None else msgs,
+                    max_tokens=max_tokens, tools=tools, thinking=thinking,
+                    temperature=(config.LLM_TEMPERATURE if temperature is None
+                                 else temperature)),
+                messages)
 
         self._stats.increment()
         return llm_stream_with_retry(
-            _create,
+            _open_stream,
             tag="Behavior.stream",
             create_timeout=config.LLM_CREATE_TIMEOUT,
             on_retry=self._retry_hook,
@@ -157,28 +128,24 @@ class LlmGateway:
         text_chars = 0
         image_count = 0
         image_bytes = 0
-        image_fmt = ""
+        image_mime = ""
         for m in messages:
-            content = m["content"]
+            content = m.get("content")
             if isinstance(content, str):
                 text_chars += len(content)
             elif isinstance(content, list):
                 for part in content:
-                    if isinstance(part, dict) and part.get("type") == "text":
+                    if not isinstance(part, dict):
+                        continue
+                    if part.get("type") == "text":
                         text_chars += len(part.get("text", ""))
-                    elif isinstance(part, dict) and part.get("type") == "image_url":
+                    elif part.get("type") == "image":
                         image_count += 1
-                        url = part.get("image_url", {}).get("url", "")
-                        if "," in url:
-                            image_bytes += len(url.split(",", 1)[1])
-                            # 从 data:image/jpeg;base64,... 中提取格式
-                            if not image_fmt and "data:image/" in url:
-                                fmt_start = url.find("data:image/") + len("data:image/")
-                                fmt_end = url.find(";", fmt_start)
-                                if fmt_end > fmt_start:
-                                    image_fmt = url[fmt_start:fmt_end]
+                        image_bytes += len(part.get("data", "") or "")
+                        image_mime = image_mime or part.get("mime", "")
         t = datetime.now().strftime("%H:%M:%S")
         parts = [f"prompt_chars: {text_chars}"]
         if image_count:
-            parts.append(f"images: {image_count}{' (' + image_fmt + ')' if image_fmt else ''} ({image_bytes // 1024}KB base64)")
+            suffix = f" ({image_mime})" if image_mime else ""
+            parts.append(f"images: {image_count}{suffix} ({image_bytes // 1024}KB base64)")
         logger.info(f"[{t}] [Behavior]   {', '.join(parts)} ({tag})")

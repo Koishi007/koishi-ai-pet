@@ -57,7 +57,8 @@ class TestChatAttachment:
 
         parts = messages[-1]["content"]
         assert isinstance(parts, list)
-        assert "ATTACH_B64" in parts[1]["image_url"]["url"]
+        assert parts[1]["type"] == "image"
+        assert parts[1]["data"] == "ATTACH_B64"
         assert "SCREEN_B64" not in str(parts)
 
     def test_screenshot_used_without_attachment(self, monkeypatch):
@@ -84,7 +85,8 @@ class TestInteractAttachment:
         messages = _builder().build_interact("尝尝看", attachment_image=object())
         parts = messages[-1]["content"]
         assert isinstance(parts, list)
-        assert "ATTACH_B64" in parts[1]["image_url"]["url"]
+        assert parts[1]["type"] == "image"
+        assert parts[1]["data"] == "ATTACH_B64"
 
     def test_attachment_image_dropped_without_vision(self, monkeypatch):
         monkeypatch.setattr(config, "VISION_ENABLED", False)
@@ -143,7 +145,8 @@ class TestAnalyzeTask:
         messages = _builder().build_analyze_decide("元信息", "无窗口", attachment_image=object())
         parts = messages[-1]["content"]
         assert isinstance(parts, list)
-        assert "ATTACH_B64" in parts[1]["image_url"]["url"]
+        assert parts[1]["type"] == "image"
+        assert parts[1]["data"] == "ATTACH_B64"
 
     def test_reject_prompt_differs_by_reason(self):
         replies = {reason: interact_file_reject_prompt(reason)

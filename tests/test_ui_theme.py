@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 from PySide6.QtCore import qInstallMessageHandler
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QWidget
 
 from pet import theme
 from pet.ui.icons import tinted_icon
@@ -51,17 +51,24 @@ def test_compat_layer_keeps_old_names():
 
 
 def test_app_stylesheet_parses(qt_app):
+    """QSS 有语法错误时 Qt 只在控件的样式求值期发出 "Could not parse"。"""
     messages = []
     previous = qInstallMessageHandler(
         lambda mode, context, message: messages.append(message))
     try:
-        qt_app.setStyleSheet(app_stylesheet())
+        probe = QWidget()
+        probe.setStyleSheet(app_stylesheet() + "\nQPushButton { color: #FFF\n")
+        qt_app.processEvents()
+        syntax_errors = [m for m in messages if "Could not parse" in m]
+        assert syntax_errors, "带语法错误的样式没有触发 Qt 报错，本用例已失去检出能力"
+
+        messages.clear()
+        probe.setStyleSheet(app_stylesheet())
+        qt_app.processEvents()
+        problems = [m for m in messages if "Could not parse" in m]
+        assert not problems, problems
     finally:
-        qt_app.setStyleSheet("")
         qInstallMessageHandler(previous)
-    problems = [m for m in messages
-                if "Could not parse" in m or "Unknown property" in m]
-    assert not problems, problems
 
 
 _BUTTON_RULE = re.compile(r"QPushButton[^{}]*\{([^{}]*)\}")

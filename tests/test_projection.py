@@ -96,7 +96,7 @@ class TestToolGroup:
     def test_native_emits_tool_calls_and_tool_messages(self):
         messages = project(tool_group(1), Profile(), Budget(now=T0 + 1000))
         assert messages[0]["role"] == "assistant"
-        assert messages[0]["tool_calls"][0]["function"]["name"] == "bilibili__like"
+        assert messages[0]["tool_calls"][0]["name"] == "bilibili__like"
         assert messages[1] == {"role": "tool", "tool_call_id": "c1", "content": "点赞成功"}
 
     def test_incomplete_group_degrades_and_never_emits_tool_role(self):
@@ -119,7 +119,7 @@ class TestToolGroup:
         messages = project(tool_group(1, args={"aside": "我出石头"}),
                            Profile(replay_args_mode="empty"), Budget(now=T0 + 1000))
         assert messages[0]["content"] == "Speech: 我出石头"
-        assert messages[0]["tool_calls"][0]["function"]["arguments"] == "{}"
+        assert messages[0]["tool_calls"][0]["arguments"] == "{}"
 
     def test_none_channel_keeps_aside_drops_tool_records(self):
         messages = project(tool_group(1, args={"aside": "我在看视频"}),
@@ -131,9 +131,8 @@ class TestToolGroup:
     def test_degrade_keeps_aside_in_assistant(self):
         messages = [
             {"role": "assistant", "content": None,
-             "tool_calls": [{"id": "c1", "type": "function",
-                             "function": {"name": "x",
-                                          "arguments": '{"aside": "看好了"}'}}]},
+             "tool_calls": [{"id": "c1", "name": "x",
+                             "arguments": '{"aside": "看好了"}'}]},
             {"role": "tool", "tool_call_id": "c1", "content": "完成"},
         ]
         out = degrade_messages(messages, "user-note")
@@ -143,9 +142,8 @@ class TestToolGroup:
     def test_degrade_none_keeps_aside_only(self):
         messages = [
             {"role": "assistant", "content": None,
-             "tool_calls": [{"id": "c1", "type": "function",
-                             "function": {"name": "x",
-                                          "arguments": '{"aside": "看好了"}'}}]},
+             "tool_calls": [{"id": "c1", "name": "x",
+                             "arguments": '{"aside": "看好了"}'}]},
             {"role": "tool", "tool_call_id": "c1", "content": "完成"},
         ]
         out = degrade_messages(messages, "none")
@@ -164,6 +162,23 @@ class TestToolGroup:
         messages = project(events, Profile(), Budget(now=T0 + 1000))
         assert [m["tool_call_id"] for m in messages if m["role"] == "tool"] == ["c10", "c11"]
 
+    def test_results_follow_call_order_not_event_order(self):
+        """结果事件乱序落库时，投影仍按调用顺序输出，Gemini 靠该顺序配对。"""
+        gid = "g10"
+        events = [
+            ev(20, "tool_call", {"name": "same", "args": "{}"}, group=gid,
+               refs={"tool_call_id": "c1"}),
+            ev(21, "tool_call", {"name": "same", "args": "{}"}, group=gid,
+               refs={"tool_call_id": "c2"}),
+            # 结果逆序写入
+            ev(22, "tool_result", {"brief": "第二个"}, group=gid, refs={"tool_call_id": "c2"}),
+            ev(23, "tool_result", {"brief": "第一个"}, group=gid, refs={"tool_call_id": "c1"}),
+        ]
+        messages = project(events, Profile(), Budget(now=T0 + 1000))
+        tool_msgs = [m for m in messages if m["role"] == "tool"]
+        assert [m["tool_call_id"] for m in tool_msgs] == ["c1", "c2"]
+        assert [m["content"] for m in tool_msgs] == ["第一个", "第二个"]
+
     def test_empty_content_becomes_null(self):
         messages = project(tool_group(1), Profile(), Budget(now=T0 + 1000))
         assert messages[0]["content"] is None
@@ -179,7 +194,7 @@ class TestToolGroup:
         ]
         messages = project(events, Profile(), Budget(now=T0 + 1000))
         assert messages[0]["content"] is None
-        args = json.loads(messages[0]["tool_calls"][0]["function"]["arguments"])
+        args = json.loads(messages[0]["tool_calls"][0]["arguments"])
         assert args["aside"] == "查一下天气"
         assert messages[1]["role"] == "tool"
 

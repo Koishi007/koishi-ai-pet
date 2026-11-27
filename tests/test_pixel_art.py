@@ -177,8 +177,8 @@ def test_bad_rows_reports_position(art):
     with pytest.raises(PixelArtError) as exc:
         core.set_pixels(rows=rows)
     assert exc.value.code == "bad_rows"
-    assert "第 5 行" in exc.value.message
-    assert "15" in exc.value.message
+    # 报错带出错行的实际长度与画布宽度，位置由调用方按行号定位
+    assert "15" in exc.value.message and "16" in exc.value.message
     assert core.open_canvas(core._store().current_id)["data"]["revision"] == 0
 
 

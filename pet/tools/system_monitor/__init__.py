@@ -28,21 +28,25 @@ PROCESS_OUTPUT = {
 
 
 def _get_overview(**kw):
+    TOOL_CTX.play_action_frame("read", 0)
     TOOL_CTX.speech_random(["检查一下…", "看看状态…", "把把脉…", "电脑怎么样了…"])
     return get_overview(**kw)
 
 
 def _get_top_processes(**kw):
+    TOOL_CTX.play_action_frame("read", 0)
     TOOL_CTX.speech_random(["看看谁在占资源…", "谁在搞事…", "查查大户…", "谁最忙…"])
     return get_top_processes(**kw)
 
 
 def _get_memory_detail(**kw):
+    TOOL_CTX.play_action_frame("read", 0)
     TOOL_CTX.speech_random(["看看内存…", "内存怎么样…", "查查内存…", "还剩多少…"])
     return get_memory_detail(**kw)
 
 
 def _get_network(**kw):
+    TOOL_CTX.play_action_frame("read", 0)
     TOOL_CTX.speech_random(["看看网络…", "网速怎么样…", "查查网络…", "网通不通…"])
     return get_network(**kw)
 

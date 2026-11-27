@@ -233,7 +233,8 @@ def main():
             pass
 
     logger.info("===== KoishiAI 启动 =====")
-    logger.info(f"BRAIN={config.BRAIN}, MODEL={config.LLM_MODEL}")
+    logger.info(f"BRAIN={config.BRAIN}, PROVIDER={config.LLM_PROVIDER}, "
+                f"MODEL={config.LLM_MODEL}")
 
     # 按用户配置开关崩溃信息收集
     get_guard().set_enabled(config.CRASH_REPORT_ENABLED)

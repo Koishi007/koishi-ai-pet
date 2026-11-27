@@ -1,4 +1,7 @@
-"""本地兜底决策：LLM 不可用或抢锁失败时的降级产出。"""
+"""本地兜底决策：LLM 不可用或抢锁失败时的降级产出。
+
+只产出 Action 与台词，不带 Summary。
+"""
 
 import logging
 import random

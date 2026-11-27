@@ -1,13 +1,36 @@
 """桌宠对话气泡：同一时刻只讲一句，多出来的排队"""
 
+from pathlib import Path
+
 from PySide6.QtWidgets import QLabel, QWidget
-from PySide6.QtCore import Qt, QTimer, QPoint, QPropertyAnimation, QParallelAnimationGroup, QEasingCurve
-from PySide6.QtGui import QPainter, QColor, QPainterPath, QPen
+from PySide6.QtCore import (Qt, QTimer, QPoint, QPointF, QRectF, QPropertyAnimation,
+                            QParallelAnimationGroup, QEasingCurve)
+from PySide6.QtGui import (QPainter, QColor, QPainterPath, QPen, QLinearGradient,
+                           QBrush, QPixmap)
 from pet.config import config
 from pet import theme
 from pet.ui.edge_dock import edge_mask_rect
 
-TAIL_HEIGHT = 10
+TAIL_HEIGHT = 13
+
+_TAIL_HALF_W = 6    # 尾巴的根部半宽
+_TAIL_ROOT = 4      # 尾根压进本体的深度
+_SHADOW = (2, 3)    # 零模糊墨影
+_BADGE_LIFT = 9     # 顶部为第三只眼徽章让出的高度
+_BAND_H = 20        # 顶部黄绿渐变带的高度，向下渐隐
+_BAND_ALPHA = 190   # 渐变带上沿的不透明度
+_BADGE_R = 7.5      # 徽章半径
+
+_ROSE_PATH = Path(__file__).resolve().parent.parent.parent / "assets" / "icon" / "rose.webp"
+_ROSE_SIZE = 20     # 蔷薇显示边长
+_ROSE_INSET = 4     # 花心从气泡右下角内收
+_ROSE_DROP = (2, 2)  # 蔷薇的零模糊墨影
+_ROSE_LIP = _ROSE_SIZE // 2 - _ROSE_INSET + _ROSE_DROP[0]  # 蔷薇探出边框的宽度
+_ROSE_GAP = 6       # 文字与蔷薇的间距
+_PAD_RIGHT = 1 + _SHADOW[0] + _ROSE_LIP + _ROSE_GAP
+_PAD_LEFT = 10
+_PAD_TOP = 10 + _BADGE_LIFT           # 顶部留徽章位
+_PAD_BOTTOM = 10 + TAIL_HEIGHT + _SHADOW[1]
 
 _GAP_MS = 300  # 两句之间的间隔
 
@@ -23,8 +46,9 @@ class SpeechBubble(QLabel):
             | Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        # 顶部留徽章位、右下留蔷薇位：正文不进边角
         self.setStyleSheet(
-            "padding: 10px;"
+            f"padding: {_PAD_TOP}px {_PAD_RIGHT}px {_PAD_BOTTOM}px {_PAD_LEFT}px;"
             f"font-size: {config.BUBBLE_FONT_SIZE}px;"
             f"color: {theme.INK};"
         )
@@ -55,6 +79,7 @@ class SpeechBubble(QLabel):
         self._incoming_chunks: list[str] = []
         self._stream_open = False  # 已开句、尚未收到 end_stream
         self._tail_x_cache = -1    # 上一次画尾巴的横坐标，贴边变化时触发重绘
+        self._rose_cache: tuple[QPixmap, QPixmap] | None = None
 
         self.hide()
 
@@ -62,30 +87,133 @@ class SpeechBubble(QLabel):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        w, h = self.width(), self.height()
-        body_h = h - TAIL_HEIGHT
+        bubble = self._bubble_path()
+        painter.fillPath(bubble.translated(_SHADOW[0], _SHADOW[1]), QColor(theme.INK))
 
-        body_rect = self.rect()
-        body_rect.setHeight(body_h)
+        paper = QLinearGradient(0, _BADGE_LIFT, 0, self.height() - TAIL_HEIGHT - _SHADOW[1])
+        paper.setColorAt(0.0, QColor(theme.SURFACE_WARM))
+        paper.setColorAt(1.0, QColor(theme.BUBBLE_SPEECH))
+        painter.fillPath(bubble, QBrush(paper))
 
-        cx = self._tail_x()
-        body = QPainterPath()
-        body.addRoundedRect(body_rect.adjusted(1, 1, -2, -2),
-                            theme.RADIUS_LG, theme.RADIUS_LG)
-        # 尾巴底边压进气泡内部，union 才会合并成单一轮廓，避免出现第二条横边
-        tail = QPainterPath()
-        tail.moveTo(cx - 8, body_h - 7)
-        tail.lineTo(cx + 8, body_h - 7)
-        tail.lineTo(cx, h - 2)
-        tail.closeSubpath()
-        bubble = body.united(tail)
-
-        painter.setBrush(QColor(theme.BUBBLE_SPEECH))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.setPen(QPen(QColor(theme.INK), theme.BORDER))
         painter.drawPath(bubble)
 
+        self._paint_paper(painter, bubble)
+        self._paint_eye_badge(painter)
+        self._paint_rose(painter)
+
         painter.end()
         super().paintEvent(event)
+
+    def _body_rect(self) -> QRectF:
+        """气泡本体矩形：右下角留出蔷薇探出边框的宽度。"""
+        w, h = self.width(), self.height()
+        dx, dy = _SHADOW
+        return QRectF(1, _BADGE_LIFT, w - 2 - dx - _ROSE_LIP,
+                      h - TAIL_HEIGHT - dy - _BADGE_LIFT)
+
+    def _bubble_path(self) -> QPainterPath:
+        """气泡轮廓：圆角本体 + 尾巴，尾根压进本体后取并集。"""
+        h = self.height()
+        dy = _SHADOW[1]
+        body = self._body_rect()
+        path = QPainterPath()
+        path.addRoundedRect(body, theme.RADIUS_LG, theme.RADIUS_LG)
+
+        cx = self._tail_x()
+        root_y = body.bottom() - _TAIL_ROOT
+        tip_y = h - dy
+        tail = QPainterPath()
+        tail.moveTo(cx - _TAIL_HALF_W, root_y)
+        tail.lineTo(cx, tip_y)
+        tail.lineTo(cx + _TAIL_HALF_W, root_y)
+        tail.closeSubpath()
+        return path.united(tail)
+
+    def _paint_paper(self, painter: QPainter, bubble: QPainterPath) -> None:
+        """纸感：顶部一条黄绿渐变带，加极浅的纸纹颗粒。"""
+        w, h = self.width(), self.height()
+        painter.save()
+        painter.setClipPath(bubble)
+        painter.setPen(Qt.PenStyle.NoPen)
+
+        light = QLinearGradient(0, _BADGE_LIFT, 0, _BADGE_LIFT + _BAND_H)
+        top = QColor(theme.BUBBLE_SPEECH_LIGHT)
+        top.setAlpha(_BAND_ALPHA)
+        clear = QColor(theme.BUBBLE_SPEECH_LIGHT)
+        clear.setAlpha(0)
+        light.setColorAt(0.0, top)
+        light.setColorAt(1.0, clear)
+        painter.setBrush(QBrush(light))
+        painter.drawRect(QRectF(0, _BADGE_LIFT, w, _BAND_H))
+
+        grain = QColor(theme.INK)
+        grain.setAlpha(12)
+        painter.setBrush(grain)
+        for gy in range(_BADGE_LIFT + 7, h - TAIL_HEIGHT - 4, 15):
+            for gx in range(8, w - 10, 15):
+                if (gx // 15 * 3 + gy // 15 * 5) % 4:
+                    continue
+                painter.drawEllipse(QPointF(gx, gy), 0.6, 0.6)
+        painter.restore()
+
+    def _paint_eye_badge(self, painter: QPainter) -> None:
+        """左上角骑边的第三只眼：淡粉圆徽章加一道闭着的眼睑。"""
+        cx, cy = 17, _BADGE_LIFT
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setBrush(QColor(theme.THIRD_EYE))
+        painter.setPen(QPen(QColor(theme.INK), 1.6))
+        painter.drawEllipse(QPointF(cx, cy), _BADGE_R, _BADGE_R)
+
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        line = QPen(QColor(theme.THIRD_EYE_LINE), 1.4)
+        line.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(line)
+        lid = QPainterPath()
+        lid.moveTo(cx - 4.4, cy - 0.6)
+        lid.quadTo(cx, cy + 3.4, cx + 4.4, cy - 0.6)
+        painter.drawPath(lid)
+        painter.drawLine(QPointF(cx - 4.6, cy - 0.4), QPointF(cx - 5.8, cy + 1.4))
+        painter.drawLine(QPointF(cx + 4.6, cy - 0.4), QPointF(cx + 5.8, cy + 1.4))
+        painter.restore()
+
+    def _paint_rose(self, painter: QPainter) -> None:
+        """右下角骑边的绿黑蔷薇：墨色剪影垫底，贴图压在上面。"""
+        images = self._rose_images()
+        if images is None:
+            return
+        rose, shadow = images
+        body = self._body_rect()
+        x = round(body.right() - _ROSE_INSET - _ROSE_SIZE / 2)
+        y = round(body.bottom() - _ROSE_INSET - _ROSE_SIZE / 2)
+        painter.drawPixmap(QPoint(x + _ROSE_DROP[0], y + _ROSE_DROP[1]), shadow)
+        painter.drawPixmap(QPoint(x, y), rose)
+
+    def _rose_images(self) -> tuple[QPixmap, QPixmap] | None:
+        """按当前 DPR 缩放蔷薇与墨色剪影；换屏导致 DPR 变化时重建。"""
+        ratio = self.devicePixelRatioF()
+        pixel = max(1, round(_ROSE_SIZE * ratio))
+        if self._rose_cache is not None and self._rose_cache[0].width() == pixel:
+            return self._rose_cache
+        source = QPixmap(str(_ROSE_PATH))
+        if source.isNull():
+            self._rose_cache = None
+            return None
+        source = source.scaled(pixel, pixel, Qt.AspectRatioMode.KeepAspectRatio,
+                               Qt.TransformationMode.SmoothTransformation)
+        shadow = QPixmap(source.size())
+        shadow.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(shadow)
+        painter.drawPixmap(0, 0, source)
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
+        painter.fillRect(shadow.rect(), QColor(theme.INK))
+        painter.end()
+        source.setDevicePixelRatio(ratio)
+        shadow.setDevicePixelRatio(ratio)
+        self._rose_cache = (source, shadow)
+        return self._rose_cache
 
     def _tail_x(self) -> int:
         """尾巴的横坐标：对准宠物可见主体，贴边时偏向贴边的那一侧。"""
@@ -97,7 +225,8 @@ class SpeechBubble(QLabel):
             if side in ("left", "right"):
                 x0, _, visible, _ = edge_mask_rect(side, pet.width(), pet.height())
                 cx = pet.x() + x0 + visible // 2 - self.x()
-        return max(12, min(cx, w - 12))
+        margin = _TAIL_HALF_W + 7   # 心形尾巴鼓出的部分也不能出界
+        return max(margin, min(cx, w - margin))
 
     def _sync_tail(self):
         """贴边侧变化后尾巴位置会变，位置没变时也要重绘。"""
@@ -111,12 +240,13 @@ class SpeechBubble(QLabel):
         self.setMinimumWidth(80)
         self.setMaximumWidth(config.BUBBLE_MAX_WIDTH)
         metrics = self.fontMetrics()
-        text_w = metrics.horizontalAdvance(text) + 20 + 5  # 20px CSS padding + 5px 缓冲（防 subpixel 舍入换行）
+        # CSS 左右内边距 + 12px 缓冲
+        text_w = metrics.horizontalAdvance(text) + _PAD_LEFT + _PAD_RIGHT + 12
         w = text_w if text_w <= config.BUBBLE_MAX_WIDTH else config.BUBBLE_MAX_WIDTH
         w = max(w, self.minimumWidth())
         self.setFixedWidth(w)
+        # 尾巴高度已经在 padding-bottom 里，adjustSize 给出的就是气泡总高
         self.adjustSize()
-        self.resize(self.width(), self.height() + TAIL_HEIGHT)
 
     def _reposition(self):
         pet = self.parent()
@@ -152,7 +282,7 @@ class SpeechBubble(QLabel):
 
     def append_stream(self, chunk: str):
         """追加流式文本片段。"""
-        chunk = chunk.replace("\r", "").replace("\n", "")  # 去掉换行符（某些 API 会发送 \r\n）
+        chunk = chunk.replace("\r", "").replace("\n", "")  # 去掉换行符
         if not chunk:
             return
         if not self._stream_open:
@@ -278,7 +408,7 @@ class SpeechBubble(QLabel):
         """收掉一句尚未收尾的流式台词，缓冲中的文本补进队列，不丢句。"""
         self._flush_buffered()
         if self._stream_open:
-            self._stream_ending = True  # 剩下的字打完再收尾，别被下一句抹掉
+            self._stream_ending = True  # 剩下的字打完再收尾
             if not self._type_timer.isActive():
                 self._type_timer.start(self._type_interval)
         self._stream_open = False

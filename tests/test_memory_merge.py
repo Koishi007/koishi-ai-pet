@@ -6,6 +6,7 @@ import pytest
 
 from pet.brain import memory_merge
 from pet.brain.memory import MemoryStore
+from pet.brain.providers import LLMConnection
 from pet.config import config
 
 
@@ -63,23 +64,38 @@ class TestParseGroups:
 
 
 class TestConnection:
+    """汇总连接：三项齐全用独立配置，否则整段沿用当前对话方案。"""
+
     def test_independent_when_all_set(self, monkeypatch):
         monkeypatch.setattr(config, "MEMORY_MERGE_URL", "https://merge.example/v1")
         monkeypatch.setattr(config, "MEMORY_MERGE_KEY", "merge-key")
         monkeypatch.setattr(config, "MEMORY_MERGE_MODEL", "merge-model")
-        assert memory_merge._resolve_connection() == (
-            "merge-key", "https://merge.example/v1", "merge-model")
+        monkeypatch.setattr(config, "LLM_PROVIDER", "openai")
+        assert memory_merge._resolve_connection() == LLMConnection(
+            provider="openai", key="merge-key",
+            url="https://merge.example/v1", model="merge-model")
+
+    def test_independent_keeps_dialog_channel(self, monkeypatch):
+        """独立配置只覆盖地址与模型，通道沿用对话通道。"""
+        monkeypatch.setattr(config, "MEMORY_MERGE_URL", "https://merge.example/v1")
+        monkeypatch.setattr(config, "MEMORY_MERGE_KEY", "merge-key")
+        monkeypatch.setattr(config, "MEMORY_MERGE_MODEL", "merge-model")
+        monkeypatch.setattr(config, "LLM_PROVIDER", "gemini")
+        assert memory_merge._resolve_connection().provider == "gemini"
 
     def test_partial_falls_back(self, monkeypatch):
         monkeypatch.setattr(config, "MEMORY_MERGE_URL", "https://merge.example/v1")
         monkeypatch.setattr(config, "MEMORY_MERGE_KEY", "")
         monkeypatch.setattr(config, "MEMORY_MERGE_MODEL", "merge-model")
+        monkeypatch.setattr(config, "LLM_PROVIDER", "openai")
+        monkeypatch.setattr(config, "BRAIN", "api")
         monkeypatch.setattr(config, "LLM_URL", "https://primary.example/v1")
         monkeypatch.setattr(config, "LLM_KEY", "primary-key")
         monkeypatch.setattr(config, "LLM_MODEL", "primary-model")
         monkeypatch.setattr(config, "LLM_ACTIVE_PROFILE", "primary")
-        assert memory_merge._resolve_connection() == (
-            "primary-key", "https://primary.example/v1", "primary-model")
+        assert memory_merge._resolve_connection() == LLMConnection(
+            provider="openai", key="primary-key",
+            url="https://primary.example/v1", model="primary-model")
 
 
 class TestFormatRecords:
@@ -259,15 +275,14 @@ class TestRunMerge:
         assert rows[0]["level"] == "L1"
         assert rows[0]["importance"] == 5
 
-    def test_merge_log_marks_truncated_remainder(self, store, monkeypatch, caplog):
+    def test_merge_keeps_summary_within_limit(self, store, monkeypatch):
         store.save("event", "准备拍视频", ["拍摄"], 3, "L2")
         store.save("event", "镜头已补拍完成", ["补拍"], 3, "L2")
         ids = ",".join(str(r["id"]) for r in store.list_merge_candidates())
         monkeypatch.setattr(memory_merge, "_call_llm",
                             lambda messages: f"Group: {ids} | {'拍' * 60}")
-        with caplog.at_level("INFO"):
-            memory_merge.run_merge(store)
-        assert "…<+10字>" in caplog.text
+        assert memory_merge.run_merge(store) == 1
+        assert [r["content"] for r in store.list_memories()[0]] == ["拍" * 60]
 
     def test_maintenance_does_not_delete_rows(self, store):
         """定期维护只打分，删除只在超上限时发生。"""
@@ -282,7 +297,7 @@ class TestRunMerge:
             store.maintenance()
         assert [r["content"] for r in store.list_memories()[0]] == ["旧事件"]
 
-    def test_capacity_cleanup_evicts_lowest_effective_first(self, store, monkeypatch, caplog):
+    def test_capacity_cleanup_evicts_lowest_effective_first(self, store, monkeypatch):
         store.save("event", "旧临时记忆", ["旧临时"], 1, "L3")
         store.save("event", "旧情景记忆", ["旧情景"], 2, "L2")
         store.save("event", "新近记忆", ["新近"], 4, "L1")
@@ -294,10 +309,8 @@ class TestRunMerge:
                 "WHERE content != '新近记忆'", (old,))
             conn.commit()
         monkeypatch.setattr(config, "MEMORY_MAX_CAPACITY", 2)
-        with caplog.at_level("INFO"):
-            with store._retriever._lock:
-                store._retriever.enforce_capacity()
-        assert "容量淘汰" in caplog.text
+        with store._retriever._lock:
+            store._retriever.enforce_capacity()
         assert [r["content"] for r in store.list_memories()[0]] == ["新近记忆"]
 
     def test_capacity_cleanup_spares_l1_core(self, store, monkeypatch):

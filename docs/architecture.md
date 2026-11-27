@@ -114,16 +114,24 @@ flowchart TB
 2. **上下文组装**：`pet/brain/context_builder.py`。三个入口 `build_autonomous_decide` / `build_chat_decide` /
    `build_interact`，内部按「静态块 + 运行时块 + 记忆」拼装，详见第 5 节。
 3. **LLM 调用**：`pet/brain/behavior.py` 的流式路径 `*_decide_stream`（首选）与非流式 `*_decide`（回退），
-   请求本身经 `pet/brain/llm_gateway.py` 发出，输出上限由 `pet/brain/budget.py` 按模式/思考/工具算
+   请求本身经 `pet/brain/llm_gateway.py` 的 `complete()` / `stream()` 发出，输出上限由 `pet/brain/budget.py` 按模式/思考/工具算
    （基线 + 思考预留 + 工具预留，统一硬上限封顶，用户不参与）。客户端 `pet/brain/llm_client.py`
-   维护首选/备选两套方案，重试与降级策略在 `pet/brain/llm_retry.py`。
+   维护首选/备选两套方案，每套方案持有一个 provider；通道的编码、异常映射与思考判据在
+   `pet/brain/providers/` 下，见 [provider 抽象设计](specs/2026-11-23-llm-provider-abstraction-design.md)。
+   重试与降级策略在 `pet/brain/llm_retry.py`，只针对中性错误族分类。
+   请求链开始时 `reset_effective()` 落到一套有 provider 的方案：首选建不起来时直接使用完整备选，
+   两套都不可用才走本地兜底。连接是否完整由 `llm_client.profile_complete` 读配置组装后判定，
+   规则来自 `PROVIDER_SPECS` 的 `url_optional`；设置页手里只有界面值，走同一规则的
+   `llm_client.connection_complete`。
 4. **输出解析**：按行前缀分派 - `Summary` / `Speech` / `Action` / `Memory` / `Emotion` / `Mood` / `Vitals`
    （`pet/brain/parsing.py`，流式与非流式共用一套行标签，聚合为 `BehaviorOutput`）。
    同一字段出现多行时，`Summary` / `Memory` / `Mood` / `Vitals` 只取第一条，`Speech` 全部保留且按换行分段。
    解析出的字段与原文一起写入会话事件日志（`BehaviorOutput.assistant_fields`）：字段供投影，
    原文（≤4KB）只作审计；投影按协议顺序还原字段行（见[投影设计](specs/2026-10-22-session-event-log-projection-design.md) §3.2）。
-   结束原因（`finish_reason`）由解析器回传给编排方；缺少必填字段（`Summary`、`Action`）时由
-   `pet/brain/repair.py` 的 `retry_if_incomplete` 重试一次：修复提示点明缺了哪个字段，并按任务给出 Action 数量要求，
+   结束原因（`finish_reason`）由解析器回传给编排方；本轮没有拿到可用输出时由
+   `pet/brain/repair.py` 的 `retry_if_incomplete` 重试一次，按原因分两条路：
+   `BehaviorOutput.call_failed`（调用异常、流式总超时）原样重发，不发格式修复提示；
+   缺必填字段（`Summary`、`Action`）走修复模式，修复提示点明缺了哪个字段，并按任务给出 Action 数量要求，
    上一轮原文（截断后）作为待修复数据回传，要求保留已符合协议的字段行、只补齐缺失字段；流式与非流式都回传；
    流式重试前先作废已流出的半截台词（`speak_stream_discard` → `SpeechBubble.discard_stream`），避免补写后重复播出；
    有副作用的工具轮次不重试。只有上一轮 `length`（上限被思考占满）才在修复轮关掉思考，其余失败保持调用方与用户设定。
@@ -229,7 +237,10 @@ system 动作表换成 `EDGE_ACTION_NAMES` 的八个贴边动作；调度器、�
 | 模块 | 职责 |
 |---|---|
 | `behavior.py` | 编排中枢：六个决策入口、抢锁与降级、上下文与工具会话装配 |
-| `llm_gateway.py` | LLM 请求：非流式补全、流式建流、thinking 参数降级、prompt 规模统计 |
+| `llm_gateway.py` | LLM 请求：`complete()` 与 `stream()` 两个入口、工具通道降级、prompt 规模统计 |
+| `llm_types.py` | 供应商边界的中性类型：工具调用、用量、补全结果、流式事件 |
+| `llm_errors.py` | 供应商边界的异常族：鉴权、参数、未找到、限流、服务端、超时、连接、通道不可用 |
+| `providers/` | 供应商边界：对话协议与能力声明、通道登记表 `registry.py`、各通道的编码与异常映射 |
 | `budget.py` | 输出预算：按模式/思考/工具算 `max_tokens`，统一封顶（不给用户自定义） |
 | `parsing.py` | 输出解析：行标签、字段取值、流式消费（流式与非流式共用一套规则） |
 | `repair.py` | 空响应修复重试：无动作无台词时追加格式修复提示、改写 messages 再跑一次 |
@@ -239,7 +250,7 @@ system 动作表换成 `EDGE_ACTION_NAMES` 的八个贴边动作；调度器、�
 | `output.py` | 输出契约：`BehaviorOutput` / `ActionStep` / `CancelledError` |
 | `events.py` | 会话事件日志：只追加写入、会话切换与旧会话回收 |
 | `projection.py` | 投影：把事件还原成模型可见的 messages（纯函数） |
-| `tool_channel.py` | 工具通道：native 优先，端点明确拒绝时按 user-note / system-note / none 降级并缓存 |
+| `tool_channel.py` | 工具通道：native 优先，端点明确拒绝时按 user-note / system-note / none 降级并缓存；降档状态由 `ToolChannelState` 实例持有 |
 | `conversation_store.py` | 对话历史：`chat_history` 表的读写与按天清理 |
 
 顶层模块（`pet/*.py`）：
@@ -290,8 +301,9 @@ system 动作表换成 `EDGE_ACTION_NAMES` 的八个贴边动作；调度器、�
    否则「被抽到」会提高权重，形成自我强化。
 5. **动作名的唯一真源是 `ACTION_NAMES`**：LLM 输出会用它校验，未知动作被丢弃并兜底。
 6. **粒子特效名唯一真源是 `_SPAWNERS`**：调试面板、动作映射都按这里的名字取。
-7. **配置项唯一真源是 `_KEY_META`**：新增项要重新生成参考文档；要在设置界面显示还得在对应页签加控件
-   （页签归属是界面代码手写的，和 `category` 不是一回事）。
+7. **配置项唯一真源是 `_KEY_META`**：新增项要重新生成参考文档；要在设置界面显示还得在对应页签加控件。
+   页签归属是界面代码手写的，和 `category` 不是一回事。通道专属键另在
+   `pet/brain/providers/registry.py` 的 `PROVIDER_SPECS` 登记归属，两张表的一致性由用例守住。
 8. **工具目录约定**：`pet/tools/<name>/__init__.py` 必须定义 `TOOL_NAME`、`TOOL_DESCRIPTION`、`register()`；
    `TOOL_GROUP`、`requirements.txt`、`config.example.json` 可选。
 9. **素材成对**：`assets/actions/<name>/` 里的帧文件排序即播放顺序，`<name>.json` 缺失则该动作不加载。
@@ -308,8 +320,10 @@ system 动作表换成 `EDGE_ACTION_NAMES` 的八个贴边动作；调度器、�
     反向、不制造新的环（见 §14）即可。
 14. **不要跨对象访问私有成员**：需要别的类的能力就给它一个公开方法，或者把协作提到调用方。
     现存的例外列在 §14，新代码不要再加。
-15. **函数内延迟 import 只在两种情况下写**：打断循环依赖、推迟重依赖（Qt / 平台后端 / playwright）。
-    没有理由就不要延迟，写了就在旁边注明原因。
+15. **函数内延迟 import 只在两种情况下写**：打断循环依赖、推迟重依赖（Qt / 平台后端 / playwright /
+    供应商 SDK）。没有理由就不要延迟，写了就在旁边注明原因。现行两处：`google-genai` 只在
+    `gemini_provider` 构造时导入，避免模块级加载 SDK；provider 模块由 `providers/registry.py` 的
+    `_load()` 延迟解析，使 registry 的模块级依赖只有标准库。
 16. **贴边只改活动范围**：`EDGE_ACTION_NAMES` 是贴边可用动作的唯一真源；贴边时 system 动作表只列这八个，
     `PetActions` 把同名动作映射到 `*_edge`，入队处丢弃表外动作；状态机与调度节奏不变，气泡与粒子保留。
 17. **终端命令由工具自己登记**：`:timer`、`:todo`、`:knowledge` 这类命令在工具的 `register(registry)` 里
@@ -375,9 +389,8 @@ system 动作表换成 `EDGE_ACTION_NAMES` 的八个贴边动作；调度器、�
 
 ### 依赖环
 
-当前无登记项。模块 import 图由 `ARCH008` 静态扫描，导入顺序由
-`tests/test_import_smoke.py` 的冷启动子进程覆盖。冻结清单与全部既有债见
-`tests/test_architecture_contracts.py` 的 allowlist（§11「ARCH 规则清单」）。
+当前无登记项。模块 import 图由 `ARCH008` 静态扫描，导入期副作用由 `ARCH009` 覆盖。
+冻结清单与全部既有债见 `tests/test_architecture_contracts.py` 的 allowlist（§11「ARCH 规则清单」）。
 
 函数内 import 大多正当（见 §11 第 15 条）；无理由的由 `ARCH002` 报出违规。
 

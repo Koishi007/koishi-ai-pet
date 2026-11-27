@@ -116,6 +116,7 @@ def _set(duration: int, label: str = "时间到") -> dict:
         return {"error": "定时器未初始化"}
     if not label.strip():
         label = "时间到"
+    TOOL_CTX.play_action_frame("write", 0)
     TOOL_CTX.speech_random(["设好了…", "到时间喊你…", "记下啦…"])
     return t.set_timer(duration=duration, label=label.strip())
 
@@ -124,6 +125,7 @@ def _list() -> dict:
     """查看活跃定时器。"""
     if not (t := _ensure()):
         return {"error": "定时器未初始化"}
+    TOOL_CTX.play_action_frame("read", 0)
     return t.list_timers()
 
 
@@ -131,6 +133,7 @@ def _cancel(timer_id: str) -> dict:
     """取消定时器。"""
     if not (t := _ensure()):
         return {"error": "定时器未初始化"}
+    TOOL_CTX.play_action_frame("write", 0)
     TOOL_CTX.speech_random(["取消啦…", "不提醒了…", "忘掉它…"])
     return t.cancel_timer(timer_id)
 
@@ -139,6 +142,7 @@ def _cancel_all() -> dict:
     """取消所有定时器。"""
     if not (t := _ensure()):
         return {"error": "定时器未初始化"}
+    TOOL_CTX.play_action_frame("write", 0)
     TOOL_CTX.speech_random(["全部取消…", "清空啦…", "都忘掉…"])
     return t.cancel_all()
 

@@ -56,11 +56,11 @@ def summarize_with_llm(messages: list, item_count: int, call_llm: Callable[..., 
     call_llm(messages, max_tokens) 由编排方提供（含重试与备选方案切换）。
     """
     resp = call_llm(messages, max_tokens=output_budget("summary"))
-    raw = resp.choices[0].message.content
+    raw = resp.content
     result = (raw or "").strip()
     if not result:
         logger.warning(f"[Behavior] LLM summarize returned empty content, raw={raw!r}, "
-                       f"finish_reason={resp.choices[0].finish_reason}")
+                       f"finish_reason={resp.finish_reason}")
         return None
     logger.info(f"[Behavior] LLM summarized {item_count} items → {result}")
     return result

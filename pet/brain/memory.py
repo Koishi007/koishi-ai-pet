@@ -929,6 +929,14 @@ class VectorRetriever(_MemoryRetriever):
         self._create_vec_table()
         logger.info(f"[VectorRetriever] initialized, dim={self._dim}")
 
+    def close(self):
+        """释放数据库连接与嵌入客户端。"""
+        with self._lock:
+            self._conn.close()
+        close = getattr(self._embedder, "close", None)
+        if close is not None:
+            close()
+
     def _create_vec_table(self):
         with self._lock:
             need_rebuild = False

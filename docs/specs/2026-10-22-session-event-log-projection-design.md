@@ -300,7 +300,9 @@ assistant 行只来自结构化字段，按协议顺序逐字渲染；投影不�
 
 ### §4.8 传输编码层
 
-投影产出的是协议无关的逻辑消息，落到 wire 格式由编码器负责：
+投影产出的是协议无关的逻辑消息，落到 wire 格式由编码器负责。
+
+> 本层已被 [provider 抽象设计](2026-11-23-llm-provider-abstraction-design.md) 取代：`ChatProvider` 覆盖同样的编码职责，并额外承担流式事件解码与异常映射，`MessageEncoder` 不再单独实现。本节的协议约束表与「投影器只保证 `tool_call_id` 稳定可复用」这条义务继续有效。
 
 ```python
 class MessageEncoder(Protocol):

@@ -8,15 +8,24 @@ from PySide6.QtWidgets import (QFormLayout, QGroupBox, QHBoxLayout, QLabel,
                                QLineEdit, QScrollArea, QTextEdit,
                                QVBoxLayout, QWidget)
 
+from pet.brain.llm_client import resolve_llm_profile
+from pet.brain.providers.registry import (channel_choices, config_keys,
+                                           config_keys_for, normalize_provider,
+                                           reasoning_efforts, url_placeholder)
+from pet.brain.reasoning import effective_efforts
 from pet.config import PET_SCALE_STEPS, config
 from pet import theme
 from pet.ui.ink_button import InkButton
 from pet.ui.settings_fields import SettingsForm, SettingsWidgets
-from pet.ui.settings_spec import TAB_SPECS
-from pet.ui.styles import (BUTTON_PRIMARY_QSS, INPUT_HIGHLIGHT_QSS,
+from pet.ui.settings_spec import EFFORT_DEFAULT_LABEL, MODE_ORDER, TAB_SPECS, effort_items
+from pet.ui.styles import (BUTTON_PRIMARY_QSS, COMBOBOX_QSS, INPUT_HIGHLIGHT_QSS,
                            SCROLLBAR_QSS, TEXTEDIT_QSS,
                            _COLOR_TEXT_MUTED, _COLOR_TEXT_SEC)
 from pet.ui.widgets import NoWheelComboBox
+
+
+_EFFORT_UNSUPPORTED = "当前模型不支持推理强度设置"
+_EFFORT_THINKING_OFF = "关闭思考时不下发推理强度"
 
 
 def _hint(text: str) -> QLabel:
@@ -41,6 +50,11 @@ class SettingsTabs:
     def __init__(self, form: SettingsForm):
         self.form = form
         self.widgets = SettingsWidgets()
+        # 各档位下拉上次写入的选项与状态，输入过程中不重复重建
+        self._effort_cache: dict[int, tuple] = {}
+
+        # 每行不可用的原因：空串可用，unsupported 端点无档位
+        self._effort_reason: dict[int, str] = {}
 
     def build(self) -> tuple[tuple[str, QWidget], ...]:
         builders = {
@@ -54,6 +68,12 @@ class SettingsTabs:
     def bind(self, actions) -> None:
         w = self.widgets
         w.brain_combo.currentTextChanged.connect(self.on_mode_changed)
+        w.provider_combo.currentTextChanged.connect(self._apply_provider_visibility)
+        w.provider_alt_combo.currentIndexChanged.connect(self._apply_provider_visibility)
+        w.thinking_check.toggled.connect(self._sync_effort_enabled)
+        for edit in (w.model_edit, w.alt_model_edit, w.alt_url_edit, w.alt_key_edit,
+                     w.ollama_model_edit, w.ollama_model_alt_edit):
+            edit.textChanged.connect(lambda _text: self._refresh_effort_options())
         w.btn_switch_profile.clicked.connect(actions.switch_profile)
         w.btn_fetch_models.clicked.connect(lambda: actions.fetch_models("primary"))
         w.btn_fetch_models_alt.clicked.connect(
@@ -90,66 +110,34 @@ class SettingsTabs:
             inner.setSpacing(spacing)
         return content, inner
 
-    # ------------------------------------------------------------------
 
     def _connection(self) -> QWidget:
         f, w = self.form, self.widgets
         content, inner = self._content()
 
-        form = QFormLayout()
-        form.setSpacing(8)
-
+        mode_group = QGroupBox("调用模式")
+        mode_form = QFormLayout(mode_group)
+        mode_form.setSpacing(8)
+        mode_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         w.brain_combo = NoWheelComboBox()
-        w.brain_combo.addItems(["local", "api", "ollama"])
+        w.brain_combo.addItems(MODE_ORDER)
         f.fields["BRAIN"] = w.brain_combo
-        form.addRow("调用模式:", w.brain_combo)
+        mode_form.addRow("调用模式:", w.brain_combo)
+        inner.addWidget(mode_group)
 
-        w.url_edit = f.line("LLM_URL", "https://api.example.com/v1")
-        form.addRow("首选 API 地址:", w.url_edit)
+        w.mode_block = self._mode_block()
+        inner.addWidget(w.mode_block)
+        w.local_hint = QLabel("离线模式不调用模型，下面的连接与生成设置都不生效。")
+        w.local_hint.setWordWrap(True)
+        w.local_hint.setStyleSheet(f"color:{_COLOR_TEXT_MUTED}; font-size:11px;")
+        inner.addWidget(w.local_hint)
 
-        w.ollama_url_edit = f.line("OLLAMA_BASE_URL", "http://localhost:11434/v1")
-        form.addRow("Ollama 地址:", w.ollama_url_edit)
+        w.generate_block = self._generate_block()
+        inner.addWidget(w.generate_block)
 
-        key_row = f.secret_row("LLM_KEY", "sk-...")
-        w.llm_key_edit = f.fields["LLM_KEY"]
-        w.key_toggle = key_row.itemAt(1).widget()
-        form.addRow("首选 API Key:", key_row)
-
-        model_row = QHBoxLayout()
-        w.model_edit = QLineEdit()
-        w.model_edit.setStyleSheet(INPUT_HIGHLIGHT_QSS)
-        f.fields["LLM_MODEL"] = w.model_edit
-        model_row.addWidget(w.model_edit)
-        w.btn_fetch_models = InkButton("获取列表")
-        w.btn_fetch_models.setStyleSheet(BUTTON_PRIMARY_QSS)
-        w.btn_fetch_models.setFixedWidth(84)
-        model_row.addWidget(w.btn_fetch_models)
-        form.addRow("首选模型名称:", model_row)
-
-        w.temperature_edit = f.line("LLM_TEMPERATURE", "0.7", QDoubleValidator(0, 2, 2))
-        w.temperature_edit.setMaxLength(4)
-        form.addRow("采样温度:", w.temperature_edit)
-
-        form.addRow("", f.check("LLM_TOOLS_ENABLED", "启用工具调用"))
-        form.addRow("", _hint("模型不支持 tools 参数时请关闭此选项"))
-
-        w.tool_rounds_edit = f.line("LLM_TOOL_MAX_ROUNDS", "99", QIntValidator(10, 99))
-        form.addRow("工具调用最大轮次:", w.tool_rounds_edit)
-
-        w.cache_check = f.check("LLM_CACHE_PROMPT", "Prompt 缓存")
-        form.addRow("", w.cache_check)
-
-        w.thinking_check = f.check("LLM_THINKING_DISABLED", "关闭思考模式")
-        form.addRow("", w.thinking_check)
-        w.thinking_hint = _hint("关闭可提升调用速度")
-        form.addRow("", w.thinking_hint)
-
-        inner.addLayout(form)
-
-        switch_group = QGroupBox("模型方案")
-        switch_layout = QVBoxLayout(switch_group)
+        profile_group = QGroupBox("模型方案")
+        switch_layout = QVBoxLayout(profile_group)
         switch_layout.setSpacing(6)
-
         switch_row = QHBoxLayout()
         w.label_active_profile = QLabel("当前启用：首选模型")
         w.label_active_profile.setStyleSheet(f"color:{_COLOR_TEXT_SEC}; font-size:11px;")
@@ -159,36 +147,10 @@ class SettingsTabs:
         w.btn_switch_profile.setStyleSheet(BUTTON_PRIMARY_QSS)
         switch_row.addWidget(w.btn_switch_profile)
         switch_layout.addLayout(switch_row)
-
         w.fallback_check = f.check(
             "LLM_FALLBACK_ENABLED", "调用报错/超时重试时自动切换到备选模型")
         switch_layout.addWidget(w.fallback_check)
-
-        fallback_hint = _hint("备选方案的地址/Key/模型名留空时，自动沿用首选方案对应项")
-        fallback_hint.setWordWrap(True)
-        switch_layout.addWidget(fallback_hint)
-
-        alt_form = QFormLayout()
-        alt_form.setSpacing(8)
-        w.alt_url_edit = f.line("LLM_URL_ALT", "https://api.example.com/v1")
-        alt_form.addRow("备选 API 地址:", w.alt_url_edit)
-        alt_key_row = f.secret_row("LLM_KEY_ALT", "sk-...")
-        w.alt_key_edit = f.fields["LLM_KEY_ALT"]
-        w.alt_key_toggle = alt_key_row.itemAt(1).widget()
-        alt_form.addRow("备选 API Key:", alt_key_row)
-
-        alt_model_row = QHBoxLayout()
-        w.alt_model_edit = QLineEdit()
-        w.alt_model_edit.setStyleSheet(INPUT_HIGHLIGHT_QSS)
-        f.fields["LLM_MODEL_ALT"] = w.alt_model_edit
-        alt_model_row.addWidget(w.alt_model_edit)
-        w.btn_fetch_models_alt = InkButton("获取列表")
-        w.btn_fetch_models_alt.setStyleSheet(BUTTON_PRIMARY_QSS)
-        w.btn_fetch_models_alt.setFixedWidth(84)
-        alt_model_row.addWidget(w.btn_fetch_models_alt)
-        alt_form.addRow("备选模型名称:", alt_model_row)
-        switch_layout.addLayout(alt_form)
-        inner.addWidget(switch_group)
+        inner.addWidget(profile_group)
 
         test_row = QHBoxLayout()
         w.btn_test = InkButton("测试连接")
@@ -205,47 +167,296 @@ class SettingsTabs:
         inner.addStretch()
         return self._scroll_page(content)
 
-    def on_mode_changed(self, mode: str) -> None:
-        """根据调用模式启用/禁用对应字段。"""
-        w = self.widgets
-        llm_fields = [w.url_edit, w.llm_key_edit, w.key_toggle,
-                      w.alt_url_edit, w.alt_key_edit, w.alt_key_toggle,
-                      w.cache_check]
-        ollama_fields = [w.ollama_url_edit]
-        common_fields = [w.model_edit, w.btn_fetch_models,
-                         w.alt_model_edit, w.btn_fetch_models_alt,
-                         w.btn_switch_profile, w.fallback_check,
-                         w.temperature_edit, w.tool_rounds_edit,
-                         w.thinking_check, w.thinking_hint,
-                         w.btn_test, w.label_test, w.test_output]
-        if mode == "local":
-            for widget in llm_fields + ollama_fields + common_fields:
-                widget.setEnabled(False)
-        elif mode == "ollama":
-            for widget in llm_fields:
-                widget.setEnabled(False)
-            for widget in ollama_fields + common_fields:
-                widget.setEnabled(True)
+    def _mode_block(self) -> QGroupBox:
+        """按调用模式切换内容的固定区块。
+
+        两个模式各自渲染一套连接与模型控件，键互不重叠，按模式显隐。
+        """
+        f, w = self.form, self.widgets
+        group = QGroupBox("模型连接")
+        layout = QVBoxLayout(group)
+        layout.setSpacing(10)
+
+        w.api_section = self._api_section()
+        layout.addWidget(w.api_section)
+        w.ollama_section = self._ollama_section()
+        layout.addWidget(w.ollama_section)
+        return group
+
+    def _api_row(self, form, prefix: str, profile_label: str) -> None:
+        """一套方案的连接与模型字段。"""
+        f, w = self.form, self.widgets
+        alt = prefix == "ALT"
+
+        provider_key = "LLM_PROVIDER_ALT" if alt else "LLM_PROVIDER"
+        combo = f.combo_with_data(provider_key, list(channel_choices()))
+        form.addRow(f"{profile_label}通道:", combo)
+
+        url_edit = f.line("LLM_URL_ALT" if alt else "LLM_URL",
+                          "https://api.example.com/v1")
+        form.addRow(f"{profile_label} API 地址:", url_edit)
+        url_label = form.labelForField(url_edit)
+
+        key_row = f.secret_row("LLM_KEY_ALT" if alt else "LLM_KEY", "sk-...")
+        key_edit = f.fields["LLM_KEY_ALT" if alt else "LLM_KEY"]
+        form.addRow(f"{profile_label} API Key:", key_row)
+
+        model_edit = QLineEdit()
+        model_edit.setStyleSheet(INPUT_HIGHLIGHT_QSS)
+        f.fields["LLM_MODEL_ALT" if alt else "LLM_MODEL"] = model_edit
+        fetch_btn = InkButton("获取列表")
+        fetch_btn.setStyleSheet(BUTTON_PRIMARY_QSS)
+        fetch_btn.setFixedWidth(84)
+        model_row = QHBoxLayout()
+        model_row.addWidget(model_edit)
+        model_row.addWidget(fetch_btn)
+        form.addRow(f"{profile_label}模型名称:", model_row)
+
+        effort_combo = NoWheelComboBox()
+        effort_combo.setStyleSheet(COMBOBOX_QSS)
+        f.fields["LLM_REASONING_EFFORT_ALT" if alt else "LLM_REASONING_EFFORT"] = effort_combo
+        form.addRow(f"{profile_label}推理强度:", effort_combo)
+        effort_label = form.labelForField(effort_combo)
+
+        if alt:
+            w.provider_alt_combo = combo
+            w.alt_url_edit, w.alt_url_label = url_edit, url_label
+            w.alt_key_edit, w.alt_key_toggle = key_edit, key_row.itemAt(1).widget()
+            w.alt_model_edit, w.btn_fetch_models_alt = model_edit, fetch_btn
+            w.alt_effort_combo, w.alt_effort_label = effort_combo, effort_label
         else:
-            for widget in ollama_fields:
-                widget.setEnabled(False)
-            for widget in llm_fields + common_fields:
-                widget.setEnabled(True)
+            w.provider_combo = combo
+            w.url_edit, w.url_label = url_edit, url_label
+            w.llm_key_edit, w.key_toggle = key_edit, key_row.itemAt(1).widget()
+            w.model_edit, w.btn_fetch_models = model_edit, fetch_btn
+            w.effort_combo, w.effort_label = effort_combo, effort_label
+
+    def _api_section(self) -> QWidget:
+        """API 档：首选一套字段，备选一套字段。"""
+        section = QWidget()
+        layout = QVBoxLayout(section)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        primary_form = QFormLayout()
+        primary_form.setSpacing(8)
+        primary_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        self._api_row(primary_form, "", "首选")
+        layout.addLayout(primary_form)
+
+        alt_form = QFormLayout()
+        alt_form.setSpacing(8)
+        alt_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        self._api_row(alt_form, "ALT", "备选")
+        layout.addLayout(alt_form)
+        return section
+
+    def _ollama_section(self) -> QWidget:
+        f, w = self.form, self.widgets
+        section = QWidget()
+        layout = QVBoxLayout(section)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        url_form = QFormLayout()
+        url_form.setSpacing(8)
+        url_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        w.ollama_url_edit = f.line("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+        url_form.addRow("服务地址:", w.ollama_url_edit)
+        layout.addLayout(url_form)
+
+        primary_form = QFormLayout()
+        primary_form.setSpacing(8)
+        primary_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        self._ollama_row(primary_form, "首选", alt=False)
+        layout.addLayout(primary_form)
+
+        alt_form = QFormLayout()
+        alt_form.setSpacing(8)
+        alt_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        self._ollama_row(alt_form, "备选", alt=True)
+        layout.addLayout(alt_form)
+        return section
+
+    def _ollama_row(self, form, profile_label: str, *, alt: bool) -> None:
+        f, w = self.form, self.widgets
+        suffix = "_ALT" if alt else ""
+        model_edit = QLineEdit()
+        model_edit.setStyleSheet(INPUT_HIGHLIGHT_QSS)
+        f.fields[f"OLLAMA_LLM_MODEL{suffix}"] = model_edit
+        form.addRow(f"{profile_label}模型名称:", model_edit)
+
+        effort_combo = NoWheelComboBox()
+        effort_combo.setStyleSheet(COMBOBOX_QSS)
+        f.fields[f"OLLAMA_LLM_REASONING_EFFORT{suffix}"] = effort_combo
+        form.addRow(f"{profile_label}推理强度:", effort_combo)
+        effort_label = form.labelForField(effort_combo)
+
+        if alt:
+            w.ollama_model_alt_edit = model_edit
+            w.ollama_effort_alt_combo = effort_combo
+            w.ollama_effort_alt_label = effort_label
+        else:
+            w.ollama_model_edit = model_edit
+            w.ollama_effort_combo = effort_combo
+            w.ollama_effort_label = effort_label
+
+    def _generate_block(self) -> QGroupBox:
+        f, w = self.form, self.widgets
+        group = QGroupBox("生成与工具")
+        form = QFormLayout(group)
+        form.setSpacing(8)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+
+        w.temperature_edit = f.line("LLM_TEMPERATURE", "0.7", QDoubleValidator(0, 2, 2))
+        w.temperature_edit.setMaxLength(4)
+        form.addRow("采样温度:", w.temperature_edit)
+
+        w.thinking_check = f.check("LLM_THINKING_DISABLED", "关闭思考模式")
+        form.addRow("", w.thinking_check)
+        w.thinking_hint = _hint("关闭可提升调用速度")
+        form.addRow("", w.thinking_hint)
+
+        form.addRow("", f.check("LLM_TOOLS_ENABLED", "启用工具调用"))
+        form.addRow("", _hint("模型不支持 tools 参数时请关闭此选项"))
+
+        w.tool_rounds_edit = f.line("LLM_TOOL_MAX_ROUNDS", "99", QIntValidator(10, 99))
+        form.addRow("工具调用最大轮次:", w.tool_rounds_edit)
+        return group
+
+    def on_mode_changed(self, mode: str) -> None:
+        """按调用模式切换区块内容与可用状态。
+
+        两套模式各有自己的控件与配置键，这里只切显隐。
+        """
+        w = self.widgets
+
+        is_local = mode == "local"
+        is_api = mode == "api"
+        is_ollama = mode == "ollama"
+
+        w.mode_block.setVisible(not is_local)
+        w.local_hint.setVisible(is_local)
+        w.api_section.setVisible(is_api)
+        w.ollama_section.setVisible(is_ollama)
+
+        # Ollama 固定走 OpenAI 兼容接口，通道不可选
+        w.provider_combo.setEnabled(is_api)
+        w.provider_alt_combo.setEnabled(is_api)
+
+        # 全程可编辑但 local 档下没有意义的字段
+        for widget in (w.btn_switch_profile, w.fallback_check, w.btn_test,
+                       w.label_test, w.test_output, w.temperature_edit,
+                       w.tool_rounds_edit, w.thinking_check, w.thinking_hint):
+            widget.setEnabled(not is_local)
+
+        self._apply_provider_visibility()
+        self._sync_effort_enabled()
+
+    def _fill_effort_combo(self, combo, efforts: tuple, empty_label: str) -> None:
+        """按端点可用档位重建下拉项；选项未变时保留当前选中。"""
+        if self._effort_cache.get(id(combo)) == (efforts, empty_label):
+            return
+        current = combo.currentData()
+        combo.blockSignals(True)
+        combo.clear()
+        for label, value in effort_items(efforts, empty_label):
+            combo.addItem(label, value)
+        combo.setCurrentIndex(max(combo.findData(current), 0))
+        combo.blockSignals(False)
+        self._effort_cache[id(combo)] = (efforts, empty_label)
+
+    def _alt_channel(self) -> str:
+        return normalize_provider(self.widgets.provider_alt_combo.currentData())
+
+    def _effort_rows(self) -> tuple:
+        """两档的档位行：下拉、标签、模型输入框、通道、清单键、取值键。"""
+        w = self.widgets
+        api_channel = normalize_provider(w.provider_combo.currentData())
+        alt_channel = self._alt_channel()
+        return (
+            (w.effort_combo, w.effort_label, w.model_edit, api_channel,
+             "LLM_REASONING_EFFORTS", "LLM_REASONING_EFFORT"),
+            (w.alt_effort_combo, w.alt_effort_label, w.alt_model_edit, alt_channel,
+             "LLM_REASONING_EFFORTS_ALT", "LLM_REASONING_EFFORT_ALT"),
+            (w.ollama_effort_combo, w.ollama_effort_label, w.ollama_model_edit,
+             "openai", "OLLAMA_LLM_REASONING_EFFORTS", "OLLAMA_LLM_REASONING_EFFORT"),
+            (w.ollama_effort_alt_combo, w.ollama_effort_alt_label,
+             w.ollama_model_alt_edit, "openai", "OLLAMA_LLM_REASONING_EFFORTS_ALT",
+             "OLLAMA_LLM_REASONING_EFFORT_ALT"),
+        )
+
+    def _refresh_effort_options(self) -> None:
+        """按通道声明、端点配置与模型名重建各档位下拉；不可用时灰置并提示。"""
+        rows = self._effort_rows()
+        for combo, combo_label, model_edit, channel, efforts_key, value_key in rows:
+            declared = reasoning_efforts(channel)
+            override = getattr(config, efforts_key, "")
+            efforts = effective_efforts(declared, override, model_edit.text())
+            self._fill_effort_combo(combo, efforts, EFFORT_DEFAULT_LABEL)
+            self._restore_effort_value(combo, getattr(config, value_key, "") or "")
+            self._effort_reason[id(combo)] = "" if efforts else "unsupported"
+            combo.setVisible(bool(declared))
+            combo_label.setVisible(bool(declared))
+        self._sync_effort_enabled()
+
+    def _restore_effort_value(self, combo, value: str) -> None:
+        """档位下拉按存储值选中；值不在当前选项内时回到首项。"""
+        combo.blockSignals(True)
+        index = combo.findData(value)
+        combo.setCurrentIndex(index if index >= 0 else 0)
+        combo.blockSignals(False)
+
+    def _sync_effort_enabled(self) -> None:
+        """关闭思考或端点没有档位时禁用对应下拉，并说明原因。"""
+        w = self.widgets
+        ready = w.brain_combo.currentText() != "local"
+        thinking_off = w.thinking_check.isChecked()
+        for combo, label, _model, _channel, _efforts_key, _value_key in self._effort_rows():
+            reason = self._effort_reason.get(id(combo), "")
+            combo.setEnabled(ready and not thinking_off and not reason)
+            if reason == "unsupported":
+                text = _EFFORT_UNSUPPORTED
+            elif thinking_off:
+                text = _EFFORT_THINKING_OFF
+            else:
+                text = ""
+            combo.setToolTip(text)
+            label.setToolTip(text)
+
+    def _apply_provider_visibility(self) -> None:
+        """按登记表的 config_keys 显隐通道专属键；标签随控件一起显隐。"""
+        w = self.widgets
+        primary_name = w.provider_combo.currentData()
+        alt_name = w.provider_alt_combo.currentData()
+        shown = set(config_keys(primary_name))
+        alt_shown = set(config_keys_for(alt_name, "alternative"))
+        w.url_edit.setPlaceholderText(url_placeholder(primary_name))
+        w.alt_url_edit.setPlaceholderText(url_placeholder(alt_name))
+        # 每行一项：控件、随行的标签、对应的配置键、该键按哪套方案的通道决定显隐
+        for widget, label, key, scope in (
+            (w.url_edit, w.url_label, "LLM_URL", "primary"),
+            (w.alt_url_edit, w.alt_url_label, "LLM_URL_ALT", "alternative"),
+        ):
+            pool = {"primary": shown, "alternative": alt_shown}[scope]
+            visible = key in pool
+            widget.setVisible(visible)
+            if label is not None:
+                label.setVisible(visible)
+        self._refresh_effort_options()
 
     def update_profile_ui(self) -> None:
         """刷新「当前启用方案」的按钮文案与状态标签。"""
         w = self.widgets
         active = getattr(config, "LLM_ACTIVE_PROFILE", "primary") or "primary"
+        model = resolve_llm_profile(active)[2] or "未配置"
         if active == "alternative":
             w.btn_switch_profile.setText("切换回首选模型")
-            model = config.LLM_MODEL_ALT or config.LLM_MODEL or "未配置"
             w.label_active_profile.setText(f"当前启用：备选模型（{model}）")
         else:
             w.btn_switch_profile.setText("切换到备选模型")
-            model = config.LLM_MODEL or "未配置"
             w.label_active_profile.setText(f"当前启用：首选模型（{model}）")
 
-    # ------------------------------------------------------------------
 
     def _behavior(self) -> QWidget:
         f, w = self.form, self.widgets
@@ -286,6 +497,9 @@ class SettingsTabs:
         memory_layout = QVBoxLayout(memory_group)
         memory_layout.setSpacing(8)
         memory_layout.addWidget(f.check("EMBEDDING_ENABLED", "启用向量记忆"))
+        vector_hint = _hint("仅支持 OpenAI 兼容的 Embedding 接口")
+        vector_hint.setWordWrap(True)
+        memory_layout.addWidget(vector_hint)
 
         memory_form = QFormLayout()
         memory_form.setSpacing(8)
@@ -368,7 +582,6 @@ class SettingsTabs:
         inner.addStretch()
         return self._scroll_page(content)
 
-    # ------------------------------------------------------------------
 
     def _personality(self) -> QWidget:
         f = self.form
@@ -402,7 +615,6 @@ class SettingsTabs:
 
         return self._scroll_page(content)
 
-    # ------------------------------------------------------------------
 
     def _appearance(self) -> QWidget:
         f, w = self.form, self.widgets

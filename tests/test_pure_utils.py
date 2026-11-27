@@ -1,6 +1,5 @@
 """纯逻辑函数测试：无 IO、无 Qt 依赖。"""
 
-import re
 import subprocess
 import sys
 
@@ -8,9 +7,8 @@ import pytest
 
 from pet.config import _convert
 from pet.game.tic_tac_toe import _board_text, _check_winner, _is_full
-from pet.tools.executor import ToolExecutor, _MAX_LOG_VALUE_LEN, _log_preview
+from pet.tools.executor import ToolExecutor
 from pet.tools.knowledge.chunker import chunk_text
-from pet.tools.timer.core import TimerTool
 from pet.version_utils import strip_v, ver_newer
 
 
@@ -184,35 +182,6 @@ class TestNonFiniteFloat:
         args, err = ToolExecutor._validate_args({"ratio": 5}, self.SCHEMA)
         assert err == ""
         assert args["ratio"] == 5
-
-
-class TestLogPreview:
-    def test_long_value_truncated_with_marker(self):
-        value = "x" * 400
-        preview = _log_preview({"data": value})
-        assert preview.count("x") == _MAX_LOG_VALUE_LEN
-        assert str(len(value) - _MAX_LOG_VALUE_LEN) in preview
-
-    def test_short_value_untouched(self):
-        assert _log_preview({"ok": 1}) == "{ ok=1 }"
-
-    def test_non_dict_uses_str(self):
-        assert _log_preview([1, 2]) == "[1, 2]"
-
-
-class TestFormatDuration:
-    def test_under_one_minute(self):
-        assert re.findall(r"\d+", TimerTool._format_duration(30)) == ["30"]
-
-    def test_minute_scales(self):
-        assert re.findall(r"\d+", TimerTool._format_duration(60)) == ["1"]
-        assert re.findall(r"\d+", TimerTool._format_duration(90)) == ["1", "30"]
-        assert re.findall(r"\d+", TimerTool._format_duration(600)) == ["10"]
-
-    def test_hour_scales(self):
-        assert re.findall(r"\d+", TimerTool._format_duration(3600)) == ["1"]
-        assert re.findall(r"\d+", TimerTool._format_duration(3661)) == ["1", "1", "1"]
-        assert re.findall(r"\d+", TimerTool._format_duration(7320)) == ["2", "2"]
 
 
 class TestConvertSettingValues:

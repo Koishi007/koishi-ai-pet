@@ -106,7 +106,7 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
             logger.warning(f"[Behavior] reached META_MAX_ROUNDS={session.meta_tool_max_rounds}, force terminate")
             break
 
-        openai_tool_calls = []
+        tool_calls = []
         for idx in sorted(tool_calls_map.keys()):
             tc = tool_calls_map[idx]
             # 清洗 arguments：解析后重新序列化，避免流式拼接残留导致 400
@@ -115,12 +115,12 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
             except json.JSONDecodeError:
                 clean_args = "{}"
             tc["arguments"] = clean_args
-            openai_tool_calls.append({
+            tool_calls.append({
                 "id": tc["id"],
-                "type": "function",
-                "function": {"name": tc["name"], "arguments": clean_args},
+                "name": tc["name"],
+                "arguments": clean_args,
             })
-        assistant_msg = {"role": "assistant", "tool_calls": openai_tool_calls}
+        assistant_msg = {"role": "assistant", "tool_calls": tool_calls}
         if first_content.strip():
             assistant_msg["content"] = first_content
         current_messages.append(assistant_msg)
@@ -149,7 +149,8 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
                 # 图片只在当轮上下文里，工具记录留一条可再次读取的引用
                 for image in images:
                     round_images.append((
-                        f"data:{image.get('mime', 'image/png')};base64,{image.get('base64', '')}",
+                        {"mime": image.get("mime", "image/png"),
+                         "data": image.get("base64", "")},
                         image.get("caption") or tc["name"],
                     ))
 
@@ -169,9 +170,10 @@ def run_tool_loop(messages: list, tool_calls_map: dict, first_content: str, sess
         image_msg = None
         if round_images:
             parts = [{"type": "text", "text": "附图：本轮工具读取到的画面。"}]
-            for uri, source in round_images:
+            for payload, source in round_images:
                 parts.append({"type": "text", "text": f"来源：{source}"})
-                parts.append({"type": "image_url", "image_url": {"url": uri}})
+                parts.append({"type": "image", "mime": payload["mime"],
+                              "data": payload["data"]})
             image_msg = {"role": "user", "content": parts}
             current_messages.append(image_msg)
 

@@ -1,14 +1,50 @@
-"""设置界面的纯数据：页签归属与单位换算"""
+"""设置界面的纯数据：页签归属、推理强度档位与单位换算"""
 
 from __future__ import annotations
+
+# 调用模式的取值顺序，即下拉项顺序
+MODE_ORDER = ("local", "api", "ollama")
+
+EFFORT_DEFAULT_LABEL = "模型默认推理强度"
+
+# 推理强度：(显示文案, 存储值)。空串表示不下发
+EFFORT_CHOICES: tuple[tuple[str, str], ...] = (
+    (EFFORT_DEFAULT_LABEL, ""),
+    ("最省 (minimal)", "minimal"),
+    ("低 (low)", "low"),
+    ("中 (medium)", "medium"),
+    ("高 (high)", "high"),
+    ("极高 (xhigh)", "xhigh"),
+    ("最高 (max)", "max"),
+)
+
+
+def effort_items(efforts, empty_label: str) -> list[tuple[str, str]]:
+    """按可用档位生成下拉项；首项为空值，文案由调用方给出。"""
+    items = [(empty_label, "")]
+    items += [(label, value) for label, value in EFFORT_CHOICES if value in efforts]
+    return items
+
+
+def effort_label(value: str) -> str:
+    """档位文案；未知值返回空串。"""
+    for label, stored in EFFORT_CHOICES:
+        if stored == value:
+            return label
+    return ""
+
 
 # 页签顺序即界面顺序；每个键按在页签里出现的先后排列。
 TAB_SPECS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("连接", (
-        "BRAIN", "LLM_URL", "OLLAMA_BASE_URL", "LLM_KEY", "LLM_MODEL",
-        "LLM_TEMPERATURE", "LLM_TOOLS_ENABLED", "LLM_TOOL_MAX_ROUNDS",
-        "LLM_CACHE_PROMPT", "LLM_THINKING_DISABLED", "LLM_FALLBACK_ENABLED",
-        "LLM_URL_ALT", "LLM_KEY_ALT", "LLM_MODEL_ALT",
+        "BRAIN",
+        "LLM_PROVIDER", "LLM_URL", "LLM_KEY", "LLM_MODEL", "LLM_REASONING_EFFORT",
+        "LLM_PROVIDER_ALT", "LLM_URL_ALT", "LLM_KEY_ALT", "LLM_MODEL_ALT",
+        "LLM_REASONING_EFFORT_ALT",
+        "OLLAMA_BASE_URL", "OLLAMA_LLM_MODEL", "OLLAMA_LLM_REASONING_EFFORT",
+        "OLLAMA_LLM_MODEL_ALT", "OLLAMA_LLM_REASONING_EFFORT_ALT",
+        "LLM_TEMPERATURE", "LLM_THINKING_DISABLED", "LLM_TOOLS_ENABLED",
+        "LLM_TOOL_MAX_ROUNDS", "LLM_FALLBACK_ENABLED",
     )),
     ("行为", (
         "SCHEDULER_MID_MS", "SCHEDULER_AUTO_START_MID", "CONTEXT_HISTORY_ENTRIES",

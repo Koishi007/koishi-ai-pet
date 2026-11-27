@@ -55,6 +55,7 @@ class BehaviorOutput:
     mood_deltas: Optional[dict] = None  # {"affection": ±值, "joy": ±值, "sanity": ±值}
     vitals_deltas: Optional[dict] = None  # {"satiety": ±值, "energy": ±值}
     action_fallback: bool = False  # 动作来自兜底 sit，不算模型输出
+    call_failed: bool = False  # 本轮没拿到模型响应（异常或超时），不是格式问题
     raw: Optional[str] = field(default=None, repr=False)  # 本次响应原文；入库只做审计，不进 repr
 
     def has_fields(self) -> bool:

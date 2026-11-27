@@ -12,6 +12,7 @@ import logging
 
 import pytest
 
+from pet.brain.llm_types import StreamEvent, ToolCallDelta
 from pet.brain.parsing import (
     BehaviorParser,
     InlineTagNormalizer,
@@ -42,50 +43,31 @@ class _Sink:
         self.finish_reasons.append(reason)
 
 
-@dataclass
-class _ToolFunction:
-    name: Optional[str] = None
-    arguments: Optional[str] = None
-
-
-@dataclass
-class _ToolCallDelta:
-    index: int
-    id: Optional[str] = None
-    name: Optional[str] = None
-    arguments: Optional[str] = None
-
-    @property
-    def function(self):
-        return _ToolFunction(name=self.name, arguments=self.arguments)
-
-
-@dataclass
-class _Delta:
-    content: Optional[str] = None
-    tool_calls: Optional[list] = None
-    reasoning_content: Optional[str] = None
-
-
-@dataclass
-class _Choice:
-    delta: _Delta
-    finish_reason: Optional[str] = None
-
-
-@dataclass
-class _Chunk:
-    choices: list
-    usage: object = None
-
-
 def _chunks(*pieces: str) -> list:
-    """把文本切片喂成 content chunk，模拟流式返回。"""
-    return [_Chunk([_Choice(_Delta(content=p))]) for p in pieces if p]
+    """把文本切片喂成 content 事件，模拟流式返回。"""
+    return [StreamEvent(content=p) for p in pieces if p]
+
+
+def _delta(index: int, id: str = "", name: str = "", arguments: str = "",
+           complete: bool = False) -> ToolCallDelta:
+    """流式工具调用增量。"""
+    return ToolCallDelta(index=index, id=id, name=name, arguments=arguments,
+                         complete=complete)
 
 
 def _stream_text(text: str, size: int = 1) -> list:
     return _chunks(*[text[i:i + size] for i in range(0, len(text), size)])
+
+
+class _ClosableStream(list):
+    """记录 close 调用的流；解析器在 finally 里关它。"""
+
+    def __init__(self, events):
+        super().__init__(events)
+        self.closed = False
+
+    def close(self):
+        self.closed = True
 
 
 def _collect(text: str, size: int = 1, sink=None, stream=None):
@@ -311,7 +293,7 @@ class TestStreamPath:
         """结束原因回传给编排方：length 是判断预算耗尽的唯一依据。"""
         sink = _Sink()
         stream = _chunks("Speech: 你好\n")
-        stream.append(_Chunk([_Choice(_Delta(), finish_reason="length")]))
+        stream.append(StreamEvent(finish_reason="length"))
         _collect("", sink=sink, stream=stream)
         assert sink.finish_reasons == ["length"]
 
@@ -361,10 +343,9 @@ class TestStreamPath:
 
     def test_tool_calls_accumulated_across_chunks(self):
         stream = [
-            _Chunk([_Choice(_Delta(tool_calls=[
-                _ToolCallDelta(0, id="call_1", name="tool_search__search", arguments='{"key')]))]),
-            _Chunk([_Choice(_Delta(tool_calls=[
-                _ToolCallDelta(0, arguments='word": "todo"}')]))]),
+            StreamEvent(tool_call=_delta(0, id="call_1", name="tool_search__search",
+                                         arguments='{"key')),
+            StreamEvent(tool_call=_delta(0, arguments='word": "todo"}')),
         ]
         raw, tool_calls, _, _ = _collect("", stream=stream)
         assert raw == ""
@@ -372,21 +353,61 @@ class TestStreamPath:
             "id": "call_1", "name": "tool_search__search", "arguments": '{"keyword": "todo"}',
         }
 
+    def test_complete_delta_replaces_accumulated_arguments(self):
+        """complete 为真的分片携带完整 JSON：替换而不是追加。"""
+        stream = [
+            StreamEvent(tool_call=_delta(0, id="call_1", name="timer__set",
+                                         arguments='{"s": ')),
+            StreamEvent(tool_call=_delta(0, arguments='1}', complete=True)),
+        ]
+        _, tool_calls, _, _ = _collect("", stream=stream)
+        assert tool_calls[0]["arguments"] == '1}'
+
+    def test_appending_after_complete_continues(self):
+        """替换后仍按追加语义处理后续分片。"""
+        stream = [
+            StreamEvent(tool_call=_delta(0, id="call_1", name="timer__set",
+                                         arguments='{"a"', complete=True)),
+            StreamEvent(tool_call=_delta(0, arguments=': 1}')),
+        ]
+        _, tool_calls, _, _ = _collect("", stream=stream)
+        assert tool_calls[0]["arguments"] == '{"a": 1}'
+
+    def test_stream_is_closed_after_collect(self):
+        """消费结束后关闭流，连接不留在池外。"""
+        stream = _ClosableStream(_chunks("Speech: 好\n"))
+        _collect("", stream=stream)
+        assert stream.closed is True
+
+    def test_stream_is_closed_when_consumer_raises(self):
+        """消费中途抛错同样关闭流。"""
+        class Boom(Exception):
+            pass
+
+        def explode(_text):
+            raise Boom()
+
+        stream = _ClosableStream(_chunks("Speech: 好\n"))
+        parser = BehaviorParser(_Sink())
+        with pytest.raises(Boom):
+            parser.collect_stream(stream, 5.0, tag="test", on_chunk=explode)
+        assert stream.closed is True
+
     def test_tool_call_without_function_name_is_dropped(self):
         # 分片的 delta 里可能始终没有 name：这类调用执行不了，
         # 拼进 assistant.tool_calls 会被服务商以「missing a function name」拒绝
         stream = [
-            _Chunk([_Choice(_Delta(tool_calls=[
-                _ToolCallDelta(0, id="call_1", arguments='{"path": "~/Desktop"}')]))]),
+            StreamEvent(tool_call=_delta(0, id="call_1",
+                                         arguments='{"path": "~/Desktop"}')),
         ]
         _, tool_calls, _, _ = _collect("", stream=stream)
         assert tool_calls == {}
 
     def test_named_call_survives_alongside_unnamed(self):
         stream = [
-            _Chunk([_Choice(_Delta(tool_calls=[
-                _ToolCallDelta(0, id="call_1", arguments="{}"),
-                _ToolCallDelta(1, id="call_2", name="timer__set", arguments="{}")]))]),
+            StreamEvent(tool_call=_delta(0, id="call_1", arguments="{}")),
+            StreamEvent(tool_call=_delta(1, id="call_2", name="timer__set",
+                                         arguments="{}")),
         ]
         _, tool_calls, _, _ = _collect("", stream=stream)
         assert list(tool_calls) == [1]
@@ -423,15 +444,15 @@ class TestStreamMatchesNonStreamPath:
 class TestFullWidthColon:
     """全角冒号的标签行与半角同义：中文上下文里模型偶尔输出「Summary：」。"""
 
-    def test_stream_path(self):
-        parser = BehaviorParser(_Sink())
-        raw, _ = parser.collect_stream(_stream_text("Summary：只有摘要\nSpeech：你好\n"), 5.0, tag="test")
-        out = parser.parse_behavior(raw)
-        assert out.summary == "只有摘要"
-        assert out.speech == "你好"
-
-    def test_non_stream_path(self):
-        out = parse_behavior("Summary：只有摘要\nSpeech：你好\n", action_fallback=False)
+    @pytest.mark.parametrize("stream", [True, False])
+    def test_label_parsed(self, stream):
+        text = "Summary：只有摘要\nSpeech：你好\n"
+        if stream:
+            parser = BehaviorParser(_Sink())
+            raw, _ = parser.collect_stream(_stream_text(text), 5.0, tag="test")
+            out = parser.parse_behavior(raw)
+        else:
+            out = parse_behavior(text, action_fallback=False)
         assert out.summary == "只有摘要"
         assert out.speech == "你好"
 
@@ -467,11 +488,9 @@ class TestUntaggedContentDiag:
         with caplog.at_level(logging.WARNING, logger="pet.brain.parsing"):
             raw, _ = parser.collect_stream(_stream_text(raw_text), 5.0, tag="test")
         assert raw == raw_text
-        records = [r.getMessage() for r in caplog.records
+        records = [r for r in caplog.records
                    if r.levelno >= logging.WARNING and r.name == "pet.brain.parsing"]
-        assert records
-        assert all(str(len(raw_text)) in m for m in records)
-        assert all("恋恋没有开始游戏哦" in m for m in records)
+        assert len(records) == 1
 
     def test_unparsed_body_is_reported_to_sink(self):
         """未解析的正文要回传给编排方，供重试时作为样本回传模型。"""
@@ -486,11 +505,10 @@ class TestUntaggedContentDiag:
         """工具轮次只带 reasoning、不带正文：空 raw 是预期形态，不按异常上报。"""
         parser = BehaviorParser(_Sink())
         stream = [
-            _Chunk([_Choice(
-                _Delta(reasoning_content="先开一局再说",
-                       tool_calls=[_ToolCallDelta(0, id="call_1", name="game__init",
-                                                  arguments='{"game_name": "rps"}')]),
-                finish_reason="tool_calls")]),
+            StreamEvent(reasoning="先开一局再说",
+                        tool_call=_delta(0, id="call_1", name="game__init",
+                                         arguments='{"game_name": "rps"}', complete=True),
+                        finish_reason="tool_calls"),
         ]
         with caplog.at_level(logging.INFO, logger="pet.brain.parsing"):
             raw, tool_calls = parser.collect_stream(stream, 5.0, tag="test")

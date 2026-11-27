@@ -65,16 +65,19 @@ def _get_instance() -> BrowserTool:
 
 
 def _search(**kw):
+    TOOL_CTX.play_action_frame("operate", 0)
     TOOL_CTX.speech_random(["搜一下…", "搜搜看…", "查查看…", "找找…"])
     return _get_instance().search(**kw)
 
 
 def _read_url(**kw):
+    TOOL_CTX.play_action_frame("operate", 0)
     TOOL_CTX.speech_random(["读一读网页…", "看看写了什么…", "读读看…", "瞄一眼…"])
     return _get_instance().read_url(**kw)
 
 
 def _screenshot_url(**kw):
+    TOOL_CTX.play_action_frame("operate", 0)
     TOOL_CTX.speech_random(["看看网页…", "瞄一眼…", "瞧瞧…", "看看…"])
     return _get_instance().screenshot_url(**kw)
 
@@ -83,6 +86,7 @@ def _close():
     """关闭浏览器；实例从未创建时直接返回。"""
     if _instance is None:
         return {"headline": "浏览器未启动，无需关闭"}
+    TOOL_CTX.play_action_frame("operate", 0)
     _instance.close()
     return {"headline": "浏览器已关闭"}
 

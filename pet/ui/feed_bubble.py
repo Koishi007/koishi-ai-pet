@@ -14,7 +14,8 @@ from pet import theme
 from pet.ui.icons import tinted_icon
 from pet.ui.qss import (BUBBLE_INPUT_BUSY_QSS, BUBBLE_INPUT_QSS,
                         bubble_button_qss)
-from pet.ui.styles import BUBBLE_ROW_FEED, bubble_column_y
+from pet.ui.styles import (BUBBLE_HINT_INDENT_LEFT, BUBBLE_HINT_INDENT_RIGHT,
+                           BUBBLE_ROW_FEED, bubble_column_y)
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 _FEED_ICON_PATH = str(BASE_DIR / "assets" / "icon" / "feed.png")
@@ -102,7 +103,7 @@ class FeedBubble(QWidget):
         self._hint = QLabel("Enter 发送 · Esc 收起")
         self._hint.setStyleSheet(
             f"font-size: 10.5px; color: {theme.INK_MUTED}; background: transparent;")
-        self._hint.setIndent(36)
+        self._hint.setIndent(BUBBLE_HINT_INDENT_RIGHT)
         self._hint.hide()
         outer.addWidget(row)
         outer.addWidget(self._hint)
@@ -296,11 +297,11 @@ class FeedBubble(QWidget):
         if pet_geo.right() + bw + 10 > screen_right:
             x = pet_geo.left() - bw + 20  # 左侧
             self._layout.setDirection(QBoxLayout.Direction.RightToLeft)
-            self._hint.setIndent(31)
+            self._hint.setIndent(BUBBLE_HINT_INDENT_LEFT)
         else:
             x = pet_geo.right() - 20      # 右侧
             self._layout.setDirection(QBoxLayout.Direction.LeftToRight)
-            self._hint.setIndent(36)
+            self._hint.setIndent(BUBBLE_HINT_INDENT_RIGHT)
         if geo:
             x = max(geo.left(), min(x, geo.right() - bw))
         self.move(x, y)

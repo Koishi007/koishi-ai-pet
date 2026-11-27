@@ -381,35 +381,34 @@ class BehaviorParser:
                         pending.append(piece)
             self._emit_speech(tagger, pending, on_chunk)
 
-        for chunk in self.iter_stream_with_timeout(stream, total_timeout, cancel_check=cancel_check):
-            # usage-only chunk（choices 为空，仅含 usage）
-            if not chunk.choices:
-                if hasattr(chunk, "usage") and chunk.usage:
-                    stream_usage = chunk.usage
-                continue
-            choice = chunk.choices[0]
-            if choice.finish_reason:
-                finish_reason = choice.finish_reason
-            delta = choice.delta
+        for event in self.iter_stream_with_timeout(stream, total_timeout, cancel_check=cancel_check):
+            # 单条事件可能同时带正文与结束原因，各字段独立处理
+            if event.usage:
+                stream_usage = event.usage
+            if event.finish_reason:
+                finish_reason = event.finish_reason
 
-            reasoning = getattr(delta, "reasoning_content", None)
-            if reasoning:
-                reasoning_len += len(reasoning)
-            if delta.content:
-                received.append(delta.content)
-                _feed_text(normalizer.feed(delta.content))
+            if event.reasoning:
+                reasoning_len += len(event.reasoning)
+            if event.content:
+                received.append(event.content)
+                _feed_text(normalizer.feed(event.content))
 
-            if delta.tool_calls:
-                for tc_delta in delta.tool_calls:
-                    idx = tc_delta.index
-                    if idx not in tool_calls_map:
-                        tool_calls_map[idx] = {"id": "", "name": "", "arguments": ""}
-                    if tc_delta.id:
-                        tool_calls_map[idx]["id"] = tc_delta.id
-                    if tc_delta.function and tc_delta.function.name:
-                        tool_calls_map[idx]["name"] = tc_delta.function.name
-                    if tc_delta.function and tc_delta.function.arguments:
-                        tool_calls_map[idx]["arguments"] += tc_delta.function.arguments
+            delta = event.tool_call
+            if delta is not None:
+                idx = delta.index
+                if idx not in tool_calls_map:
+                    tool_calls_map[idx] = {"id": "", "name": "", "arguments": ""}
+                if delta.id:
+                    tool_calls_map[idx]["id"] = delta.id
+                if delta.name:
+                    tool_calls_map[idx]["name"] = delta.name
+                if delta.arguments:
+                    # complete 为真表示该序号已完整到达，替换而不是追加
+                    if delta.complete:
+                        tool_calls_map[idx]["arguments"] = delta.arguments
+                    else:
+                        tool_calls_map[idx]["arguments"] += delta.arguments
 
         _feed_text(normalizer.flush())
         if tagger.line.strip():
@@ -560,5 +559,7 @@ def _log_stream_done(tag: str, elapsed: float, finish_reason, stream_usage) -> N
     usage_log = f", finish_reason: {finish_reason}"
     if stream_usage:
         usage_log += (f", tokens: prompt={stream_usage.prompt_tokens}, "
-                      f"completion={stream_usage.completion_tokens}, total={stream_usage.total_tokens}")
-    logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] [Behavior] stream completed in {elapsed:.2f}s ({tag}){usage_log}")
+                      f"completion={stream_usage.completion_tokens}, "
+                      f"total={stream_usage.total_tokens}")
+    logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] [Behavior] "
+                f"stream completed in {elapsed:.2f}s ({tag}){usage_log}")

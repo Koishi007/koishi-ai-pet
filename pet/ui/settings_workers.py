@@ -2,12 +2,32 @@
 
 from __future__ import annotations
 
+import logging
 import time
 
 from PySide6.QtCore import QObject, QThread, Signal
 
 from pet.brain.memory_merge import run_merge
+from pet.brain.providers import LLMConnection
+from pet.brain.providers.registry import build_provider
 from pet.ui.settings_hooks import make_embedding_client
+from pet.ui.settings_spec import effort_label
+
+logger = logging.getLogger(__name__)
+
+# 连通性测试只验证鉴权与模型可用，不涉及人格
+_PROBE_MESSAGES = [
+    {"role": "system", "content": "你是调试助手。"},
+    {"role": "user", "content": "请回复 'OK' 表示联通正常。"},
+]
+
+
+def _effort_note(provider, reasoning_effort: str) -> str:
+    """端点拒绝档位时给用户一句说明。"""
+    if not reasoning_effort or not provider.reasoning_effort_rejected():
+        return ""
+    label = effort_label(reasoning_effort) or reasoning_effort
+    return f"该模型不接受推理强度「{label}」，已按默认档位连通。"
 
 
 class LLMTestWorker(QObject):
@@ -16,45 +36,37 @@ class LLMTestWorker(QObject):
     finished = Signal(bool, str, float)
 
     def __init__(self, url: str, key: str, model: str, timeout: float = 30.0,
-                 thinking: bool = True):
+                 thinking: bool = True, provider: str = "openai",
+                 reasoning_effort: str = ""):
         super().__init__()
         self._url = url
         self._key = key
         self._model = model
         self._timeout = timeout
         self._thinking = thinking
+        self._provider_name = provider
+        self._reasoning_effort = reasoning_effort
 
     def run(self):
         start = time.time()
+        provider = None
         try:
-            from openai import OpenAI, BadRequestError
-            client = OpenAI(api_key=self._key or "empty",
-                            base_url=self._url or "", timeout=self._timeout)
-            kwargs = {
-                "model": self._model,
-                "messages": [
-                    {"role": "system", "content": "你是调试助手。"},
-                    {"role": "user", "content": "请回复 'OK' 表示联通正常。"},
-                ],
-                "max_tokens": 50,
-                "extra_body": {
-                    "thinking": {"type": "enabled" if self._thinking else "disabled"}
-                },
-            }
-            degraded = False
-            try:
-                reply = client.chat.completions.create(**kwargs)
-            except BadRequestError:
-                kwargs.pop("extra_body", None)
-                reply = client.chat.completions.create(**kwargs)
-                degraded = True
+            connection = LLMConnection(provider=self._provider_name, key=self._key,
+                                       url=self._url, model=self._model)
+            provider = build_provider(connection, self._timeout,
+                                      reasoning_effort=self._reasoning_effort)
+            reply = provider.complete(_PROBE_MESSAGES, max_tokens=50,
+                                      thinking=self._thinking)
             elapsed = time.time() - start
-            content = reply.choices[0].message.content or "(空响应)"
-            if degraded:
-                content = "(服务商不支持思考模式参数，已自动降级) " + content
-            self.finished.emit(True, content, elapsed)
+            content = reply.content or "(空响应)"
+            note = _effort_note(provider, self._reasoning_effort)
+            self.finished.emit(True, note + content if note else content, elapsed)
         except Exception as e:
             self.finished.emit(False, str(e), time.time() - start)
+        finally:
+            close = getattr(provider, "close", None)
+            if close is not None:
+                close()
 
 
 class EmbeddingTestWorker(QObject):
@@ -72,7 +84,8 @@ class EmbeddingTestWorker(QObject):
     def run(self):
         start = time.time()
         try:
-            client = make_embedding_client(self._url, self._key, self._model, self._dim)
+            client = make_embedding_client(self._url, self._key, self._model,
+                                           self._dim)
             vectors = client.embed("测试")
             elapsed = time.time() - start
             vec_count = len(vectors)
@@ -111,18 +124,21 @@ class ModelsFetchWorker(QObject):
 
     finished = Signal(bool, list, str)
 
-    def __init__(self, client, target: str = "primary"):
+    def __init__(self, provider, target: str = "primary"):
         super().__init__()
-        self._client = client
+        self._provider = provider
         self.target = target
 
     def run(self):
         try:
-            resp = self._client.models.list()
-            model_ids = sorted(m.id for m in resp.data)
-            self.finished.emit(True, model_ids, "")
+            model_ids = self._provider.list_models()
+            self.finished.emit(True, list(model_ids), "")
         except Exception as e:
             self.finished.emit(False, [], str(e))
+        finally:
+            close = getattr(self._provider, "close", None)
+            if close is not None:
+                close()
 
 
 class VoiceTestWorker(QObject):

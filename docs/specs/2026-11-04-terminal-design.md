@@ -89,8 +89,8 @@ parsed, err = parse_command(command, shell="")
 
 - `shell` 为空时按平台拆分 argv；`shell` 非空时 `command` 原样作为单个参数，`Parsed.argv` 为 `[command]`，`builtin` 为空串，`routed` 按下表组装。
 - POSIX 用 `shlex.split(posix=True)`，未闭合引号由 `shlex` 抛 `ValueError`，转为 `bad_command`。
-- Windows 用 `posix=False`，保留 `C:\path\to\file` 中的反斜杠，随后对每个 token 剥掉成对的包裹引号。
-- `posix=False` 不报未闭合引号，拆前用状态机自检：`\` 转义下一个字符；进入双引号段后段内的 `'` 不计入配对，段未闭合返回 `bad_command`。双引号段外的 `'` 在 Windows 上按普通字符处理。`echo "it's"` 因此解析为 `["echo", "it's"]`。
+- Windows 用 `split_windows_args` 自写拆分：引号可开在参数中间，引号内空白不分割，引号不进入 token；保留 `C:\path\to\file` 中的反斜杠，`\` 后的引号按字面量处理。
+- 拆前用 `quotes_paired` 自检双引号配对，段内的 `'` 不计入配对；单引号只在参数开头起包裹作用，未闭合返回 `bad_command`。`echo "it's"` 因此解析为 `["echo", "it's"]`，`findstr /c:"a b"` 解析为 `["findstr", "/c:a b"]`。
 - 拆分结果为空时返回 `bad_command`。
 
 Windows 内建命令不在 `PATH` 里，`shutil.which` 找不到，必须显式路由。`parse_command()` 一次给出三份结果 `Parsed(argv, builtin, routed)`：
@@ -184,7 +184,7 @@ Windows 内建命令不在 `PATH` 里，`shutil.which` 找不到，必须显式�
 
 | 能力 | Windows | macOS | Linux |
 |---|---|---|---|
-| 命令拆分 | `posix=False` 加剥引号 | `posix=True` | `posix=True` |
+| 命令拆分 | 自写拆分，引号可开在参数中间 | `posix=True` | `posix=True` |
 | 内建命令 | `cmd /d /s /c` 路由 | 不需要 | 不需要 |
 | argv 展示 | `list2cmdline` | `shlex.join` | `shlex.join` |
 | 进程树终止 | `taskkill /F /T /PID` | `killpg(SIGKILL)` | `killpg(SIGKILL)` |
@@ -457,12 +457,12 @@ handler 在工具线程中运行，界面在主线程，确认必须跨线程。
 
 ### §7.6 确认卡片
 
-形态：独立无边框小窗，宽 420，高度随内容自适应，最小 150；底色 `#1f2224`，圆角 10，1px `#2f3437`；`Qt.Tool | WindowStaysOnTopHint`，不进任务栏。
+形态：独立无边框小窗，宽 420~560，高度随内容自适应，最小 150；底色 `#1f2224`，圆角 10，1px `#2f3437`；`Qt.Tool | WindowStaysOnTopHint`，不进任务栏；任意非按钮区域可拖动，只影响当前卡片。
 
 位置由纯函数 `card_position(pet_rect, screen_rect, card_size)` 计算，便于单测：
 
-1. 优先放在恋恋窗口上方 8px，水平居中对齐；
-2. 上方空间不足时放到下方；
+1. 优先放在恋恋左右侧面 8px，取空隙较大的一侧并垂直居中；
+2. 两侧都放不下时放到下方，下方不够再放上方；
 3. 恋恋不可见或完全在屏幕外时，放在鼠标所在屏的右下角，距边 24px；
 4. 结果夹进屏幕可用区，不压住任务栏。
 
@@ -799,7 +799,7 @@ method_timeout = 2 * TERMINAL_CONFIRM_TIMEOUT_S + TERMINAL_MAX_COMMAND_TIMEOUT_S
 | `pet/cli/builtins.py` | 内建命令实现：`help` 之外的 `check` / `status` / `policy` / `clear` / `quit` / `restart`；`:status` 经 `TOOL_CTX.pet_status()` 取恋恋快照 |
 | `pet/cli/dispatch.py` | `is_local()`、`run()`：命中 handler 走内建，否则翻译参数后经 `ToolExecutor` 调用 `tool__method` |
 | `pet/cli/__init__.py` | 只 re-export 公共 API 并声明 `__all__` |
-| `pet/ui/confirm_card.py` | 确认卡片：队列展示、倒计时进度条、危险与可写目录提示、按钮与快捷键；`card_position()` 纯函数 |
+| `pet/ui/confirm_card.py` | 确认卡片：队列展示、倒计时进度条、危险与可写目录提示、可拖动、按钮与快捷键；`card_position()` 纯函数 |
 | `pet/tools/timer/__init__.py` | `register_commands()` 登记 `:timer`（用法、子命令候选、示例），`_resolve_command()` 翻译参数，`parse_duration()` 解析 90 / 10m / 1h30m |
 | `pet/tools/todo/__init__.py` | `register_commands()` 登记 `:todo`（用法、子命令候选、示例），`_resolve_command()` 翻译 add / list |
 | `pet/tools/knowledge/__init__.py` | `register_commands()` 登记 `:knowledge search`（用法、子命令候选、示例），`_resolve_command()` 翻译关键词 |
@@ -896,7 +896,7 @@ python scripts/gen_docs.py --check
 13. 重启后终端回显区为空（回显与命令历史只在内存，不落盘、不恢复 `last_cwd`）；
 14. 在桌面放一个 `git.bat`，`auto` 档执行 `git status` 返回 `untrusted_program`；在桌面建子目录放同名文件并按其绝对路径调用，同样返回 `untrusted_program`；
 15. 询问模型能用什么命令时，它先调用 `terminal__list`，回复里给出本机免确认命令与沙箱根；未安装的程序标注为未安装；
-16. 确认卡片在恋恋上方弹出；恋恋靠在屏幕顶部时改到下方；恋恋隐藏时落在鼠标所在屏的右下角；
+16. 确认卡片在恋恋侧面弹出；两侧放不下时改到下方或上方；恋恋隐藏时落在鼠标所在屏的右下角；拖动后当前卡片停在新位置；
 17. 命令命中危险模式时分类条转红、`Enter` 不生效，点击「仍要执行」后才执行；
 18. 终端里贴上多行文本，只执行首行，输入行提示已忽略后续行；
 19. 在 macOS 或 Linux 上执行 `ls` 与 `echo`，不经过 `cmd` 路由、输出正常；Wayland 下确认卡片仍能弹出，位置可能由合成器决定；

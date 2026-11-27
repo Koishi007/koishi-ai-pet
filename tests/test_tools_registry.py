@@ -234,17 +234,24 @@ class TestRecallOutput:
         assert result["pagination"]["has_next"] is False
 
 
-class TestOpenAiSchema:
+class TestToolSpecs:
+    """工具声明是与协议无关的结构，外层包装由各 provider 负责。"""
+
     def test_schema_types_and_required(self, registry):
-        tools = registry.to_openai_tools(groups={"test"})
-        by_name = {t["function"]["name"]: t["function"] for t in tools}
+        tools = registry.to_tool_specs(groups={"test"})
+        by_name = {t["name"]: t for t in tools}
         count_schema = by_name["demo__count"]["parameters"]
         assert count_schema["properties"]["n"]["type"] == "integer"
         assert count_schema["properties"]["mode"]["type"] == "string"
 
+    def test_specs_carry_no_protocol_wrapper(self, registry):
+        tools = registry.to_tool_specs(groups={"test"})
+        assert all("type" not in t or t["type"] == "object" for t in tools)
+        assert all("function" not in t for t in tools)
+
     def test_default_and_enum_preserved(self, registry):
-        tools = registry.to_openai_tools(groups={"test"})
-        by_name = {t["function"]["name"]: t["function"] for t in tools}
+        tools = registry.to_tool_specs(groups={"test"})
+        by_name = {t["name"]: t for t in tools}
         mode = by_name["demo__count"]["parameters"]["properties"]["mode"]
         assert mode["enum"] == ["fast", "slow"]
         assert mode["default"] == "fast"
@@ -256,8 +263,8 @@ class TestOpenAiSchema:
                           "items": {"type": "object", "required": ["op"],
                                     "properties": {"op": {"type": "string"}}}}},
             output=_OUTPUT)
-        tools = registry.to_openai_tools(groups={"test"})
-        by_name = {t["function"]["name"]: t["function"] for t in tools}
+        tools = registry.to_tool_specs(groups={"test"})
+        by_name = {t["name"]: t for t in tools}
         ops = by_name["demo__batch"]["parameters"]["properties"]["ops"]
         assert ops["items"]["required"] == ["op"]
         assert ops["items"]["properties"]["op"]["type"] == "string"
@@ -266,7 +273,7 @@ class TestOpenAiSchema:
         registry.register("other", "其他工具", group="other")
         registry.add_method("other", "ping", "ping", handler=lambda: {"summary": "pong"},
                                 output=_OUTPUT)
-        names = {t["function"]["name"] for t in registry.to_openai_tools(groups={"test"})}
+        names = {t["name"] for t in registry.to_tool_specs(groups={"test"})}
         assert "other__ping" not in names
         assert "demo__echo" in names
 
@@ -429,3 +436,53 @@ class TestToolContextVision:
         ctx = ToolContext()
         ctx.bind(SimpleNamespace(behavior=SimpleNamespace(has_vision=enabled)))
         assert ctx.has_vision() is enabled
+
+
+class TestBuiltinToolActionFrames:
+    """内置（meta）工具 handler 切动作帧的契约。"""
+
+    @pytest.fixture(autouse=True)
+    def _record(self, monkeypatch):
+        self.frames: list[str] = []
+        monkeypatch.setattr(registry_module.TOOL_CTX, "play_action_frame",
+                            lambda name, index=0: self.frames.append(name))
+
+    def test_tool_search_reads(self, registry):
+        registry._tool_search_list_groups()
+        registry._tool_search_search("天气")
+        assert self.frames == ["read", "read"]
+
+    def test_food(self, registry, monkeypatch):
+        food = SimpleNamespace(spawn=lambda *a, **k: {}, status=lambda *a, **k: {})
+        monkeypatch.setattr("pet.food.food.FOOD", food)
+        registry._food_spawn()
+        registry._food_status()
+        assert self.frames == ["operate", "read"]
+
+    def test_game(self, registry, monkeypatch):
+        game = SimpleNamespace(list_games=lambda: {}, init=lambda n: {},
+                               stop=lambda n: {})
+        monkeypatch.setattr("pet.game.gamebase.GAME", game)
+        registry._game_list()
+        registry._game_init("x")
+        registry._game_stop("x")
+        assert self.frames == ["read", "operate", "operate"]
+
+    def test_recall(self, registry, monkeypatch):
+        TestRecallOutput._patch(monkeypatch, [])
+        registry._recall_search("猫")
+        registry._recall_browse()
+        assert self.frames == ["read", "read"]
+
+    def test_terminal(self, monkeypatch):
+        from pet.config import config
+
+        monkeypatch.setattr(config, "TERMINAL_ENABLED", True)
+        fake_runner = SimpleNamespace(set_confirm=lambda fn: None,
+                                      run=lambda **kw: {}, list=lambda: {},
+                                      method_timeout=60)
+        monkeypatch.setattr(registry_module, "get_runner", lambda: fake_runner)
+        reg = ToolRegistry()
+        reg.get_method("terminal__run").handler(command="echo hi")
+        reg.get_method("terminal__list").handler()
+        assert self.frames == ["operate", "read"]

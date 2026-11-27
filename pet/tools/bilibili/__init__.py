@@ -55,6 +55,7 @@ def _show_panel():
 
 
 def _browse(keyword: str = "", bvid: str = "", **_):
+    TOOL_CTX.play_action_frame("operate", 0)
     if _storage is None:
         return duty.with_hint({"error": "B 站工具未初始化", "code": "not_ready"})
     bv = (bvid or "").strip()
@@ -69,28 +70,34 @@ def _browse(keyword: str = "", bvid: str = "", **_):
 
 
 def _status(**_):
+    TOOL_CTX.play_action_frame("read", 0)
     if _storage is None:
         return duty.with_hint({"error": "B 站工具未初始化", "code": "not_ready"})
     return duty.with_hint(duty.status(_storage))
 
 
 def _like(bvid: str, **_):
+    TOOL_CTX.play_action_frame("operate", 0)
     return duty.with_hint(duty.write_action(_storage, "like", bvid=bvid))
 
 
 def _coin(bvid: str, **_):
+    TOOL_CTX.play_action_frame("operate", 0)
     return duty.with_hint(duty.write_action(_storage, "coin", bvid=bvid))
 
 
 def _comment(bvid: str, text: str, **_):
+    TOOL_CTX.play_action_frame("operate", 0)
     return duty.with_hint(duty.write_action(_storage, "comment", bvid=bvid, text=text))
 
 
 def _dm(text: str, **_):
+    TOOL_CTX.play_action_frame("operate", 0)
     return duty.with_hint(duty.write_action(_storage, "dm", text=text))
 
 
 def _verify(limit: int = 10, **_):
+    TOOL_CTX.play_action_frame("operate", 0)
     return duty.with_hint(duty.verify(_storage, limit=limit))
 
 

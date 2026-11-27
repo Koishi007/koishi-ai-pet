@@ -65,6 +65,9 @@ BUBBLE_ROW_FEED = 45
 BUBBLE_ROW_MUSIC = 85
 # 收起态气泡高度 40：按钮 32 加上下边距 8，列底估算取固定值
 _BUBBLE_COLLAPSED_H = 40
+# 展开态提示行缩进：右侧展开对齐输入框光标起始位置，左侧展开取镜像值
+BUBBLE_HINT_INDENT_RIGHT = 47
+BUBBLE_HINT_INDENT_LEFT = 42
 
 
 def bubble_column_y(pet_top: int, row_offset: int, height: int, geo) -> int:

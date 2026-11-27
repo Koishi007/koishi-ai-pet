@@ -19,6 +19,10 @@
 | **会话事件日志（session events）** | 只追加的会话记录：用户消息、模型轮次、工具调用与结果、失败轮、系统备注 | `pet/brain/events.py` 的 `EventLog` |
 | **投影（projection）** | 把事件日志还原成模型可见 messages 的纯函数，按模型 Profile 决定工具通道 | `pet/brain/projection.py` 的 `project` |
 | **工具通道（tool channel）** | 工具结果的承载方式：`native` → `user-note` → `system-note` → `none`，端点明确拒绝时逐档降级并缓存 | `pet/brain/tool_channel.py` |
+| **调用模式（BRAIN）** | `local` / `api` / `ollama`：决定是否建 provider、读哪套连接键 | `pet/config.py`、`pet/brain/llm_client.py` |
+| **通道（provider）** | 供应商边界：OpenAI 兼容接口或 Gemini，负责协议编码、异常映射与能力声明 | `pet/brain/providers/` |
+| **方案（profile）** | 首选与备选两套独立连接；`LLM_ACTIVE_PROFILE` 决定默认用哪套，请求链失败时可临时回退 | `pet/brain/llm_client.py` |
+| **推理强度（reasoning effort）** | 中性档位 `minimal`~`max`，通道声明可用子集，首选与备选分别配置 | `pet/brain/reasoning.py`、[设计](specs/2026-11-25-reasoning-effort-design.md) |
 
 ## 数值与需求
 
@@ -80,3 +84,6 @@
 | **启动标记 / 崩溃报告** | 运行状态标记与异常落盘，用于下次启动时判断上次是否异常退出 | `pet/crash_reporter.py` |
 | **prompt 缓存** | `LLM_CACHE_PROMPT`：保持 system 前缀稳定以命中服务端缓存 | `pet/brain/llm_client.py` |
 | **输出契约（output contract）** | 工具方法的返回 schema：字段用 `x-role` 声明渲染方式，违约时本次调用失败（`output_violation`） | `pet/tools/output.py` |
+| **命令放行策略** | `TERMINAL_MODE` 三档：`deny` / `ask` / `auto`，决定模型发起的命令是否弹确认卡片 | `pet/terminal/policy.py` |
+| **确认卡片** | 模型命令执行前的确认弹窗，可拖动，默认出现在恋恋侧面 | `pet/ui/confirm_card.py` |
+| **工作目录根** | 终端初始目录与模型命令的沙箱范围；用户 `cd` 后随之变化 | `pet/terminal/policy.py` |

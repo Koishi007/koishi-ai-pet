@@ -70,6 +70,7 @@ class PetAgent(QObject):
     notify_requested   = Signal(str, str, int)  # title, message, duration_ms
     game_board_requested = Signal(str, object)  # (game_name, board_payload)
     tool_interact_requested = Signal(dict)  # 工具线程请求的即时交互（kwargs），转回主线程执行
+    tool_frame_requested = Signal(str, int)  # 工具线程请求切动作帧（动作名, 帧序），转回主线程执行
     confirm_requested = Signal(object)  # 需要展示的确认请求（ConfirmRequest），同一时刻只有一条
     confirm_cleared   = Signal(object)  # 队列清空或请求被撤销，参数是卡片上那条（可能为 None）
 
@@ -108,6 +109,7 @@ class PetAgent(QObject):
         self._confirm_lock = threading.Lock()  # 工具线程入队与主线程推进共用一把锁
         self.state_machine.state_changed.connect(self._on_state_changed)
         self.tool_interact_requested.connect(self._trigger_tool_interact)
+        self.tool_frame_requested.connect(self._on_tool_frame)
 
     _RECENT_EVENT_MAX = 16
     _ONCE_EVENT_MAX = 16  # 一次性事件积压上限（正常会在下一轮被消费掉，纯防御）
@@ -277,6 +279,10 @@ class PetAgent(QObject):
                 self.behavior.close_events()
             except Exception:
                 logger.warning("[PetAgent] close event store failed")
+            try:
+                self.behavior.close_llm()
+            except Exception:
+                logger.warning("[PetAgent] close llm client failed")
         logger.info("[PetAgent] stopped")
 
     def trigger(self, intent: str, **kwargs):
@@ -367,6 +373,14 @@ class PetAgent(QObject):
     def _trigger_tool_interact(self, kwargs: dict):
         """工具线程经信号转来的即时交互请求：回主线程执行（QTimer 依赖主线程事件循环）。"""
         self.trigger("interact", **kwargs)
+
+    def _on_tool_frame(self, name: str, index: int):
+        """清空行为队列后切到该帧。"""
+        if not name or not self._pet_window:
+            return
+        self._pet_window.action_queue.clear()
+        if not self._pet_window.pet_actions.play_frame(name, index):
+            logger.debug(f"[PetAgent] 动作帧未播放: {name}[{index}]")
 
     def _trigger_interact(self, hint: str = "", delay_ms: int = 100,
                           cooldown_ms: int = 15000, record_context: bool = False,

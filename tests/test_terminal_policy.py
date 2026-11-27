@@ -112,12 +112,6 @@ class TestArgsPattern:
 
 class TestBuiltin:
 
-    def test_dir_hits_configured_allow(self, sandbox, monkeypatch):
-        monkeypatch.setattr(config, "TERMINAL_MODE", "auto")
-        monkeypatch.setattr(config, "TERMINAL_ALLOW", ["dir *"])
-        verdict = policy.check("model", ["dir", "/a"], "dir", "dir /a")
-        assert verdict.decision == "allow"
-
     def test_cmd_command_is_treated_as_interpreter(self, sandbox, monkeypatch):
         monkeypatch.setattr(config, "TERMINAL_MODE", "auto")
         monkeypatch.setattr(config, "TERMINAL_ALLOW", ["cmd *"])

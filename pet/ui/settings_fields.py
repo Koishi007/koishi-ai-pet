@@ -89,24 +89,42 @@ class SettingsWidgets:
     """页签构建后仍被联动方法与后台动作引用的控件。"""
 
     brain_combo: object | None = None
+    mode_block: object | None = None
+    api_section: object | None = None
+    ollama_section: object | None = None
+    generate_block: object | None = None
+    local_hint: object | None = None
+    provider_combo: object | None = None
+    provider_alt_combo: object | None = None
+    effort_combo: object | None = None
+    effort_label: object | None = None
     url_edit: object | None = None
+    url_label: object | None = None
     ollama_url_edit: object | None = None
     llm_key_edit: object | None = None
     key_toggle: object | None = None
     model_edit: object | None = None
+    ollama_model_edit: object | None = None
+    ollama_model_alt_edit: object | None = None
+    ollama_effort_combo: object | None = None
+    ollama_effort_label: object | None = None
+    ollama_effort_alt_combo: object | None = None
+    ollama_effort_alt_label: object | None = None
     btn_fetch_models: object | None = None
     temperature_edit: object | None = None
     tool_rounds_edit: object | None = None
-    cache_check: object | None = None
     thinking_check: object | None = None
     thinking_hint: object | None = None
     label_active_profile: object | None = None
     btn_switch_profile: object | None = None
     fallback_check: object | None = None
     alt_url_edit: object | None = None
+    alt_url_label: object | None = None
     alt_key_edit: object | None = None
     alt_key_toggle: object | None = None
     alt_model_edit: object | None = None
+    alt_effort_combo: object | None = None
+    alt_effort_label: object | None = None
     btn_fetch_models_alt: object | None = None
     btn_test: object | None = None
     label_test: object | None = None
@@ -189,6 +207,21 @@ class SettingsForm:
         self.fields[key] = cb
         return cb
 
+    def combo_with_data(self, key: str, items: list[tuple[str, object]]) -> QComboBox:
+        """下拉项为 (显示文案, 存储值)；读取时用 currentData()，不用 currentText()。"""
+        cb = NoWheelComboBox()
+        for label, value in items:
+            cb.addItem(label, value)
+        cb.setStyleSheet(COMBOBOX_QSS)
+        self.fields[key] = cb
+        return cb
+
+    @staticmethod
+    def select_combo_data(widget: QComboBox, value) -> None:
+        """按存储值选中下拉项，找不到时保持第一项。"""
+        idx = widget.findData(value)
+        widget.setCurrentIndex(max(idx, 0))
+
     def help_badge(self, tooltip: str) -> QLabel:
         badge = QLabel("?")
         badge.setFixedSize(16, 16)
@@ -231,7 +264,10 @@ class SettingsForm:
             elif isinstance(widget, QCheckBox):
                 widget.setChecked(bool(value))
             elif isinstance(widget, QComboBox):
-                self.select_combo(widget, value)
+                if widget.findData(value) >= 0:
+                    self.select_combo_data(widget, value)
+                else:
+                    self.select_combo(widget, value)
             elif isinstance(widget, (QTextEdit, MarkdownEdit)):
                 widget.setPlainText(str(value))
         self.take_snapshot()
@@ -253,7 +289,8 @@ class SettingsForm:
         if isinstance(widget, QCheckBox):
             return widget.isChecked()
         if isinstance(widget, QComboBox):
-            return widget.currentText()
+            data = widget.currentData()
+            return data if data is not None else widget.currentText()
         if isinstance(widget, (QTextEdit, MarkdownEdit)):
             return widget.toPlainText()
         return None
@@ -293,7 +330,8 @@ class SettingsForm:
             elif isinstance(widget, QCheckBox):
                 result[key] = widget.isChecked()
             elif isinstance(widget, QComboBox):
-                result[key] = widget.currentText()
+                data = widget.currentData()
+                result[key] = data if data is not None else widget.currentText()
             elif isinstance(widget, (QTextEdit, MarkdownEdit)):
                 result[key] = widget.toPlainText()
         return result, invalid

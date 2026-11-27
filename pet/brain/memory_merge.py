@@ -4,10 +4,13 @@ import logging
 import re
 from datetime import datetime
 
-from openai import BadRequestError, OpenAI
-
-from pet.brain.llm_client import active_llm_profile, resolve_llm_profile
+from pet.brain.llm_client import (active_llm_profile, resolve_connection,
+                                   resolve_llm_profile, resolve_provider_name,
+                                   resolve_reasoning_effort)
+from pet.brain.llm_errors import ProviderUnavailable
 from pet.brain.prompts import MEMORY_MERGE_PROMPT
+from pet.brain.providers import LLMConnection
+from pet.brain.providers.registry import temporary_provider
 from pet.config import config
 
 logger = logging.getLogger(__name__)
@@ -21,17 +24,20 @@ _TEMPERATURE = 0.2
 _GROUP_RE = re.compile(r"^Group\s*[:：]\s*(.+)$")
 
 
-def _resolve_connection() -> tuple[str, str, str] | None:
-    """合并请求的 (key, url, model)：三项齐全用独立配置，否则沿用当前启用方案。"""
+def _resolve_connection() -> LLMConnection | None:
+    """合并请求的连接；三项齐全用独立配置，否则沿用当前启用的对话方案。"""
     url = (config.MEMORY_MERGE_URL or "").strip()
     key = (config.MEMORY_MERGE_KEY or "").strip()
     model = (config.MEMORY_MERGE_MODEL or "").strip()
     if url and key and model:
-        return key, url, model
-    key, url, model = resolve_llm_profile(active_llm_profile())
-    if not (url and key and model):
+        # 独立配置只覆盖地址与模型，通道沿用对话通道
+        profile = active_llm_profile()
+        return LLMConnection(provider=resolve_provider_name(profile), key=key,
+                             url=url, model=model)
+    profile = active_llm_profile()
+    if not any(resolve_llm_profile(profile)):
         return None
-    return key, url, model
+    return resolve_connection(profile)
 
 
 def _format_records(rows: list[dict]) -> str:
@@ -52,26 +58,21 @@ def _format_records(rows: list[dict]) -> str:
 
 
 def _call_llm(messages: list[dict]) -> str:
-    """调用合并模型，返回原始文本输出；思考模式开启，不支持时降级重试一次。"""
-    conn = _resolve_connection()
-    if conn is None:
+    """调用合并模型，返回原始文本输出；思考开启。
+
+    思考参数被端点拒绝时的重发由 provider 完成。
+    """
+    connection = _resolve_connection()
+    if connection is None:
         raise RuntimeError("未配置可用的模型连接")
-    key, url, model = conn
-    client = OpenAI(base_url=url, api_key=key, timeout=config.LLM_TIMEOUT, max_retries=0)
-    kwargs = {
-        "model": model,
-        "messages": messages,
-        "max_tokens": _MAX_TOKENS,
-        "temperature": _TEMPERATURE,
-        "extra_body": {"thinking": {"type": "enabled"}},
-    }
+    effort = resolve_reasoning_effort(active_llm_profile())
     try:
-        resp = client.chat.completions.create(**kwargs)
-    except BadRequestError:
-        logger.info("[MemoryMerge] 模型不支持 thinking 参数，去掉后重试")
-        kwargs.pop("extra_body")
-        resp = client.chat.completions.create(**kwargs)
-    return resp.choices[0].message.content or ""
+        with temporary_provider(connection, config.LLM_TIMEOUT,
+                                reasoning_effort=effort) as provider:
+            return provider.complete(messages, max_tokens=_MAX_TOKENS, thinking=True,
+                                     temperature=_TEMPERATURE).content or ""
+    except ProviderUnavailable as e:
+        raise RuntimeError(str(e)) from e
 
 
 def parse_groups(text: str, rows: list[dict]) -> list[tuple[list[int], str]]:

@@ -16,6 +16,7 @@ def bind(embedding_factory: Callable[..., object],
 
 
 def make_embedding_client(url, key, model, dim):
+    """构建嵌入客户端。"""
     return _embedding_factory(url, key, model, dim)
 
 

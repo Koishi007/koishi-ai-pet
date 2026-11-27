@@ -1,0 +1,8 @@
+{
+  "desc": "盯着看",
+  "tick_counts": 60,
+  "frame_ratios": [1],
+  "loop": false,
+  "breath": { "amplitude": 2, "period_ticks": 40 },
+  "note": "单次播放"
+}

@@ -119,6 +119,9 @@ class TestActionParticleMap:
     def test_dejected_uses_spiral(self):
         assert _ACTION_PARTICLES["dejected"] == ("spiral", 2)
 
+    def test_cheer_uses_stars(self):
+        assert _ACTION_PARTICLES["cheer"] == ("stars", 2)
+
     def test_every_mapped_effect_has_spawner(self):
         # 名字写错时 spawn 只会 warning，桌面看不到任何特效
         missing = [effect for effect, _ in _ACTION_PARTICLES.values() if effect not in _SPAWNERS]

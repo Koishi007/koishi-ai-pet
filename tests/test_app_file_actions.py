@@ -4,6 +4,7 @@ pet/app.py 只在进程入口被导入，此前没有测试覆盖；这里用桩
 断言后台线程能启动、正文能送达，不构造 QApplication 与 PetWindow。
 """
 
+import logging
 import threading
 
 from pet.app import (_FileActionDispatcher, _file_meta_lines, _run_tool_file_action,
@@ -172,7 +173,13 @@ def test_meta_lines_skip_dir_size(tmp_path):
     assert str(ref.size) not in line
 
 
-def test_missing_tool_action_only_warns(monkeypatch, tmp_path):
+def test_missing_tool_action_only_warns(monkeypatch, tmp_path, caplog):
+    """注册表里查不到的动作不抛异常，只留一条告警。"""
     ref, _ = _text_ref(tmp_path)
+    spy = _SpeechSpy()
+    monkeypatch.setattr(TOOL_CTX, "speech", spy)
     monkeypatch.setattr(TOOL_REGISTRY, "file_actions", lambda: [])
-    _run_tool_file_action("tool:gone:x", [ref])
+    with caplog.at_level(logging.WARNING, logger="pet.app"):
+        _run_tool_file_action("tool:gone:x", [ref])
+    assert [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert spy.calls == []

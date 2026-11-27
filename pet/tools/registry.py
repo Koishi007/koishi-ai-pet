@@ -1,4 +1,4 @@
-﻿"""工具注册表 — 自动发现、注册、描述可用工具，并聚合工具登记的终端命令。"""
+"""工具注册表 — 自动发现、注册、描述可用工具，并聚合工具登记的终端命令。"""
 
 import logging
 import os
@@ -430,11 +430,13 @@ class ToolRegistry:
 
     def _food_spawn(self, food_type: str = None) -> dict:
         """food__spawn 工具实现（懒 import，避免注册表依赖行为层）。"""
+        TOOL_CTX.play_action_frame("operate", 0)
         from pet.food.food import FOOD
         return FOOD.spawn(food_type)
 
     def _food_status(self) -> dict:
         """food__status 工具实现。"""
+        TOOL_CTX.play_action_frame("read", 0)
         from pet.food.food import FOOD
         return FOOD.status()
 
@@ -591,6 +593,15 @@ class ToolRegistry:
         """注册终端元工具（TERMINAL_ENABLED=True 时调用）。"""
         runner = get_runner()
         runner.set_confirm(TOOL_CTX.confirm)
+
+        def _run_with_frame(**kw):
+            TOOL_CTX.play_action_frame("operate", 0)
+            return runner.run(**kw)
+
+        def _list_with_frame(**kw):
+            TOOL_CTX.play_action_frame("read", 0)
+            return runner.list(**kw)
+
         self.register("terminal", "终端命令执行：运行系统命令并返回退出码与输出",
                       group="default", meta=True, side_effect=True)
         self.add_method(
@@ -605,7 +616,7 @@ class ToolRegistry:
                 "有专用工具可做同一件事时优先用专用工具。"
                 "不确定本机允许哪些命令时先调用 terminal__list。"
             ),
-            handler=runner.run,
+            handler=_run_with_frame,
             args={
                 "command": {
                     "type": "str",
@@ -645,7 +656,7 @@ class ToolRegistry:
                 "一律转询问的解释器、危险模式覆盖的类别。"
                 "不确定某条命令是否允许时先调用它。"
             ),
-            handler=runner.list,
+            handler=_list_with_frame,
             args={},
             output=ToolOutputDefinition(schema=TERMINAL_LIST_OUTPUT),
         )
@@ -677,6 +688,7 @@ class ToolRegistry:
 
     def _recall_search(self, query: str, limit: int = 5) -> dict:
         """recall__search 工具实现。"""
+        TOOL_CTX.play_action_frame("read", 0)
         from pet.brain.memory import get_memory_store
         TOOL_CTX.speech_random(["让我想想…", "回忆一下…", "翻翻记忆…"])
         query = (query or "").strip()
@@ -701,6 +713,7 @@ class ToolRegistry:
         **_ 吞掉模型多传的未声明参数：executor 会把 schema 外的键原样透传给
         handler，缺少它时一个多余参数就会让整次调用 TypeError 失败。
         """
+        TOOL_CTX.play_action_frame("read", 0)
         from pet.brain.memory import get_memory_store
         TOOL_CTX.speech_random(["翻翻记忆…", "看看都记了些什么…", "回忆一下…"])
         start_date, err = self._normalize_date(start_date, "start_date")
@@ -749,6 +762,7 @@ class ToolRegistry:
 
     def _game_list(self) -> dict:
         """game__list 工具实现。"""
+        TOOL_CTX.play_action_frame("read", 0)
         from pet.game.gamebase import GAME
         return GAME.list_games()
 
@@ -759,11 +773,13 @@ class ToolRegistry:
 
     def _game_init(self, game_name: str) -> dict:
         """game__init 工具实现。"""
+        TOOL_CTX.play_action_frame("operate", 0)
         from pet.game.gamebase import GAME
         return GAME.init(game_name)
 
     def _game_stop(self, game_name: str) -> dict:
         """game__stop 工具实现。"""
+        TOOL_CTX.play_action_frame("operate", 0)
         from pet.game.gamebase import GAME
         return GAME.stop(game_name)
 
@@ -788,6 +804,7 @@ class ToolRegistry:
             }
 
     def _tool_search_list_groups(self) -> dict:
+        TOOL_CTX.play_action_frame("read", 0)
         groups = []
         for grp in self.get_groups():
             tools = self.get_tools_by_group(grp)
@@ -816,6 +833,7 @@ class ToolRegistry:
         }
 
     def _tool_search_search(self, keyword: str = "") -> dict:
+        TOOL_CTX.play_action_frame("read", 0)
         kw = (keyword or "").strip()
         phrase = _search_normalize(kw)
         terms = _search_terms(kw)
@@ -918,9 +936,9 @@ class ToolRegistry:
         "any": "string",
     }
 
-    def to_openai_tools(self, groups: set[str] | None = None) -> list[dict]:
-        """将已注册工具转换为 OpenAI function calling 格式。
-        
+    def to_tool_specs(self, groups: set[str] | None = None) -> list[dict]:
+        """把已注册工具转换成与协议无关的工具声明。
+
         Args:
             groups: 指定分组集合，None 表示返回全部已启用工具。
         """
@@ -959,18 +977,16 @@ class ToolRegistry:
                     "description": "（可选）调用此工具时的自言自语，按你的人格口吻说一句，只让用户理解你正在做什么，不会作为对用户的正式回复；不想说可不填",
                 }
                 tools.append({
-                    "type": "function",
-                    "function": {
-                        "name": f"{tool.name}__{method_name}",
-                        "description": method.description,
-                        "parameters": {
-                            "type": "object",
-                            "properties": properties,
-                            "required": required,
-                        },
+                    "name": f"{tool.name}__{method_name}",
+                    "description": method.description,
+                    "parameters": {
+                        "type": "object",
+                        "properties": properties,
+                        "required": required,
                     },
                 })
         return tools
+
 
 TOOL_REGISTRY = ToolRegistry()
 

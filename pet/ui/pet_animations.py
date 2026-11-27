@@ -118,6 +118,42 @@ class PetAnimator(QObject):
 
         return True
 
+    def play_frame(self, action: str, index: int = 0) -> bool:
+        """只显示动作的第 index 帧并停住。"""
+        data = self._load_action(action)
+        if not data:
+            self._frame_timer.stop()
+            self._duration_timer.stop()
+            self._reset_breath()
+            return False
+
+        frames = data["frames"]
+        if not 0 <= index < len(frames):
+            logger.warning(f"'{action}' 共 {len(frames)} 帧，index={index} 按最后一帧处理")
+            index = max(0, len(frames) - 1)
+
+        self._frame_timer.stop()
+        self._duration_timer.stop()
+        self._reset_breath()
+
+        breath = data["breath"]
+        self._frames = [frames[index]]
+        self._tick_plan = [1]
+        self._loop = True  # 不发 animation_finished，等到下一次播放
+        self._breath_amplitude = breath["amplitude"]
+        self._breath_scale_x = breath["scale_x"]
+        self._breath_scale_y = breath["scale_y"]
+        self._breath_period = breath["period_ticks"]
+        self._current_action = action
+        self._current_frame = 0
+        self._tick_in_frame = 0
+        self._tick_count = 0
+
+        self.frame_changed.emit(self._frames[0])
+        # 计时器保持运行：重力与调度按 is_playing 判断桌宠是否在播动画
+        self._frame_timer.start(self._calc_tick_interval())
+        return True
+
     def stop(self):
         was_playing = self.is_playing
         self._frame_timer.stop()

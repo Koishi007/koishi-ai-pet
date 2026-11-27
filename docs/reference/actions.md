@@ -22,6 +22,7 @@
 | `calling` | 5 | 0.2 |
 | `finger_heart` | 1 | 0.01 |
 | `bathing` | 20 | 0.5 |
+| `waiting` | 5 | 0.2 |
 
 ## 移动
 
@@ -45,12 +46,15 @@
 | `shy` | 无参数 | 双手捧脸表达害羞 | `Action: shy` |
 | `dejected` | 无参数 | 失落，情绪低落地蹲着 | `Action: dejected` |
 | `hug` | 无参数 | 张开双手求抱抱 | `Action: hug` |
+| `stare` | 无参数 | 盯着看，专注地注视某处 | `Action: stare` |
+| `cheer` | 无参数 | 给用户加油打气 | `Action: cheer` |
 | `sit` | 10-216秒 | 坐下 | `Action: sit 108` |
 | `thinking` | 5-108秒 | 沉思 | `Action: thinking 54` |
 | `sleep` | 10-216秒 | 睡觉 | `Action: sleep 108` |
 | `calling` | 5-108秒 | 给用户打电话，也许能让用户注意你关心你陪你玩 | `Action: calling 54` |
 | `finger_heart` | 1-6秒 | 表达喜欢的比心 | `Action: finger_heart 2` |
 | `bathing` | 20-270秒 | 放松地泡澡 | `Action: bathing 135` |
+| `waiting` | 5-108秒 | 举着沙漏等待，等人回复或等一段时间过去 | `Action: waiting 54` |
 
 ## 显隐
 
@@ -65,7 +69,7 @@
 这段文本被 `_Lazy` 缓存（首次求值后不再重算，保 system 前缀稳定）；改完 `settings.json` 里与调度相关的项后，设置界面会调用 `invalidate_action_section()` 让它按新配置重算。
 
 ```text
-[可用动作] 共 21 个
+[可用动作] 共 24 个
 - drive [移动] [direction=left/right distance>=0] 骑小电驴 | 示例: drive right 800
 - walk [移动] [direction=left/right distance>=0（按 50px 步进）] 行走 | 示例: walk right 800
 - bounce [移动] [direction=left/right distance=0-800 height>0] 跳跃 | 示例: bounce right 400 200
@@ -79,12 +83,15 @@
 - shy [驻留] 无参数 双手捧脸表达害羞
 - dejected [驻留] 无参数 失落，情绪低落地蹲着
 - hug [驻留] 无参数 张开双手求抱抱
+- stare [驻留] 无参数 盯着看，专注地注视某处
+- cheer [驻留] 无参数 给用户加油打气
 - sit [驻留] [10-216秒] 坐下 | 示例: sit 108
 - thinking [驻留] [5-108秒] 沉思 | 示例: thinking 54
 - sleep [驻留] [10-216秒] 睡觉 | 示例: sleep 108
 - calling [驻留] [5-108秒] 给用户打电话，也许能让用户注意你关心你陪你玩 | 示例: calling 54
 - finger_heart [驻留] [1-6秒] 表达喜欢的比心 | 示例: finger_heart 2
 - bathing [驻留] [20-270秒] 放松地泡澡 | 示例: bathing 135
+- waiting [驻留] [5-108秒] 举着沙漏等待，等人回复或等一段时间过去 | 示例: waiting 54
 - fade_in [显隐] 无参数 显示自己的身形
 - fade_out [显隐] 无参数 突然消失不见
 ```

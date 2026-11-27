@@ -142,10 +142,13 @@ def test_fetch_rejects_loopback(config, monkeypatch):
     assert "error" in core.fetch("http://127.0.0.1/admin")
 
 
-def test_fetch_rejects_private_host(config, monkeypatch):
-    monkeypatch.setattr(core, "_resolve_public_ips", lambda host, port: [])
-    _reject_network(monkeypatch)
-    assert "error" in core.fetch("https://intranet.example")
+def test_url_guard_skips_dns(config, monkeypatch):
+    """URL 校验不解析域名，交给本地抓取前的解析校验。"""
+    def _unexpected(*a, **kw):
+        raise AssertionError("URL 校验不应解析域名")
+
+    monkeypatch.setattr(core, "_resolve_public_ips", _unexpected)
+    assert core._url_reject_reason("https://example.com") == ""
 
 
 def test_pin_target_replaces_host_with_resolved_ip(monkeypatch):
@@ -232,6 +235,32 @@ def test_fetch_uses_tavily(monkeypatch):
         "failed_results": [],
     }))
     assert "Tavily 正文" in core.fetch("https://example.com")["body"]
+
+
+def test_fetch_via_api_ignores_fake_ip_dns(monkeypatch):
+    """代理 fake-ip 把域名解析到保留段时，远端 API 抓取照常进行。"""
+    monkeypatch.setattr(core, "_load_config",
+                        lambda: {"backend": "tavily", "tavily_api_key": "tvly-test"})
+    monkeypatch.setattr(core, "_resolve_public_ips", lambda host, port: [])
+    monkeypatch.setattr(core.requests, "post", lambda *a, **kw: _Resp(200, {
+        "results": [{"url": "https://example.com", "raw_content": "Tavily 正文"}],
+        "failed_results": [],
+    }))
+    assert "Tavily 正文" in core.fetch("https://example.com")["body"]
+
+
+def test_fetch_local_extract_rejects_private_resolution(monkeypatch):
+    """本地抓取前仍校验解析结果，内网域名不外连。"""
+    monkeypatch.setattr(core, "_load_config",
+                        lambda: {"backend": "tavily", "tavily_api_key": ""})
+    monkeypatch.setattr(core, "_resolve_public_ips", lambda host, port: [])
+    _reject_network(monkeypatch)
+    assert "error" in core.fetch("https://intranet.example")
+
+
+def test_fetch_rejects_private_literal_ip(config, monkeypatch):
+    _reject_network(monkeypatch)
+    assert "error" in core.fetch("http://192.168.1.1/admin")
 
 
 def test_connectivity_detects_tavily(monkeypatch):

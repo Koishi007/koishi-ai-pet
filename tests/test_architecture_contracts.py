@@ -363,6 +363,8 @@ HEAVY_IMPORTS = {
     "PySide6", "playwright",
     "win32gui", "win32con", "win32process",
     "Quartz", "AppKit", "Xlib",
+    # 可选供应商 SDK：未安装时不能影响导入，只能在函数内导入
+    "google",
 }
 
 WINDOW_DETECTOR_API = {"is_window_alive", "get_window_rect", "is_window_occluded", "get_visible_windows"}

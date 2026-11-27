@@ -32,11 +32,13 @@ FETCH_OUTPUT = {
 
 
 def _search(**kw):
+    TOOL_CTX.play_action_frame("read", 0)
     TOOL_CTX.speech_random(["搜搜看…", "查查看…", "找找看…", "搜一下…"])
     return search(**kw)
 
 
 def _fetch(**kw):
+    TOOL_CTX.play_action_frame("read", 0)
     TOOL_CTX.speech_random(["读一读网页…", "看看写了什么…", "读读看…", "瞄一眼…"])
     return fetch(**kw)
 

@@ -1,4 +1,7 @@
-"""LLM 调用重试与异常分类。"""
+"""LLM 调用重试与异常分类。
+
+分类只针对中性错误族，不依赖任何供应商 SDK 的异常类型。
+"""
 
 import logging
 import queue
@@ -8,24 +11,21 @@ from tenacity import (
     retry, stop_after_attempt, wait_exponential,
     retry_if_exception, before_sleep_log, RetryError,
 )
-from openai import (
-    APIConnectionError, APITimeoutError, RateLimitError,
-    InternalServerError, AuthenticationError, BadRequestError, NotFoundError,
-)
-import httpx
 
+from pet.brain.llm_errors import (ProviderAuthError, ProviderBadRequest,
+                                  ProviderConnection, ProviderNotFound,
+                                  ProviderRateLimit, ProviderServerError,
+                                  ProviderTimeout)
 from pet.config import config
 
 logger = logging.getLogger(__name__)
 
 RETRYABLE_EXCEPTIONS = (
-    APIConnectionError, APITimeoutError, RateLimitError,
-    InternalServerError, ConnectionError, TimeoutError, OSError,
-    httpx.RemoteProtocolError,  # 服务端非正常断开连接，重试通常有效
-    httpx.ReadTimeout,          # 流式读取超时
+    ProviderConnection, ProviderTimeout, ProviderRateLimit, ProviderServerError,
+    ConnectionError, TimeoutError, OSError,
 )
 NON_RETRYABLE_EXCEPTIONS = (
-    AuthenticationError, BadRequestError, NotFoundError,
+    ProviderAuthError, ProviderBadRequest, ProviderNotFound,
 )
 
 

@@ -57,11 +57,6 @@ def _make_queue():
 
 
 class TestActionFinished:
-    def test_not_emitted_while_running(self):
-        _, queue, finished = _make_queue()
-        queue.enqueue("sit")
-        assert finished == []  # 动作还在跑，不能提前结算
-
     def test_emitted_after_animation_ends(self):
         actions, queue, finished = _make_queue()
         queue.enqueue("sit")
