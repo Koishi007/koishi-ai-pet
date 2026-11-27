@@ -1,6 +1,7 @@
 """全局热键管理器，使用 pynput 监听按键。"""
 
 import logging
+import time
 
 from pynput import keyboard
 from PySide6.QtCore import QObject, Signal
@@ -9,9 +10,14 @@ from pet.config import config
 
 logger = logging.getLogger(__name__)
 
+TRIGGER_DOUBLE = "double"   # 配置取值 "single" 走默认分支，不需要同名常量
+
+TAP_SECONDS = 0.35    # 短按上限：按得更久就不算「第一击」
+ARM_SECONDS = 1.20    # 短按之后等待第二击按下的窗口
+
 
 class HotkeyManager(QObject):
-    """全局热键监听。长按触发录音，松开停止。语音输入完成后可拦截回车提交。"""
+    """全局热键监听。两种模式都按住录音，语音输入完成后可拦截回车提交。"""
 
     voice_start = Signal()
     voice_stop = Signal()
@@ -22,14 +28,20 @@ class HotkeyManager(QObject):
         super().__init__(parent)
         self._listener: keyboard.Listener | None = None
         self._hotkey = config.VOICE_HOTKEY.lower()
-        self._key_down = False  # 防止按键连发导致高频翻转
-        self._intercept_enter = False  # 是否拦截回车
-        self._enter_handled = False  # 防止回车连发
+        self._mode = config.VOICE_TRIGGER_MODE
+        self._key_down = False       # 防止按键连发导致高频翻转
+        self._recording = False      # 当前是否已发出 voice_start
+        self._press_at = 0.0         # 本次按下的时刻
+        self._armed_at = 0.0         # double 模式：第一击短按完成的时刻，0 表示未解除防备
+        self._intercept_enter = False
+        self._enter_handled = False
 
     def start(self):
         """启动全局键盘监听线程。"""
         if self._listener and self._listener.running:
             return
+        self._hotkey = config.VOICE_HOTKEY.lower()
+        self._mode = config.VOICE_TRIGGER_MODE
         try:
             self._listener = keyboard.Listener(
                 on_press=self._on_press,
@@ -37,7 +49,7 @@ class HotkeyManager(QObject):
             )
             self._listener.daemon = True
             self._listener.start()
-            logger.info(f"[HotkeyManager] listening for '{self._hotkey}'")
+            logger.info(f"[HotkeyManager] listening for '{self._hotkey}' ({self._mode})")
         except Exception as e:
             logger.error(f"[HotkeyManager] failed to start listener: {e}")
             self.error_occurred.emit(str(e))
@@ -60,7 +72,6 @@ class HotkeyManager(QObject):
         """按键按下时处理。"""
         key_name = self._key_name(key)
 
-        # 回车拦截（语音输入完成后的提交）
         if self._intercept_enter and key_name == 'enter':
             if not self._enter_handled:
                 self._enter_handled = True
@@ -68,30 +79,59 @@ class HotkeyManager(QObject):
                 self.enter_pressed.emit()
             return
 
-        # 录音热键
         if self._key_down:
             return  # 防止 auto-repeat 连发
         if key_name != self._hotkey:
             return
         self._key_down = True
-        logger.info(f"[HotkeyManager] press: {self._hotkey} → start recording")
-        self.voice_start.emit()
+        self._press_at = time.monotonic()
+
+        if self._mode == TRIGGER_DOUBLE and not self._armed():
+            return  # 第一击只等松开时判定是否为短按
+        self._armed_at = 0.0
+        self._begin()
 
     def _on_release(self, key):
         """按键释放时处理。"""
         key_name = self._key_name(key)
 
-        # 回车释放时重置防连发标记
         if key_name == 'enter':
             self._enter_handled = False
             return
 
-        # 录音热键释放
         if key_name != self._hotkey:
             return
         if not self._key_down:
             return
         self._key_down = False
+
+        was_recording = self._recording
+        if was_recording:
+            self._end()
+        if self._mode != TRIGGER_DOUBLE or was_recording:
+            return
+        if time.monotonic() - self._press_at <= TAP_SECONDS:
+            self._armed_at = time.monotonic()
+            logger.info("[HotkeyManager] armed by short tap, waiting for second press")
+
+    def _armed(self) -> bool:
+        """double 模式：第一击的短按是否仍在有效窗口内。"""
+        if not self._armed_at:
+            return False
+        return time.monotonic() - self._armed_at <= ARM_SECONDS
+
+    def _begin(self):
+        if self._recording:
+            return
+        self._recording = True
+        logger.info(f"[HotkeyManager] press: {self._hotkey} → start recording")
+        self.voice_start.emit()
+
+    def _end(self):
+        if not self._recording:
+            return
+        self._recording = False
+        self._armed_at = 0.0
         logger.info(f"[HotkeyManager] release: {self._hotkey} → stop recording")
         self.voice_stop.emit()
 
