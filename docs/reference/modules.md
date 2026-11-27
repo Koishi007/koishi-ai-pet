@@ -145,6 +145,9 @@
 | `pet/tools/web_search/__init__.py` | 支持 SearXNG（自建）、DeepSeek 搜索 API、Tavily 和 Bing Web Search API。 | `register()` |
 | `pet/tools/web_search/core.py` | 支持 SearXNG（自建）、DeepSeek 搜索 API、Tavily 和 Bing Web Search API 四种后端。 | `_PinnedHTTPSAdapter` `check_connectivity()` `search()` `fetch()` |
 | `pet/ui/__init__.py` | UI 层 — pet_window 宠物主窗口，speech_bubble/chat_bubble/feed_bubble/file_bubble 气泡组件，file_drop_handler 拖放判定， |  |
+| `pet/ui/audio/__init__.py` | 语音输出：发声门面与 QAudioSink 播放通道。 |  |
+| `pet/ui/audio/audio_out.py` | 播放通道：常驻 QAudioSink，空闲挂起，发声前恢复。 | `_Feeder` `_AudioWorker` `AudioOut` |
+| `pet/ui/audio/vocalizer.py` | 发声门面：按当前配置把文本合成音节并交给播放通道。 | `Vocalizer` |
 | `pet/ui/base_window.py` | （模块未提供 docstring） | `TransparentWindow` |
 | `pet/ui/chat_bubble.py` | 桌宠聊天交互组件 | `ChatBubble` |
 | `pet/ui/chat_history.py` | 对话历史窗口 — 以对话气泡形式展示用户与桌宠的对话记录。 | `ChatBubbleDelegate` `ChatHistoryWindow` |
@@ -192,9 +195,11 @@
 | `pet/version_check.py` | 启动时版本检查 | `get_local_version()` `_CheckWorker` `UpdateChecker` |
 | `pet/version_utils.py` | 版本号解析与比较的纯逻辑。 | `strip_v()` `ver_newer()` |
 | `pet/voice/__init__.py` | 语音层 — 全局热键、麦克风采集与讯飞听写编排。 |  |
+| `pet/voice/animalese.py` | 波形合成：音节序列 → 22.05 kHz 单声道 int16 PCM。 | `render()` |
 | `pet/voice/hotkey_manager.py` | 全局热键管理器，使用 pynput 监听按键。 | `HotkeyManager` |
 | `pet/voice/mic_capture.py` | 麦克风 PCM 采集模块 | `MicCapture` |
+| `pet/voice/phoneme.py` | 音节切分：台词文本 → 音节序列，音高只由字符决定，音区由预设给出。 | `Syllable` `normalize_preset()` `syllable_duration()` `split()` |
 | `pet/voice/voice_session.py` | 语音会话编排：麦克风采集 → 讯飞识别 | `VoiceSession` |
 | `pet/voice/xunfei_stt.py` | 讯飞语音听写 (iat) WebSocket API 封装 | `XunfeiSTT` |
 
-共 189 个模块。
+共 194 个模块。

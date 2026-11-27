@@ -226,9 +226,10 @@ system 动作表换成 `EDGE_ACTION_NAMES` 的八个贴边动作；调度器、�
 | `pet/terminal/` | 终端能力：命令解析与内建路由、执行核心、策略与沙箱、两个入口共用的 `TerminalRunner`，不依赖 Qt | `core.py`、`policy.py`、`runner.py`、`confirm.py` |
 | `pet/cli/` | 终端本地命令：冒号前缀分发、内建命令、输出排版与帮助；工具命令来自注册表登记，不写死具体工具，不依赖 Qt | `__init__.py`、`catalog.py`、`dispatch.py`、`builtins.py`、`format.py`、`types.py` |
 | `pet/ui/` | 界面层：宠物窗口、各类气泡、表情、粒子、拖拽惯性钟摆、贴边几何、设置/调试/记忆面板、托盘、终端窗口与命令确认卡片 | `pet_window.py`、`particle.py`、`swing.py`、`edge_dock.py`、`settings_window.py`、`terminal_window.py`、`confirm_card.py` |
+| `pet/ui/audio/` | 语音输出：发声门面与 QAudioSink 播放通道，空闲挂起 | `vocalizer.py`、`audio_out.py` |
 | `pet/food/` | 觅食：需求驱动的地面食物生成与食用 | `food.py` |
 | `pet/game/` | 小游戏：猜数字、猜拳、井字棋、二十问、猜高低 | `gamebase.py` 与各游戏 |
-| `pet/voice/` | 语音输入：热键、麦克风采集、讯飞听写 | `voice_session.py` |
+| `pet/voice/` | 语音输入：热键、麦克风采集、讯飞听写；语音输出：音节切分与波形合成，不依赖 Qt | `voice_session.py`、`phoneme.py`、`animalese.py` |
 | `assets/` | 素材：每个动作一个目录（`<name>.json` + 帧 webp） | `assets/actions/` |
 | `tests/` | pytest 用例（CI 在 ubuntu + windows 上跑） | 见 `CONTRIBUTING.md`；结构红线见 [test_architecture_contracts.py](../tests/test_architecture_contracts.py) |
 

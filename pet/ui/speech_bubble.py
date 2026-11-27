@@ -38,8 +38,9 @@ _QUEUE_MAX = 4  # 待播上限：多轮工具链的 aside 堆积时丢最旧的
 
 
 class SpeechBubble(QLabel):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, voice=None):
         super().__init__(parent)
+        self._voice = voice
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnTopHint
@@ -328,8 +329,10 @@ class SpeechBubble(QLabel):
         if self._buffering:
             self._buffering = False
             self._incoming_chunks.clear()
+            self._silence()
             return
         self._hide_bubble()
+        self._silence()
         self._dispatch()  # 队列里还有更早的句子就接着播
 
     def flush_pending(self):
@@ -340,6 +343,12 @@ class SpeechBubble(QLabel):
         self._stream_open = False
         self._stream_ending = False
         self._hide_bubble()
+        self._silence()
+
+    def _silence(self):
+        """作废已排队的音节：台词不再播出时声音不能继续。"""
+        if self._voice is not None:
+            self._voice.clear()
 
     def is_busy(self) -> bool:
         """气泡是否被占用：显示、打字中、过渡中或有排队文本。"""
@@ -468,6 +477,8 @@ class SpeechBubble(QLabel):
             self.setText(self._stream_buffer)
             self._resize_to_text()
             self._reposition()
+            if self._voice is not None:
+                self._voice.speak(char)
         else:
             self._type_timer.stop()
             if self._stream_ending:

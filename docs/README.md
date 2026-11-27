@@ -59,6 +59,7 @@
 | [specs/2026-11-20-ui-style-refactor-design.md](specs/2026-11-20-ui-style-refactor-design.md) | 设计文档 | 手写 | 手绘风 UI 样式改造：令牌分层、QSS 表达边界、28 个文件的内联样式收敛、工具样式自包含约定 | 动手前写，落地后补齐结论 |
 | [specs/2026-11-23-llm-provider-abstraction-design.md](specs/2026-11-23-llm-provider-abstraction-design.md) | 设计文档 | 手写 | 模型供应商抽象：中性消息与错误类型、provider 协议与工厂、OpenAI 与 Gemini 的编码映射、配置面与界面派生 | 改供应商边界或新增通道时对照 |
 | [specs/2026-11-25-reasoning-effort-design.md](specs/2026-11-25-reasoning-effort-design.md) | 设计文档 | 手写 | 通用推理强度：中性档位词表、模型预设与端点清单、通道协议值映射、逐字段降级阶梯、界面派生 | 改推理强度或新增通道的档位时对照 |
+| [specs/2026-11-27-vocalization-design.md](specs/2026-11-27-vocalization-design.md) | 设计文档 | 手写 | 语音输出：波形合成而非 TTS 的理由、音高预设四档、字符到音节的分配、播放通道的线程与挂起模型、打字机联动、积压与生命周期处理 | 改音色或播放通道时对照 |
 | [../CHANGELOG.md](../CHANGELOG.md) | 事实参考 | 生成 | 按版本分组的变更记录 | `python scripts/gen_changelog.py` |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | 操作指南 | 手写 | 开发流程、测试、提交与 PR 规范 | 流程变化时人工更新 |
 

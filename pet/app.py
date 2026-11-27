@@ -37,6 +37,7 @@ from pet.file_intake import KIND_LABELS, load_image, load_text
 from pet.config import config
 from pet.auto_start import set_auto_start
 from pet.crash_reporter import get_guard
+from pet.ui.audio.vocalizer import Vocalizer
 from pet.relaunch import spawn_relaunch
 from pet.self_update import apply_pending_update_scripts
 from pet.single_instance import SingleInstanceGuard
@@ -265,12 +266,14 @@ def main():
     agent = PetAgent()
     TOOL_CTX.bind(agent)
     TOOL_CTX.set_confirm_sink(agent.request_confirm)
+    vocalizer = Vocalizer()
     window = PetWindow()
     window.set_agent(agent)
     window.set_app(app)
     window.set_log_relay(_log_relay)
     agent.set_pet_window(window)
-    speech_bubble = SpeechBubble(window)
+    speech_bubble = SpeechBubble(window, voice=vocalizer)
+    window.set_vocalizer(vocalizer)
     emotion_bubble = EmotionBubble(window)
     window.set_speech_bubble(speech_bubble)
     window.set_emotion_bubble(emotion_bubble)
@@ -550,6 +553,10 @@ def main():
             get_runner().shutdown()
         except Exception as e:
             logger.warning(f"shutdown: runner cleanup failed: {e}")
+        try:
+            vocalizer.shutdown()
+        except Exception as e:
+            logger.warning(f"shutdown: vocalizer cleanup failed: {e}")
         logging.getLogger().removeHandler(_log_handler)
         # 正常退出：清除启动标记，避免下次启动误报异常退出
         get_guard().clear_marker()

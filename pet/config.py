@@ -8,6 +8,7 @@ import json
 import logging
 import os
 from pet.settings import load_user_settings, save_user_setting, delete_user_settings, settings_path
+from pet.voice.phoneme import PRESETS as VOICE_PRESETS
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +125,11 @@ _KEY_META = {
     "XF_API_KEY":                {"type": "str",      "default": "",            "category": "connection", "needs_restart": False, "hidden": False, "description": "讯飞语音听写 API Key"},
     "XF_API_SECRET":             {"type": "str",      "default": "",            "category": "connection", "needs_restart": False, "hidden": False, "description": "讯飞语音听写 API Secret"},
     "VOICE_INPUT_ENABLED":       {"type": "bool",     "default": False,         "category": "behavior",   "needs_restart": False, "hidden": False, "description": "启用语音输入"},
-    "VOICE_HOTKEY":              {"type": "str",      "default": "F8",          "category": "behavior",   "needs_restart": False, "hidden": False, "description": "语音输入全局热键"},
+    "VOICE_HOTKEY":              {"type": "str",      "default": "alt_l",       "category": "behavior",   "needs_restart": False, "hidden": False, "description": "语音输入全局热键"},
+    "VOICE_TRIGGER_MODE":        {"type": "str",      "default": "double",      "category": "behavior",   "needs_restart": False, "hidden": False, "description": "语音输入的触发方式：single 按一次即录，double 需先短按再按住", "enum": ["single", "double"]},
+    "VOICE_OUTPUT_ENABLED":      {"type": "bool",     "default": False,         "category": "behavior",   "needs_restart": False, "hidden": False, "description": "允许发出声音"},
+    "VOICE_OUTPUT_PRESET":       {"type": "str",      "default": "soft",        "category": "behavior",   "needs_restart": False, "hidden": False, "description": "语音音高预设", "enum": list(VOICE_PRESETS)},
+    "VOICE_OUTPUT_VOLUME":       {"type": "int",      "default": 60,            "category": "behavior",   "needs_restart": False, "hidden": False, "description": "语音音量", "minimum": 0, "maximum": 100},
     "EMBEDDING_ENABLED":         {"type": "bool",     "default": False,          "category": "memory",   "needs_restart": True,  "hidden": False, "description": "启用向量记忆(需配置下方 API)"},
     "EMBEDDING_URL":             {"type": "str",      "default": "",             "category": "memory",   "needs_restart": True,  "hidden": False, "description": "Embedding API 地址(需兼容 OpenAI 格式)", "placeholder": "https://open.bigmodel.cn/api/paas/v4"},
     "EMBEDDING_KEY":             {"type": "str",      "default": "",             "category": "memory",   "needs_restart": True,  "hidden": False, "description": "Embedding API Key"},

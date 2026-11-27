@@ -203,6 +203,7 @@ class PetWindow(TransparentWindow):
         self._file_bubble = None
         self._speech_bubble = None
         self._emotion_bubble = None
+        self._vocalizer = None
         self._agent = None
         self._debug_window = None
         self._log_window = None
@@ -261,6 +262,10 @@ class PetWindow(TransparentWindow):
     def set_speech_bubble(self, speech_bubble):
         """注入 SpeechBubble 引用。"""
         self._speech_bubble = speech_bubble
+
+    def set_vocalizer(self, vocalizer):
+        """注入发声门面：右键菜单出现静音项。"""
+        self._vocalizer = vocalizer
 
     def set_emotion_bubble(self, emotion_bubble):
         """注入 EmotionBubble 引用。"""
@@ -772,6 +777,13 @@ class PetWindow(TransparentWindow):
             toggle_mouse.triggered.connect(self._toggle_event_reaction)
             menu.addAction(toggle_mouse)
 
+            # 语音静音开关：只存内存，初值取自设置页「允许发出声音」
+            if self._vocalizer is not None:
+                muted = self._vocalizer.muted
+                mute_action = QAction("关闭静音" if muted else "开启静音")
+                mute_action.triggered.connect(self._toggle_mute)
+                menu.addAction(mute_action)
+
             if self._dock_side:
                 dock_action = QAction("离开边缘")
                 dock_action.triggered.connect(lambda: self.undock())
@@ -814,6 +826,12 @@ class PetWindow(TransparentWindow):
     def _toggle_event_reaction(self):
         self._event_reaction = not self._event_reaction
         logger.info(f"Event reaction {'enabled' if self._event_reaction else 'disabled'}")
+
+    def _toggle_mute(self):
+        """切换语音静音。内存态覆盖设置页的「允许发出声音」。"""
+        if self._vocalizer is None:
+            return
+        self._vocalizer.set_muted(not self._vocalizer.muted)
 
     def _show_debug_window(self):
         if self._debug_window is None:

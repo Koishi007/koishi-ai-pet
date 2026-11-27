@@ -31,3 +31,4 @@
 | [0013](0013-memory-cleanup-only-over-capacity.md) | 记忆只在超容量时清理 | 定期维护只打分，删除全部集中在容量边界 |
 | [0014](0014-provider-abstraction.md) | 模型供应商抽象 | 内部只流通中性消息与错误类型，编码与异常映射收敛进 provider |
 | [0015](0015-reasoning-effort-per-channel.md) | 推理强度按通道与端点声明 | 配置存中性档位，通道声明全集，模型预设与端点清单收窄，端点拒绝时逐字段降级 |
+| [0016](0016-waveform-vocalization.md) | 语音输出用波形合成而非 TTS | 零模型零素材，音高由字符哈希决定，播放通道常驻挂起且 sink 只在工作线程创建 |
