@@ -100,13 +100,17 @@ class TestRetryIfIncomplete:
         assert repair_module.missing_required(_complete()) == ""
 
     def test_action_requirement_follows_task(self):
-        """数量要求只进提示。"""
-        assert repair_module.action_requirement("chat") == "至少 3 个"
-        assert repair_module.action_requirement("interact") == "1-2 个"
-        assert repair_module.action_requirement("chat", docked=True) == "至少 1 个"
-        assert repair_module.action_requirement("autonomous") == \
-            f"至少 {min_action_count()} 个"
+        """数量要求只进提示，提示里的下限与上限取自同一份区间。"""
+        assert repair_module.action_bounds("chat") == (3, 0)
         assert repair_module.action_bounds("interact") == (1, 2)
+        assert repair_module.action_bounds("chat", docked=True) == (1, 0)
+        assert repair_module.action_bounds("autonomous") == (min_action_count(), 0)
+        for task in ("chat", "interact", "autonomous"):
+            low, high = repair_module.action_bounds(task)
+            requirement = repair_module.action_requirement(task)
+            assert str(low) in requirement
+            if high:
+                assert str(high) in requirement
 
     def test_still_empty_after_retry_is_returned(self):
         calls = []
@@ -441,14 +445,10 @@ class TestAssistantFields:
 
 
 class TestToolLoopRounds:
-    def test_event_failure_does_not_block_tools(self):
-        session = _FailingEventSession([("Speech: 好\n", {})])
-        out = run_tool_loop([], _tool_calls("timer__set"), "", session, max_rounds=3)
-        assert out.speech == "好"
-        assert session.executor_obj.calls == ["timer__set"]
-
-    def test_stops_when_model_returns_no_tool_calls(self):
-        session = _FakeSession([("Speech: 好\n", {})])
+    @pytest.mark.parametrize("session_type", [_FakeSession, _FailingEventSession])
+    def test_single_tool_round_still_produces_speech(self, session_type):
+        """事件写入失败不影响工具轮次的产出。"""
+        session = session_type([("Speech: 好\n", {})])
         out = run_tool_loop([], _tool_calls("timer__set"), "", session, max_rounds=3)
         assert out.speech == "好"
         assert session.executor_obj.calls == ["timer__set"]

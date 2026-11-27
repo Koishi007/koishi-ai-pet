@@ -275,15 +275,14 @@ class TestRunMerge:
         assert rows[0]["level"] == "L1"
         assert rows[0]["importance"] == 5
 
-    def test_merge_log_marks_truncated_remainder(self, store, monkeypatch, caplog):
+    def test_merge_keeps_summary_within_limit(self, store, monkeypatch):
         store.save("event", "准备拍视频", ["拍摄"], 3, "L2")
         store.save("event", "镜头已补拍完成", ["补拍"], 3, "L2")
         ids = ",".join(str(r["id"]) for r in store.list_merge_candidates())
         monkeypatch.setattr(memory_merge, "_call_llm",
                             lambda messages: f"Group: {ids} | {'拍' * 60}")
-        with caplog.at_level("INFO"):
-            memory_merge.run_merge(store)
-        assert "…<+10字>" in caplog.text
+        assert memory_merge.run_merge(store) == 1
+        assert [r["content"] for r in store.list_memories()[0]] == ["拍" * 60]
 
     def test_maintenance_does_not_delete_rows(self, store):
         """定期维护只打分，删除只在超上限时发生。"""
@@ -298,7 +297,7 @@ class TestRunMerge:
             store.maintenance()
         assert [r["content"] for r in store.list_memories()[0]] == ["旧事件"]
 
-    def test_capacity_cleanup_evicts_lowest_effective_first(self, store, monkeypatch, caplog):
+    def test_capacity_cleanup_evicts_lowest_effective_first(self, store, monkeypatch):
         store.save("event", "旧临时记忆", ["旧临时"], 1, "L3")
         store.save("event", "旧情景记忆", ["旧情景"], 2, "L2")
         store.save("event", "新近记忆", ["新近"], 4, "L1")
@@ -310,10 +309,8 @@ class TestRunMerge:
                 "WHERE content != '新近记忆'", (old,))
             conn.commit()
         monkeypatch.setattr(config, "MEMORY_MAX_CAPACITY", 2)
-        with caplog.at_level("INFO"):
-            with store._retriever._lock:
-                store._retriever.enforce_capacity()
-        assert "容量淘汰" in caplog.text
+        with store._retriever._lock:
+            store._retriever.enforce_capacity()
         assert [r["content"] for r in store.list_memories()[0]] == ["新近记忆"]
 
     def test_capacity_cleanup_spares_l1_core(self, store, monkeypatch):

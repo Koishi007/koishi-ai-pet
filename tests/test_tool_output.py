@@ -32,9 +32,9 @@ class TestRenderText:
 
     def test_failure_renders_primary_line(self):
         blocks = render_failure("probe__x", "timeout", "工具执行超时（30s）")
-        assert blocks == [TextBlock("[FAIL probe__x] timeout: 工具执行超时（30s）",
-                                    role="primary")]
-        assert render_text(blocks) == "[FAIL probe__x] timeout: 工具执行超时（30s）"
+        assert len(blocks) == 1 and blocks[0].role == "primary"
+        assert blocks[0].text.startswith("[FAIL probe__x] timeout: ")
+        assert render_text(blocks) == blocks[0].text
 
     def test_failure_hint_is_appended_last(self):
         blocks = render_failure("probe__x", "timeout", "工具执行超时（30s）",

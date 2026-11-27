@@ -389,9 +389,8 @@ system 动作表换成 `EDGE_ACTION_NAMES` 的八个贴边动作；调度器、�
 
 ### 依赖环
 
-当前无登记项。模块 import 图由 `ARCH008` 静态扫描，导入顺序由
-`tests/test_import_smoke.py` 的冷启动子进程覆盖。冻结清单与全部既有债见
-`tests/test_architecture_contracts.py` 的 allowlist（§11「ARCH 规则清单」）。
+当前无登记项。模块 import 图由 `ARCH008` 静态扫描，导入期副作用由 `ARCH009` 覆盖。
+冻结清单与全部既有债见 `tests/test_architecture_contracts.py` 的 allowlist（§11「ARCH 规则清单」）。
 
 函数内 import 大多正当（见 §11 第 15 条）；无理由的由 `ARCH002` 报出违规。
 

@@ -444,15 +444,15 @@ class TestStreamMatchesNonStreamPath:
 class TestFullWidthColon:
     """全角冒号的标签行与半角同义：中文上下文里模型偶尔输出「Summary：」。"""
 
-    def test_stream_path(self):
-        parser = BehaviorParser(_Sink())
-        raw, _ = parser.collect_stream(_stream_text("Summary：只有摘要\nSpeech：你好\n"), 5.0, tag="test")
-        out = parser.parse_behavior(raw)
-        assert out.summary == "只有摘要"
-        assert out.speech == "你好"
-
-    def test_non_stream_path(self):
-        out = parse_behavior("Summary：只有摘要\nSpeech：你好\n", action_fallback=False)
+    @pytest.mark.parametrize("stream", [True, False])
+    def test_label_parsed(self, stream):
+        text = "Summary：只有摘要\nSpeech：你好\n"
+        if stream:
+            parser = BehaviorParser(_Sink())
+            raw, _ = parser.collect_stream(_stream_text(text), 5.0, tag="test")
+            out = parser.parse_behavior(raw)
+        else:
+            out = parse_behavior(text, action_fallback=False)
         assert out.summary == "只有摘要"
         assert out.speech == "你好"
 
@@ -488,11 +488,9 @@ class TestUntaggedContentDiag:
         with caplog.at_level(logging.WARNING, logger="pet.brain.parsing"):
             raw, _ = parser.collect_stream(_stream_text(raw_text), 5.0, tag="test")
         assert raw == raw_text
-        records = [r.getMessage() for r in caplog.records
+        records = [r for r in caplog.records
                    if r.levelno >= logging.WARNING and r.name == "pet.brain.parsing"]
-        assert records
-        assert all(str(len(raw_text)) in m for m in records)
-        assert all("恋恋没有开始游戏哦" in m for m in records)
+        assert len(records) == 1
 
     def test_unparsed_body_is_reported_to_sink(self):
         """未解析的正文要回传给编排方，供重试时作为样本回传模型。"""

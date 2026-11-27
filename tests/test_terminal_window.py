@@ -421,7 +421,7 @@ class TestLocalCommand:
         text = window._view.toPlainText()
         assert ":help" in text
         assert "exit 0" in text
-        assert "本地 ·" not in text
+        assert terminal_source_label(CommandSource.USER) in text
         assert window._busy is False
 
     def test_unknown_command_skips_runner(self, window, runner):
@@ -466,7 +466,8 @@ class TestLocalCommand:
         window._input.setText(":quit")
         window._submit()
         _wait_idle(window)
-        assert "无法退出" in window._view.toPlainText()
+        assert window._phase == Phase.ERROR.value
+        assert "exit 1" in window._view.toPlainText()
 
     def test_tab_completes_command_name(self, window):
         window._input.setText(":he")

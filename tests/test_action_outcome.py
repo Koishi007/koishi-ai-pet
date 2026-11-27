@@ -14,10 +14,12 @@ class TestOutcomeRegistry:
         outcome.register("_probe", lambda: "新的")
         assert outcome.outcome_for("_probe").handler() == "新的"
 
-    def test_once_defaults_to_true(self, monkeypatch):
+    def test_register_defaults(self, monkeypatch):
         monkeypatch.setitem(outcome._OUTCOMES, "_probe", outcome.Outcome(lambda: "x"))
         outcome.register("_probe", lambda: "y")
-        assert outcome.outcome_for("_probe").once is True
+        spec = outcome.outcome_for("_probe")
+        assert spec.once is True
+        assert spec.timing == outcome.TIMING_END
 
     def test_once_can_be_disabled(self, monkeypatch):
         monkeypatch.setitem(outcome._OUTCOMES, "_probe", outcome.Outcome(lambda: "x"))
@@ -26,20 +28,13 @@ class TestOutcomeRegistry:
 
     def test_registered_actions_includes_new(self, monkeypatch):
         monkeypatch.setitem(outcome._OUTCOMES, "_probe", outcome.Outcome(lambda: ""))
+        outcome.register("_probe", lambda: "")
         assert "_probe" in outcome.registered_actions()
-
-    def test_handler_may_return_empty(self, monkeypatch):
         # 空串表示本次无产出，调用方据此跳过注入
-        monkeypatch.setitem(outcome._OUTCOMES, "_probe", outcome.Outcome(lambda: ""))
         assert not outcome.outcome_for("_probe").handler()
 
 
 class TestTiming:
-    def test_defaults_to_end(self, monkeypatch):
-        monkeypatch.setitem(outcome._OUTCOMES, "_probe", outcome.Outcome(lambda: "x"))
-        outcome.register("_probe", lambda: "y")
-        assert outcome.outcome_for("_probe").timing == outcome.TIMING_END
-
     def test_can_settle_at_action_start(self, monkeypatch):
         monkeypatch.setitem(outcome._OUTCOMES, "_probe", outcome.Outcome(lambda: "x"))
         outcome.register("_probe", lambda: "y", timing=outcome.TIMING_START)

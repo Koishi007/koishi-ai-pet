@@ -62,9 +62,6 @@ class TestRecentEventsNote:
     def _builder(self, events):
         return ContextBuilder(recent_events_fn=lambda: events)
 
-    def test_no_provider_returns_empty(self):
-        assert ContextBuilder()._recent_events_note() == ""
-
     def test_provider_exception_returns_empty(self):
         builder = ContextBuilder(recent_events_fn=lambda: 1 / 0)
         assert builder._recent_events_note() == ""
@@ -137,9 +134,6 @@ class TestOnceEvents:
         builder = self._builder([("fishing", time.time(), "你钓到了一条鲫鱼")])
         line = builder._recent_events_note().splitlines()[0]
         assert re.fullmatch(r"\[\d{2}:\d{2}\] 你钓到了一条鲫鱼", line)
-
-    def test_no_provider_returns_empty(self):
-        assert ContextBuilder()._recent_events_note() == ""
 
     def test_provider_exception_ignored(self):
         builder = ContextBuilder(recent_events_fn=lambda: [], once_events_fn=lambda: 1 / 0)

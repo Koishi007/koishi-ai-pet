@@ -69,6 +69,10 @@ class TestFormatResult:
                  for rarity in fishing.FISH_TABLE}
         assert len(set(lines.values())) == len(lines)
 
-    def test_common_has_no_exclamation(self):
-        # 占七成的寻常收获要压平语气，不能和上游档同样兴奋
-        assert "！" not in fishing.format_result((fishing.FISH_TABLE["common"][0], "common"))
+    def test_wording_intensity_follows_rarity(self):
+        # 情绪梯度逐档升高：寻常档只有补语，罕见档前后各一句
+        name = fishing.FISH_TABLE["common"][0]
+        common = fishing.format_result((name, "common"))
+        legendary = fishing.format_result((name, "legendary"))
+        assert common == f"你钓到了一条{name}，没什么特别的"
+        assert legendary.count("！") > common.count("！")

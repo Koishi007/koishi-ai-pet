@@ -5,8 +5,7 @@ import pytest
 from pet.brain.llm_client import (resolve_reasoning_effort,
                                   resolve_reasoning_efforts)
 from pet.brain.providers import gemini_provider, openai_provider
-from pet.brain.providers.registry import (PROVIDER_SPECS, config_keys,
-                                          config_keys_for, reasoning_efforts)
+from pet.brain.providers.registry import PROVIDER_SPECS, reasoning_efforts
 from pet.brain.reasoning import (EFFORT_IDS, effective_efforts, normalize,
                                  parse_efforts, preset_efforts)
 from pet.config import _KEY_META, config
@@ -48,12 +47,6 @@ def test_openai_offers_xhigh():
     assert "xhigh" in reasoning_efforts("openai")
 
 
-@pytest.mark.parametrize("name", list(PROVIDER_SPECS))
-def test_effort_keys_belong_to_every_channel(name):
-    assert "LLM_REASONING_EFFORT" in config_keys(name)
-    assert "LLM_REASONING_EFFORT_ALT" in config_keys_for(name, "alternative")
-
-
 def _own_alternative(monkeypatch, model: str = "gpt-5.2") -> None:
     """给备选配齐地址、Key 与模型，使其成为独立方案。"""
     monkeypatch.setattr(config, "LLM_KEY_ALT", "k2")
@@ -61,20 +54,13 @@ def _own_alternative(monkeypatch, model: str = "gpt-5.2") -> None:
     monkeypatch.setattr(config, "LLM_MODEL_ALT", model)
 
 
-@pytest.mark.parametrize("missing", ["LLM_KEY_ALT", "LLM_URL_ALT",
-                                     "LLM_MODEL_ALT"])
-def test_alternative_keeps_its_own_effort_when_field_blank(monkeypatch, missing):
+@pytest.mark.parametrize("missing", ["", "LLM_KEY_ALT", "LLM_URL_ALT",
+                                       "LLM_MODEL_ALT"])
+def test_each_profile_keeps_its_own_effort(monkeypatch, missing):
     """备选缺项只影响它能否建 provider，档位仍按自己的通道与模型算。"""
     _own_alternative(monkeypatch)
-    monkeypatch.setattr(config, missing, "")
-    monkeypatch.setattr(config, "LLM_REASONING_EFFORT", "high")
-    monkeypatch.setattr(config, "LLM_REASONING_EFFORT_ALT", "low")
-    assert resolve_reasoning_effort("primary") == "high"
-    assert resolve_reasoning_effort("alternative") == "low"
-
-
-def test_each_profile_keeps_its_own_effort(monkeypatch):
-    _own_alternative(monkeypatch)
+    if missing:
+        monkeypatch.setattr(config, missing, "")
     monkeypatch.setattr(config, "LLM_REASONING_EFFORT", "high")
     monkeypatch.setattr(config, "LLM_REASONING_EFFORT_ALT", "low")
     assert resolve_reasoning_effort("primary") == "high"

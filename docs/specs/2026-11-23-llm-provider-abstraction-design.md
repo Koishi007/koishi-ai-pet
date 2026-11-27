@@ -393,7 +393,7 @@ class ProviderSpec:
 | `build_provider` 的分发 | `target` |
 | 通道名归一化 | `normalize_provider()`，未知值原样返回 |
 
-**导入方向约束**：`PROVIDER_SPECS` 是字面量字典而非 dataclass 实例，因为模块级构造会被 `ARCH009` 判为导入期副作用。registry 模块级只依赖标准库：不 import `pet.config`，也不 import 具体 provider 模块（它们会连带 import SDK 与 `config`）。provider 类由 `_load()` 在首次调用时 `importlib.import_module`。这条与 `docs/architecture.md` §11 第 15 条一致：延迟 import 用于打断环或推迟重依赖，这里两者兼有。`tests/test_architecture_contracts.py` 的 `ARCH008`、`ARCH009` 与 `tests/test_import_smoke.py` 覆盖。
+**导入方向约束**：`PROVIDER_SPECS` 是字面量字典而非 dataclass 实例，因为模块级构造会被 `ARCH009` 判为导入期副作用。registry 模块级只依赖标准库：不 import `pet.config`，也不 import 具体 provider 模块（它们会连带 import SDK 与 `config`）。provider 类由 `_load()` 在首次调用时 `importlib.import_module`。这条与 `docs/architecture.md` §11 第 15 条一致：延迟 import 用于打断环或推迟重依赖，这里两者兼有。`tests/test_architecture_contracts.py` 的 `ARCH008`、`ARCH009` 覆盖。
 
 因此配置面存在两处登记，各管一件事：`_KEY_META` 是配置项真源（类型、默认值、描述），`PROVIDER_SPECS` 只管「哪个通道读哪些键」。两张表的一致性由 `tests/test_provider_registry.py` 守住，不靠评审。
 
