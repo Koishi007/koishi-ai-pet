@@ -13,7 +13,7 @@ from pet.ui.edge_dock import edge_mask_rect
 
 TAIL_HEIGHT = 13
 
-_TAIL_HALF_W = 9    # 尾巴的根部半宽
+_TAIL_HALF_W = 6    # 尾巴的根部半宽
 _TAIL_ROOT = 4      # 尾根压进本体的深度
 _SHADOW = (2, 3)    # 零模糊墨影
 _BADGE_LIFT = 9     # 顶部为第三只眼徽章让出的高度
@@ -126,10 +126,8 @@ class SpeechBubble(QLabel):
         tip_y = h - dy
         tail = QPainterPath()
         tail.moveTo(cx - _TAIL_HALF_W, root_y)
-        tail.cubicTo(cx - _TAIL_HALF_W - 6, root_y + 4,
-                     cx - 4, tip_y - 4, cx, tip_y)
-        tail.cubicTo(cx + 4, tip_y - 4,
-                     cx + _TAIL_HALF_W + 6, root_y + 4, cx + _TAIL_HALF_W, root_y)
+        tail.lineTo(cx, tip_y)
+        tail.lineTo(cx + _TAIL_HALF_W, root_y)
         tail.closeSubpath()
         return path.united(tail)
 
