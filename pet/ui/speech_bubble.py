@@ -20,11 +20,12 @@ _BADGE_LIFT = 9     # 顶部为第三只眼徽章让出的高度
 _BADGE_R = 7.5      # 徽章半径
 
 _ROSE_PATH = Path(__file__).resolve().parent.parent.parent / "assets" / "icon" / "rose.webp"
-_ROSE_SIZE = 25     # 蔷薇显示边长
-_ROSE_INSET = 8     # 蔷薇距气泡右下角
-_ROSE_GAP = 6       # 文字与蔷薇的间距
+_ROSE_SIZE = 20     # 蔷薇显示边长
+_ROSE_INSET = 4     # 花心从气泡右下角内收
 _ROSE_DROP = (2, 2)  # 蔷薇的零模糊墨影
-_PAD_RIGHT = 1 + _SHADOW[0] + _ROSE_INSET + _ROSE_SIZE + _ROSE_GAP
+_ROSE_LIP = _ROSE_SIZE // 2 - _ROSE_INSET + _ROSE_DROP[0]  # 蔷薇探出边框的宽度
+_ROSE_GAP = 6       # 文字与蔷薇的间距
+_PAD_RIGHT = 1 + _SHADOW[0] + _ROSE_LIP + _ROSE_GAP
 _PAD_LEFT = 10
 _PAD_TOP = 10 + _BADGE_LIFT           # 顶部留徽章位
 _PAD_BOTTOM = 10 + TAIL_HEIGHT + _SHADOW[1]
@@ -43,7 +44,7 @@ class SpeechBubble(QLabel):
             | Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        # 顶部留徽章位，右侧留蔷薇位：正文不进右下角
+        # 顶部留徽章位、右下留蔷薇位：正文不进边角
         self.setStyleSheet(
             f"padding: {_PAD_TOP}px {_PAD_RIGHT}px {_PAD_BOTTOM}px {_PAD_LEFT}px;"
             f"font-size: {config.BUBBLE_FONT_SIZE}px;"
@@ -98,16 +99,23 @@ class SpeechBubble(QLabel):
 
         self._paint_paper(painter, bubble)
         self._paint_eye_badge(painter)
+        self._paint_rose(painter)
 
         painter.end()
         super().paintEvent(event)
-        self._paint_rose()
+
+    def _body_rect(self) -> QRectF:
+        """气泡本体矩形：右下角留出蔷薇探出边框的宽度。"""
+        w, h = self.width(), self.height()
+        dx, dy = _SHADOW
+        return QRectF(1, _BADGE_LIFT, w - 2 - dx - _ROSE_LIP,
+                      h - TAIL_HEIGHT - dy - _BADGE_LIFT)
 
     def _bubble_path(self) -> QPainterPath:
         """气泡轮廓：圆角本体 + 尾巴，尾根压进本体后取并集。"""
-        w, h = self.width(), self.height()
-        dx, dy = _SHADOW
-        body = QRectF(1, _BADGE_LIFT, w - 2 - dx, h - TAIL_HEIGHT - dy - _BADGE_LIFT)
+        h = self.height()
+        dy = _SHADOW[1]
+        body = self._body_rect()
         path = QPainterPath()
         path.addRoundedRect(body, theme.RADIUS_LG, theme.RADIUS_LG)
 
@@ -171,20 +179,17 @@ class SpeechBubble(QLabel):
         painter.drawLine(QPointF(cx + 4.6, cy - 0.4), QPointF(cx + 5.8, cy + 1.4))
         painter.restore()
 
-    def _paint_rose(self) -> None:
-        """右下角的绿黑蔷薇：墨色剪影垫底，贴图压在上面。"""
+    def _paint_rose(self, painter: QPainter) -> None:
+        """右下角骑边的绿黑蔷薇：墨色剪影垫底，贴图压在上面。"""
         images = self._rose_images()
         if images is None:
             return
         rose, shadow = images
-        right = self.width() - 1 - _SHADOW[0] - _ROSE_INSET
-        bottom = self.height() - TAIL_HEIGHT - _SHADOW[1] - _ROSE_INSET
-        x = round(right - _ROSE_SIZE)
-        y = round(bottom - _ROSE_SIZE)
-        painter = QPainter(self)
+        body = self._body_rect()
+        x = round(body.right() - _ROSE_INSET - _ROSE_SIZE / 2)
+        y = round(body.bottom() - _ROSE_INSET - _ROSE_SIZE / 2)
         painter.drawPixmap(QPoint(x + _ROSE_DROP[0], y + _ROSE_DROP[1]), shadow)
         painter.drawPixmap(QPoint(x, y), rose)
-        painter.end()
 
     def _rose_images(self) -> tuple[QPixmap, QPixmap] | None:
         """按当前 DPR 缩放蔷薇与墨色剪影；换屏导致 DPR 变化时重建。"""
