@@ -14,11 +14,12 @@ from pet.config import _KEY_META
 from pet import theme
 from pet.ui.icons import tinted_icon
 from pet.ui.ink_button import InkButton
-from pet.ui.qss import HELP_BADGE_QSS, VOLUME_SLIDER_QSS
+from pet.ui.qss import HELP_BADGE_QSS
 from pet.ui.settings_spec import display_value, stored_value
 from pet.ui.styles import (BUTTON_PRIMARY_QSS, COMBOBOX_QSS, HIDE_ICON_PATH,
                            INPUT_HIGHLIGHT_QSS, SHOW_ICON_PATH, _COLOR_TEXT_SEC)
 from pet.ui.widgets import NoWheelComboBox
+from pet.ui.volume_slider import VolumeSlider
 
 
 class MarkdownEdit(QWidget):
@@ -213,11 +214,8 @@ class SettingsForm:
         row = QHBoxLayout(holder)
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(8)
-        slider = QSlider(Qt.Orientation.Horizontal)
+        slider = VolumeSlider()
         slider.setRange(minimum, maximum)
-        slider.setStyleSheet(VOLUME_SLIDER_QSS)
-        # QSlider 的 sizeHint 固定为 15px，圆形滑块需要额外高度才不被裁
-        slider.setMinimumHeight(20)
         value_label = QLabel(str(slider.value()))
         value_label.setFixedWidth(28)
         value_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)

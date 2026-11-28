@@ -314,6 +314,6 @@ def tinted_icon(path: str, color: str, size: int = 28) -> QIcon:
 | 气泡按钮 | 38px 圆钮 | 32px | 行距常量按 40px 节拍，贴边翻列按此计算 |
 | 悬停提示 | 带 45° 小三角 | 墨底圆角块，无箭头 | QSS 不支持伪元素 |
 | 标本开关与虚线按钮 | Switch、ghost 虚线按钮 | 不实现 | 界面无消费方，控件不因换肤增删 |
-| 进度条斜纹 | 斜纹填充 | 音量条用双色斜向渐变近似 | QSS 没有重复渐变，不做贴图 |
+| 进度条斜纹 | 斜纹填充 | 音量滑块自绘 45 度斜带 | QSS 没有重复渐变；`VolumeSlider` 只让 QSS 提供几何，凹槽与斜纹在 `paintEvent` 里画 |
 
 验证结果：全仓十六进制色值只剩 `theme.py` 与系统托盘图标的白色绘制；新增 `tests/test_ui_theme.py` 六条护栏；`tests/test_ui_*.py`、设置、确认卡、终端、托盘、像素画窗口等 UI 测试全部通过。

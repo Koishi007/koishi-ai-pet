@@ -191,15 +191,16 @@
 | `pet/ui/terminal_window.py` | 终端窗口：装配回显视图、输入控制器、状态点与执行线程的信号桥。 | `resolve_initial_cwd()` `cd_target()` `drive_target()` `_WindowControl` `_Combo` `TerminalWindow` |
 | `pet/ui/tic_tac_toe_panel.py` | 井字棋棋盘面板 — 继承 GamePanelBase，负责棋盘渲染与点击落子。 | `TicTacToePanel` |
 | `pet/ui/twenty_questions_panel.py` | 二十问面板 — 桌宠提问猜东西，用户在面板点击"是/否/不确定"作答， | `TwentyQuestionsPanel` |
+| `pet/ui/volume_slider.py` | 音量滑块：45 度黄绿斜纹填充。 | `VolumeSlider` |
 | `pet/ui/widgets.py` | 通用控件。 | `NoWheelComboBox` `make_icon_badge()` |
 | `pet/version_check.py` | 启动时版本检查 | `get_local_version()` `_CheckWorker` `UpdateChecker` |
 | `pet/version_utils.py` | 版本号解析与比较的纯逻辑。 | `strip_v()` `ver_newer()` |
-| `pet/voice/__init__.py` | 语音层 — 全局热键、麦克风采集与讯飞听写编排。 |  |
-| `pet/voice/animalese.py` | 波形合成：音节序列 → 22.05 kHz 单声道 int16 PCM。 | `render()` |
+| `pet/voice/__init__.py` | 语音层 — 输入方向：全局热键、麦克风采集与讯飞听写；输出方向：音节切分与波形合成。 |  |
 | `pet/voice/hotkey_manager.py` | 全局热键管理器，使用 pynput 监听按键。 | `HotkeyManager` |
 | `pet/voice/mic_capture.py` | 麦克风 PCM 采集模块 | `MicCapture` |
-| `pet/voice/phoneme.py` | 音节切分：台词文本 → 音节序列，音高只由字符决定，音区由预设给出。 | `Syllable` `normalize_preset()` `syllable_duration()` `split()` |
+| `pet/voice/syllable.py` | 音节切分：台词文本 → 音节序列，音高与口型只由字符决定，音区由预设给出。 | `Syllable` `normalize_preset()` `syllable_duration()` `Tone` `tone_of()` `split()` |
 | `pet/voice/voice_session.py` | 语音会话编排：麦克风采集 → 讯飞识别 | `VoiceSession` |
+| `pet/voice/waveform.py` | 波形合成：音节序列 → 22.05 kHz 单声道 int16 PCM。 | `mtof()` `render()` |
 | `pet/voice/xunfei_stt.py` | 讯飞语音听写 (iat) WebSocket API 封装 | `XunfeiSTT` |
 
-共 194 个模块。
+共 195 个模块。

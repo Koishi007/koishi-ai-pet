@@ -68,7 +68,7 @@ class SpeechBubble(QLabel):
         self._stream_ending = False
         self._type_timer = QTimer(self)
         self._type_timer.timeout.connect(self._type_next_char)
-        self._type_interval = 35
+        self._type_interval = 60
         self._end_stream_duration = 5000
 
         self._gap_timer = QTimer(self)  # 过渡期也算占用，防止新句子误判气泡空闲

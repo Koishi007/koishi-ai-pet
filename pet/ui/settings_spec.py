@@ -34,12 +34,10 @@ def effort_label(value: str) -> str:
     return ""
 
 
-# 语音音高预设：(显示文案, 存储值)。存储值即 pet/voice/phoneme.py 的 PRESETS 键
+# 语音音高预设：(显示文案, 存储值)。存储值即 pet/voice/syllable.py 的 PRESETS 键
 VOICE_PRESET_CHOICES: tuple[tuple[str, str], ...] = (
     ("低沉 (deep)", "deep"),
     ("柔和 (soft)", "soft"),
-    ("明亮 (bright)", "bright"),
-    ("清脆 (clear)", "clear"),
 )
 
 

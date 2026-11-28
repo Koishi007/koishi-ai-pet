@@ -95,8 +95,8 @@
 | `XF_API_KEY` | str | `""` |  | 讯飞语音听写 API Key |
 | `XF_API_SECRET` | str | `""` |  | 讯飞语音听写 API Secret |
 | `VOICE_OUTPUT_ENABLED` | bool | false |  | 允许发出声音 |
-| `VOICE_OUTPUT_PRESET` | str | `"soft"` |  | 语音音高预设（可选：deep / soft / bright / clear） |
-| `VOICE_OUTPUT_VOLUME` | int | 60 |  | 语音音量（≥0, ≤100） |
+| `VOICE_OUTPUT_PRESET` | str | `"soft"` |  | 语音音高预设（可选：deep / soft） |
+| `VOICE_OUTPUT_VOLUME` | int | 10 |  | 语音音量（≥0, ≤100） |
 
 ## 未在设置界面列出的键
 

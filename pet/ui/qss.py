@@ -645,43 +645,21 @@ QProgressBar::chunk {{
 """
 
 
-# 斜纹填充：QSS 没有重复渐变，按比例铺交替色带。槽是宽而扁的，横向归一化后
-# 斜向会被压成近似水平，故 x2 取很小的值，让条纹在真实像素里接近 45 度；
-# 条数过密会被抗锯齿平均成纯色，5 条是能看出条纹的上限。
-_VOLUME_FILL = (
-    "qlineargradient(x1:0, y1:0, x2:0.05, y2:1, "
-    f"stop:0.0000 {theme.ACCENT}, stop:0.2000 {theme.ACCENT}, "
-    f"stop:0.2000 {theme.ACCENT_DEEP}, stop:0.4000 {theme.ACCENT_DEEP}, "
-    f"stop:0.4000 {theme.ACCENT}, stop:0.6000 {theme.ACCENT}, "
-    f"stop:0.6000 {theme.ACCENT_DEEP}, stop:0.8000 {theme.ACCENT_DEEP}, "
-    f"stop:0.8000 {theme.ACCENT}, stop:1.0000 {theme.ACCENT})"
-)
-
-# 音量滑块：墨色凹槽 + 黄绿斜纹填充 + 圆形滑块，与 MUSIC_VOLUME_BAR_QSS 同一套语言
-VOLUME_SLIDER_QSS = f"""
+# 音量滑块：QSS 只给几何，凹槽与填充由 VolumeSlider.paintEvent 绘制。
+# 轨道两端各留半个滑块宽，滑块行程因此与轨道端点重合，两端都能贴到边缘且滑块不被裁。
+SLIDER_METRICS_QSS = f"""
 QSlider::groove:horizontal {{
-    height: 8px;
-    background: {theme.PAPER_DEEP};
-    border: {theme.BORDER}px solid {theme.INK};
-    border-radius: 4px;
-}}
-QSlider::sub-page:horizontal {{
-    border-radius: 3px;
-    background: {_VOLUME_FILL};
+    height: 12px;
+    margin: 0 7px;
+    background: transparent;
+    border: 0;
 }}
 QSlider::handle:horizontal {{
-    width: 12px;
-    height: 12px;
-    margin: -2px 0;
-    background: {theme.SURFACE_WARM};
-    border: {theme.BORDER}px solid {theme.INK};
-    border-radius: 6px;
-}}
-QSlider::handle:horizontal:hover {{
-    background: {theme.ACCENT_SOFT};
-}}
-QSlider::handle:horizontal:disabled {{
-    background: {theme.PAPER_DEEP};
+    width: 14px;
+    height: 14px;
+    margin: -1px 0;
+    background: transparent;
+    border: 0;
 }}
 """
 

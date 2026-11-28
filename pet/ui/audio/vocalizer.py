@@ -3,19 +3,27 @@
 import logging
 
 from pet.config import config
-from pet.voice import animalese, phoneme
+from pet.voice import syllable, waveform
 from pet.ui.audio.audio_out import AudioOut
 
 logger = logging.getLogger(__name__)
 
+_ASK_CHARS = tuple(syllable.ASK_CHARS)
+_SHOUT_CHARS = tuple(syllable.SHOUT_CHARS)
+
 
 class Vocalizer:
-    """静音态只存内存：初值取自「允许发出声音」，设置改了跟着变，右键菜单可覆盖。"""
+    """静音态只存内存：初值取自「允许发出声音」，设置改了跟着变，右键菜单可覆盖。
+
+    语气状态跨 speak() 调用保留，clear() 复位。
+    """
 
     def __init__(self, audio: AudioOut | None = None):
         self._audio = audio if audio is not None else AudioOut(True)
         self._enabled_seen = config.VOICE_OUTPUT_ENABLED
         self._muted = not self._enabled_seen
+        self._shift = 0
+        self._applied = syllable.Tone()
 
     @property
     def audio(self) -> AudioOut:
@@ -25,6 +33,11 @@ class Vocalizer:
     def muted(self) -> bool:
         self._sync_from_config()
         return self._muted
+
+    @property
+    def tone(self) -> syllable.Tone:
+        """最近一次实际用于合成的语气，供用例断言。"""
+        return self._applied
 
     def _sync_from_config(self) -> None:
         """设置页改了「允许发出声音」时，内存静音态跟着改。"""
@@ -45,6 +58,20 @@ class Vocalizer:
             self._audio.clear()
         logger.info(f"[Vocalizer] muted={self._muted}")
 
+    def _track_tone(self, text: str) -> syllable.Tone:
+        """按本字符携带的标点给出语气；整段升降跨字符累积，句尾滑音不累积。"""
+        stripped = text.rstrip()
+        if any(char in text for char in _SHOUT_CHARS):
+            self._shift = syllable.SHOUT_SHIFT
+        elif stripped.endswith(syllable.ELLIPSIS_MARKS):
+            self._shift = syllable.SAD_SHIFT
+        glide = 0
+        if stripped.endswith(_ASK_CHARS):
+            glide = syllable.ASK_GLIDE
+        elif stripped.endswith(syllable.ELLIPSIS_MARKS):
+            glide = syllable.SAD_GLIDE
+        return syllable.Tone(self._shift, glide)
+
     def speak(self, text: str) -> None:
         """合成并播放一段文本；静音时清空已排队的音节。"""
         self._sync_from_config()
@@ -54,18 +81,25 @@ class Vocalizer:
         if not text:
             return
         try:
-            syllables = phoneme.split(text, config.VOICE_OUTPUT_PRESET)
+            tone = self._track_tone(text)
+            self._applied = tone
+            syllables = syllable.split(text, config.VOICE_OUTPUT_PRESET, tone=tone)
             if not syllables:
                 return
-            pcm = animalese.render(syllables, config.VOICE_OUTPUT_VOLUME / 100)
+            pcm = waveform.render(syllables, config.VOICE_OUTPUT_VOLUME / 100)
         except Exception:
             logger.exception("语音合成失败，跳过本次发声")
             return
         self._audio.feed(pcm)
 
     def clear(self) -> None:
-        """作废已排队的音节。"""
+        """作废已排队的音节，并复位本段语气。"""
+        self._reset_tone()
         self._audio.clear()
+
+    def _reset_tone(self) -> None:
+        self._shift = 0
+        self._applied = syllable.Tone()
 
     def shutdown(self) -> None:
         self._audio.shutdown()

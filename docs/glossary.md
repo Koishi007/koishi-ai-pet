@@ -87,7 +87,8 @@
 | **命令放行策略** | `TERMINAL_MODE` 三档：`deny` / `ask` / `auto`，决定模型发起的命令是否弹确认卡片 | `pet/terminal/policy.py` |
 | **确认卡片** | 模型命令执行前的确认弹窗，可拖动，默认出现在恋恋侧面 | `pet/ui/confirm_card.py` |
 | **工作目录根** | 终端初始目录与模型命令的沙箱范围；用户 `cd` 后随之变化 | `pet/terminal/policy.py` |
-| **语音输出** | 台词逐字合成音节后播出；不发音模型，无素材文件 | `pet/ui/audio/vocalizer.py`、[设计](specs/2026-11-27-vocalization-design.md) |
-| **音节（syllable）** | 一次发声单位：基频、时长、是否发声。汉字按码点哈希定音高，标点是不发声的停顿 | `pet/voice/phoneme.py` |
-| **音高预设** | `VOICE_OUTPUT_PRESET` 四档 `deep` / `soft` / `bright` / `clear`，各自一段基频区间 | `pet/voice/phoneme.py` |
+| **语音输出** | 台词逐字合成音节后播出；不发音模型，无素材文件 | `pet/ui/audio/vocalizer.py`、[设计](specs/2026-11-28-bibibobo-vocalization-design.md) |
+| **音节（syllable）** | 一次发声单位：MIDI 音高、时长、口型序号、是否发声。汉字按码点哈希定音高，标点是不发声的停顿 | `pet/voice/syllable.py` |
+| **口型（vowel）** | 一对共振峰频率，决定音节听起来像哪个元音。五种口型，由字符哈希选定，同一个字口型固定 | `pet/voice/waveform.py` |
+| **音高预设** | `VOICE_OUTPUT_PRESET` 两档 `deep` / `soft`，各自一段半音偏移加五声音阶 | `pet/voice/syllable.py` |
 | **播放通道（AudioOut）** | 常驻 `QAudioSink` 空闲挂起，发声前恢复；sink 只在工作线程创建 | `pet/ui/audio/audio_out.py` |

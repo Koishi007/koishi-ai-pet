@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 SAMPLE_RATE = 22050
 _BUFFER_BYTES = SAMPLE_RATE  # 0.5 秒缓冲
-_MAX_QUEUED_SECONDS = 0.5    # 积压上限，超过则跳过本次喂入
+_MAX_QUEUED_SECONDS = 3.0    # 积压上限，超过则跳过本次喂入
 
 
 class _Feeder(QIODevice):

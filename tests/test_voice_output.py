@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 from PySide6.QtWidgets import QApplication
 
-from pet.voice import animalese, phoneme
+from pet.voice import syllable, waveform
 from pet.ui.audio.audio_out import AudioOut, _Feeder
 
 
@@ -17,107 +17,150 @@ def qt_app():
 
 
 class TestPresets:
-    def test_all_four_presets_present(self):
-        assert set(phoneme.PRESETS) == {"deep", "soft", "bright", "clear"}
+    def test_presets_present(self):
+        assert set(syllable.PRESETS) == {"deep", "soft"}
 
-    def test_ranges_are_ordered(self):
-        for preset_id, (low, high) in phoneme.PRESETS.items():
-            assert low < high, preset_id
+    def test_presets_are_ordered_by_shift(self):
+        shifts = [syllable.PRESETS[key][0] for key in ("deep", "soft")]
+        assert shifts == sorted(shifts)
 
     def test_default_is_in_table(self):
-        assert phoneme.DEFAULT_PRESET in phoneme.PRESETS
+        assert syllable.DEFAULT_PRESET in syllable.PRESETS
 
     def test_config_enum_matches_presets(self):
         from pet.config import _KEY_META
-        assert set(_KEY_META["VOICE_OUTPUT_PRESET"]["enum"]) == set(phoneme.PRESETS)
+        assert set(_KEY_META["VOICE_OUTPUT_PRESET"]["enum"]) == set(syllable.PRESETS)
 
     def test_unknown_value_falls_back_to_default(self):
-        assert phoneme.normalize_preset("nope") == phoneme.DEFAULT_PRESET
-        assert phoneme.normalize_preset(None) == phoneme.DEFAULT_PRESET
-        assert phoneme.normalize_preset("  SOFT ") == "soft"
+        assert syllable.normalize_preset("nope") == syllable.DEFAULT_PRESET
+        assert syllable.normalize_preset(None) == syllable.DEFAULT_PRESET
+        assert syllable.normalize_preset("  SOFT ") == "soft"
 
 
 class TestSplit:
-    def test_pitch_is_stable(self):
-        first = [s.pitch for s in phoneme.split("找到你啦")]
+    def test_degree_is_stable(self):
+        first = [s.degree for s in syllable.split("找到你啦")]
         for _ in range(3):
-            assert [s.pitch for s in phoneme.split("找到你啦")] == first
+            assert [s.degree for s in syllable.split("找到你啦")] == first
 
     def test_different_chars_differ(self):
-        pitches = {round(s.pitch) for s in phoneme.split("找到你啦")}
-        assert len(pitches) > 1
+        degrees = {s.degree for s in syllable.split("找到你啦")}
+        assert len(degrees) > 1
 
-    def test_preset_changes_pitch_within_range(self):
-        chars = "找到你啦"
-        for preset_id, (low, high) in phoneme.PRESETS.items():
-            syllables = phoneme.split(chars, preset=preset_id)
-            assert len(syllables) == len(chars)
-            for syllable in syllables:
-                assert low <= syllable.pitch <= high
+    def test_degree_comes_from_preset_scale(self):
+        for preset_id, (shift, scale) in syllable.PRESETS.items():
+            for item in syllable.split("找到你啦", preset=preset_id):
+                assert item.degree in {d + shift for d in scale}
 
-    def test_preset_changes_actual_values(self):
+    def test_preset_shifts_degree(self):
         char = "找"
-        values = {round(phoneme.split(char, preset=p)[0].pitch) for p in phoneme.PRESETS}
-        assert len(values) == len(phoneme.PRESETS)
+        deep = syllable.split(char, preset="deep")[0].degree
+        soft = syllable.split(char, preset="soft")[0].degree
+        shift = (syllable.PRESETS["soft"][0] - syllable.PRESETS["deep"][0])
+        assert soft - deep == shift
+
+    def test_vowel_is_stable_and_in_range(self):
+        first = [s.vowel for s in syllable.split("找到你啦")]
+        for _ in range(3):
+            assert [s.vowel for s in syllable.split("找到你啦")] == first
+        assert all(0 <= v < 5 for v in first)
+
+    def test_vowels_cover_more_than_one(self):
+        vowels = {s.vowel for s in syllable.split("今天天气不错呢")}
+        assert len(vowels) > 1
 
     def test_punctuation_is_unvoiced_pause(self):
-        syllables = phoneme.split("好，吗")
+        syllables = syllable.split("好，吗")
         assert len(syllables) == 3
         assert syllables[1].voiced is False
-        assert syllables[1].pitch == 0.0
         assert syllables[1].duration > syllables[0].duration
 
     def test_blank_and_space_are_skipped(self):
-        assert len(phoneme.split("  ")) == 0
-        assert len(phoneme.split("a b")) == 2
-        assert len(phoneme.split("")) == 0
+        assert len(syllable.split("  ")) == 0
+        assert len(syllable.split("a b")) == 2
+        assert len(syllable.split("")) == 0
 
-    def test_duration_clamped(self):
-        assert phoneme.syllable_duration(1) == pytest.approx(0.030)
-        assert phoneme.syllable_duration(9999) == pytest.approx(0.060)
+    def test_duration_is_fixed(self):
+        """音节时长与打字间隔无关，是合成器的固有节奏。"""
+        assert syllable.syllable_duration() == pytest.approx(0.110)
 
-    def test_duration_tracks_typing_interval(self):
-        slow = phoneme.split("找", type_interval_ms=50)[0].duration
-        fast = phoneme.split("找", type_interval_ms=34)[0].duration
-        assert slow > fast
+    def test_syllable_duration_independent_of_typing(self):
+        assert syllable.split("找")[0].duration == pytest.approx(0.110)
+
+    def test_pause_is_twice_the_syllable(self):
+        pauses = [s for s in syllable.split("好，吗") if not s.voiced]
+        assert pauses[0].duration == pytest.approx(0.220)
+
+
+class TestTone:
+    def test_plain_text_has_no_tone(self):
+        assert syllable.tone_of("走吧") == syllable.Tone(0, 0)
+
+    def test_exclamation_lifts_whole_clause(self):
+        assert syllable.tone_of("走吧！").shift == syllable.SHOUT_SHIFT
+
+    def test_question_glides_tail(self):
+        assert syllable.tone_of("走吗？").glide == syllable.ASK_GLIDE
+
+    def test_ellipsis_lowers_and_falls(self):
+        tone = syllable.tone_of("走吧……")
+        assert tone.shift == syllable.SAD_SHIFT
+        assert tone.glide == syllable.SAD_GLIDE
+
+    def test_shift_applies_to_every_syllable(self):
+        plain = [s.degree for s in syllable.split("走吧") if s.voiced]
+        lifted = [s.degree for s in syllable.split("走吧！") if s.voiced]
+        assert [d - syllable.SHOUT_SHIFT for d in lifted] == plain
+
+    def test_glide_lands_on_last_voiced_syllable(self):
+        syllables = syllable.split("走吗？")
+        voiced = [s for s in syllables if s.voiced]
+        plain = [s for s in syllable.split("走吗") if s.voiced]
+        assert voiced[-1].degree - plain[-1].degree == syllable.ASK_GLIDE
+        assert voiced[0].degree == plain[0].degree
+
+    def test_explicit_tone_overrides_text(self):
+        syllables = syllable.split("走吧", tone=syllable.Tone(3, 0))
+        assert syllables[0].degree == syllable.split("走吧")[0].degree + 3
 
 
 class TestRender:
     def test_length_matches_duration(self):
-        syllables = phoneme.split("找到你啦")
-        pcm = animalese.render(syllables, 0.5)
-        expected = int(sum(s.duration for s in syllables) * animalese.SAMPLE_RATE)
+        syllables = syllable.split("找到你啦")
+        pcm = waveform.render(syllables, 0.5)
+        expected = int(sum(s.duration for s in syllables) * waveform.SAMPLE_RATE)
         assert len(pcm) == pytest.approx(expected * 2, abs=8)
 
     def test_int16_and_peak_within_range(self):
-        pcm = animalese.render(phoneme.split("找到你啦"), 1.0)
+        pcm = waveform.render(syllable.split("找到你啦"), 1.0)
         samples = np.frombuffer(pcm, dtype=np.int16)
         assert samples.dtype == np.int16
         assert int(np.abs(samples).max()) <= 32767
 
     def test_silence_syllable_is_zero(self):
-        pcm = animalese.render([phoneme.Syllable(0.0, 0.05, False)], 1.0)
+        pcm = waveform.render([syllable.Syllable(0, 0.05, 0, False)], 1.0)
         assert not np.frombuffer(pcm, dtype=np.int16).any()
 
     def test_volume_zero_is_silent(self):
-        pcm = animalese.render(phoneme.split("找到你啦"), 0.0)
+        pcm = waveform.render(syllable.split("找到你啦"), 0.0)
         assert not np.frombuffer(pcm, dtype=np.int16).any()
 
     def test_volume_scales_peak(self):
-        syllables = phoneme.split("找")
-        low = int(np.abs(np.frombuffer(animalese.render(syllables, 0.3), dtype=np.int16)).max())
-        high = int(np.abs(np.frombuffer(animalese.render(syllables, 0.6), dtype=np.int16)).max())
+        syllables = syllable.split("找")
+        waveform.render(syllables, 0.5)
+        low = int(np.abs(np.frombuffer(waveform.render(syllables, 0.3), dtype=np.int16)).max())
+        high = int(np.abs(np.frombuffer(waveform.render(syllables, 0.6), dtype=np.int16)).max())
         assert high == pytest.approx(low * 2, rel=0.05)
 
     def test_fade_in_and_out(self):
-        pcm = animalese.render([phoneme.Syllable(400.0, 0.05, True)], 1.0)
+        pcm = waveform.render([syllable.Syllable(69, 0.05, 0, True)], 1.0)
         samples = np.frombuffer(pcm, dtype=np.int16)
-        assert abs(int(samples[0])) < 200
-        assert abs(int(samples[-1])) < 200
+        assert abs(int(samples[0])) < 1000
+        assert abs(int(samples[-1])) < 1000
         assert int(np.abs(samples).max()) > 20000
 
     def test_empty_input(self):
-        assert animalese.render([], 1.0) == b""
+        assert waveform.render([], 1.0) == b""
 
 
 class TestFeeder:
@@ -181,7 +224,106 @@ class TestVocalizer:
         vocalizer = self._make()
         vocalizer.speak("找")
         assert vocalizer.audio.fed == []
-        assert vocalizer.audio.cleared == 1
+        assert vocalizer.audio.cleared >= 1
+
+
+class TestVocalizerTone:
+    """逐字发声时语气跨字符累积，段落结束或作废时复位。"""
+
+    def _make(self, monkeypatch):
+        from pet.config import config
+        from pet.ui.audio.vocalizer import Vocalizer
+        monkeypatch.setattr(config, "VOICE_OUTPUT_ENABLED", True)
+        monkeypatch.setattr(config, "VOICE_OUTPUT_PRESET", "soft")
+        return Vocalizer(audio=_RecordingAudioOut())
+
+    def test_shift_persists_across_chars(self, monkeypatch):
+        vocalizer = self._make(monkeypatch)
+        vocalizer.speak("走")
+        vocalizer.speak("！")
+        assert vocalizer.tone.shift == syllable.SHOUT_SHIFT
+
+    def test_tail_glide_lands_when_text_carries_its_own_question(self, monkeypatch):
+        """整段送来时滑音落在末个发声音节；逐字送来时问号是停顿，无处可落。"""
+        vocalizer = self._make(monkeypatch)
+        vocalizer.speak("吗？")
+        assert vocalizer.tone.glide == syllable.ASK_GLIDE
+
+        whole = syllable.split("吗？")
+        voiced = [s for s in whole if s.voiced]
+        plain = [s for s in syllable.split("吗") if s.voiced]
+        assert voiced[-1].degree - plain[-1].degree == syllable.ASK_GLIDE
+
+    def test_tail_glide_does_not_leak_to_next_char(self, monkeypatch):
+        """问号单独到达后，下一个字不带滑音。"""
+        vocalizer = self._make(monkeypatch)
+        vocalizer.speak("吗")
+        vocalizer.speak("？")
+        vocalizer.speak("好")
+        assert vocalizer.tone.glide == 0
+
+    def test_clear_resets_tone(self, monkeypatch):
+        vocalizer = self._make(monkeypatch)
+        vocalizer.speak("！")
+        assert vocalizer.tone.shift != 0
+        vocalizer.clear()
+        assert vocalizer.tone == syllable.Tone(0, 0)
+
+    def test_ellipsis_lowers_across_chars(self, monkeypatch):
+        vocalizer = self._make(monkeypatch)
+        vocalizer.speak("走")
+        vocalizer.speak("…")
+        vocalizer.speak("…")
+        assert vocalizer.tone.shift == syllable.SAD_SHIFT
+
+    def test_new_clause_after_plain_text_keeps_no_tone(self, monkeypatch):
+        vocalizer = self._make(monkeypatch)
+        vocalizer.speak("好")
+        assert vocalizer.tone == syllable.Tone(0, 0)
+
+
+class TestSynthQuality:
+    """合成器的声学契约：谐波止于奈奎斯特、口型由共振峰塑造。"""
+
+    def test_harmonics_stay_below_nyquist(self):
+        """最高谐波不超过采样率的 45%，不会折叠回可听频段。"""
+        from pet.voice.waveform import (_MAX_HARMONICS, _NYQUIST_GUARD,
+                                        SAMPLE_RATE, mtof)
+
+        for degree in (55, 58, 60, 62, 65):
+            top = mtof(degree) * _MAX_HARMONICS
+            assert top > SAMPLE_RATE * _NYQUIST_GUARD, degree
+
+    def test_formant_gain_decays_toward_upper_formants(self):
+        """共振峰权重逐级递减：F1 最强，越往上越弱。"""
+        from pet.voice.waveform import VOWELS, _formant_gain
+
+        for vowel, centers in enumerate(VOWELS):
+            gains = [_formant_gain(center, vowel) for center in centers]
+            assert gains[0] > gains[1] > gains[2] > gains[4], (vowel, gains)
+
+    def test_lower_formants_dominate_energy(self):
+        """能量集中在前两个共振峰，符合人声的频谱分布。"""
+        from pet.voice.waveform import VOWELS, _formant_gain
+
+        for vowel, centers in enumerate(VOWELS):
+            low = _formant_gain(centers[0], vowel) + _formant_gain(centers[1], vowel)
+            high = sum(_formant_gain(center, vowel) for center in centers[2:])
+            assert low > high * 1.5, (vowel, low, high)
+
+    def test_vowel_changes_spectrum(self):
+        """不同口型产出不同频谱，口型维度真实存在。"""
+        from pet.voice.waveform import SAMPLE_RATE
+
+        def spectrum(vowel: int) -> np.ndarray:
+            pcm = waveform.render([syllable.Syllable(57, 0.2, vowel, True)], 1.0)
+            samples = np.frombuffer(pcm, dtype=np.int16).astype(float)
+            samples = samples[int(len(samples) * 0.2):int(len(samples) * 0.9)]
+            return np.abs(np.fft.rfft(samples * np.hanning(len(samples))))
+
+        a = spectrum(0)
+        b = spectrum(2)
+        assert not np.allclose(a, b)
 
 
 class TestMute:

@@ -229,7 +229,7 @@ system 动作表换成 `EDGE_ACTION_NAMES` 的八个贴边动作；调度器、�
 | `pet/ui/audio/` | 语音输出：发声门面与 QAudioSink 播放通道，空闲挂起 | `vocalizer.py`、`audio_out.py` |
 | `pet/food/` | 觅食：需求驱动的地面食物生成与食用 | `food.py` |
 | `pet/game/` | 小游戏：猜数字、猜拳、井字棋、二十问、猜高低 | `gamebase.py` 与各游戏 |
-| `pet/voice/` | 语音输入：热键、麦克风采集、讯飞听写；语音输出：音节切分与波形合成，不依赖 Qt | `voice_session.py`、`phoneme.py`、`animalese.py` |
+| `pet/voice/` | 语音输入：热键、麦克风采集、讯飞听写；语音输出：音节切分与波形合成，不依赖 Qt | `voice_session.py`、`syllable.py`、`waveform.py` |
 | `assets/` | 素材：每个动作一个目录（`<name>.json` + 帧 webp） | `assets/actions/` |
 | `tests/` | pytest 用例（CI 在 ubuntu + windows 上跑） | 见 `CONTRIBUTING.md`；结构红线见 [test_architecture_contracts.py](../tests/test_architecture_contracts.py) |
 
