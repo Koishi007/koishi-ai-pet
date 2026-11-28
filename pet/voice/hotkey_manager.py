@@ -3,7 +3,11 @@
 import logging
 import time
 
-from pynput import keyboard
+try:
+    from pynput import keyboard
+except ImportError:
+    keyboard = None  # 无显示服务器的环境（CI、无 X11 的 Linux）导入即失败
+
 from PySide6.QtCore import QObject, Signal
 
 from pet.config import config
@@ -39,6 +43,11 @@ class HotkeyManager(QObject):
     def start(self):
         """启动全局键盘监听线程。"""
         if self._listener and self._listener.running:
+            return
+        if keyboard is None:
+            msg = "pynput 不可用，无法监听全局热键"
+            logger.error(f"[HotkeyManager] {msg}")
+            self.error_occurred.emit(msg)
             return
         self._hotkey = config.VOICE_HOTKEY.lower()
         self._mode = config.VOICE_TRIGGER_MODE
