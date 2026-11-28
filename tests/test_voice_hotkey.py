@@ -192,11 +192,70 @@ class TestKeyName:
         assert HotkeyManager._key_name(_Broken()) == ""
 
 
+class TestReload:
+    """设置页保存后热键与模式立即生效。"""
+
+    def test_reload_picks_up_new_hotkey(self, monkeypatch, clock):
+        from pet.config import config
+        manager, events = _make("single", hotkey="alt_l")
+        monkeypatch.setattr(config, "VOICE_HOTKEY", "f8")
+        monkeypatch.setattr(config, "VOICE_TRIGGER_MODE", "single")
+        manager.reload()
+        assert manager._hotkey == "f8"
+
+        manager._on_press(_Key(name="alt_l"))
+        clock.advance(0.5)
+        manager._on_release(_Key(name="alt_l"))
+        assert events == []
+
+        manager._on_press(_Key(name="f8"))
+        clock.advance(0.5)
+        manager._on_release(_Key(name="f8"))
+        assert events == ["start", "stop"]
+
+    def test_reload_picks_up_new_mode(self, monkeypatch, clock):
+        from pet.config import config
+        manager, events = _make("single", hotkey="alt_l")
+        monkeypatch.setattr(config, "VOICE_HOTKEY", "alt_l")
+        monkeypatch.setattr(config, "VOICE_TRIGGER_MODE", "double")
+        manager.reload()
+        assert manager._mode == "double"
+
+        manager._on_press(KEY)
+        clock.advance(1.0)
+        manager._on_release(KEY)
+        assert events == []
+
+    def test_reload_during_recording_stops_it(self, monkeypatch, clock):
+        from pet.config import config
+        manager, events = _make("single", hotkey="alt_l")
+        manager._on_press(KEY)
+        assert events == ["start"]
+
+        monkeypatch.setattr(config, "VOICE_HOTKEY", "f8")
+        monkeypatch.setattr(config, "VOICE_TRIGGER_MODE", "single")
+        manager.reload()
+        assert events == ["start", "stop"]
+        assert manager._recording is False
+
+    def test_reload_resets_armed_state(self, monkeypatch, clock):
+        from pet.config import config
+        manager, events = _make("double", hotkey="alt_l")
+        manager._on_press(KEY)
+        clock.advance(0.1)
+        manager._on_release(KEY)
+        assert manager._armed_at > 0
+
+        monkeypatch.setattr(config, "VOICE_HOTKEY", "alt_l")
+        monkeypatch.setattr(config, "VOICE_TRIGGER_MODE", "double")
+        manager.reload()
+        assert manager._armed_at == 0.0
+
+
 class TestConfigDefaults:
     def test_default_hotkey_is_left_alt(self):
         from pet.config import _KEY_META
         assert _KEY_META["VOICE_HOTKEY"]["default"] == "alt_l"
-
     def test_trigger_modes(self):
         from pet.config import _KEY_META
         assert _KEY_META["VOICE_TRIGGER_MODE"]["enum"] == ["single", "double"]

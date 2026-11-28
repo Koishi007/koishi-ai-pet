@@ -62,6 +62,17 @@ class HotkeyManager(QObject):
         self._key_down = False
         logger.info("[HotkeyManager] stopped")
 
+    def reload(self):
+        """重新读取热键与触发方式，用于设置页保存后即时生效。"""
+        if self._recording:
+            self._end()
+        self._hotkey = config.VOICE_HOTKEY.lower()
+        self._mode = config.VOICE_TRIGGER_MODE
+        self._key_down = False
+        self._press_at = 0.0
+        self._armed_at = 0.0
+        logger.info(f"[HotkeyManager] reloaded: '{self._hotkey}' ({self._mode})")
+
     def set_intercept_enter(self, enabled: bool):
         """开启/关闭回车拦截模式（语音输入完成后开启）。"""
         self._intercept_enter = enabled
