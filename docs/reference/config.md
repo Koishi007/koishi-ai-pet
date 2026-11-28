@@ -89,7 +89,8 @@
 | `TERMINAL_ALLOW` | str_list | ["dir *", "ls *", "where *", "whoami *", "hostname *", "git status", "git log", "git rev-parse", "git describe"] |  | auto 档免确认的命令，逗号分隔，空为全部询问 |
 | `TERMINAL_SANDBOX_ROOT` | str | `""` |  | 默认工作目录根：终端初始目录，模型默认跟随终端当前目录，留空为桌面 |
 | `VOICE_INPUT_ENABLED` | bool | false |  | 启用语音输入 |
-| `VOICE_HOTKEY` | str | `"F8"` |  | 语音输入全局热键 |
+| `VOICE_HOTKEY` | str | `"alt_l"` |  | 语音输入全局热键 |
+| `VOICE_TRIGGER_MODE` | str | `"double"` |  | 语音输入的触发方式：single 按一次即录，double 需先短按再按住（可选：single / double） |
 | `XF_APPID` | str | `""` |  | 讯飞语音听写 APPID |
 | `XF_API_KEY` | str | `""` |  | 讯飞语音听写 API Key |
 | `XF_API_SECRET` | str | `""` |  | 讯飞语音听写 API Secret |
@@ -196,4 +197,4 @@
 - `hidden`：`true` 表示不在界面显示，只能直接编辑 `settings.json`
 - `enum` / `minimum` / `maximum`：取值约束，会写进 `settings-schema.json`
 
-共 133 项（其中 69 项未在界面列出）。
+共 134 项（其中 69 项未在界面列出）。

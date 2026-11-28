@@ -174,7 +174,7 @@
 | `pet/ui/rps_panel.py` | 猜拳面板 — 继承 GamePanelBase，负责出拳展示与点击提交。 | `RpsPanel` |
 | `pet/ui/settings_actions.py` | 设置页的后台动作：连通性测试、模型列表、记忆汇总与热键录制 | `apply_pet_scale()` `SettingsActions` |
 | `pet/ui/settings_fields.py` | 设置页的控件工厂、表单模型与跨模块共享的控件引用 | `MarkdownEdit` `SettingsWidgets` `SettingsForm` |
-| `pet/ui/settings_hooks.py` | 设置页可选能力的注入点：装配层在启动时绑定真实实现 | `bind()` `make_embedding_client()` `invalidate_action_section()` |
+| `pet/ui/settings_hooks.py` | 设置页可选能力的注入点：装配层在启动时绑定真实实现 | `bind()` `make_embedding_client()` `invalidate_action_section()` `reload_hotkey()` |
 | `pet/ui/settings_spec.py` | 设置界面的纯数据：页签归属、推理强度档位与单位换算 | `effort_items()` `effort_label()` `display_value()` `stored_value()` |
 | `pet/ui/settings_tabs.py` | 设置页的四个页签：只负责搭建控件并登记到 SettingsForm | `SettingsTabs` |
 | `pet/ui/settings_window.py` | 设置界面 — 用户配置的图形界面 | `SettingsWindow` |

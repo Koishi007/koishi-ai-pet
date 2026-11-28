@@ -20,7 +20,7 @@ from pet.ui.qss import (CHECKMARK_SVG, TAB_PILL_QSS, TITLE_LABEL_QSS,
                         app_stylesheet)
 from pet.ui.settings_actions import SettingsActions, apply_pet_scale
 from pet.ui.settings_fields import SettingsForm
-from pet.ui.settings_hooks import invalidate_action_section
+from pet.ui.settings_hooks import invalidate_action_section, reload_hotkey
 from pet.ui.settings_tabs import SettingsTabs
 from pet.ui.styles import (BUTTON_PRIMARY_QSS, SETTING_ICON_PATH,
                            ensure_taskbar_icon, make_close_button,
@@ -209,6 +209,12 @@ class SettingsWindow(QWidget):
                 invalidate_action_section()
             except Exception as e:
                 logger.exception(f"[Settings] invalidate_action_section failed: {e}")
+
+        if "VOICE_HOTKEY" in values or "VOICE_TRIGGER_MODE" in values:
+            try:
+                reload_hotkey()
+            except Exception as e:
+                logger.exception(f"[Settings] reload_hotkey failed: {e}")
 
         if needs_rebuild_client:
             self.actions.rebuild_client()

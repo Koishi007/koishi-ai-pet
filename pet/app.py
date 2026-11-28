@@ -168,7 +168,8 @@ def _warn_already_running() -> None:
 
 
 def main():
-    settings_hooks.bind(EmbeddingClient, invalidate_action_section)
+    settings_hooks.bind(EmbeddingClient, invalidate_action_section,
+                        lambda: _hotkey_mgr.reload() if _hotkey_mgr else None)
     logging.basicConfig(
         level=getattr(logging, config.LOG_LEVEL, logging.INFO),
         format="[%(name)s] %(message)s",

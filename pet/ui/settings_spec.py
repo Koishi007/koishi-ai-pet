@@ -34,15 +34,6 @@ def effort_label(value: str) -> str:
     return ""
 
 
-# 语音音高预设：(显示文案, 存储值)。存储值即 pet/voice/phoneme.py 的 PRESETS 键
-VOICE_PRESET_CHOICES: tuple[tuple[str, str], ...] = (
-    ("低沉 (deep)", "deep"),
-    ("柔和 (soft)", "soft"),
-    ("明亮 (bright)", "bright"),
-    ("清脆 (clear)", "clear"),
-)
-
-
 # 语音触发方式：(显示文案, 存储值)。两种模式都按住录音，double 需先短按一下
 VOICE_TRIGGER_CHOICES: tuple[tuple[str, str], ...] = (
     ("单次长按", "single"),
@@ -83,7 +74,6 @@ TAB_SPECS: tuple[tuple[str, tuple[str, ...]], ...] = (
         "TERMINAL_MODE", "TERMINAL_ALLOW", "TERMINAL_SANDBOX_ROOT",
         "VOICE_INPUT_ENABLED", "VOICE_HOTKEY", "VOICE_TRIGGER_MODE", "XF_APPID", "XF_API_KEY",
         "XF_API_SECRET",
-        "VOICE_OUTPUT_ENABLED", "VOICE_OUTPUT_PRESET", "VOICE_OUTPUT_VOLUME",
     )),
 )
 

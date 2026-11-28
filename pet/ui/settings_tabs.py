@@ -17,7 +17,8 @@ from pet.config import PET_SCALE_STEPS, config
 from pet import theme
 from pet.ui.ink_button import InkButton
 from pet.ui.settings_fields import SettingsForm, SettingsWidgets
-from pet.ui.settings_spec import EFFORT_DEFAULT_LABEL, MODE_ORDER, TAB_SPECS, effort_items
+from pet.ui.settings_spec import (EFFORT_DEFAULT_LABEL, MODE_ORDER, TAB_SPECS,
+                                  VOICE_TRIGGER_CHOICES, effort_items)
 from pet.ui.styles import (BUTTON_PRIMARY_QSS, COMBOBOX_QSS, INPUT_HIGHLIGHT_QSS,
                            SCROLLBAR_QSS, TEXTEDIT_QSS,
                            _COLOR_TEXT_MUTED, _COLOR_TEXT_SEC)
@@ -710,6 +711,10 @@ class SettingsTabs:
         w.capture_btn.setStyleSheet(BUTTON_PRIMARY_QSS)
         hotkey_row.addWidget(w.capture_btn)
         voice_form.addRow("热键:", hotkey_row)
+        voice_form.addRow("触发方式:", f.combo_with_data(
+            "VOICE_TRIGGER_MODE",
+            [(label, value) for label, value in VOICE_TRIGGER_CHOICES],
+        ))
         voice_form.addRow("讯飞 APPID:", f.line("XF_APPID", ""))
         voice_form.addRow("讯飞 API Key:", f.secret_row("XF_API_KEY"))
         voice_form.addRow("讯飞 API Secret:", f.secret_row("XF_API_SECRET"))
